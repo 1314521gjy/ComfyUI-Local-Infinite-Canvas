@@ -1,0 +1,28 @@
+{
+  "1": {
+    "class_type": "TE_Qwen_Image_2_1_Prompt_Enhancer",
+    "inputs": {
+      "输入提示词": "a quiet bookstore at night",
+      "任务模式": "文生图",
+      "输出语言": "中文",
+      "增强方式": "本地官方PE",
+      "api_key": "",
+      "api_base_url": "https://teynex.com",
+      "model": "deepseek-v4.1-flash",
+      "文生图PE模型": "qwen3.5_9b_int8_convrot.safetensors",
+      "图生图PE模型": "qwen3.5_9b_int8_convrot.safetensors",
+      "主模型": "Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf",
+      "mmproj": "mmproj-Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-BF16.gguf",
+      "最大生成token": 4096,
+      "上下文长度": 8192,
+      "seed": 0,
+      "生成后自动卸载模型": true,
+      "启用思考": false
+    },
+    "_meta": { "title": "Qwen Image 2.1 Prompt Enhancer" }
+  },
+  "2": {
+    "class_type": "TE_text_display",
+    "inputs": { "text": ["1", 0] }
+  }
+}

@@ -1,0 +1,177 @@
+{
+  "version": 1,
+  "workflows": [
+    {
+      "id": "image-mock",
+      "name": "image-mock",
+      "type": "image",
+      "file": "mock-image.json",
+      "description": "Mock image workflow for gateway protocol tests (no GPU).",
+      "bindings": {
+        "prompt": {
+          "node": "6",
+          "input": "text"
+        },
+        "negative": {
+          "node": "7",
+          "input": "text",
+          "default": ""
+        },
+        "width": {
+          "node": "5",
+          "input": "width",
+          "from": "size.width",
+          "default": 1024
+        },
+        "height": {
+          "node": "5",
+          "input": "height",
+          "from": "size.height",
+          "default": 1024
+        },
+        "batch": {
+          "node": "5",
+          "input": "batch_size",
+          "from": "count",
+          "default": 1
+        },
+        "seed": {
+          "node": "3",
+          "input": "seed",
+          "random": true
+        },
+        "steps": {
+          "node": "3",
+          "input": "steps",
+          "from": "quality.steps",
+          "default": 8
+        },
+        "cfg": {
+          "node": "3",
+          "input": "cfg",
+          "from": "quality.cfg",
+          "default": 1
+        }
+      },
+      "presets": {
+        "quality": {
+          "low": {
+            "steps": 6
+          },
+          "medium": {
+            "steps": 8
+          },
+          "high": {
+            "steps": 12
+          },
+          "xhigh": {
+            "steps": 16
+          },
+          "max": {
+            "steps": 20
+          }
+        }
+      }
+    },
+    {
+      "id": "image-mock-edit",
+      "name": "image-mock-edit",
+      "type": "image",
+      "file": "mock-image-edit.json",
+      "description": "Mock image edit workflow with one LoadImage reference (no GPU).",
+      "bindings": {
+        "prompt": {
+          "node": "6",
+          "input": "text"
+        },
+        "negative": {
+          "node": "7",
+          "input": "text",
+          "default": ""
+        },
+        "seed": {
+          "node": "3",
+          "input": "seed",
+          "random": true
+        },
+        "steps": {
+          "node": "3",
+          "input": "steps",
+          "from": "quality.steps",
+          "default": 8
+        },
+        "cfg": {
+          "node": "3",
+          "input": "cfg",
+          "from": "quality.cfg",
+          "default": 1
+        },
+        "image": {
+          "node": "10",
+          "input": "image",
+          "from": "image",
+          "imageIndex": 0
+        },
+        "denoise": {
+          "node": "3",
+          "input": "denoise",
+          "from": "params.denoise",
+          "default": 0.55
+        }
+      }
+    },
+    {
+      "id": "video-mock",
+      "name": "video-mock",
+      "type": "video",
+      "file": "mock-video.json",
+      "description": "Mock MiniMax-H3 style video workflow for task polling tests (no GPU).",
+      "bindings": {
+        "prompt": {
+          "node": "6",
+          "input": "text"
+        },
+        "width": {
+          "node": "10",
+          "input": "width",
+          "from": "size.width",
+          "default": 1024
+        },
+        "height": {
+          "node": "10",
+          "input": "height",
+          "from": "size.height",
+          "default": 576
+        },
+        "length": {
+          "node": "10",
+          "input": "length",
+          "from": "seconds",
+          "transform": "secondsToFrames",
+          "fps": 24,
+          "default": 81
+        },
+        "fps": {
+          "node": "10",
+          "input": "fps",
+          "default": 24
+        },
+        "seed": {
+          "node": "3",
+          "input": "seed",
+          "random": true
+        },
+        "steps": {
+          "node": "3",
+          "input": "steps",
+          "default": 8
+        },
+        "cfg": {
+          "node": "3",
+          "input": "cfg",
+          "default": 1
+        }
+      }
+    }
+  ]
+}

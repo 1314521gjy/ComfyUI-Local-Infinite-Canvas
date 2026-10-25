@@ -1,0 +1,315 @@
+{
+  "115": {
+    "class_type": "ResolutionSelector",
+    "inputs": {
+      "aspect_ratio": "16:9 (Widescreen)",
+      "megapixels": 1,
+      "multiple": 32
+    },
+    "_meta": {
+      "title": "Resolution Selector (Size)"
+    }
+  },
+  "119": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "minimax_h3_video_vae_fp16.safetensors"
+    }
+  },
+  "120": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
+    }
+  },
+  "121": {
+    "class_type": "VAEDecodeAudio",
+    "inputs": {
+      "samples": [
+        "125",
+        0
+      ],
+      "vae": [
+        "120",
+        0
+      ]
+    }
+  },
+  "122": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "125",
+        0
+      ],
+      "vae": [
+        "119",
+        0
+      ]
+    }
+  },
+  "123": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "res_multistep"
+    }
+  },
+  "124": {
+    "class_type": "BasicScheduler",
+    "inputs": {
+      "model": [
+        "150",
+        0
+      ],
+      "scheduler": "simple",
+      "steps": 4,
+      "denoise": 1
+    }
+  },
+  "125": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": [
+        "129",
+        0
+      ],
+      "guider": [
+        "126",
+        0
+      ],
+      "sampler": [
+        "123",
+        0
+      ],
+      "sigmas": [
+        "124",
+        0
+      ],
+      "latent_image": [
+        "136",
+        1
+      ]
+    }
+  },
+  "126": {
+    "class_type": "BasicGuider",
+    "inputs": {
+      "model": [
+        "147",
+        0
+      ],
+      "conditioning": [
+        "136",
+        0
+      ]
+    }
+  },
+  "127": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "minimax_h3_fastvideo_vsa_datafree_1300step_4step_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "128": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
+      "type": "minimax",
+      "device": "default"
+    }
+  },
+  "129": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": 666
+    }
+  },
+  "130": {
+    "class_type": "CreateVideo",
+    "inputs": {
+      "images": [
+        "122",
+        0
+      ],
+      "audio": [
+        "121",
+        0
+      ],
+      "fps": 24,
+      "bit_depth": 8,
+      "color_space": "sRGB"
+    }
+  },
+  "131": {
+    "class_type": "ComfyMathExpression",
+    "inputs": {
+      "values.a": [
+        "132",
+        0
+      ],
+      "expression": "max(5, round(a * 24)) + (5 - (max(5, round(a * 24)) % 17)) % 17"
+    }
+  },
+  "132": {
+    "class_type": "PrimitiveFloat",
+    "inputs": {
+      "value": 10
+    },
+    "_meta": {
+      "title": "Float (Duration)"
+    }
+  },
+  "136": {
+    "class_type": "MiniMaxH3ReferenceToVideo",
+    "inputs": {
+      "clip": [
+        "128",
+        0
+      ],
+      "vae": [
+        "119",
+        0
+      ],
+      "audio_vae": [
+        "120",
+        0
+      ],
+      "ref_images.ref_image_0": [
+        "137",
+        0
+      ],
+      "ref_images.ref_image_1": [
+        "139",
+        0
+      ],
+      "ref_images.ref_image_2": [
+        "140",
+        0
+      ],
+      "prompt": [
+        "138",
+        0
+      ],
+      "width": [
+        "115",
+        0
+      ],
+      "height": [
+        "115",
+        1
+      ],
+      "length": [
+        "131",
+        1
+      ],
+      "ref_image_size": "max"
+    }
+  },
+  "137": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "join_2x2_20260907_005454.png",
+      "upload": "image"
+    }
+  },
+  "138": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": "目标视频在 0.00 秒处完整参考 <Picture 1>（来自 [Shot 1]）。\n\nintegrated_multimodal_description: [Shot 1] 画面严格保持 <Picture 1> 中的人物外貌、浅灰蓝旧衬衫、敞开的领口、身后土坯房与树根菜地的构图特征。年轻男人沈明从土墙根下迈步走向院门，脚步由慢到急，喉结滚动，下颌绷紧，视线死死盯住前方院门：<d>[Chinese] 娘，秀兰怀上了，今天我必须带她走<d>。镜头为中景跟拍，随他向前缓推，光线维持参考图正午硬光，影子在沙土地上被拉长。\n\noverall_soundscape: 空旷村庄的环境底噪，远处零星鞭炮声，脚下沙土地被踩出的沉重脚步声，风声穿过枯树枝的轻响，人声清晰发紧。\n\nnon_diegetic_music: N/A\n\n目标视频在 2.80 秒处完整参考 <Picture 2>（来自 [Shot 2]）。\n\nintegrated_multimodal_description: [Shot 2] 画面严格保持 <Picture 2> 中大红棉袄、黑盘扣、胸前红花胸针、双麻花辫与身后土坯房村路的构图特征。年轻姑娘秀兰双手护住小腹，抬眼望向院门方向，眼里有水光却强撑着不落，随后咬牙跟上两步：<d>[Chinese] 你娘要是还认那门亲，我就自己走<d>。镜头为近景，固定机位，轻微手持晃动，光线维持参考图正午强光，红袄在冷灰土墙前格外扎眼。\n\noverall_soundscape: 风声与远处鸡鸣，棉袄布料摩擦的窸窣声，她压抑的吸气声，人声发颤但字字清楚。\n\nnon_diegetic_music: N/A\n\n目标视频在 5.60 秒处完整参考 <Picture 3>（来自 [Shot 3]）。\n\nintegrated_multimodal_description: [Shot 3] 画面严格保持 <Picture 3> 中老妇人的黑棉袄立领、盘发、右颊旧疤、双手背在身后的冷硬神情与身后土墙构图特征。她一步横在门前，脊背笔直，眼神从儿子脸上扫到姑娘的肚子上，嘴角往下一压：<d>[Chinese] 那门亲我退了，你敢踏出这门试试<d>。镜头为近景略仰，固定机位不运镜，光线维持参考图正午顶光，墙面阴影把她整个人压成一道硬影。\n\noverall_soundscape: 风声骤然静下，只剩衣料摩擦与呼吸声，远处鞭炮声断了一拍，人声低沉、冷、不带起伏。\n\nnon_diegetic_music: 一声极低的二胡长音在句尾拉起，随即收住。\n\n目标视频在 8.20 秒处完整参考 <Picture 4>（来自 [Shot 4]）。\n\nintegrated_multimodal_description: [Shot 4] 画面严格保持 <Picture 4> 中斑驳白墙、暗红木门框、门楣系着的红绸、垂落的绸带与地面散落的红纸屑构图特征。老妇人背对镜头跨过门槛，抬手一把扯下门楣上的红绸，红绸垂落，地上红纸屑被风卷起贴住门框，画面停在空门与满地碎红上：<d>[Chinese] 秀兰，他要是今天出了这个门，就别再回来<d>。镜头为中景固定机位，最后半秒红绸出画，光线维持参考图正午强光，红绸与红纸屑在灰白墙面下刺眼。\n\noverall_soundscape: 红绸被扯下的布料撕裂声，红纸屑被风卷动的沙沙声，脚步跨过门槛的闷响，远处传来隐约的唢呐声，人声在门外发闷。\n\nnon_diegetic_music: N/A\n\n"
+    },
+    "_meta": {
+      "title": "Input Text (Prompt)"
+    }
+  },
+  "139": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "download (22).png",
+      "upload": "image"
+    }
+  },
+  "140": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "ref3.png"
+    }
+  },
+  "147": {
+    "class_type": "ModelPreviewOverrideKJ",
+    "inputs": {
+      "model": [
+        "150",
+        0
+      ],
+      "max_resolution": 1024,
+      "jpeg_quality": 80,
+      "suppress_default_preview": true,
+      "preview_frames": [
+        "131",
+        1
+      ],
+      "preview_fps": 12,
+      "tiny_vae": "taeh3.safetensors"
+    }
+  },
+  "150": {
+    "class_type": "SolAttnMiniMax",
+    "inputs": {
+      "model": [
+        "155",
+        0
+      ],
+      "tau": 1.3,
+      "start_percent": 0.2,
+      "end_percent": 0.9,
+      "min_tokens": 12288,
+      "sink_conditioning": "exact_kv_and_rows",
+      "morton": false,
+      "morton_curve": "2d_frame",
+      "centroid_tail": true,
+      "routed_cap_percent": 0,
+      "reuse_qkv_memory": false,
+      "verbose": false,
+      "dense_blocks": ""
+    }
+  },
+  "153": {
+    "class_type": "ModelAttentionBackend",
+    "inputs": {
+      "model": [
+        "127",
+        0
+      ],
+      "attention": "comfy kitchen attention"
+    }
+  },
+  "154": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "video": [
+        "130",
+        0
+      ],
+      "filename_prefix": "video/MiniMax_H3",
+      "format": "auto",
+      "format.codec": "auto",
+      "codec": "auto"
+    }
+  },
+  "155": {
+    "class_type": "TESpeedMiniMaxH3",
+    "inputs": {
+      "model": [
+        "153",
+        0
+      ],
+      "processing_control_value": 0.08,
+      "processing_percent_1": 0.1,
+      "processing_percent_2": 0.9,
+      "mcs": 2,
+      "device": "auto",
+      "mode": "4-step LoRA"
+    }
+  }
+}

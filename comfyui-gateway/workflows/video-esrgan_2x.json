@@ -1,0 +1,52 @@
+{
+  "10": {
+    "class_type": "VHS_LoadVideo",
+    "inputs": {
+      "video": "X://insert/path/here.mp4",
+      "force_rate": 0,
+      "custom_width": 0,
+      "custom_height": 0,
+      "frame_load_cap": 0,
+      "skip_first_frames": 0,
+      "select_every_nth": 1
+    }
+  },
+  "20": {
+    "class_type": "Upscale Model Loader",
+    "inputs": {
+      "model_name": "RealESRGAN_x2plus.pth"
+    }
+  },
+  "30": {
+    "class_type": "Upscale Image",
+    "inputs": {
+      "image": [
+        "10",
+        0
+      ],
+      "upscale_model": [
+        "20",
+        0
+      ]
+    }
+  },
+  "40": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": [
+        "30",
+        0
+      ],
+      "frame_rate": 60,
+      "loop_count": 0,
+      "filename_prefix": "ESRGAN_2x",
+      "format": "video/h264-mp4",
+      "pingpong": false,
+      "save_output": true,
+      "audio": [
+        "10",
+        2
+      ]
+    }
+  }
+}

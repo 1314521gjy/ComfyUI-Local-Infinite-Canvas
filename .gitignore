@@ -1,0 +1,30 @@
+# dependencies
+node_modules/
+**/node_modules/
+
+# local runtime state
+launcher/config.json
+launcher/launcher.log
+comfyui-gateway/data/
+comfyui-gateway/samples/
+comfyui-gateway/test/.tmp/
+*.log
+*.tsbuildinfo
+
+# environment / secrets
+.env
+.env.*
+!.env.example
+
+# generated output (the committed web/dist is a release artifact)
+infinite-canvas/.next/
+infinite-canvas/out/
+infinite-canvas/plugins/canvas/*/dist/
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# local test artifacts
+tmp-*

@@ -1,0 +1,16 @@
+{
+  "comfyUrl": "http://127.0.0.1:8188",
+  "comfyDir": "C:\\ComfyUI",
+  "comfyWorkflowsDir": "C:\\ComfyUI\\ComfyUI\\user\\default\\workflows",
+  "gatewayPort": 8190,
+  "controlPort": 8290,
+  "canvasPort": 3000,
+  "gatewayDir": "",
+  "canvasDist": "",
+  "comfyStartTimeoutSec": 300,
+  "gatewayStartTimeoutSec": 30,
+  "openBrowser": true,
+  "closeCanvasStopsBackend": true,
+  "stopAdoptedComfyOnCanvasClose": true,
+  "canvasIdleGraceSec": 15
+}

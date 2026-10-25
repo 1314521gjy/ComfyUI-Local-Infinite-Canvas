@@ -1,0 +1,145 @@
+{
+  "1": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "SinoXvision_Krea2_Aesthetics_fp8_scale.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "2": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3vl_4b_fp8_scaled.safetensors",
+      "type": "krea2",
+      "device": "default"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    }
+  },
+  "4": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "2",
+        0
+      ],
+      "text": "A cinematic photorealistic portrait, natural light, detailed, high quality"
+    }
+  },
+  "5": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "2",
+        0
+      ],
+      "text": "low quality, blurry, deformed, watermark, text, mosaic, low resolution"
+    }
+  },
+  "6": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "width": 1280,
+      "height": 784,
+      "batch_size": 1
+    }
+  },
+  "7": {
+    "class_type": "KSamplerAdvanced",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "add_noise": "enable",
+      "noise_seed": 835582592782321,
+      "steps": 7,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "positive": [
+        "4",
+        0
+      ],
+      "negative": [
+        "5",
+        0
+      ],
+      "latent_image": [
+        "6",
+        0
+      ],
+      "start_at_step": 0,
+      "end_at_step": 7,
+      "return_with_leftover_noise": "enable"
+    }
+  },
+  "8": {
+    "class_type": "LatentUpscaleBy",
+    "inputs": {
+      "samples": [
+        "7",
+        0
+      ],
+      "upscale_method": "bislerp",
+      "scale_by": 1.5
+    }
+  },
+  "9": {
+    "class_type": "KSamplerAdvanced",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "add_noise": "enable",
+      "noise_seed": 680614728720534,
+      "steps": 10,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "positive": [
+        "4",
+        0
+      ],
+      "negative": [
+        "5",
+        0
+      ],
+      "latent_image": [
+        "8",
+        0
+      ],
+      "start_at_step": 4,
+      "end_at_step": 999,
+      "return_with_leftover_noise": "disable"
+    }
+  },
+  "10": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "9",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    }
+  },
+  "11": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "10",
+        0
+      ],
+      "filename_prefix": "krea2"
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "version": "v0.20.0",
+  "publishedAt": "2026-10-25",
+  "notes": "本地 Infinite Canvas × ComfyUI 集成初始版本。",
+  "repository": "https://github.com/1314521gjy/ComfyUI-Local-Infinite-Canvas",
+  "downloadUrl": "https://github.com/1314521gjy/ComfyUI-Local-Infinite-Canvas/archive/refs/heads/main.zip"
+}

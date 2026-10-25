@@ -1,0 +1,239 @@
+import { useEffect, useRef, useState, type RefObject } from "react";
+import { createPortal } from "react-dom";
+import { Settings2 } from "lucide-react";
+import { Button } from "antd";
+import { useTranslation } from "react-i18next";
+
+import { ImageSettingsPanel, OptionPill, SettingTitle, imageQualityLabel, imageSizeLabel } from "@/components/image-settings-panel";
+import { canvasThemes } from "@/lib/canvas-theme";
+import { channelModelOf } from "@/stores/use-config-store";
+import { useThemeStore } from "@/stores/use-theme-store";
+import type { AiConfig } from "@/stores/use-config-store";
+
+type CanvasImageSettingsPopoverProps = {
+    config: AiConfig;
+    onConfigChange: (key: keyof AiConfig, value: string) => void;
+    onMissingConfig?: () => void;
+    onOpenChange?: (open: boolean) => void;
+    onOpenMaskEditor?: () => void;
+    onOpenOutpaintEditor?: () => void;
+    onOpenMossLayoutEditor?: () => void;
+    buttonClassName?: string;
+    getPopupContainer?: (triggerNode: HTMLElement) => HTMLElement;
+    placement?: "topLeft" | "top" | "topRight" | "bottomLeft" | "bottom" | "bottomRight";
+    autoAdjustOverflow?: boolean;
+};
+
+const qwenModeLabels: Record<string, string> = { edit: "多图编辑", inpaint: "局部重绘", outpaint: "扩图" };
+const qwenModeHints: Record<string, string> = {
+    edit: "接 1–4 张参考图，按提示词编辑或融合",
+    inpaint: "选择后自动打开蒙版，只修改蒙版覆盖区域",
+    outpaint: "打开扩图画布，拖图 / 滚轮调整扩图范围",
+};
+
+function mossModelInfo(config: AiConfig) {
+    const workflowId = channelModelOf(config, config.model)?.model.workflowId || "";
+    return workflowId.startsWith("image-moss-sft-") ? { label: workflowId.includes("50step") ? "MOSS-Image 50步" : "MOSS-Image 8步" } : null;
+}
+
+function qwenModelInfo(config: AiConfig) {
+    const model = channelModelOf(config, config.model)?.model;
+    if (model?.workflowId !== "image-qwen21") return null;
+    const modes = model.variantModes?.length ? model.variantModes : ["edit", "inpaint"];
+    return { modes, labels: { ...qwenModeLabels, ...(model.variantLabels || {}) } };
+}
+
+export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChange, onOpenMaskEditor, onOpenOutpaintEditor, onOpenMossLayoutEditor, buttonClassName, placement = "topLeft" }: CanvasImageSettingsPopoverProps) {
+    const { t } = useTranslation();
+    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const buttonRef = useRef<HTMLSpanElement>(null);
+    const panelRef = useRef<HTMLDivElement>(null);
+    const [open, setOpen] = useState(false);
+    const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
+    const quality = config.quality || "auto";
+    const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
+    const activeSize = config.size || "auto";
+    const qwen = qwenModelInfo(config);
+    const updateOpen = (nextOpen: boolean) => {
+        setOpen(nextOpen);
+        onOpenChange?.(nextOpen);
+    };
+
+    useEffect(() => {
+        if (!open) return;
+        const syncPosition = () => setButtonRect(buttonRef.current?.getBoundingClientRect() || null);
+        const closeOnOutsidePointer = (event: PointerEvent) => {
+            const target = event.target;
+            if (!(target instanceof Node)) return;
+            if (buttonRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+            if (document.activeElement instanceof HTMLElement && panelRef.current?.contains(document.activeElement)) document.activeElement.blur();
+            setOpen(false);
+            onOpenChange?.(false);
+        };
+
+        syncPosition();
+        window.addEventListener("resize", syncPosition);
+        window.addEventListener("scroll", syncPosition, true);
+        window.addEventListener("pointerdown", closeOnOutsidePointer, true);
+        return () => {
+            window.removeEventListener("resize", syncPosition);
+            window.removeEventListener("scroll", syncPosition, true);
+            window.removeEventListener("pointerdown", closeOnOutsidePointer, true);
+        };
+    }, [onOpenChange, open]);
+
+    const panel = open && buttonRect ? <ImageSettingsPortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={config} onConfigChange={onConfigChange} onOpenMaskEditor={onOpenMaskEditor} onOpenOutpaintEditor={onOpenOutpaintEditor} onOpenMossLayoutEditor={onOpenMossLayoutEditor} onClose={() => updateOpen(false)} /> : null;
+
+    return (
+        <>
+            <span ref={buttonRef} className="inline-flex min-w-0">
+                <Button size="small" type="text" className={buttonClassName || "!h-8 !max-w-[180px] !justify-start !rounded-full !px-2.5"} style={{ background: theme.node.fill, color: theme.node.text }} icon={<Settings2 className="size-3.5" />} onClick={() => updateOpen(!open)}>
+                    <span className="truncate">
+                        {qwen ? `${qwen.labels[String(config.imageMode || "edit")] || qwen.labels.edit} · 跟随原图` : `${imageQualityLabel(quality)} · ${imageSizeLabel(activeSize)} · ${t("canvas.controls.images", { count })}`}
+                    </span>
+                </Button>
+            </span>
+            {panel}
+        </>
+    );
+}
+
+function ImageSettingsPortal({
+    buttonRect,
+    panelRef,
+    placement,
+    theme,
+    config,
+    onConfigChange,
+    onOpenMaskEditor,
+    onOpenOutpaintEditor,
+    onOpenMossLayoutEditor,
+    onClose,
+}: {
+    buttonRect: DOMRect;
+    panelRef: RefObject<HTMLDivElement | null>;
+    placement: CanvasImageSettingsPopoverProps["placement"];
+    theme: (typeof canvasThemes)[keyof typeof canvasThemes];
+    config: AiConfig;
+    onConfigChange: (key: keyof AiConfig, value: string) => void;
+    onOpenMaskEditor?: () => void;
+    onOpenOutpaintEditor?: () => void;
+    onOpenMossLayoutEditor?: () => void;
+    onClose: () => void;
+}) {
+    const qwen = qwenModelInfo(config);
+    const moss = mossModelInfo(config);
+    const qwenMode = String(config.imageMode || "edit");
+    const width = 356;
+    const gap = 8;
+    const margin = 12;
+    const alignRight = placement?.endsWith("Right");
+    const alignCenter = placement === "top" || placement === "bottom";
+    const left = alignCenter ? buttonRect.left + buttonRect.width / 2 - width / 2 : alignRight ? buttonRect.right - width : buttonRect.left;
+    const topPlacement = placement?.startsWith("top");
+    const style = {
+        position: "fixed",
+        zIndex: 1200,
+        width,
+        left: Math.max(margin, Math.min(window.innerWidth - width - margin, left)),
+        ...(topPlacement ? { bottom: window.innerHeight - buttonRect.top + gap, maxHeight: Math.max(260, buttonRect.top - margin * 2) } : { top: buttonRect.bottom + gap, maxHeight: Math.max(260, window.innerHeight - buttonRect.bottom - margin * 2) }),
+        background: theme.toolbar.panel,
+        borderRadius: 18,
+        boxShadow: "0 18px 54px rgba(28, 25, 23, 0.16)",
+        padding: 18,
+        overflowY: "auto",
+        color: theme.node.text,
+    } as const;
+
+    return createPortal(
+        <div
+            ref={panelRef}
+            className="canvas-image-settings-popover"
+            style={style}
+            onPointerDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+        >
+            {qwen ? (
+                <div className="space-y-4">
+                    <div className="text-lg font-semibold">Qwen Image 2.1</div>
+                    <div className="space-y-2.5">
+                        <SettingTitle color={theme.node.muted}>功能</SettingTitle>
+                        <div className="grid grid-cols-3 gap-2.5">
+                            {qwen.modes.map((mode) => (
+                                <OptionPill
+                                    key={mode}
+                                    selected={qwenMode === mode}
+                                    theme={theme}
+                                    onClick={() => {
+                                        onConfigChange("imageMode", mode);
+                                        if (mode === "inpaint" || mode === "outpaint") onClose();
+                                        if (mode === "inpaint") onOpenMaskEditor?.();
+                                        if (mode === "outpaint") onOpenOutpaintEditor?.();
+                                    }}
+                                >
+                                    {qwen.labels[mode] || mode}
+                                </OptionPill>
+                            ))}
+                        </div>
+                        <div className="text-xs leading-4" style={{ color: theme.node.muted }}>
+                            {qwenModeHints[qwenMode] || qwenModeHints.edit}
+                        </div>
+                        <div className="text-xs leading-4" style={{ color: theme.node.muted, opacity: 0.75 }}>
+                            输出尺寸跟随原图；提示词描述要改的内容即可。
+                        </div>
+                    </div>
+                </div>
+            ) : (
+                <div className="space-y-4">
+                    {moss && onOpenMossLayoutEditor ? (
+                        <div className="space-y-2.5 rounded-xl border p-3" style={{ borderColor: theme.node.stroke }}>
+                            <SettingTitle color={theme.node.muted}>区域布局</SettingTitle>
+                            {config.imageMode === "layout" && config.layout ? (
+                                <>
+                                    <button
+                                        type="button"
+                                        className="h-9 w-full cursor-pointer rounded-full border text-sm transition hover:opacity-80"
+                                        style={{ background: "transparent", borderColor: theme.node.text, color: theme.node.text }}
+                                        onClick={() => {
+                                            onClose();
+                                            onOpenMossLayoutEditor();
+                                        }}
+                                    >
+                                        编辑区域布局（{config.layout.regions.length} 个区域）
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="h-8 w-full cursor-pointer rounded-full border text-xs transition hover:opacity-80"
+                                        style={{ background: "transparent", borderColor: theme.node.stroke, color: theme.node.muted }}
+                                        onClick={() => onConfigChange("imageMode", "edit")}
+                                    >
+                                        切换普通文生图
+                                    </button>
+                                </>
+                            ) : (
+                                <button
+                                    type="button"
+                                    className="h-9 w-full cursor-pointer rounded-full border text-sm transition hover:opacity-80"
+                                    style={{ background: "transparent", borderColor: theme.node.text, color: theme.node.text }}
+                                    onClick={() => {
+                                        onConfigChange("imageMode", "layout");
+                                        onClose();
+                                        onOpenMossLayoutEditor();
+                                    }}
+                                >
+                                    打开区域布局编辑器
+                                </button>
+                            )}
+                            <div className="text-xs leading-4" style={{ color: theme.node.muted }}>
+                                {moss.label} · 画框并为每个区域单独填写提示词；背景框先画，主体/文字后画。普通文生图不会使用旧布局。
+                            </div>
+                        </div>
+                    ) : null}
+                    <ImageSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" />
+                </div>
+            )}
+        </div>,
+        document.body,
+    );
+}

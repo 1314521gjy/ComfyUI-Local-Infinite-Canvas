@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ComfyUI Gateway</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: oklch(0.145 0 0);
+    --panel: oklch(0.185 0 0);
+    --panel-2: oklch(0.215 0 0);
+    --fg: oklch(0.985 0 0);
+    --muted: oklch(0.708 0 0);
+    --border: rgba(255, 255, 255, 0.10);
+    --border-strong: rgba(255, 255, 255, 0.16);
+    --primary: oklch(0.922 0 0);
+    --primary-fg: oklch(0.205 0 0);
+    --ok: oklch(0.72 0.17 150);
+    --bad: oklch(0.64 0.20 25);
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); }
+  body {
+    color: var(--fg);
+    font: 13px/1.55 "SF Pro Display", "SF Pro Text", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--muted); text-decoration: none; }
+  a:hover { color: var(--fg); }
+  button, input, select, textarea { font: inherit; }
+  button { cursor: pointer; }
+
+  .top {
+    height: 56px;
+    padding: 0 28px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .brand { display: flex; align-items: center; gap: 9px; font-size: 14px; font-weight: 500; letter-spacing: -0.01em; }
+  .mark { width: 16px; height: 16px; border: 1px solid var(--border-strong); border-radius: 5px; position: relative; }
+  .mark::after { content: ""; position: absolute; inset: 3px; border-radius: 2px; background: var(--fg); opacity: 0.9; }
+  .top-right { display: flex; align-items: center; gap: 16px; font-size: 12px; }
+  .status { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--bad); flex: none; }
+  .dot.ok { background: var(--ok); }
+
+  main { max-width: 760px; margin: 0 auto; padding: 52px 24px 64px; }
+  .intro h1 { margin: 0; font-size: 22px; font-weight: 500; letter-spacing: -0.02em; }
+  .intro p { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+
+  .setup-line { margin-top: 18px; padding: 9px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+  .composer { margin-top: 28px; }
+  .composer-box {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .composer-box:focus-within { border-color: var(--border-strong); }
+  .composer-box select {
+    width: 112px;
+    flex: none;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    padding: 7px 8px;
+    outline: none;
+    font-size: 12px;
+  }
+  .composer-box input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: var(--fg);
+    padding: 7px 8px;
+    outline: none;
+  }
+  .composer-box input::placeholder { color: var(--muted); opacity: 0.8; }
+  .composer-box textarea {
+    flex: 1;
+    min-width: 0;
+    min-height: 118px;
+    border: 0;
+    background: transparent;
+    color: var(--fg);
+    padding: 8px;
+    outline: none;
+    resize: vertical;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    display: none;
+  }
+  .composer-box textarea::placeholder { color: var(--muted); opacity: 0.8; }
+  .composer-box.json { align-items: stretch; }
+  .composer-box.json input { display: none; }
+  .composer-box.json textarea { display: block; }
+  .primary {
+    flex: none;
+    height: 34px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 7px;
+    background: var(--primary);
+    color: var(--primary-fg);
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .primary:disabled { opacity: 0.5; cursor: default; }
+  .composer-sub { display: flex; align-items: center; gap: 14px; margin-top: 10px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
+  .text-btn { border: 0; background: transparent; color: var(--muted); padding: 0; font-size: 12px; }
+  .text-btn:hover { color: var(--fg); }
+  details.advanced { margin-left: auto; }
+  details.advanced summary { list-style: none; cursor: pointer; color: var(--muted); }
+  details.advanced summary::-webkit-details-marker { display: none; }
+  details.advanced summary:hover { color: var(--fg); }
+  .advanced-body { position: absolute; right: 24px; margin-top: 8px; width: 300px; padding: 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius); z-index: 2; }
+  .advanced-body label { display: block; color: var(--muted); font-size: 12px; margin: 8px 0 4px; }
+  .advanced-body input[type="text"], .advanced-body select { width: 100%; border: 1px solid var(--border); background: var(--bg); color: var(--fg); border-radius: 7px; padding: 7px 8px; outline: none; }
+  .advanced-body .check { display: flex; align-items: center; gap: 7px; margin-top: 10px; color: var(--muted); font-size: 12px; }
+  .advanced-body .check input { accent-color: var(--primary); }
+  .message { margin-top: 12px; font-size: 12px; color: var(--muted); white-space: pre-wrap; }
+  .message.ok { color: var(--ok); }
+  .message.bad { color: var(--bad); }
+
+  .section { margin-top: 40px; }
+  .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+  .section-head h2 { margin: 0; font-size: 13px; font-weight: 500; }
+  .count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 12px 2px; border-bottom: 1px solid var(--border); }
+  .row:last-child { border-bottom: 0; }
+  .row-main { min-width: 0; flex: 1; }
+  .row-name { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .row-name strong { font-weight: 500; font-size: 13px; overflow-wrap: anywhere; }
+  .row-type { color: var(--muted); font-size: 12px; flex: none; }
+  .row-meta { margin-top: 2px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  .copy { border: 1px solid var(--border); background: transparent; color: var(--muted); border-radius: 7px; padding: 5px 9px; font-size: 12px; flex: none; }
+  .copy:hover { color: var(--fg); border-color: var(--border-strong); }
+  .empty { padding: 18px 2px; color: var(--muted); font-size: 12px; }
+  .task { display: flex; align-items: center; gap: 9px; padding: 9px 2px; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .task:last-child { border-bottom: 0; }
+  .task .dot { width: 5px; height: 5px; }
+  .task-model { color: var(--fg); min-width: 92px; }
+  .task-status { color: var(--muted); min-width: 72px; }
+  .task-id { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; }
+  .footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; display: flex; gap: 16px; flex-wrap: wrap; }
+
+  @media (max-width: 600px) {
+    .top { padding: 0 16px; }
+    main { padding: 32px 16px 48px; }
+    .composer-box { flex-wrap: wrap; }
+    .composer-box select { width: 100%; }
+    .composer-box input { flex-basis: 100%; }
+    .composer-box .primary { width: 100%; }
+    .advanced-body { right: 16px; left: 16px; width: auto; }
+    .task-id { display: none; }
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="mark" aria-hidden="true"></span> ComfyUI Gateway</div>
+  <div class="top-right">
+    <span class="status"><span id="health-dot" class="dot"></span><span id="health-text">检查中</span></span>
+    <a href="http://localhost:3000/config" target="_blank">画布配置</a>
+    <a href="/v1/models" target="_blank">API</a>
+  </div>
+</header>
+
+<main>
+  <div class="intro">
+    <h1>工作流</h1>
+    <p>把一个 ComfyUI API 工作流变成画布里的模型。</p>
+  </div>
+
+  <div id="setup-line" class="setup-line">正在检查 ComfyUI…</div>
+
+  <section class="composer">
+    <div class="composer-box" id="composer-box">
+      <select id="source" aria-label="来源类型">
+        <option value="url">URL</option>
+        <option value="path">本地路径</option>
+        <option value="json">粘贴 JSON</option>
+      </select>
+      <input id="value" placeholder="粘贴工作流 URL，或本地 API JSON 路径" autocomplete="off">
+      <textarea id="value-json" placeholder="粘贴 ComfyUI API 格式 JSON" spellcheck="false"></textarea>
+      <button class="primary" id="import">导入</button>
+    </div>
+    <div class="composer-sub">
+      <button class="text-btn" id="scan">扫描 workflows 目录</button>
+      <button class="text-btn" id="refresh">刷新</button>
+      <details class="advanced">
+        <summary>高级选项</summary>
+        <div class="advanced-body">
+          <label for="name">模型名（可选）</label>
+          <input id="name" type="text" placeholder="留空自动命名" autocomplete="off">
+          <label for="type">类型</label>
+          <select id="type">
+            <option value="">自动识别</option>
+            <option value="image">生图</option>
+            <option value="video">生视频</option>
+            <option value="audio">音频</option>
+            <option value="text">文本</option>
+          </select>
+          <label class="check"><input id="overwrite" type="checkbox"> 同名覆盖</label>
+        </div>
+      </details>
+    </div>
+    <div id="message" class="message" hidden></div>
+  </section>
+
+  <section class="section">
+    <div class="section-head"><h2>已注册</h2><span id="count" class="count">0</span></div>
+    <div id="workflows" class="empty">加载中…</div>
+  </section>
+
+  <section class="section" id="tasks-section" hidden>
+    <div class="section-head"><h2>最近任务</h2></div>
+    <div id="tasks"></div>
+  </section>
+
+  <div class="footer">
+    <span>127.0.0.1:8190</span>
+    <a href="/health" target="_blank">健康检查</a>
+    <a href="/v1/models" target="_blank">模型列表</a>
+  </div>
+</main>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var TYPE_LABEL = { image: "生图", video: "视频", audio: "音频", text: "文本" };
+  var STATUS_LABEL = { queued: "排队", running: "生成中", completed: "完成", failed: "失败", cancelled: "已取消" };
+
+  function esc(value) {
+    return String(value == null ? "" : value).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function message(text, kind) {
+    var el = $("message");
+    el.hidden = false;
+    el.className = "message" + (kind ? " " + kind : "");
+    el.textContent = text;
+  }
+  function clearMessage() { $("message").hidden = true; }
+  async function getJson(url, options) {
+    var response = await fetch(url, options);
+    var data = await response.json().catch(function () { return {}; });
+    if (!response.ok) throw new Error((data.error && data.error.message) || ("HTTP " + response.status));
+    return data;
+  }
+
+  async function loadHealth() {
+    try {
+      var data = await getJson("/health");
+      var ok = Boolean(data.comfy && data.comfy.reachable);
+      $("health-dot").className = "dot" + (ok ? " ok" : "");
+      $("health-text").textContent = ok ? "已连接" : "未连接";
+    } catch (_) {
+      $("health-text").textContent = "离线";
+    }
+  }
+
+  var lastSetupPhase = "";
+  async function loadSetup() {
+    try {
+      var data = await getJson("/api/setup/status");
+      var status = data.status || {};
+      if (status.phase !== lastSetupPhase) {
+        lastSetupPhase = status.phase;
+        if (status.phase === "ready") void loadWorkflows();
+      }
+      var parts = [status.comfyReachable ? "ComfyUI 已连接" : "ComfyUI 未连接"];
+      if (status.phase === "scanning") parts.push("后台扫描中…");
+      else if (status.phase === "ready") parts.push("工作流 " + (status.counts?.available || 0) + "/" + (status.counts?.total || 0) + " 可用");
+      else if (status.phase === "degraded") parts.push("扫描降级");
+      if (status.missing?.uiWorkflows) parts.push(status.missing.uiWorkflows + " 个 UI 工作流未导入");
+      if (status.missing?.models?.length) parts.push("缺模型 " + status.missing.models.length);
+      if (status.missing?.nodes?.length) parts.push("缺节点 " + status.missing.nodes.length);
+      $("setup-line").textContent = parts.join(" · ");
+      if (status.phase === "scanning") setTimeout(loadSetup, 1500);
+    } catch (_) {
+      $("setup-line").textContent = "ComfyUI 状态不可用";
+    }
+  }
+
+  async function loadWorkflows() {
+    try {
+      var data = await getJson("/api/workflows");
+      var list = data.workflows || [];
+      $("count").textContent = String(list.length);
+      if (!list.length) {
+        $("workflows").className = "empty";
+        $("workflows").textContent = "还没有工作流。粘贴一个 API JSON 地址，或把文件放进 workflows/ 后扫描。";
+        return;
+      }
+      $("workflows").className = "";
+      $("workflows").innerHTML = list.map(function (item) {
+        var bindings = Object.keys(item.bindings || {}).length;
+        var modes = item.variantModes && item.variantModes.length ? " · " + item.variantModes.join(" / ") : "";
+        var unavailable = item.availability && item.availability.available === false;
+        var problem = unavailable && item.availability.problems && item.availability.problems.length
+          ? '<div class="row-meta" style="color:var(--bad)">' + esc(item.availability.problems[0].message) + '</div>'
+          : "";
+        return '<div class="row">' +
+          '<div class="row-main"><div class="row-name"><strong>' + esc(item.name) + '</strong><span class="row-type">' + esc(TYPE_LABEL[item.type] || item.type) + '</span>' +
+          (unavailable ? '<span class="row-type" style="color:var(--bad)">不可用</span>' : '') +
+          '</div><div class="row-meta">' + bindings + ' 个参数 · ' + esc(item.file) + modes + '</div>' + problem + '</div>' +
+          '<button class="copy" data-copy="' + encodeURIComponent(item.name) + '">复制</button></div>';
+      }).join("");
+      Array.prototype.forEach.call($("workflows").querySelectorAll("[data-copy]"), function (button) {
+        button.addEventListener("click", async function () {
+          var name = decodeURIComponent(button.getAttribute("data-copy"));
+          try {
+            await navigator.clipboard.writeText(name);
+            button.textContent = "已复制";
+            setTimeout(function () { button.textContent = "复制"; }, 1200);
+          } catch (_) {
+            message("复制失败，请手动选择：" + name, "bad");
+          }
+        });
+      });
+    } catch (error) {
+      $("workflows").className = "empty";
+      $("workflows").textContent = "加载失败：" + error.message;
+    }
+  }
+
+  async function loadTasks() {
+    try {
+      var data = await getJson("/api/tasks");
+      var list = (data.tasks || []).slice(0, 6);
+      if (!list.length) { $("tasks-section").hidden = true; return; }
+      $("tasks-section").hidden = false;
+      $("tasks").innerHTML = list.map(function (task) {
+        var ok = task.status === "completed";
+        var bad = task.status === "failed" || task.status === "cancelled";
+        return '<div class="task"><span class="dot' + (ok ? " ok" : "") + '"' + (bad ? ' style="background:var(--bad)"' : "") + '></span>' +
+          '<span class="task-model">' + esc(task.model) + '</span>' +
+          '<span class="task-status">' + esc(STATUS_LABEL[task.status] || task.status) + '</span>' +
+          '<span class="task-id">' + esc(task.id) + '</span></div>';
+      }).join("");
+    } catch (_) {
+      $("tasks-section").hidden = true;
+    }
+  }
+
+  async function doImport() {
+    clearMessage();
+    var source = $("source").value;
+    var value = source === "json" ? $("value-json").value.trim() : $("value").value.trim();
+    if (!value) return message("先填一个地址、路径或 JSON。", "bad");
+    var body = { overwrite: $("overwrite").checked };
+    if ($("name").value.trim()) body.name = $("name").value.trim();
+    if ($("type").value) body.type = $("type").value;
+    if (source === "url") body.url = value;
+    else if (source === "path") body.path = value;
+    else {
+      try { body.json = JSON.parse(value); }
+      catch (error) { return message("JSON 解析失败：" + error.message, "bad"); }
+    }
+    var button = $("import");
+    button.disabled = true;
+    try {
+      var data = await getJson("/api/workflows/import", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      var warnings = (data.warnings || []).length ? "\n" + data.warnings.join("\n") : "";
+      message("已导入 " + data.workflow.name + warnings, "ok");
+      $("value").value = "";
+      $("value-json").value = "";
+      await loadWorkflows();
+    } catch (error) {
+      message("导入失败：" + error.message, "bad");
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  $("source").addEventListener("change", function () {
+    $("composer-box").classList.toggle("json", $("source").value === "json");
+  });
+  $("import").addEventListener("click", doImport);
+  $("scan").addEventListener("click", async function () {
+    clearMessage();
+    var button = $("scan");
+    button.disabled = true;
+    try {
+      var data = await getJson("/api/workflows/scan", { method: "POST" });
+      message("扫描完成：新增 " + (data.added || []).length + "，跳过 " + (data.skipped || []).length + "，失败 " + (data.failed || []).length, "ok");
+      await loadWorkflows();
+    } catch (error) {
+      message("扫描失败：" + error.message, "bad");
+    } finally {
+      button.disabled = false;
+    }
+  });
+  $("refresh").addEventListener("click", function () {
+    clearMessage();
+    void loadHealth();
+    void loadSetup();
+    void loadWorkflows();
+    void loadTasks();
+  });
+  document.addEventListener("click", function (event) {
+    var details = document.querySelector("details.advanced");
+    if (details && details.open && !details.contains(event.target)) details.open = false;
+  });
+
+  void loadHealth();
+  void loadSetup();
+  void loadWorkflows();
+  void loadTasks();
+})();
+</script>
+</body>
+</html>
