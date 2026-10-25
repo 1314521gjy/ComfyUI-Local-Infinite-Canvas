@@ -130,14 +130,20 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
         if (mode !== "image" && mode !== "video") return;
         const next = referencePrompt.trim();
         if (!next) return;
+        const previous = lastAutoPromptRef.current;
+        if (next === previous) return;
         const current = draftRef.current.trim();
-        if (!current || current === lastAutoPromptRef.current) {
-            if (next !== current) {
-                lastAutoPromptRef.current = next;
-                updatePrompt(next);
-            }
+        lastAutoPromptRef.current = next;
+        if (!current) {
+            updatePrompt(next);
+            return;
         }
-        // Only react to reference content changes; manual edits must not be overwritten.
+        if (previous && current.includes(previous)) {
+            updatePrompt(current.replace(previous, next));
+            return;
+        }
+        if (!current.includes(next)) updatePrompt(`${current}\n\n${next}`);
+        // Sync on connection and when the source text changes, without dropping manual additions.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mode, referencePrompt]);
 
