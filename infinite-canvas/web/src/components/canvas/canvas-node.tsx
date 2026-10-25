@@ -46,6 +46,7 @@ type CanvasNodeProps = {
     onResize: (nodeId: string, width: number, height: number, position?: Position) => void;
     onResizeEnd: (nodeId: string) => void;
     onContentChange: (nodeId: string, content: string) => void;
+    onVideoDimensions?: (nodeId: string, width: number, height: number) => void;
     onTitleChange: (nodeId: string, title: string) => void;
     onToggleBatch?: (nodeId: string) => void;
     onSetBatchPrimary?: (nodeId: string, itemId: string) => void;
@@ -71,6 +72,7 @@ type NodeContentRendererProps = {
     renderNodeContent?: (node: CanvasNodeData) => ReactNode;
     pluginContext?: CanvasNodeContext | null;
     onContentChange: (nodeId: string, content: string) => void;
+    onVideoDimensions?: (nodeId: string, width: number, height: number) => void;
     onStopEditing: () => void;
     mentionReferences: CanvasResourceReference[];
     onRetry?: (node: CanvasNodeData) => void;
@@ -111,6 +113,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     onResize,
     onResizeEnd,
     onContentChange,
+    onVideoDimensions,
     onTitleChange,
     onToggleBatch,
     onSetBatchPrimary,
@@ -414,6 +417,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                         pluginContext={pluginContext}
                         mentionReferences={mentionReferences}
                         onContentChange={onContentChange}
+                        onVideoDimensions={onVideoDimensions}
                         onStopEditing={() => setIsEditingContent(false)}
                         onRetry={onRetry}
                         onToggleBatch={() => onToggleBatch?.(data.id)}
@@ -723,7 +727,7 @@ function EmptyImageContent({ theme }: NodeContentRendererProps) {
     );
 }
 
-function VideoNodeContent({ node, theme }: NodeContentRendererProps) {
+function VideoNodeContent({ node, theme, onVideoDimensions }: NodeContentRendererProps) {
     const { t } = useTranslation();
     if (!node.metadata?.content)
         return (
@@ -732,7 +736,21 @@ function VideoNodeContent({ node, theme }: NodeContentRendererProps) {
                 <span className="text-sm">{t("canvas.node.emptyVideo")}</span>
             </div>
         );
-    return <video src={node.metadata.content} controls draggable={false} onDragStart={(event) => event.preventDefault()} className="h-full w-full rounded-[18px] bg-black object-contain" data-canvas-video={node.id} data-canvas-no-zoom />;
+    return (
+        <video
+            src={node.metadata.content}
+            controls
+            draggable={false}
+            onDragStart={(event) => event.preventDefault()}
+            onLoadedMetadata={(event) => {
+                const video = event.currentTarget;
+                if (video.videoWidth && video.videoHeight) onVideoDimensions?.(node.id, video.videoWidth, video.videoHeight);
+            }}
+            className="h-full w-full rounded-[18px] bg-black object-contain"
+            data-canvas-video={node.id}
+            data-canvas-no-zoom
+        />
+    );
 }
 
 function AudioNodeContent({ node, theme }: NodeContentRendererProps) {

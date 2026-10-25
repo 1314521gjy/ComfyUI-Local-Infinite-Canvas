@@ -3330,6 +3330,25 @@ function InfiniteCanvasPage() {
         if (nodeDraggingRef.current) return;
         setHoveredNodeId(nodeId);
     }, []);
+    const handleVideoDimensions = useCallback((nodeId: string, width: number, height: number) => {
+        if (!width || !height) return;
+        setNodes((prev) =>
+            prev.map((node) => {
+                if (node.id !== nodeId || node.type !== CanvasNodeType.Video) return node;
+                const next = fitNodeSize(width, height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
+                const sameSize = Math.abs(node.width - next.width) < 0.5 && Math.abs(node.height - next.height) < 0.5;
+                const sameMeta = node.metadata?.naturalWidth === width && node.metadata?.naturalHeight === height;
+                if (sameSize && sameMeta) return node;
+                return {
+                    ...node,
+                    width: next.width,
+                    height: next.height,
+                    position: { x: node.position.x + node.width / 2 - next.width / 2, y: node.position.y + node.height / 2 - next.height / 2 },
+                    metadata: { ...node.metadata, naturalWidth: width, naturalHeight: height },
+                };
+            }),
+        );
+    }, []);
     const handleNodeHoverEnd = useCallback((nodeId: string) => {
         setHoveredNodeId((current) => (current === nodeId ? null : current));
     }, []);
@@ -3562,6 +3581,7 @@ function InfiniteCanvasPage() {
                             onResize={handleNodeResize}
                             onResizeEnd={handleNodeResizeEnd}
                             onContentChange={handleNodeContentChange}
+                            onVideoDimensions={handleVideoDimensions}
                             onTitleChange={handleNodeTitleChange}
                             onToggleBatch={toggleBatchExpanded}
                             onSetBatchPrimary={setBatchPrimary}
