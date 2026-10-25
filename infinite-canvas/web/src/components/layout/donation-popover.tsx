@@ -38,7 +38,7 @@ export function DonationPopover({ variant = "default", className, style }: Donat
             </div>
 
             <div className="mx-auto w-[250px] rounded-xl border border-stone-200 bg-white p-2 text-center">
-                <img src={asset("wechat.png")} alt="微信打赏二维码" className="mx-auto h-[255px] w-full object-contain" draggable={false} />
+                <img src={asset("wechat-pay.png")} alt="微信打赏二维码" className="mx-auto h-auto w-[224px] object-contain" draggable={false} />
                 <div className="mt-1 text-xs font-medium text-stone-700">微信支付</div>
             </div>
 
