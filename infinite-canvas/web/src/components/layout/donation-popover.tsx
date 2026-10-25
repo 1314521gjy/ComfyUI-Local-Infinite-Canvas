@@ -34,6 +34,7 @@ export function DonationPopover({ variant = "default", className, style }: Donat
             <div>
                 <div className="text-sm font-semibold">支持 ComfyUI-本地无限画布</div>
                 <p className="mt-1 text-xs leading-5 text-stone-600">您的支持是 UP 制作的最大动力，感谢打赏！</p>
+                <p className="mt-1 text-xs leading-5 text-stone-500">一毛也是爱~~感谢~~</p>
                 <p className="mt-1 text-xs leading-5 text-stone-500">打赏后欢迎加入 QQ 交流群，一起交流本地部署、工作流和更新。</p>
             </div>
 
