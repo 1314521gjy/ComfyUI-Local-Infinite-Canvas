@@ -135,7 +135,11 @@ function isResourceNode(node: CanvasNodeData) {
 }
 
 function resourceText(node: CanvasNodeData): string | undefined {
-    if (node.type === CanvasNodeType.Text) return node.metadata?.content || node.metadata?.prompt;
+    if (node.type === CanvasNodeType.Text) {
+        const texts = node.metadata?.texts || [];
+        const primary = texts.find((text) => text.id === node.metadata?.primaryTextId) || texts[0];
+        return primary?.content || node.metadata?.content || node.metadata?.composerContent || node.metadata?.prompt;
+    }
     const resource = getNodeDefinition(node.type)?.resource?.(node);
     return resource?.kind === "text" ? resource.text : undefined;
 }
@@ -144,7 +148,7 @@ function resourceKind(node: CanvasNodeData): CanvasResourceKind | null {
     if (node.type === CanvasNodeType.Image && node.metadata?.content) return "image";
     if (node.type === CanvasNodeType.Video && node.metadata?.content) return "video";
     if (node.type === CanvasNodeType.Audio && node.metadata?.content) return "audio";
-    if (node.type === CanvasNodeType.Text && (node.metadata?.content || node.metadata?.prompt)) return "text";
+    if (node.type === CanvasNodeType.Text && (node.metadata?.content || node.metadata?.prompt || node.metadata?.composerContent || node.metadata?.texts?.some((text) => text.content))) return "text";
     // Plugin nodes declare their input eligibility through definition.resource.
     return getNodeDefinition(node.type)?.resource?.(node)?.kind || null;
 }

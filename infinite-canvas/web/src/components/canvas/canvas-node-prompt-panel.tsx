@@ -126,6 +126,20 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
         else onPromptChange(node.id, value);
     };
 
+    const applyPromptResult = (value: string) => {
+        setDraft(value);
+        setPrompt(value);
+        if (mode === "text" && node.type === CanvasNodeType.Text) {
+            const texts = node.metadata?.texts || [];
+            const primaryId = node.metadata?.primaryTextId || texts[0]?.id;
+            const nextTexts = texts.length ? texts.map((text) => (text.id === primaryId ? { ...text, content: value } : text)) : undefined;
+            onConfigChange(node.id, { content: value, prompt: value, composerContent: value, ...(nextTexts ? { texts: nextTexts } : {}) });
+            return;
+        }
+        if (isEditingExistingContent) onConfigChange(node.id, { composerContent: value });
+        else onPromptChange(node.id, value);
+    };
+
     useEffect(() => {
         if (mode !== "image" && mode !== "video") return;
         const next = referencePrompt.trim();
@@ -468,7 +482,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                                 <Button
                                     size="small"
                                     onClick={() => {
-                                        updatePrompt(draft.trim() ? `${draft.trim()}\n\n${optimizedPrompt}` : optimizedPrompt);
+                                        applyPromptResult(draft.trim() ? `${draft.trim()}\n\n${optimizedPrompt}` : optimizedPrompt);
                                         setOptimizedPrompt("");
                                         setOptimizeError("");
                                     }}
@@ -479,7 +493,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                                     size="small"
                                     type="primary"
                                     onClick={() => {
-                                        updatePrompt(optimizedPrompt);
+                                        applyPromptResult(optimizedPrompt);
                                         setOptimizedPrompt("");
                                         setOptimizeError("");
                                     }}
