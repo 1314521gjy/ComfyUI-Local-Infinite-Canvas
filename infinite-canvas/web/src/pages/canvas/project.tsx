@@ -269,6 +269,7 @@ function InfiniteCanvasPage() {
     const [angleNodeId, setAngleNodeId] = useState<string | null>(null);
     const [previewNodeId, setPreviewNodeId] = useState<string | null>(null);
     const [hoverPreviewNodeId, setHoverPreviewNodeId] = useState<string | null>(null);
+    const [hoverPreviewImageId, setHoverPreviewImageId] = useState<string | null>(null);
     const [previewImageId, setPreviewImageId] = useState<string | null>(null);
     const [titleEditing, setTitleEditing] = useState(false);
     const [titleDraft, setTitleDraft] = useState("");
@@ -3336,6 +3337,18 @@ function InfiniteCanvasPage() {
         setPreviewNodeId(node.id);
         setPreviewImageId(imageId || null);
     }, []);
+    const handleSidebarHoverNode = useCallback((nodeId: string | null) => {
+        setHoverPreviewNodeId(nodeId);
+        setHoverPreviewImageId(null);
+    }, []);
+    const handleSidebarHoverImage = useCallback((nodeId: string, imageId: string | null) => {
+        setHoverPreviewNodeId(nodeId);
+        setHoverPreviewImageId(imageId);
+    }, []);
+    const handleSidebarPreviewImage = useCallback((nodeId: string, imageId: string) => {
+        setPreviewNodeId(nodeId);
+        setPreviewImageId(imageId);
+    }, []);
     const handleNodeRetry = useCallback(
         (node: CanvasNodeData) => {
             if (node.type === CanvasNodeType.Text && (node.metadata?.textCount || 1) > 1) {
@@ -3418,13 +3431,21 @@ function InfiniteCanvasPage() {
     );
 
     const hoverPreviewNode = hoverPreviewNodeId ? nodeById.get(hoverPreviewNodeId) || null : null;
+    const hoverImages = hoverPreviewNode?.metadata?.images || [];
+    const hoverPrimaryImage = hoverImages.find((image) => image.id === hoverPreviewNode?.metadata?.primaryImageId) || hoverImages[0];
+    const hoverImage = (hoverPreviewImageId ? hoverImages.find((image) => image.id === hoverPreviewImageId) : undefined) || hoverPrimaryImage;
+    const hoverImageIndex = hoverImage ? hoverImages.findIndex((image) => image.id === hoverImage.id) + 1 : 0;
+    const hoverImageTitle = hoverPreviewNode && hoverImages.length > 1 && hoverImageIndex
+        ? `${hoverPreviewNode.title || t("assets.kinds.image")} · ${hoverImageIndex}/${hoverImages.length}`
+        : hoverPreviewNode?.title || "";
     const hoverPreviewMedia =
-        hoverPreviewNode && (hoverPreviewNode.type === CanvasNodeType.Image || hoverPreviewNode.type === CanvasNodeType.Video) && hoverPreviewNode.metadata?.content
+        hoverPreviewNode && (hoverPreviewNode.type === CanvasNodeType.Image || hoverPreviewNode.type === CanvasNodeType.Video) && (hoverImage?.content || hoverPreviewNode.metadata?.content)
             ? {
                   video: hoverPreviewNode.type === CanvasNodeType.Video,
-                  src: hoverPreviewNode.metadata.content,
-                  width: hoverPreviewNode.metadata.naturalWidth || hoverPreviewNode.width,
-                  height: hoverPreviewNode.metadata.naturalHeight || hoverPreviewNode.height,
+                  src: hoverImage?.content || hoverPreviewNode.metadata!.content!,
+                  width: hoverImage?.naturalWidth || hoverPreviewNode.metadata?.naturalWidth || hoverPreviewNode.width,
+                  height: hoverImage?.naturalHeight || hoverPreviewNode.metadata?.naturalHeight || hoverPreviewNode.height,
+                  title: hoverImageTitle,
               }
             : null;
     const showHoverPreview = Boolean(hoverPreviewMedia);
@@ -3433,7 +3454,7 @@ function InfiniteCanvasPage() {
     // retained after the hovered node clears. Sizing reuses the measured container size instead of reading layout here.
     if (hoverPreviewMedia) {
         const previewSize = fitNodeSize(hoverPreviewMedia.width, hoverPreviewMedia.height, size.width * 0.9, size.height * 0.9);
-        retainedPreviewRef.current = { video: hoverPreviewMedia.video, src: hoverPreviewMedia.src, title: hoverPreviewNode?.title || "", width: previewSize.width, height: previewSize.height };
+        retainedPreviewRef.current = { video: hoverPreviewMedia.video, src: hoverPreviewMedia.src, title: hoverPreviewMedia.title, width: previewSize.width, height: previewSize.height };
     }
     const retainedPreview = retainedPreviewRef.current;
 
@@ -3441,7 +3462,7 @@ function InfiniteCanvasPage() {
 
     return (
         <main className="flex h-full min-h-0 overflow-hidden" style={{ background: theme.canvas.background, color: theme.node.text }}>
-            <CanvasSidePanel nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={focusNode} onPreviewNode={setPreviewNodeId} onHoverNode={setHoverPreviewNodeId} onInsertAsset={handleAssetInsert} />
+            <CanvasSidePanel nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={focusNode} onPreviewNode={setPreviewNodeId} onPreviewImage={handleSidebarPreviewImage} onHoverNode={handleSidebarHoverNode} onHoverImage={handleSidebarHoverImage} onInsertAsset={handleAssetInsert} />
             <section className="relative min-w-0 flex-1 overflow-hidden">
                 <CanvasTopBar
                     title={currentProject?.title || t("canvas.projectPage.untitledCanvas")}

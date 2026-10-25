@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from "react";
+import { Fragment, memo, useEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from "react";
 import { App, Empty, Input, Popconfirm, Select, Spin, Tag } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { BookOpen, Check, ChevronRight, Download, Eye, FileText, Image as ImageIcon, LayoutGrid, ListChecks, Music2, Plus, Rows3, Search, Settings2, Square, Trash2, Type, Video } from "lucide-react";
@@ -32,7 +32,9 @@ type Props = {
     selectedNodeIds: Set<string>;
     onFocusNode: (nodeId: string) => void;
     onPreviewNode: (nodeId: string) => void;
+    onPreviewImage?: (nodeId: string, imageId: string) => void;
     onHoverNode: (nodeId: string | null) => void;
+    onHoverImage?: (nodeId: string, imageId: string | null) => void;
     onInsertAsset: (payload: InsertAssetPayload) => void;
 };
 
@@ -52,7 +54,7 @@ const STATUS_COLOR: Record<string, string> = {
     idle: "transparent",
 };
 
-export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, onHoverNode, onInsertAsset }: Props) {
+export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, onPreviewImage, onHoverNode, onHoverImage, onInsertAsset }: Props) {
     const { t } = useTranslation();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const [tab, setTab] = useState<PanelTab>("canvas");
@@ -108,7 +110,7 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreview
                 </div>
                 <div className="mt-2 min-h-0 flex-1 overflow-hidden">
                     {tab === "canvas" ? (
-                        <CanvasNodesTab nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={onFocusNode} onPreviewNode={onPreviewNode} onHoverNode={onHoverNode} theme={theme} />
+                        <CanvasNodesTab nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={onFocusNode} onPreviewNode={onPreviewNode} onPreviewImage={onPreviewImage} onHoverNode={onHoverNode} onHoverImage={onHoverImage} theme={theme} />
                     ) : tab === "assets" ? (
                         <CanvasAssetsTab onInsert={onInsertAsset} theme={theme} />
                     ) : !LOCAL_ONLY ? (
@@ -141,7 +143,7 @@ function nodePreviewText(node: CanvasNodeData) {
     return getNodeDefinition(node.type)?.title || node.type;
 }
 
-function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, onHoverNode, theme }: { nodes: CanvasNodeData[]; selectedNodeIds: Set<string>; onFocusNode: (nodeId: string) => void; onPreviewNode: (nodeId: string) => void; onHoverNode: (nodeId: string | null) => void; theme: CanvasTheme }) {
+function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, onPreviewImage, onHoverNode, onHoverImage, theme }: { nodes: CanvasNodeData[]; selectedNodeIds: Set<string>; onFocusNode: (nodeId: string) => void; onPreviewNode: (nodeId: string) => void; onPreviewImage?: (nodeId: string, imageId: string) => void; onHoverNode: (nodeId: string | null) => void; onHoverImage?: (nodeId: string, imageId: string | null) => void; theme: CanvasTheme }) {
     const { message } = App.useApp();
     const { t } = useTranslation();
     useSyncExternalStore(subscribeImagePreviews, getImagePreviewRevision);
@@ -150,6 +152,7 @@ function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, on
     const [selectMode, setSelectMode] = useState(false);
     const [checked, setChecked] = useState<Set<string>>(new Set());
     const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+    const [expandedBatches, setExpandedBatches] = useState<Set<string>>(new Set());
     const [exporting, setExporting] = useState(false);
     const nodeViewMode = useCanvasSidePanelStore((state) => state.nodeViewMode);
     const setNodeViewMode = useCanvasSidePanelStore((state) => state.setNodeViewMode);
@@ -301,9 +304,17 @@ function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, on
                             const isImage = node.type === CanvasNodeType.Image && node.metadata?.content;
                             const isChecked = checked.has(node.id);
                             const active = selectMode ? isChecked : selectedNodeIds.has(node.id);
+                            const batchImages = node.type === CanvasNodeType.Image ? node.metadata?.images || [] : [];
+                            const hasBatch = batchImages.length > 1;
+                            const batchExpanded = expandedBatches.has(node.id);
+                            const toggleBatch = () => setExpandedBatches((prev) => {
+                                const next = new Set(prev);
+                                next.has(node.id) ? next.delete(node.id) : next.add(node.id);
+                                return next;
+                            });
                             return (
+                                <Fragment key={node.id}>
                                 <div
-                                    key={node.id}
                                     data-node-item
                                     className={cn("group relative flex items-center rounded-lg transition", depth && "ml-5", active ? "" : "hover:bg-black/5 dark:hover:bg-white/5")}
                                     style={active ? { background: theme.toolbar.activeBg } : undefined}
@@ -332,12 +343,55 @@ function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, on
                                     </button>
                                     {selectMode || !isImage ? null : (
                                         <div className="flex shrink-0 flex-col items-center gap-0.5 pr-1.5">
+                                            {!selectMode && hasBatch ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={(event) => { event.stopPropagation(); toggleBatch(); }}
+                                                    className="grid size-7 place-items-center rounded-md opacity-55 transition hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10"
+                                                    aria-label={t("canvas.sidePanel.batchToggle", { count: batchImages.length })}
+                                                    title={t("canvas.sidePanel.batchToggle", { count: batchImages.length })}
+                                                >
+                                                    <ChevronRight className={cn("size-3.5 transition-transform", batchExpanded && "rotate-90")} />
+                                                </button>
+                                            ) : null}
                                             <button type="button" onClick={() => onPreviewNode(node.id)} className="grid size-7 place-items-center rounded-md opacity-55 transition hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10" aria-label={t("canvas.sidePanel.preview")} title={t("canvas.sidePanel.preview")}>
                                                 <Eye className="size-3.5" />
                                             </button>
                                         </div>
                                     )}
                                 </div>
+                                {!selectMode && hasBatch && batchExpanded ? (
+                                    <div
+                                        data-node-item
+                                        className={cn("mb-1.5 mr-2 grid grid-cols-5 gap-1.5 rounded-lg border p-1.5", depth && "ml-12")}
+                                        style={{ borderColor: theme.toolbar.border, background: theme.toolbar.activeBg }}
+                                        onMouseEnter={() => onHoverNode(node.id)}
+                                        onMouseLeave={(event) => {
+                                            const to = event.relatedTarget as Element | null;
+                                            if (!to || !to.closest("[data-node-item]")) onHoverNode(null);
+                                        }}
+                                    >
+                                        {batchImages.map((image, index) => (
+                                            <button
+                                                key={image.id}
+                                                type="button"
+                                                onMouseEnter={() => onHoverImage?.(node.id, image.id)}
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    onPreviewImage?.(node.id, image.id);
+                                                }}
+                                                className="group/batch relative aspect-square overflow-hidden rounded-md border transition hover:opacity-90"
+                                                style={{ borderColor: theme.toolbar.border }}
+                                                title={`${node.title || t("assets.kinds.image")} ${index + 1}/${batchImages.length}`}
+                                                aria-label={`${node.title || t("assets.kinds.image")} ${index + 1}/${batchImages.length}`}
+                                            >
+                                                <img src={previewUrlFor(image.storageKey) || image.content} alt="" className="size-full object-cover" />
+                                                <span className="absolute bottom-0.5 right-0.5 rounded bg-black/55 px-1 text-[10px] leading-4 text-white">{index + 1}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                ) : null}
+                                </Fragment>
                             );
                         })}
                     </div>
