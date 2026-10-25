@@ -3,7 +3,7 @@ import { Slider } from "antd";
 import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
-import { ImageSettingsTheme } from "@/components/image-settings-panel";
+import { ImageSettingsTheme, SeedSetting } from "@/components/image-settings-panel";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import { videoWorkflowId } from "@/lib/canvas/video-model-mode";
 import { clampVideoSeconds, computeVideoSize, inferVideoRatio, parseVideoResolution, readVideoDimensions, VIDEO_SECONDS_MAX, VIDEO_SECONDS_MIN, videoRatioOptions } from "@/lib/media-size";
@@ -25,7 +25,7 @@ export const videoSecondsRange = { min: VIDEO_SECONDS_MIN, max: VIDEO_SECONDS_MA
 
 type VideoSettingsPanelProps = {
     config: AiConfig;
-    onConfigChange: (key: "vquality" | "size" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark" | "videoMode", value: string) => void;
+    onConfigChange: (key: "vquality" | "size" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark" | "videoMode" | "seedFixed" | "seed", value: string) => void;
     theme: CanvasTheme;
     showTitle?: boolean;
     className?: string;
@@ -118,6 +118,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                         <span className="shrink-0 text-sm" style={{ color: theme.node.muted }}>s</span>
                     </div>
                 </SettingGroup>
+                <SeedSetting fixed={config.seedFixed === "true"} seed={config.seed || ""} theme={theme} onChange={onConfigChange} />
                 <SettingGroup title={t("settingsPanels.video.mode")} color={theme.node.muted}>
                     <div className={modeOptions.length > 1 ? "grid grid-cols-2 gap-2.5" : "grid grid-cols-1 gap-2.5"}>
                         {modeOptions.map((item) => (

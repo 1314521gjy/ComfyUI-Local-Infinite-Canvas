@@ -23,7 +23,7 @@ export const imageScaleOptions = mediaScaleOptions.map((value) => ({ value, labe
 
 type ImageSettingsPanelProps = {
     config: AiConfig;
-    onConfigChange: (key: "quality" | "size" | "count" | "background", value: string) => void;
+    onConfigChange: (key: "quality" | "size" | "count" | "background" | "seedFixed" | "seed", value: string) => void;
     theme: CanvasTheme;
     showTitle?: boolean;
     showSize?: boolean;
@@ -135,9 +135,58 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                         <CountInput value={count} max={maxCount} theme={theme} onChange={(value) => onConfigChange("count", String(value || 1))} />
                     </div>
                 </div>
+                <SeedSetting fixed={config.seedFixed === "true"} seed={config.seed || ""} theme={theme} onChange={onConfigChange} />
             </div>
         </ImageSettingsTheme>
     );
+}
+
+export function SeedSetting({ fixed, seed, theme, onChange }: { fixed: boolean; seed: string; theme: CanvasTheme; onChange: (key: "seedFixed" | "seed", value: string) => void }) {
+    const { t } = useTranslation();
+    const toggle = (checked: boolean) => {
+        onChange("seedFixed", checked ? "true" : "false");
+        if (checked && !seed.trim()) onChange("seed", String(randomSeed()));
+    };
+    return (
+        <div className="space-y-2.5">
+            <div className="flex items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                    <SettingTitle color={theme.node.muted}>{t("settingsPanels.common.fixedSeed")}</SettingTitle>
+                    <div className="text-xs" style={{ color: theme.node.muted, opacity: 0.75 }}>
+                        {t("settingsPanels.common.fixedSeedHint")}
+                    </div>
+                </div>
+                <span onMouseDown={(event) => event.stopPropagation()}>
+                    <Switch size="small" checked={fixed} onChange={toggle} />
+                </span>
+            </div>
+            {fixed ? (
+                <label className="flex h-9 overflow-hidden rounded-xl text-sm" style={{ background: theme.node.fill, color: theme.node.text }}>
+                    <span className="grid w-9 place-items-center" style={{ color: theme.node.muted }}>
+                        #
+                    </span>
+                    <input
+                        type="number"
+                        min={1}
+                        max={2147483647}
+                        step={1}
+                        className="min-w-0 flex-1 bg-transparent px-2 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        value={seed}
+                        placeholder={t("settingsPanels.common.seedPlaceholder")}
+                        onChange={(event) => onChange("seed", event.currentTarget.value.replace(/[^\d]/g, "").slice(0, 10))}
+                        onBlur={() => {
+                            if (!seed.trim()) onChange("seed", String(randomSeed()));
+                        }}
+                        onMouseDown={(event) => event.stopPropagation()}
+                    />
+                </label>
+            ) : null}
+        </div>
+    );
+}
+
+function randomSeed() {
+    return Math.floor(Math.random() * 2147483646) + 1;
 }
 
 export function ImageSettingsTheme({ theme, children }: { theme: CanvasTheme; children: ReactNode }) {

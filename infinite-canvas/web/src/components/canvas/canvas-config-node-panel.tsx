@@ -196,6 +196,8 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
         audioSpeed: node.metadata?.audioSpeed || globalConfig.audioSpeed || defaultConfig.audioSpeed,
         audioInstructions: node.metadata?.audioInstructions || globalConfig.audioInstructions || defaultConfig.audioInstructions,
         count: String(node.metadata?.count || (mode === "image" ? globalConfig.canvasImageCount || globalConfig.count : globalConfig.count) || defaultConfig.count),
+        seed: node.metadata?.seed || globalConfig.seed || "",
+        seedFixed: node.metadata?.seedFixed ?? globalConfig.seedFixed ?? "false",
         params: node.metadata?.params || globalConfig.params,
     };
 }

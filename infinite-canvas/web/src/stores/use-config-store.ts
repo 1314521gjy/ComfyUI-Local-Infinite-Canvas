@@ -69,6 +69,8 @@ export type AiConfig = {
     nodeRegenerateBehavior: "new-node" | "overwrite";
     autoFocusOnSelect: boolean;
     progressRingSkin: ProgressRingSkinId;
+    seed?: string;
+    seedFixed?: string;
     params?: Record<string, unknown>;
 };
 

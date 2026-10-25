@@ -103,8 +103,15 @@ export function getInputSummary(inputs: NodeGenerationInput[]) {
 }
 
 export function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefined, mode: CanvasNodeGenerationMode): AiConfig {
+    const params = { ...(node?.metadata?.params || config.params || {}) };
+    const seedFixed = (node?.metadata?.seedFixed ?? config.seedFixed ?? "") === "true";
+    const seed = String(node?.metadata?.seed ?? config.seed ?? "").trim();
+    if (seedFixed && seed) params.seed = seed;
+    else delete params.seed;
     return {
         ...config,
+        seed,
+        seedFixed: seedFixed ? "true" : "false",
         model: resolveModelForCapability(config, node?.metadata?.model, mode),
         reasoningEffort: node?.metadata?.reasoningEffort || config.reasoningEffort || defaultConfig.reasoningEffort,
         quality: node?.metadata?.quality || config.quality || defaultConfig.quality,
@@ -124,7 +131,7 @@ export function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | u
         audioSpeed: node?.metadata?.audioSpeed || config.audioSpeed || defaultConfig.audioSpeed,
         audioInstructions: node?.metadata?.audioInstructions || config.audioInstructions || defaultConfig.audioInstructions,
         count: String(node?.metadata?.count || (mode === "image" ? config.canvasImageCount || config.count : config.count) || defaultConfig.count),
-        params: node?.metadata?.params || config.params,
+        params: Object.keys(params).length ? params : undefined,
     };
 }
 

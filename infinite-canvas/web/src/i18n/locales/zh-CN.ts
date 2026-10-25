@@ -31,7 +31,7 @@ export default {
         imageReadFailed: "读取图片失败",
     },
     settingsPanels: {
-        common: { auto: "自动", low: "低", medium: "中", high: "高", xhigh: "极高", max: "最高" },
+        common: { auto: "自动", low: "低", medium: "中", high: "高", xhigh: "极高", max: "最高", fixedSeed: "固定种子", fixedSeedHint: "关闭时每次随机，开启后固定使用下方种子", seedPlaceholder: "随机种子" },
         image: { title: "图像设置", quality: "质量", size: "尺寸", align16: "16 倍数对齐", align16Hint: "输入完成后自动向上补成 16 的倍数", resolution: "分辨率", aspectRatio: "宽高比", transparent: "透明背景", transparentHint: "开启后生成无背景的透明图像（仅部分模型可用）", count: "生成张数", images: "{{count}} 张" },
         video: { title: "视频设置", quality: "清晰度", size: "尺寸", seconds: "秒数", mode: "模式", modes: { frames: "首尾帧模式", text: "文生", textH3: "文生", framesH3: "首尾帧", reference: "全能参考模式", referenceH3: "多参", textHint: "纯文生：不接任何图片/音频/视频", framesHint: "首尾帧：1–2 张图；可选首帧、尾帧或首尾帧", referenceHint: "多参：1–6 图 + 0–2 音频 + 0–1 视频，至少一种媒体；不支持首尾帧", framePosition: "首尾帧位置", firstFrame: "首帧", lastFrame: "尾帧", bothFrames: "首尾帧" }, resolution: "分辨率", ratio: "比例", duration: "时长", smart: "智能", output: "输出", generateAudio: "生成声音", watermark: "添加水印", adaptive: "自适应", sizes: { landscape: "横屏", portrait: "竖屏", square: "方形", widescreen: "宽屏", tall: "长图", auto: "自动" }, ratios: { landscape: "横屏", portrait: "竖屏", square: "方形", standardLandscape: "标准横屏", standardPortrait: "标准竖屏", cinematic: "宽银幕", adaptive: "自适应" } },
         audio: { title: "音频设置", voice: "声音", format: "格式", speed: "语速", instructions: "声音指令", instructionsPlaceholder: "例如：自然、温暖、适合旁白。" },
