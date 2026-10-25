@@ -535,7 +535,7 @@ export default {
             imageResolution: "默认生图分辨率",
             videoResolution: "默认视频分辨率",
             canvasImageCount: "画布默认生图张数",
-            canvasImageCountDescription: "新建画布生图和配置节点默认使用，单个节点仍可单独覆盖。",
+            imageAspectRatio: "默认画幅", canvasImageCountDescription: "新建画布生图和配置节点默认使用，单个节点仍可单独覆盖。",
             regenerateBehavior: "已有内容的节点再次生成时",
             regenerateBehaviorOverwrite: "原地重新生成（覆盖当前节点）",
             regenerateBehaviorOverwriteDescription: "直接替换该节点的内容和参数，不新建节点。想保留旧结果时，先复制该节点。",
