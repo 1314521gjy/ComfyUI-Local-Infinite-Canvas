@@ -6,6 +6,7 @@ import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 
 import { requestEdit, requestGeneration, requestImageQuestion, requestUpscale } from "@/services/api/image";
+import { bindStepProgress, unbindStepProgress } from "@/services/api/step-progress";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { createVideoGenerationTask, createVideoUpscaleTask, isVideoTaskFailed, storeGeneratedVideo, waitForVideoGenerationTask, type VideoPreview } from "@/services/api/video";
 import { channelModelOf, defaultConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
@@ -291,6 +292,8 @@ function InfiniteCanvasPage() {
     const selectionBoxRef = useRef(selectionBox);
     const pendingConnectionCreateRef = useRef(pendingConnectionCreate);
     const generationRequestsRef = useRef(new Map<string, CanvasGenerationRequest>());
+    const generationStepTimersRef = useRef(new Map<string, number>());
+    const generationStepTracksRef = useRef(new Map<string, Map<string, { step: number; total: number }>>());
     const videoPollIdsRef = useRef(new Set<string>());
 
     const createHistoryEntry = useCallback(
@@ -312,35 +315,80 @@ function InfiniteCanvasPage() {
         [cleanupAssetImages],
     );
 
-    const startGenerationRequest = useCallback((targetNodeId: string, originNodeId: string, runningId = originNodeId, controller = new AbortController()) => {
+    const startGenerationRequest = useCallback((targetNodeId: string, originNodeId: string, runningId = originNodeId, controller = new AbortController(), expectedProgressCount = 1) => {
         const previous = generationRequestsRef.current.get(targetNodeId);
         if (previous?.controller !== controller) previous?.controller.abort("user-stop");
+        const pendingClear = generationStepTimersRef.current.get(targetNodeId);
+        if (pendingClear) {
+            window.clearTimeout(pendingClear);
+            generationStepTimersRef.current.delete(targetNodeId);
+        }
+        generationStepTracksRef.current.delete(targetNodeId);
+        setNodes((prev) => prev.map((item) => (item.id === targetNodeId && item.metadata?.stepProgress ? { ...item, metadata: { ...item.metadata, stepProgress: undefined } } : item)));
+        bindStepProgress(controller.signal, (progress) => {
+            const tracks = generationStepTracksRef.current.get(targetNodeId) || new Map<string, { step: number; total: number }>();
+            generationStepTracksRef.current.set(targetNodeId, tracks);
+            if (progress.requestId) tracks.set(progress.requestId, { step: progress.step, total: progress.total });
+            const values = [...tracks.values()].filter((item) => item.total > 0);
+            if (!values.length) return;
+            const perTotal = Math.max(...values.map((item) => item.total));
+            const count = Math.max(expectedProgressCount, tracks.size, 1);
+            const completed = values.filter((item) => item.step >= item.total).length;
+            const active = values.filter((item) => item.step < item.total).reduce((max, item) => Math.max(max, item.step), 0);
+            const total = perTotal * count;
+            const step = Math.min(total, completed * perTotal + active);
+            setNodes((prev) => prev.map((item) => (item.id === targetNodeId ? { ...item, metadata: { ...item.metadata, stepProgress: { step, total } } } : item)));
+        });
         generationRequestsRef.current.set(targetNodeId, { targetNodeId, originNodeId, runningNodeId: runningId, controller });
         return controller;
     }, []);
 
     const finishGenerationRequest = useCallback((targetNodeId: string, controller: AbortController) => {
         const request = generationRequestsRef.current.get(targetNodeId);
-        if (request?.controller === controller) generationRequestsRef.current.delete(targetNodeId);
+        if (request?.controller !== controller) return;
+        generationRequestsRef.current.delete(targetNodeId);
+        generationStepTracksRef.current.delete(targetNodeId);
+        unbindStepProgress(controller.signal);
+        if (!nodesRef.current.some((item) => item.id === targetNodeId && item.metadata?.stepProgress)) return;
+        // Let the last segment light up and glow briefly before the ring fades out.
+        setNodes((prev) =>
+            prev.map((item) => {
+                if (item.id !== targetNodeId || !item.metadata?.stepProgress) return item;
+                const total = item.metadata.stepProgress.total;
+                return { ...item, metadata: { ...item.metadata, stepProgress: { step: total, total, complete: true } } };
+            }),
+        );
+        const timer = window.setTimeout(() => {
+            generationStepTimersRef.current.delete(targetNodeId);
+            setNodes((prev) => prev.map((item) => (item.id === targetNodeId && item.metadata?.stepProgress ? { ...item, metadata: { ...item.metadata, stepProgress: undefined } } : item)));
+        }, 1450);
+        generationStepTimersRef.current.set(targetNodeId, timer);
     }, []);
 
     const updateVideoPreview = useCallback((nodeId: string, preview: VideoPreview | null) => {
         setNodes((prev) =>
-            prev.map((item) =>
-                item.id === nodeId
-                    ? {
-                          ...item,
-                          metadata: {
-                              ...item.metadata,
-                              previewUrl: preview?.url,
-                              previewMime: preview?.mime,
-                              previewStep: preview?.step,
-                              previewTotal: preview?.total,
-                          },
-                      }
-                    : item,
-            ),
+            prev.map((item) => {
+                if (item.id !== nodeId) return item;
+                const stepProgress = preview?.step != null && preview.total
+                    ? { step: preview.step, total: preview.total }
+                    : item.metadata?.stepProgress;
+                return {
+                    ...item,
+                    metadata: {
+                        ...item.metadata,
+                        previewUrl: preview?.url,
+                        previewMime: preview?.mime,
+                        previewStep: preview?.step,
+                        previewTotal: preview?.total,
+                        stepProgress,
+                    },
+                };
+            }),
         );
+    }, []);
+
+    const updateVideoSteps = useCallback((nodeId: string, steps: { step: number; total: number }) => {
+        setNodes((prev) => prev.map((item) => (item.id === nodeId ? { ...item, metadata: { ...item.metadata, stepProgress: steps } } : item)));
     }, []);
 
     const completeVideoNodeTask = useCallback(
@@ -349,10 +397,10 @@ function InfiniteCanvasPage() {
             if (task.provider !== "plugin") {
                 setNodes((prev) => prev.map((item) => (item.id === nodeId ? { ...item, metadata: { ...item.metadata, videoTaskId: task.id, videoTaskProvider: task.provider === "gemini" ? "gemini" : "openai", model: config.model, params: config.params, previewUrl: undefined, previewMime: undefined, previewStep: undefined, previewTotal: undefined } } : item)));
             }
-            const video = await storeGeneratedVideo(await waitForVideoGenerationTask(config, task, { signal, onPreview: (preview) => updateVideoPreview(nodeId, preview) }));
+            const video = await storeGeneratedVideo(await waitForVideoGenerationTask(config, task, { signal, onPreview: (preview) => updateVideoPreview(nodeId, preview), onSteps: (steps) => updateVideoSteps(nodeId, steps) }));
             setNodes((prev) => prev.map((item) => (item.id === nodeId ? applyGeneratedVideo(item, video, { prompt, model: config.model, ...extra, previewUrl: undefined, previewMime: undefined, previewStep: undefined, previewTotal: undefined }) : item)));
         },
-        [updateVideoPreview],
+        [updateVideoPreview, updateVideoSteps],
     );
 
     const pollVideoNodeTask = useCallback(
@@ -374,7 +422,7 @@ function InfiniteCanvasPage() {
                 setRunningNodeId(node.id);
                 setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_LOADING, errorDetails: undefined } } : item)));
                 controller = startGenerationRequest(node.id, node.id, node.id);
-                const video = await storeGeneratedVideo(await waitForVideoGenerationTask(generationConfig, { id: taskId, provider: node.metadata?.videoTaskProvider === "gemini" ? "gemini" : "openai", model: generationConfig.model }, { signal: controller.signal, onPreview: (preview) => updateVideoPreview(node.id, preview) }));
+                const video = await storeGeneratedVideo(await waitForVideoGenerationTask(generationConfig, { id: taskId, provider: node.metadata?.videoTaskProvider === "gemini" ? "gemini" : "openai", model: generationConfig.model }, { signal: controller.signal, onPreview: (preview) => updateVideoPreview(node.id, preview), onSteps: (steps) => updateVideoSteps(node.id, steps) }));
                 setNodes((prev) =>
                     prev.map((item) =>
                         item.id === node.id
@@ -426,7 +474,7 @@ function InfiniteCanvasPage() {
                 }
             }
         },
-        [effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, startGenerationRequest, t, updateVideoPreview],
+        [effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, startGenerationRequest, t, updateVideoPreview, updateVideoSteps],
     );
 
     const stopGenerationByRunningId = useCallback((runningId: string) => {
@@ -435,6 +483,13 @@ function InfiniteCanvasPage() {
             if (request.runningNodeId !== runningId && request.originNodeId !== runningId && request.targetNodeId !== runningId) return;
             request.controller.abort("user-stop");
             generationRequestsRef.current.delete(request.targetNodeId);
+            unbindStepProgress(request.controller.signal);
+            generationStepTracksRef.current.delete(request.targetNodeId);
+            const pendingClear = generationStepTimersRef.current.get(request.targetNodeId);
+            if (pendingClear) {
+                window.clearTimeout(pendingClear);
+                generationStepTimersRef.current.delete(request.targetNodeId);
+            }
             affectedNodeIds.add(request.targetNodeId);
             affectedNodeIds.add(request.originNodeId);
         });
@@ -449,6 +504,7 @@ function InfiniteCanvasPage() {
                               ...node.metadata,
                               status: NODE_STATUS_IDLE,
                               errorDetails: undefined,
+                              stepProgress: undefined,
                               images: node.metadata.images?.map((image) => (image.status === NODE_STATUS_LOADING ? { ...image, status: NODE_STATUS_ERROR, errorDetails: t("common.requestCanceled") } : image)),
                               texts: node.metadata.texts?.map((text) => (text.status === NODE_STATUS_LOADING ? { ...text, status: NODE_STATUS_ERROR, errorDetails: t("common.requestCanceled") } : text)),
                           },
@@ -2745,7 +2801,7 @@ function InfiniteCanvasPage() {
                     setSelectedConnectionId(null);
                     setDialogNodeId(nodeId);
 
-                    const controller = rootId === nodeId ? runController : startGenerationRequest(rootId, nodeId, nodeId, runController);
+                    const controller = startGenerationRequest(rootId, nodeId, nodeId, runController, count);
                     let hasSuccess = false;
                     let hasFailure = false;
                     let firstError = "";

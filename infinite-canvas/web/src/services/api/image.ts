@@ -8,6 +8,7 @@ import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
 import { imageToDataUrl } from "@/services/image-storage";
 import { imageSizePresets, inferMediaScale } from "@/lib/media-size";
+import { publishStepProgress } from "@/services/api/step-progress";
 import type { ReferenceImage } from "@/types/image";
 
 const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiErrors.${key}`, options);
@@ -108,7 +109,7 @@ const IMAGE_OUTPUT_FORMAT = "png";
 // 与 image-storage 的下载超时保持一致，避免接口挂起时节点一直停在生成中。
 const IMAGE_REQUEST_TIMEOUT_MS = 10 * 60_000;
 
-function localGatewayRoot(baseUrl: string) {
+export function localGatewayRoot(baseUrl: string) {
     const url = baseUrl.trim().replace(/\/+$/, "");
     return /^https?:\/\/(?:127\.0\.0\.1|localhost):8190(?:\/|$)/i.test(url) ? url.replace(/\/v1$/i, "") : "";
 }
@@ -126,6 +127,32 @@ function attachLocalCancel(config: AiConfig, requestId: string, signal?: AbortSi
     };
     signal.addEventListener("abort", onAbort, { once: true });
     return () => signal.removeEventListener("abort", onAbort);
+}
+
+// 网关只能在本请求被 ComfyUI 接收后才知道 prompt_id，所以按 requestId 轮询步骤。
+function attachLocalProgress(config: AiConfig, requestId: string, signal?: AbortSignal) {
+    const root = localGatewayRoot(config.baseUrl);
+    if (!root || !signal) return null;
+    let stopped = false;
+    let timer = 0;
+    const tick = async () => {
+        if (stopped) return;
+        try {
+            const response = await axios.get<{ step?: number; total?: number }>(`${root}/api/progress/${encodeURIComponent(requestId)}`, { timeout: 3000 });
+            if (stopped) return;
+            const total = Math.floor(Number(response.data?.total) || 0);
+            const step = Math.floor(Number(response.data?.step) || 0);
+            if (total > 0) publishStepProgress(signal, { step: Math.min(total, Math.max(0, step)), total, requestId });
+        } catch {
+            // Progress is best-effort and must never fail the generation itself.
+        }
+        if (!stopped) timer = window.setTimeout(tick, 250);
+    };
+    void tick();
+    return () => {
+        stopped = true;
+        window.clearTimeout(timer);
+    };
 }
 
 const GEMINI_SUPPORTED_RATIOS = ["1:1", "1:4", "1:8", "2:3", "3:2", "3:4", "4:1", "4:3", "4:5", "5:4", "8:1", "9:16", "16:9", "21:9"];
@@ -759,6 +786,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
     }
     const requestId = `img_${nanoid()}`;
     const detachCancel = attachLocalCancel(requestConfig, requestId, options?.signal);
+    const detachProgress = attachLocalProgress(requestConfig, requestId, options?.signal);
     try {
         const response = await axios.post<ImageApiResponse>(
             aiApiUrl(requestConfig, "/images/generations"),
@@ -786,6 +814,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
         throw new Error(readAxiosError(error, apiText("requestFailed")));
     } finally {
         detachCancel?.();
+        detachProgress?.();
     }
 }
 
@@ -861,6 +890,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
 
     const requestId = `img_${nanoid()}`;
     const detachCancel = attachLocalCancel(requestConfig, requestId, options?.signal);
+    const detachProgress = attachLocalProgress(requestConfig, requestId, options?.signal);
     try {
         const response = await axios.post<ImageApiResponse>(aiApiUrl(requestConfig, "/images/edits"), formData, {
             headers: { ...aiHeaders(requestConfig), ...(detachCancel ? { "X-Request-Id": requestId } : {}) },
@@ -873,6 +903,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         throw new Error(readAxiosError(error, apiText("requestFailed")));
     } finally {
         detachCancel?.();
+        detachProgress?.();
     }
 }
 
@@ -1012,6 +1043,7 @@ export async function requestUpscale(config: AiConfig, image: ReferenceImage, op
     formData.append("image", await dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) }));
     const requestId = `img_${nanoid()}`;
     const detachCancel = attachLocalCancel(requestConfig, requestId, options.signal);
+    const detachProgress = attachLocalProgress(requestConfig, requestId, options.signal);
     try {
         const response = await axios.post<ImageApiResponse>(`${root}/v1/images/upscale`, formData, {
             headers: { ...aiHeaders(requestConfig), ...(detachCancel ? { "X-Request-Id": requestId } : {}) },
@@ -1023,6 +1055,7 @@ export async function requestUpscale(config: AiConfig, image: ReferenceImage, op
         throw new Error(readAxiosError(error, apiText("requestFailed")));
     } finally {
         detachCancel?.();
+        detachProgress?.();
     }
 }
 

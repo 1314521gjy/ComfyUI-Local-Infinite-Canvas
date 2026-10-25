@@ -11,7 +11,7 @@ import { runModelPlugin } from "./model-plugin";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
-type VideoResponse = { id: string; status?: string; error?: { message?: string }; url?: string; result_url?: string; video_url?: string; content?: { video_url?: string; url?: string } | null; preview?: { url?: string; mime?: string; step?: number; total?: number } };
+type VideoResponse = { id: string; status?: string; error?: { message?: string }; url?: string; result_url?: string; video_url?: string; content?: { video_url?: string; url?: string } | null; preview?: { url?: string; mime?: string; step?: number; total?: number }; steps?: { step?: number; total?: number } };
 type ApiVideoResponse = VideoResponse | { code?: number | string; data?: VideoResponse | null; msg?: string; message?: string; error?: { message?: string } };
 type ApiEnvelope<T> = T | { code?: number | string; data?: T | null; msg?: string; message?: string; error?: { message?: string } };
 type RequestOptions = { signal?: AbortSignal; params?: Record<string, unknown> };
@@ -23,7 +23,7 @@ export type VideoGenerationTask = { id: string; provider: "openai" | "gemini" | 
 export type VideoUpscaleSource = { name: string; type?: string; url?: string; storageKey?: string };
 export type VideoUpscaleParams = { scale: number; resolution: number; fps?: number; seed?: number; batchSize?: number; colorCorrection?: string };
 export type VideoPreview = { url: string; mime?: string; step?: number; total?: number };
-type WaitOptions = RequestOptions & { onPreview?: (preview: VideoPreview | null) => void };
+type WaitOptions = RequestOptions & { onPreview?: (preview: VideoPreview | null) => void; onSteps?: (steps: { step: number; total: number }) => void };
 type GeminiInlineData = { bytesBase64Encoded: string; mimeType: string };
 type GeminiVideoOperation = {
     name?: string;
@@ -31,7 +31,7 @@ type GeminiVideoOperation = {
     error?: { message?: string };
     response?: { generateVideoResponse?: { generatedSamples?: Array<{ video?: { uri?: string } }> } };
 };
-export type VideoGenerationTaskState = { status: "pending"; preview?: VideoPreview } | { status: "completed"; result: VideoGenerationResult } | { status: "failed"; error: string };
+export type VideoGenerationTaskState = { status: "pending"; preview?: VideoPreview; steps?: { step: number; total: number } } | { status: "completed"; result: VideoGenerationResult } | { status: "failed"; error: string };
 
 /** Results for scripted (plugin) video models, which run their own create+poll in one shot at task creation. */
 const pluginVideoResults = new Map<string, VideoGenerationResult>();
@@ -65,6 +65,7 @@ export async function waitForVideoGenerationTask(config: AiConfig, task: VideoGe
                 throw videoTaskFailed(state.error);
             }
             if (state.preview) options?.onPreview?.(state.preview);
+            if (state.steps) options?.onSteps?.(state.steps);
             await delay(2500, options?.signal);
         }
     } catch (error) {
@@ -280,7 +281,11 @@ async function pollOpenAIVideoTask(config: AiConfig, task: VideoGenerationTask, 
                   total: video.preview.total,
               }
             : undefined;
-        return { status: "pending", preview };
+        const totalSteps = Number(video.steps?.total) || 0;
+        const steps = totalSteps > 0
+            ? { step: Math.min(totalSteps, Math.max(0, Number(video.steps?.step) || 0)), total: totalSteps }
+            : undefined;
+        return { status: "pending", preview, steps };
     } catch (error) {
         throw new Error(readAxiosError(error, apiText("videoTaskQueryFailed")));
     }

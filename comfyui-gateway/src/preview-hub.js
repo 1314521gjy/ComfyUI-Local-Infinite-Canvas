@@ -1,11 +1,14 @@
 import { truncate } from "./util.js";
 
 const PREVIEW_EVENT = "kj_preview_override";
+const PROGRESS_EVENT = "progress_state";
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
 const IDLE_CLOSE_MS = 5 * 60 * 1000;
 
 export function createPreviewHub({ comfyUrl, logger, ttlMs = DEFAULT_TTL_MS } = {}) {
   const previews = new Map();
+  const progressByPrompt = new Map();
+  const promptByRequest = new Map();
   const sockets = new Map();
 
   function wsEndpoint(clientId) {
@@ -17,20 +20,83 @@ export function createPreviewHub({ comfyUrl, logger, ttlMs = DEFAULT_TTL_MS } = 
     return url.toString();
   }
 
-  function handleMessage(clientId, raw) {
-    if (typeof raw !== "string") return;
-    let message;
-    try {
-      message = JSON.parse(raw);
-    } catch {
+  function createProgress(socket, promptId) {
+    const record = {
+      promptId,
+      requestId: socket.requestId || null,
+      total: socket.plan?.total || 0,
+      planNodes: socket.plan?.steps || {},
+      absoluteNodes: socket.plan?.absolute || {},
+      nodeRatios: new Map(),
+      nodeValues: new Map(),
+      fallbackStep: null,
+      fallbackTotal: null,
+      step: 0,
+      state: "queued",
+      updatedAt: Date.now(),
+    };
+    progressByPrompt.set(promptId, record);
+    if (record.requestId) promptByRequest.set(record.requestId, promptId);
+    return record;
+  }
+
+  function ensureProgress(socket, promptId) {
+    return progressByPrompt.get(promptId) || createProgress(socket, promptId);
+  }
+
+  function computeStep(record) {
+    if (record.planNodes && Object.keys(record.planNodes).length) {
+      let steps = 0;
+      for (const [nodeId, planned] of Object.entries(record.planNodes)) {
+        if (record.absoluteNodes?.[nodeId]) {
+          steps += Math.min(planned, Math.max(0, record.nodeValues.get(nodeId) || 0));
+          continue;
+        }
+        const ratio = record.nodeRatios.get(nodeId) || 0;
+        steps += Math.min(1, Math.max(0, ratio)) * planned;
+      }
+      record.step = Math.min(record.total, Math.round(steps));
       return;
     }
-    if (message?.type !== PREVIEW_EVENT) return;
-    const data = message.data || {};
-    if (!data.image) return;
-    const socket = sockets.get(clientId);
-    const promptId = socket?.promptId;
+    if (record.fallbackTotal) {
+      record.step = Math.min(record.fallbackTotal, Math.max(0, record.fallbackStep || 0));
+    }
+  }
+
+  function handleProgressState(socket, data) {
+    const promptId = data?.prompt_id;
     if (!promptId) return;
+    const record = ensureProgress(socket, promptId);
+    for (const node of Object.values(data.nodes || {})) {
+      const nodeId = String(node?.node_id ?? node?.display_node_id ?? "");
+      if (!record.planNodes?.[nodeId]) continue;
+      const value = Number(node.value);
+      const max = Number(node.max);
+      if (!Number.isFinite(value) || !Number.isFinite(max) || max <= 0) continue;
+      if (record.absoluteNodes?.[nodeId]) {
+        record.nodeValues.set(nodeId, Math.max(record.nodeValues.get(nodeId) || 0, value));
+        continue;
+      }
+      const ratio = Math.min(1, Math.max(0, value / max));
+      record.nodeRatios.set(nodeId, Math.max(record.nodeRatios.get(nodeId) || 0, ratio));
+    }
+    record.state = "running";
+    record.updatedAt = Date.now();
+    computeStep(record);
+  }
+
+  function finishPrompt(socket, promptId, state) {
+    const id = promptId || socket.promptId;
+    const record = id ? progressByPrompt.get(id) : null;
+    if (!record) return;
+    record.state = state;
+    record.step = record.total || record.step;
+    record.updatedAt = Date.now();
+  }
+
+  function handlePreview(socket, data) {
+    const promptId = socket.promptId;
+    if (!promptId || !data.image) return;
     previews.set(promptId, {
       data: String(data.image),
       mime: String(data.mime || "image/jpeg"),
@@ -39,6 +105,44 @@ export function createPreviewHub({ comfyUrl, logger, ttlMs = DEFAULT_TTL_MS } = 
       nodeId: data.node_id || null,
       updatedAt: Date.now(),
     });
+    const step = Number(data.step);
+    const total = Number(data.total);
+    if (Number.isFinite(step) && Number.isFinite(total) && total > 0) {
+      const record = progressByPrompt.get(promptId);
+      if (record && !record.total) {
+        record.fallbackStep = step;
+        record.fallbackTotal = total;
+        record.total = total;
+        record.state = "running";
+        record.updatedAt = Date.now();
+        computeStep(record);
+      }
+    }
+  }
+
+  function handleMessage(clientId, raw) {
+    if (typeof raw !== "string") return;
+    let message;
+    try {
+      message = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    const socket = sockets.get(clientId);
+    if (!socket) return;
+    if (message?.type === PREVIEW_EVENT) {
+      handlePreview(socket, message.data || {});
+    } else if (message?.type === PROGRESS_EVENT) {
+      handleProgressState(socket, message.data || {});
+    } else if (message?.type === "execution_success") {
+      finishPrompt(socket, message.data?.prompt_id, "done");
+    } else if (message?.type === "execution_error") {
+      finishPrompt(socket, message.data?.prompt_id, "error");
+    } else if (message?.type === "execution_interrupted") {
+      finishPrompt(socket, message.data?.prompt_id, "cancelled");
+    } else {
+      return;
+    }
     socket.lastActivity = Date.now();
   }
 
@@ -62,7 +166,7 @@ export function createPreviewHub({ comfyUrl, logger, ttlMs = DEFAULT_TTL_MS } = 
         finish(false);
         return;
       }
-      const entry = { ws, promptId: null, lastActivity: Date.now() };
+      const entry = { ws, promptId: null, requestId: null, plan: null, lastActivity: Date.now() };
       sockets.set(clientId, entry);
       ws.addEventListener("open", () => {
         try {
@@ -85,9 +189,13 @@ export function createPreviewHub({ comfyUrl, logger, ttlMs = DEFAULT_TTL_MS } = 
     });
   }
 
-  function bindPrompt(clientId, promptId) {
+  function bindPrompt(clientId, promptId, { requestId = null, plan = null } = {}) {
     const socket = sockets.get(clientId);
-    if (socket && promptId) socket.promptId = promptId;
+    if (!socket || !promptId) return;
+    socket.promptId = promptId;
+    socket.requestId = requestId;
+    socket.plan = plan;
+    createProgress(socket, promptId);
   }
 
   function get(promptId) {
@@ -98,6 +206,21 @@ export function createPreviewHub({ comfyUrl, logger, ttlMs = DEFAULT_TTL_MS } = 
       return null;
     }
     return preview;
+  }
+
+  function getProgress(promptId) {
+    const progress = progressByPrompt.get(promptId);
+    if (!progress) return null;
+    if (Date.now() - progress.updatedAt > ttlMs) {
+      progressByPrompt.delete(promptId);
+      return null;
+    }
+    return progress;
+  }
+
+  function getByRequest(requestId) {
+    const promptId = promptByRequest.get(requestId);
+    return promptId ? getProgress(promptId) : null;
   }
 
   function closeIdle() {
@@ -114,10 +237,16 @@ export function createPreviewHub({ comfyUrl, logger, ttlMs = DEFAULT_TTL_MS } = 
     for (const [promptId, preview] of previews) {
       if (now - preview.updatedAt > ttlMs) previews.delete(promptId);
     }
+    for (const [promptId, progress] of progressByPrompt) {
+      if (now - progress.updatedAt > ttlMs) {
+        progressByPrompt.delete(promptId);
+        if (progress.requestId && promptByRequest.get(progress.requestId) === promptId) promptByRequest.delete(progress.requestId);
+      }
+    }
   }
 
   const timer = setInterval(closeIdle, 60 * 1000);
   timer.unref?.();
 
-  return { ensure, bindPrompt, get, closeIdle };
+  return { ensure, bindPrompt, get, getProgress, getByRequest, closeIdle };
 }

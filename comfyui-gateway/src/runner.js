@@ -64,7 +64,7 @@ function collectOutputFiles(history) {
   return files;
 }
 
-export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 * 1000, pollIntervalMs = 750, signal, onProgress, logger, loraCatalog }) {
+export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 * 1000, pollIntervalMs = 750, signal, requestId, onProgress, logger, loraCatalog }) {
   if (signal?.aborted) throw new GenerationError("生成已取消", { status: 400, code: "cancelled" });
   const resolved = resolveForMode(entry, context.mode);
   const params = resolved.baseModelParams ? { ...resolved.baseModelParams, ...(context.params || {}) } : context.params;
@@ -79,7 +79,7 @@ export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 *
   if (loraResult.applied.length) {
     logger?.info?.(`LoRA ${entry.name}: ${loraResult.applied.map((item) => `${path.basename(item.name)}@${item.strength}`).join(" -> ")}`);
   }
-  const submitted = await comfy.submit(workflow, { signal });
+  const submitted = await comfy.submit(workflow, { signal, requestId });
   const promptId = submitted.promptId;
   let running = true;
   let cancelPromise = null;
@@ -148,7 +148,7 @@ export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 *
   }
 }
 
-export async function runImage({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, onProgress, logger, loraCatalog }) {
+export async function runImage({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, requestId, onProgress, logger, loraCatalog }) {
   const count = context.count || 1;
   const all = [];
   let lastPromptId;
@@ -161,6 +161,7 @@ export async function runImage({ entry, context, comfy, timeoutMs, pollIntervalM
       timeoutMs,
       pollIntervalMs,
       signal,
+      requestId,
       logger,
       loraCatalog,
       onProgress: (event) => onProgress?.({ ...event, attempt, attempts: count }),
@@ -171,8 +172,8 @@ export async function runImage({ entry, context, comfy, timeoutMs, pollIntervalM
   return { promptId: lastPromptId, files: all.slice(0, count) };
 }
 
-export async function runVideo({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, onProgress, logger, loraCatalog }) {
-  const result = await runWorkflow({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, logger, loraCatalog, onProgress });
+export async function runVideo({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, requestId, onProgress, logger, loraCatalog }) {
+  const result = await runWorkflow({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, requestId, logger, loraCatalog, onProgress });
   const video = result.files.find((file) => /^video\//i.test(file.mimeType) || /\.(mp4|webm|mov)$/i.test(file.filename));
   if (!video) {
     throw new GenerationError("视频工作流没有返回视频文件（只拿到了图片/动图）", { status: 502, code: "no_video_output", details: result.files.map((file) => file.filename) });

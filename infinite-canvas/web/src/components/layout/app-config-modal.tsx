@@ -18,6 +18,8 @@ import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent }
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
 import { computeMediaSize, inferMediaRatio, inferMediaScale, mediaScaleOptions, parseVideoResolution } from "@/lib/media-size";
+import { progressRingSkins } from "@/lib/canvas/progress-ring-skins";
+import { useThemeStore } from "@/stores/use-theme-store";
 import { createModelChannel, modelOptionsFromChannels, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 
 type ModelGroup = {
@@ -62,6 +64,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const [webdavSyncStatus, setWebdavSyncStatus] = useState("");
     const [webdavDomainProgress, setWebdavDomainProgress] = useState(createWebdavDomainProgress);
     const config = useConfigStore((state) => state.config);
+    const appTheme = useThemeStore((state) => state.theme);
     const webdav = useConfigStore((state) => state.webdav);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const updateWebdavConfig = useConfigStore((state) => state.updateWebdavConfig);
@@ -286,6 +289,40 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                         </>
                                     ) : null}
                                 </div>
+                                <Form.Item label={t("config.preferences.progressRingSkin")} extra={t("config.preferences.progressRingSkinDescription")} className="mb-4">
+                                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                                        {progressRingSkins.map((skin) => {
+                                            const selected = (config.progressRingSkin || "cyan") === skin.id;
+                                            const palette = appTheme === "dark" ? skin.dark : skin.light;
+                                            return (
+                                                <button
+                                                    key={skin.id}
+                                                    type="button"
+                                                    onClick={() => updateConfig("progressRingSkin", skin.id)}
+                                                    className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition ${selected ? "border-stone-900 bg-stone-100 dark:border-stone-100 dark:bg-white/10" : "border-stone-200 hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-white/5"}`}
+                                                >
+                                                    <span className="relative grid h-7 w-14 shrink-0 place-items-center overflow-hidden rounded-md" style={{ background: appTheme === "dark" ? "#1c1917" : "#f5f5f4" }}>
+                                                        {skin.mode === "tide" ? (
+                                                            <span
+                                                                className="absolute inset-x-0 bottom-0 h-[62%]"
+                                                                style={{ background: `linear-gradient(to top, ${palette.glow}66, ${palette.core}2e)`, borderTop: `1px solid ${palette.glow}`, boxShadow: `0 -3px 8px ${palette.glow}66` }}
+                                                            />
+                                                        ) : (
+                                                            <span
+                                                                className="absolute inset-x-1.5 top-1/2 h-[2px] -translate-y-1/2 rounded-full"
+                                                                style={{ background: `linear-gradient(90deg, ${palette.gradient[0]}, ${palette.gradient[2]})`, boxShadow: `0 0 8px ${palette.glow}` }}
+                                                            />
+                                                        )}
+                                                    </span>
+                                                    <span className="min-w-0">
+                                                        <span className="block text-sm font-medium">{t(`config.preferences.progressRingSkins.${skin.id}.label`)}</span>
+                                                        <span className="mt-0.5 block truncate text-[11px] opacity-60">{t(`config.preferences.progressRingSkins.${skin.id}.description`)}</span>
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </Form.Item>
                                 <Form.Item label={t("config.preferences.regenerateBehavior")} className="mb-4">
                                     <Radio.Group value={config.nodeRegenerateBehavior} onChange={(event) => updateConfig("nodeRegenerateBehavior", event.target.value)} className="flex flex-col gap-2">
                                         <Radio value="overwrite">

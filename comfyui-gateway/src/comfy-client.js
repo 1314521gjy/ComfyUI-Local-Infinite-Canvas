@@ -1,3 +1,4 @@
+import { estimateStepPlan } from "./step-plan.js";
 import { randomId, sleep, truncate } from "./util.js";
 
 export class ComfyUIError extends Error {
@@ -100,7 +101,7 @@ export function createComfyClient({ baseUrl, timeoutMs = 10 * 60 * 1000, retryAt
     throw lastError;
   }
 
-  async function submit(workflow, { clientId = randomId("canvas-"), signal } = {}) {
+  async function submit(workflow, { clientId = randomId("canvas-"), signal, requestId } = {}) {
     if (previewHub) {
       await previewHub.ensure(clientId).catch(() => false);
     }
@@ -117,7 +118,7 @@ export function createComfyClient({ baseUrl, timeoutMs = 10 * 60 * 1000, retryAt
     if (!data?.prompt_id) {
       throw new ComfyUIError(`ComfyUI 未返回 prompt_id：${truncate(JSON.stringify(data), 500)}`, { status: 502, code: "no_prompt_id", details: data });
     }
-    previewHub?.bindPrompt(clientId, data.prompt_id);
+    previewHub?.bindPrompt(clientId, data.prompt_id, { requestId, plan: estimateStepPlan(workflow) });
     return { promptId: data.prompt_id, number: data.number, raw: data };
   }
 

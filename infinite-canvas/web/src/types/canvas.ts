@@ -118,6 +118,7 @@ export type CanvasNodeMetadata = {
     previewMime?: string;
     previewStep?: number;
     previewTotal?: number;
+    stepProgress?: { step: number; total: number; complete?: boolean };
     groupId?: string;
     interactive?: boolean; // Plugin node interaction/move state; see CanvasNodeDefinition.interactionToggle.
     params?: Record<string, unknown>; // Per-node model params (e.g. LoRA stack).

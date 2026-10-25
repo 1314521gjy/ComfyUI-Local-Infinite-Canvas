@@ -478,6 +478,7 @@ export async function createGatewayApp(overrides = {}) {
         timeoutMs: config.requestTimeoutMs,
         pollIntervalMs: config.pollIntervalMs,
         signal: abort.signal,
+        requestId: req.id,
         logger,
         loraCatalog: setup.loraNames(),
       });
@@ -532,6 +533,7 @@ export async function createGatewayApp(overrides = {}) {
         timeoutMs: config.requestTimeoutMs,
         pollIntervalMs: config.pollIntervalMs,
         signal: abort.signal,
+        requestId: req.id,
         logger,
         loraCatalog: setup.loraNames(),
       });
@@ -609,6 +611,7 @@ export async function createGatewayApp(overrides = {}) {
         timeoutMs: config.requestTimeoutMs,
         pollIntervalMs: config.pollIntervalMs,
         signal: abort.signal,
+        requestId: req.id,
         logger,
         loraCatalog: setup.loraNames(),
       });
@@ -748,6 +751,7 @@ export async function createGatewayApp(overrides = {}) {
         timeoutMs: config.videoTimeoutMs,
         pollIntervalMs: config.pollIntervalMs,
         signal,
+        requestId: req.id,
         onProgress: progress,
         logger,
       });
@@ -851,6 +855,7 @@ export async function createGatewayApp(overrides = {}) {
         timeoutMs: config.videoTimeoutMs,
         pollIntervalMs: config.pollIntervalMs,
         signal,
+        requestId: req.id,
         onProgress: progress,
         logger,
         loraCatalog: setup.loraNames(),
@@ -872,12 +877,14 @@ export async function createGatewayApp(overrides = {}) {
     if (!task) throw new HttpError("视频任务不存在", { status: 404, code: "video_not_found" });
     const data = tasks.publicTask(task);
     const preview = task.promptId ? previewHub.get(task.promptId) : null;
+    const stepProgress = task.promptId ? previewHub.getProgress(task.promptId) : null;
     res.json({
       id: data.id,
       object: "video",
       status: data.status,
       progress: data.progress,
       prompt_id: data.promptId || undefined,
+      steps: stepProgress ? { step: stepProgress.step, total: stepProgress.total } : undefined,
       preview: preview
         ? {
             url: `/api/previews/${encodeURIComponent(task.promptId)}?t=${preview.updatedAt}`,
@@ -901,6 +908,17 @@ export async function createGatewayApp(overrides = {}) {
     if (preview.step != null) res.setHeader("X-Preview-Step", String(preview.step));
     if (preview.total != null) res.setHeader("X-Preview-Total", String(preview.total));
     res.type(preview.mime).send(Buffer.from(preview.data, "base64"));
+  });
+
+  app.get("/api/progress/:requestId", (req, res) => {
+    const progress = previewHub.getByRequest(req.params.requestId);
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      status: progress?.state || "pending",
+      step: progress?.step || 0,
+      total: progress?.total || 0,
+      prompt_id: progress?.promptId || undefined,
+    });
   });
 
   app.get("/v1/videos/:id/content", (req, res) => {
