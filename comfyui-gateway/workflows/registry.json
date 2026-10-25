@@ -1040,12 +1040,13 @@
       "name": "image-qwen21",
       "label": "Qwen Image 2.1",
       "type": "image",
-      "description": "Qwen-Image 2.1 Turbo. One model with routed functions: multi-image edit, true-mask inpaint, outpaint.",
+      "description": "Qwen-Image 2.1 Turbo. Text-to-image, multi-image edit, true-mask inpaint, outpaint; native RGBA via prompt template.",
       "file": "image-qwen21-edit-turbo.json",
       "variantLabels": {
         "edit": "多图编辑",
         "inpaint": "局部重绘",
-        "outpaint": "扩图"
+        "outpaint": "扩图",
+        "t2i": "文生图"
       },
       "lora": {
         "filter": "Qwen21|qwen_image_2.1|Qwen-Image-2.1"
@@ -1260,8 +1261,45 @@
               "default": 1.5
             }
           }
+        },
+        "t2i": {
+          "file": "image-qwen21-t2i.json",
+          "label": "文生图",
+          "description": "纯文生图，不需要参考图；支持原生透明背景",
+          "bindings": {
+            "prompt": {
+              "node": "5",
+              "input": "prompt"
+            },
+            "negative": {
+              "node": "5",
+              "input": "negative_prompt",
+              "default": "artifacts, low quality, blurry, deformed, watermark"
+            },
+            "cfg": {
+              "node": "6",
+              "input": "cfg",
+              "from": "params.cfg",
+              "default": 1
+            },
+            "seed": {
+              "node": "7",
+              "input": "noise_seed",
+              "from": "params.seed",
+              "transform": "int",
+              "random": true
+            },
+            "resolution": {
+              "node": "5",
+              "input": "resolution",
+              "from": "params.resolution",
+              "transform": "int",
+              "default": 1024
+            }
+          }
         }
-      }
+      },
+      "backgroundPrompt": "qwen-rgba"
     },
     {
       "id": "image-moss-sft-8step",

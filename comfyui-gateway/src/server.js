@@ -138,6 +138,16 @@ async function uploadImages(comfy, files) {
   return uploaded;
 }
 
+const RGBA_PROMPT_PREFIX = "This is an RGBA format image with transparency.";
+const RGBA_PROMPT_SUFFIX = "The image has an alpha channel and a transparent background.";
+
+function applyBackgroundPrompt(prompt, background, entry) {
+  if (background !== "transparent" || !entry?.backgroundPrompt) return prompt;
+  const text = String(prompt || "").trim();
+  if (/alpha channel|RGBA/i.test(text)) return text;
+  return `${RGBA_PROMPT_PREFIX} ${text} ${RGBA_PROMPT_SUFFIX}`.trim();
+}
+
 function requireModel(registry, setup, model, expectedType) {
   const name = String(model || "").trim();
   if (!name) throw new HttpError("缺少 model 参数", { status: 400, code: "missing_model" });
@@ -440,17 +450,20 @@ export async function createGatewayApp(overrides = {}) {
   app.post("/v1/images/generations", async (req, res) => {
     await registry.reloadIfChanged();
     const body = req.body || {};
-    const entry = requireModel(registry, setup, body.model, "image");
-    if (body.background && !entry.bindings?.background) {
+    const baseEntry = requireModel(registry, setup, body.model, "image");
+    const mode = String(body.mode || body.imageMode || "").trim();
+    const entry = mode ? registry.resolveForMode(baseEntry, mode) : baseEntry;
+    if (body.background && !entry.bindings?.background && !entry.backgroundPrompt) {
       throw new HttpError(`工作流 ${entry.name} 没有 background 绑定，不能保证透明背景。`, { status: 400, code: "unsupported_background" });
     }
     const context = buildContext({
-      prompt: body.prompt,
+      prompt: applyBackgroundPrompt(body.prompt, body.background, entry),
       negative: body.negative,
       size: body.size,
       count: body.n ?? body.count,
       quality: body.quality,
       background: body.background,
+      mode,
       params: parseParams(body.params),
       presets: entry.presets,
     });
@@ -567,9 +580,13 @@ export async function createGatewayApp(overrides = {}) {
         throw new HttpError("Qwen 扩图需要且只接收 1 张原图", { status: 400, code: "invalid_outpaint_media" });
       }
     }
+    const resolvedEntry = registry.resolveForMode(entry, mode);
+    if (body.background && !resolvedEntry.bindings?.background && !resolvedEntry.backgroundPrompt) {
+      throw new HttpError(`工作流 ${resolvedEntry.name} 没有 background 绑定，不能保证透明背景。`, { status: 400, code: "unsupported_background" });
+    }
     const uploadedImages = await uploadImages(comfy, files);
     const context = buildContext({
-      prompt: body.prompt,
+      prompt: applyBackgroundPrompt(body.prompt, body.background, resolvedEntry),
       negative: body.negative,
       size: body.size,
       count: body.n ?? body.count,

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { Settings2 } from "lucide-react";
-import { Button } from "antd";
+import { Button, Switch } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { ImageSettingsPanel, OptionPill, SettingTitle, imageQualityLabel, imageSizeLabel } from "@/components/image-settings-panel";
@@ -24,8 +24,9 @@ type CanvasImageSettingsPopoverProps = {
     autoAdjustOverflow?: boolean;
 };
 
-const qwenModeLabels: Record<string, string> = { edit: "多图编辑", inpaint: "局部重绘", outpaint: "扩图" };
+const qwenModeLabels: Record<string, string> = { t2i: "文生图", edit: "多图编辑", inpaint: "局部重绘", outpaint: "扩图" };
 const qwenModeHints: Record<string, string> = {
+    t2i: "纯文生图：不需要参考图，按提示词生成完整画面",
     edit: "接 1–4 张参考图，按提示词编辑或融合",
     inpaint: "选择后自动打开蒙版，只修改蒙版覆盖区域",
     outpaint: "打开扩图画布，拖图 / 滚轮调整扩图范围",
@@ -39,7 +40,7 @@ function mossModelInfo(config: AiConfig) {
 function qwenModelInfo(config: AiConfig) {
     const model = channelModelOf(config, config.model)?.model;
     if (model?.workflowId !== "image-qwen21") return null;
-    const modes = model.variantModes?.length ? model.variantModes : ["edit", "inpaint"];
+    const modes = model.variantModes?.length ? model.variantModes : ["t2i", "edit", "inpaint", "outpaint"];
     return { modes, labels: { ...qwenModeLabels, ...(model.variantLabels || {}) } };
 }
 
@@ -89,7 +90,7 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
             <span ref={buttonRef} className="inline-flex min-w-0">
                 <Button size="small" type="text" className={buttonClassName || "!h-8 !max-w-[180px] !justify-start !rounded-full !px-2.5"} style={{ background: theme.node.fill, color: theme.node.text }} icon={<Settings2 className="size-3.5" />} onClick={() => updateOpen(!open)}>
                     <span className="truncate">
-                        {qwen ? `${qwen.labels[String(config.imageMode || "edit")] || qwen.labels.edit} · 跟随原图` : `${imageQualityLabel(quality)} · ${imageSizeLabel(activeSize)} · ${t("canvas.controls.images", { count })}`}
+                        {qwen ? `${qwen.labels[String(config.imageMode || "t2i")] || qwen.labels.t2i || qwen.labels.edit}${String(config.imageMode || "t2i") === "t2i" ? "" : " · 跟随原图"}` : `${imageQualityLabel(quality)} · ${imageSizeLabel(activeSize)} · ${t("canvas.controls.images", { count })}`}
                     </span>
                 </Button>
             </span>
@@ -123,7 +124,7 @@ function ImageSettingsPortal({
 }) {
     const qwen = qwenModelInfo(config);
     const moss = mossModelInfo(config);
-    const qwenMode = String(config.imageMode || "edit");
+    const qwenMode = String(config.imageMode || "t2i");
     const width = 356;
     const gap = 8;
     const margin = 12;
@@ -159,8 +160,8 @@ function ImageSettingsPortal({
                     <div className="text-lg font-semibold">Qwen Image 2.1</div>
                     <div className="space-y-2.5">
                         <SettingTitle color={theme.node.muted}>功能</SettingTitle>
-                        <div className="grid grid-cols-3 gap-2.5">
-                            {qwen.modes.map((mode) => (
+                        <div className="grid grid-cols-2 gap-2.5">
+                            {["t2i", "edit", "inpaint", "outpaint"].filter((mode) => qwen.modes.includes(mode)).map((mode) => (
                                 <OptionPill
                                     key={mode}
                                     selected={qwenMode === mode}
@@ -177,11 +178,21 @@ function ImageSettingsPortal({
                             ))}
                         </div>
                         <div className="text-xs leading-4" style={{ color: theme.node.muted }}>
-                            {qwenModeHints[qwenMode] || qwenModeHints.edit}
+                            {qwenModeHints[qwenMode] || qwenModeHints.t2i}
                         </div>
-                        <div className="text-xs leading-4" style={{ color: theme.node.muted, opacity: 0.75 }}>
-                            输出尺寸跟随原图；提示词描述要改的内容即可。
-                        </div>
+                        {qwenMode === "t2i" ? (
+                            <ImageSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" maxCount={10} />
+                        ) : (
+                            <div className="space-y-2 rounded-xl border p-3" style={{ borderColor: theme.node.stroke }}>
+                                <div className="flex items-center justify-between gap-3">
+                                    <SettingTitle color={theme.node.muted}>透明背景</SettingTitle>
+                                    <Switch size="small" checked={config.background === "transparent"} onChange={(checked) => onConfigChange("background", checked ? "transparent" : "")} />
+                                </div>
+                                <div className="text-xs leading-4" style={{ color: theme.node.muted }}>
+                                    仅 Qwen Image 2.1 支持；透明输出保存为 PNG，保留 alpha。
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             ) : (

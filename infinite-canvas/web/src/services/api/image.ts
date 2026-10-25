@@ -769,6 +769,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
                 ...(quality ? { quality } : {}),
                 ...(requestSize ? { size: requestSize } : {}),
                 ...(background ? { background } : {}),
+                ...(config.imageMode ? { mode: config.imageMode } : {}),
                 ...(Object.keys(requestParams).length ? { params: requestParams } : {}),
                 // gpt-image models reject response_format; they always return b64.
                 ...(/gpt-image/.test(requestConfig.model) ? {} : { response_format: "b64_json" }),
