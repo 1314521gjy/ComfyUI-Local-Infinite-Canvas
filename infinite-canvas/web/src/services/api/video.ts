@@ -415,11 +415,11 @@ function resolveVideoMode(mode: string | undefined, imageCount: number) {
 }
 
 function normalizeVideoSize(value: string, resolution?: string) {
-    if (value === "auto") return null;
-    if (/^\d+x\d+$/.test(value || "")) return value;
-    const ratio = inferVideoRatio(value || "16:9");
-    if (ratio === "auto") return null;
-    return computeVideoSize(resolution || "720", ratio);
+    const selectedResolution = resolution || "720";
+    if (!value || value === "auto") return computeVideoSize(selectedResolution, "16:9");
+    // A stale pixel size must not override the selected 480/720/1080 tier.
+    const ratio = inferVideoRatio(value);
+    return computeVideoSize(selectedResolution, ratio === "auto" ? "16:9" : ratio);
 }
 
 function normalizeVideoResolution(value: string) {
