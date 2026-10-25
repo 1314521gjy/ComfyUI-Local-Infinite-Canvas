@@ -13,6 +13,7 @@ import type { AiConfig } from "@/stores/use-config-store";
 type CanvasImageSettingsPopoverProps = {
     config: AiConfig;
     onConfigChange: (key: keyof AiConfig, value: string) => void;
+    onParamsChange?: (params: Record<string, unknown>) => void;
     onMissingConfig?: () => void;
     onOpenChange?: (open: boolean) => void;
     onOpenMaskEditor?: () => void;
@@ -27,7 +28,7 @@ type CanvasImageSettingsPopoverProps = {
 const qwenModeLabels: Record<string, string> = { t2i: "文生图", edit: "多图编辑", inpaint: "局部重绘", outpaint: "扩图" };
 const qwenModeHints: Record<string, string> = {
     t2i: "纯文生图：不需要参考图，按提示词生成完整画面",
-    edit: "接 1–4 张参考图，按提示词编辑或融合",
+    edit: "接 1–4 张参考图，按提示词编辑或融合；输出尺寸跟随第一张参考图",
     inpaint: "选择后自动打开蒙版，只修改蒙版覆盖区域",
     outpaint: "打开扩图画布，拖图 / 滚轮调整扩图范围",
 };
@@ -44,7 +45,7 @@ function qwenModelInfo(config: AiConfig) {
     return { modes, labels: { ...qwenModeLabels, ...(model.variantLabels || {}) } };
 }
 
-export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChange, onOpenMaskEditor, onOpenOutpaintEditor, onOpenMossLayoutEditor, buttonClassName, placement = "topLeft" }: CanvasImageSettingsPopoverProps) {
+export function CanvasImageSettingsPopover({ config, onConfigChange, onParamsChange, onOpenChange, onOpenMaskEditor, onOpenOutpaintEditor, onOpenMossLayoutEditor, buttonClassName, placement = "topLeft" }: CanvasImageSettingsPopoverProps) {
     const { t } = useTranslation();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const buttonRef = useRef<HTMLSpanElement>(null);
@@ -82,7 +83,7 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
         };
     }, [onOpenChange, open]);
 
-    const panel = open && buttonRect ? <ImageSettingsPortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={config} onConfigChange={onConfigChange} onOpenMaskEditor={onOpenMaskEditor} onOpenOutpaintEditor={onOpenOutpaintEditor} onOpenMossLayoutEditor={onOpenMossLayoutEditor} onClose={() => updateOpen(false)} /> : null;
+    const panel = open && buttonRect ? <ImageSettingsPortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={config} onConfigChange={onConfigChange} onParamsChange={onParamsChange} onOpenMaskEditor={onOpenMaskEditor} onOpenOutpaintEditor={onOpenOutpaintEditor} onOpenMossLayoutEditor={onOpenMossLayoutEditor} onClose={() => updateOpen(false)} /> : null;
 
     return (
         <>
@@ -105,6 +106,7 @@ function ImageSettingsPortal({
     theme,
     config,
     onConfigChange,
+    onParamsChange,
     onOpenMaskEditor,
     onOpenOutpaintEditor,
     onOpenMossLayoutEditor,
@@ -116,6 +118,7 @@ function ImageSettingsPortal({
     theme: (typeof canvasThemes)[keyof typeof canvasThemes];
     config: AiConfig;
     onConfigChange: (key: keyof AiConfig, value: string) => void;
+    onParamsChange?: (params: Record<string, unknown>) => void;
     onOpenMaskEditor?: () => void;
     onOpenOutpaintEditor?: () => void;
     onOpenMossLayoutEditor?: () => void;
@@ -124,6 +127,7 @@ function ImageSettingsPortal({
     const qwen = qwenModelInfo(config);
     const moss = mossModelInfo(config);
     const qwenMode = String(config.imageMode || "t2i");
+    const refResolution = String((config.params as Record<string, unknown> | undefined)?.resolution ?? 1024);
     const width = 356;
     const gap = 8;
     const margin = 12;
@@ -181,6 +185,28 @@ function ImageSettingsPortal({
                         </div>
                         {qwenMode === "t2i" ? (
                             <ImageSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" maxCount={10} />
+                        ) : qwenMode === "edit" ? (
+                            <div className="space-y-3">
+                                <div className="space-y-2 rounded-xl border p-3" style={{ borderColor: theme.node.stroke }}>
+                                    <SettingTitle color={theme.node.muted}>参考分辨率</SettingTitle>
+                                    <div className="grid grid-cols-4 gap-2">
+                                        {[
+                                            ["1024", "1k"],
+                                            ["1536", "1.5k"],
+                                            ["2048", "2k"],
+                                            ["0", "原始"],
+                                        ].map(([value, label]) => (
+                                            <OptionPill key={value} selected={refResolution === value} theme={theme} onClick={() => onParamsChange?.({ resolution: Number(value) })}>
+                                                {label}
+                                            </OptionPill>
+                                        ))}
+                                    </div>
+                                    <div className="text-xs leading-4" style={{ color: theme.node.muted }}>
+                                        多图尺寸不同时各自按比例缩放；输出尺寸跟随第一张参考图，原始表示不缩放。
+                                    </div>
+                                </div>
+                                <ImageSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" maxCount={10} showSize={false} />
+                            </div>
                         ) : (
                             <div className="space-y-2 rounded-xl border p-3" style={{ borderColor: theme.node.stroke }}>
                                 <div className="flex items-center justify-between gap-3">

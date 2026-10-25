@@ -1,0 +1,64 @@
+{
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "caption-input.png"
+    },
+    "_meta": {
+      "title": "Image"
+    }
+  },
+  "2": {
+    "class_type": "llama_cpp_model_loader",
+    "inputs": {
+      "model": "Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf",
+      "mmproj": "mmproj-Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-BF16.gguf",
+      "chat_handler": "Qwen3.5",
+      "n_ctx": 8192,
+      "vram_limit": -1,
+      "image_min_tokens": 0,
+      "image_max_tokens": 0,
+      "load_mtp": false
+    },
+    "_meta": {
+      "title": "Qwen3.5 VL"
+    }
+  },
+  "3": {
+    "class_type": "llama_cpp_instruct_adv",
+    "inputs": {
+      "llama_model": [
+        "2",
+        0
+      ],
+      "preset_prompt": "Empty - Nothing",
+      "custom_prompt": "请把这张图片反推成可直接用于 AI 生图的中文提示词。",
+      "system_prompt": "你是一位专业的AI图像生成提示词工程师。请详细描述这张图像主体、前景、中景、背景、构图、视觉引导、光影氛围等细节并创作出具有深度、氛围和艺术感或日常业余设备拍摄的图像提示词。\n\n要求：中文提示词，不用出现对图像水印的描述，不要出现无关的文字和符号，不需要总结，限制在800字以内",
+      "inference_mode": "images",
+      "max_frames": 24,
+      "max_size": 512,
+      "seed": 0,
+      "force_offload": true,
+      "save_states": false,
+      "images": [
+        "1",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Reverse Prompt"
+    }
+  },
+  "4": {
+    "class_type": "TE_text_display",
+    "inputs": {
+      "text": [
+        "3",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Caption"
+    }
+  }
+}

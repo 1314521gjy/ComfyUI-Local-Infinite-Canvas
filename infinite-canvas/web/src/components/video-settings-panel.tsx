@@ -68,11 +68,25 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
         onConfigChange("vquality", nextResolution);
         onConfigChange("size", computeVideoSize(nextResolution, ratio));
     };
+    const selectResolution = (nextResolution: string) => {
+        if (selectedRatio === "auto") onConfigChange("vquality", nextResolution);
+        else applySize(nextResolution, selectedRatio);
+    };
 
     return (
         <ImageSettingsTheme theme={theme}>
             <div className={className} style={{ color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()}>
                 {showTitle ? <div className="text-lg font-semibold">{t("settingsPanels.video.title")}</div> : null}
+                <SettingGroup title={t("settingsPanels.video.resolution")} color={theme.node.muted}>
+                    <div className="grid grid-cols-4 gap-2.5">
+                        {resolutionOptions.map((item) => (
+                            <OptionPill key={item.value} selected={resolution === item.value} theme={theme} onClick={() => selectResolution(item.value)}>
+                                {item.label}
+                            </OptionPill>
+                        ))}
+                        <ResolutionInput value={resolution} theme={theme} onChange={selectResolution} />
+                    </div>
+                </SettingGroup>
                 <SettingGroup title={t("settingsPanels.video.size")} color={theme.node.muted}>
                     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2.5">
                         <DimensionInput prefix="W" value={dimensions.width} disabled={selectedRatio === "auto"} theme={theme} onChange={(value) => updateDimension("width", value, dimensions, onConfigChange)} />
@@ -200,6 +214,17 @@ function SettingGroup({ title, color, children }: { title: string; color: string
             </div>
             {children}
         </div>
+    );
+}
+
+function ResolutionInput({ value, theme, onChange }: { value: string; theme: CanvasTheme; onChange: (value: string) => void }) {
+    return (
+        <label className="flex h-9 overflow-hidden rounded-full border text-sm" style={{ borderColor: theme.node.stroke, color: theme.node.text }}>
+            <input type="number" min={1} className="min-w-0 flex-1 bg-transparent px-3 text-center outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" value={value} onChange={(event) => onChange(event.target.value)} onMouseDown={(event) => event.stopPropagation()} />
+            <span className="grid w-7 place-items-center pr-1" style={{ color: theme.node.muted }}>
+                p
+            </span>
+        </label>
     );
 }
 

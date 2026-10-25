@@ -939,6 +939,34 @@ export async function requestImagePromptOptimize(
     }
 }
 
+export type ImageCaptionEngine = "qwen35" | "florence";
+export type ImageCaptionResult = { prompt: string; engine?: ImageCaptionEngine; promptId?: string; elapsedMs?: number };
+
+export async function requestImageCaption(config: AiConfig, params: { images: ReferenceImage[]; language?: "zh" | "en"; instruction?: string; engine?: ImageCaptionEngine }, options?: RequestOptions): Promise<ImageCaptionResult> {
+    const requestConfig = resolveModelRequestConfig(config, config.model || config.imageModel);
+    const root = localGatewayRoot(requestConfig.baseUrl);
+    if (!root) throw new Error(apiText("promptOptimizeLocalOnly"));
+    const image = params.images[0];
+    if (!image) throw new Error(apiText("requestFailed"));
+    const formData = new FormData();
+    if (params.language) formData.set("language", params.language);
+    if (params.instruction) formData.set("instruction", params.instruction);
+    if (params.engine) formData.set("engine", params.engine);
+    const file = await dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) });
+    formData.append("image", file);
+    try {
+        const response = await axios.post<ImageCaptionResult>(`${root}/v1/prompts/caption`, formData, {
+            headers: aiHeaders(requestConfig),
+            signal: options?.signal,
+            timeout: 240000,
+        });
+        if (!response.data?.prompt) throw new Error(apiText("promptOptimizeEmpty"));
+        return response.data;
+    } catch (error) {
+        throw new Error(readAxiosError(error, apiText("requestFailed")));
+    }
+}
+
 export type UpscaleParameter = {
     key: string;
     label: string;

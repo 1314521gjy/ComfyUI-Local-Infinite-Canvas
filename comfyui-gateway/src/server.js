@@ -686,6 +686,32 @@ export async function createGatewayApp(overrides = {}) {
     }
   });
 
+  app.post("/v1/prompts/caption", upload.any(), async (req, res) => {
+    const body = req.body || {};
+    const files = orderedPromptImages(req.files || []);
+    if (!files.length) throw new HttpError("反推提示词请求缺少图片", { status: 400, code: "missing_reference_image" });
+    const uploadedImages = await uploadImages(comfy, files.slice(0, 1));
+    const abort = abortOnDisconnect(req, res, registerActiveRequest);
+    try {
+      const result = await promptOptimizer.captionImage({
+        uploadedImages,
+        language: body.language,
+        instruction: body.instruction,
+        engine: body.engine,
+        signal: abort.signal,
+      });
+      res.json({ ok: true, ...result });
+    } catch (error) {
+      if (abort.signal.aborted) {
+        logger.info(`image caption 请求被客户端中断 ${req.id}`);
+        return;
+      }
+      throw error;
+    } finally {
+      abort.cleanup();
+    }
+  });
+
   app.post("/v1/videos/upscale", upload.any(), async (req, res) => {
     await registry.reloadIfChanged();
     const body = req.body || {};

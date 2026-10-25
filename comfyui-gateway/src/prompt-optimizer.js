@@ -58,8 +58,12 @@ function outputText(history) {
 export function createPromptOptimizer({ config, comfy, logger }) {
   const workflowPath = path.join(config.rootDir, "prompts", "h3-prompt-enhance.json");
   const imageWorkflowPath = path.join(config.rootDir, "prompts", "image-prompt-enhance.json");
+  const captionWorkflowPath = path.join(config.rootDir, "prompts", "image-caption.json");
+  const captionFlorenceWorkflowPath = path.join(config.rootDir, "prompts", "image-caption-florence.json");
   let template = null;
   let imageTemplate = null;
+  let captionTemplate = null;
+  let captionFlorenceTemplate = null;
 
   function workflowTemplate() {
     if (!template) template = JSON.parse(fs.readFileSync(workflowPath, "utf8"));
@@ -69,6 +73,15 @@ export function createPromptOptimizer({ config, comfy, logger }) {
   function imageWorkflowTemplate() {
     if (!imageTemplate) imageTemplate = JSON.parse(fs.readFileSync(imageWorkflowPath, "utf8"));
     return deepClone(imageTemplate);
+  }
+
+  function captionWorkflowTemplate(engine) {
+    if (engine === "florence") {
+      if (!captionFlorenceTemplate) captionFlorenceTemplate = JSON.parse(fs.readFileSync(captionFlorenceWorkflowPath, "utf8"));
+      return deepClone(captionFlorenceTemplate);
+    }
+    if (!captionTemplate) captionTemplate = JSON.parse(fs.readFileSync(captionWorkflowPath, "utf8"));
+    return deepClone(captionTemplate);
   }
 
   async function optimize({ prompt, mode, duration, referenceNote, uploadedImages = [], signal }) {
@@ -235,5 +248,78 @@ export function createPromptOptimizer({ config, comfy, logger }) {
     }
   }
 
-  return { optimize, optimizeImage };
+  async function captionImage({ uploadedImages = [], language = "zh", instruction = "", engine = "qwen35", signal }) {
+    const image = uploadedImages[0];
+    if (!image) throw new PromptOptimizeError("反推提示词需要 1 张图片", { status: 400, code: "missing_reference_image" });
+    const engineName = engine === "florence" ? "florence" : "qwen35";
+    const english = String(language || "zh").toLowerCase() === "en";
+    const workflow = captionWorkflowTemplate(engineName);
+    workflow["1"].inputs["image"] = imageValue(image);
+    if (engineName === "qwen35") {
+      workflow["3"].inputs["system_prompt"] = String(instruction || "").trim() || (english ? CAPTION_SYSTEM_EN : CAPTION_SYSTEM_ZH);
+      workflow["3"].inputs["custom_prompt"] = english ? CAPTION_USER_EN : CAPTION_USER_ZH;
+    }
+
+    const started = Date.now();
+    const submitted = await comfy.submit(workflow, { signal });
+    const promptId = submitted.promptId;
+    let running = true;
+    let cancelPromise = null;
+    const cancel = () => {
+      if (!running) return Promise.resolve();
+      if (!cancelPromise) cancelPromise = typeof comfy.cancel === "function" ? comfy.cancel(promptId) : comfy.interrupt(promptId);
+      return cancelPromise;
+    };
+    const onAbort = () => {
+      void cancel();
+    };
+    if (signal) signal.addEventListener("abort", onAbort, { once: true });
+    try {
+      const deadline = Date.now() + 180000;
+      let history = null;
+      while (Date.now() < deadline) {
+        if (signal?.aborted) {
+          await cancel();
+          throw new PromptOptimizeError("反推提示词已取消", { status: 400, code: "cancelled" });
+        }
+        history = await comfy.history(promptId);
+        const failure = historyError(history);
+        if (failure) {
+          throw new PromptOptimizeError(`反推提示词失败：${truncate(failure, 1200)}`, {
+            status: 502,
+            code: "comfy_execution_failed",
+            details: failure,
+          });
+        }
+        if (historyCompleted(history)) break;
+        await sleep(1000);
+      }
+      running = false;
+      if (!historyCompleted(history)) {
+        throw new PromptOptimizeError("反推提示词超时", { status: 504, code: "caption_timeout" });
+      }
+      const result = outputText(history).trim();
+      if (!result) {
+        throw new PromptOptimizeError("反推工作流没有返回文本", {
+          status: 502,
+          code: "no_caption_output",
+          details: history.outputs,
+        });
+      }
+      logger?.info?.(`image caption ${engineName} ${english ? "en" : "zh"} ${promptId} ${Date.now() - started}ms`);
+      return { prompt: result, engine: engineName, promptId, elapsedMs: Date.now() - started };
+    } finally {
+      running = false;
+      signal?.removeEventListener("abort", onAbort);
+    }
+  }
+
+  return { optimize, optimizeImage, captionImage };
 }
+
+const CAPTION_SYSTEM_ZH =
+  "你是一位专业的AI图像生成提示词工程师。请详细描述这张图像主体、前景、中景、背景、构图、视觉引导、光影氛围等细节并创作出具有深度、氛围和艺术感或日常业余设备拍摄的图像提示词。\n\n要求：中文提示词，不用出现对图像水印的描述，不要出现无关的文字和符号，不需要总结，限制在800字以内";
+const CAPTION_USER_ZH = "请把这张图片反推成可直接用于 AI 生图的中文提示词。";
+const CAPTION_SYSTEM_EN =
+  "You are a professional prompt engineer for AI image generation. Describe the subject, foreground, middle ground, background, composition, visual guidance, lighting and atmosphere, then write a detailed prompt with depth and mood. Requirements: English prompt only; do not describe watermarks; no irrelevant text or symbols; no summary; at most 800 words.";
+const CAPTION_USER_EN = "Write a detailed English prompt that could recreate this image.";

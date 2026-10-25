@@ -130,7 +130,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
                         onModeChange={changeVideoMode}
                     />
                 ) : mode === "image" ? (
-                    <CanvasImageSettingsPopover config={config} placement="topRight" autoAdjustOverflow={false} buttonClassName="canvas-compact-control !h-10 !w-full !justify-start !rounded-lg !px-2" onConfigChange={(key, value) => onConfigChange(node.id, key === "count" ? { count: Number(value) || 1 } : { [key]: value })} onOpenMaskEditor={() => onOpenMaskEditor?.(node.id)} onOpenOutpaintEditor={() => onOpenOutpaintEditor?.(node.id)} onOpenMossLayoutEditor={() => onOpenMossLayoutEditor?.(node.id)} />
+                    <CanvasImageSettingsPopover config={config} placement="topRight" autoAdjustOverflow={false} buttonClassName="canvas-compact-control !h-10 !w-full !justify-start !rounded-lg !px-2" onConfigChange={(key, value) => onConfigChange(node.id, key === "count" ? { count: Number(value) || 1 } : { [key]: value })} onParamsChange={(params) => onConfigChange(node.id, { params: { ...node.metadata?.params, ...params } })} onOpenMaskEditor={() => onOpenMaskEditor?.(node.id)} onOpenOutpaintEditor={() => onOpenOutpaintEditor?.(node.id)} onOpenMossLayoutEditor={() => onOpenMossLayoutEditor?.(node.id)} />
                 ) : mode === "audio" ? (
                     <CanvasAudioSettingsPopover config={config} placement="topRight" buttonClassName="canvas-compact-control !h-10 !w-full !justify-start !rounded-lg !px-2" onConfigChange={(key, value) => onConfigChange(node.id, audioConfigPatch(key, value))} />
                 ) : (
@@ -196,6 +196,7 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
         audioSpeed: node.metadata?.audioSpeed || globalConfig.audioSpeed || defaultConfig.audioSpeed,
         audioInstructions: node.metadata?.audioInstructions || globalConfig.audioInstructions || defaultConfig.audioInstructions,
         count: String(node.metadata?.count || (mode === "image" ? globalConfig.canvasImageCount || globalConfig.count : globalConfig.count) || defaultConfig.count),
+        params: node.metadata?.params || globalConfig.params,
     };
 }
 
