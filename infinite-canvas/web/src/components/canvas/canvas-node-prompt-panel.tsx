@@ -78,6 +78,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     const canOptimize = isH3 && Boolean(draft.trim()) && !isRunning && !optimizing;
     const canOptimizeImage = isImage && Boolean(draft.trim()) && !isRunning && !optimizing;
     const canCaption = mode === "text" && Boolean(captionEngine) && imageReferences.length > 0 && !isRunning && !optimizing;
+    const captionReady = mode === "text" && Boolean(captionEngine);
     const hasMediaReferences = mentionReferences.some((reference) => reference.kind !== "text");
     const textVideoHasReferences = isH3T2V && hasMediaReferences;
     const frameMode: "first" | "last" | "both" =
@@ -382,17 +383,6 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                         </>
                     ) : (
                         <>
-                            {optimizing ? (
-                                <Button size="small" danger className="!h-9 !rounded-full !px-2" onClick={stopCaption} icon={<Square className="size-3.5 fill-current" />}>
-                                    {t("canvas.promptPanel.captionStop")}
-                                </Button>
-                            ) : (
-                                <Tooltip title={!captionEngine ? t("canvas.promptPanel.captionSelectEngine") : imageReferences.length ? t("canvas.promptPanel.captionHint") : t("canvas.promptPanel.captionNoImage")}>
-                                    <Button size="small" type="text" className="!h-9 !rounded-full !px-2" disabled={!canCaption} onClick={() => void captionPrompt()} icon={<ScanText className="size-4" />}>
-                                        {t("canvas.promptPanel.caption")}
-                                    </Button>
-                                </Tooltip>
-                            )}
                             <ModelPicker
                                 config={config}
                                 value={captionEngine ? `caption:${captionEngine}` : config.model}
@@ -414,19 +404,32 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                 </div>
                 <Button
                     type="primary"
-                    className={`ml-auto !h-10 shrink-0 !rounded-full ${isRunning ? "!min-w-10 !px-2" : "!min-w-16 !px-3"}`}
-                    danger={isRunning}
-                    disabled={!isRunning && !draft.trim()}
-                    title={isRunning ? t("canvas.promptPanel.stop") : undefined}
-                    onClick={() => (isRunning ? onStop(node.id) : submit())}
-                    aria-label={t(isRunning ? "canvas.promptPanel.stopGeneration" : "canvas.promptPanel.generate")}
+                    className={`ml-auto !h-10 shrink-0 !rounded-full ${isRunning || (captionReady && optimizing) ? "!min-w-10 !px-2" : "!min-w-16 !px-3"}`}
+                    danger={isRunning || (captionReady && optimizing)}
+                    disabled={!isRunning && !(captionReady ? imageReferences.length : draft.trim())}
+                    title={captionReady ? (optimizing ? t("canvas.promptPanel.captionStop") : imageReferences.length ? t("canvas.promptPanel.captionHint") : t("canvas.promptPanel.captionNoImage")) : isRunning ? t("canvas.promptPanel.stop") : undefined}
+                    onClick={() => {
+                        if (isRunning) {
+                            onStop(node.id);
+                            return;
+                        }
+                        if (captionReady) {
+                            if (optimizing) stopCaption();
+                            else void captionPrompt();
+                            return;
+                        }
+                        submit();
+                    }}
+                    aria-label={t(isRunning || (captionReady && optimizing) ? "canvas.promptPanel.captionStop" : captionReady ? "canvas.promptPanel.caption" : "canvas.promptPanel.generate")}
                 >
                     <span className="flex items-center gap-1.5">
-                        {isRunning ? (
+                        {isRunning || (captionReady && optimizing) ? (
                             <>
                                 <LoaderCircle className="size-4 animate-spin" />
                                 <Square className="size-3.5 fill-current" />
                             </>
+                        ) : captionReady ? (
+                            <ScanText className="size-4" />
                         ) : (
                             <ArrowUp className="size-4" />
                         )}
