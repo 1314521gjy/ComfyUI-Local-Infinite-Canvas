@@ -19,6 +19,7 @@ import { requestImageCaption, requestImagePromptOptimize, requestPromptOptimize,
 import { videoModelForWorkflow, videoModelModePatch } from "@/lib/canvas/video-model-mode";
 import { CanvasNodeReferenceBar } from "./canvas-node-reference-bar";
 import { abortCaptionJob, hasCaptionJob, registerCaptionJob, releaseCaptionJob } from "@/lib/canvas/caption-jobs";
+import { abortPromptOptimizeJob, hasPromptOptimizeJob, registerPromptOptimizeJob, releasePromptOptimizeJob } from "@/lib/canvas/prompt-optimize-jobs";
 
 export type CanvasNodeGenerationMode = CanvasGenerationMode;
 
@@ -60,9 +61,6 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     draftRef.current = draft;
     promptRef.current = prompt;
     const [expanded, setExpanded] = useState(false);
-    const [optimizing, setOptimizing] = useState(false);
-    const [optimizedPrompt, setOptimizedPrompt] = useState("");
-    const [optimizeError, setOptimizeError] = useState("");
     const lastAutoPromptRef = useRef("");
     const imageReferences = mentionReferences.filter((reference) => reference.kind === "image");
     const referencePrompt = mentionReferences
@@ -74,8 +72,12 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     const isH3T2V = mode === "video" && workflowId === "video-h3-t2v";
     const isH3 = mode === "video" && (workflowId === "video-h3-t2v" || workflowId === "video-h3-frames" || workflowId === "video-h3-ref2va");
     const isImage = mode === "image";
-    const canOptimize = isH3 && Boolean(draft.trim()) && !isRunning && !optimizing;
-    const canOptimizeImage = isImage && Boolean(draft.trim()) && !isRunning && !optimizing;
+    const optimizeStatus = node.metadata?.promptOptimizeStatus;
+    const optimizeRunning = optimizeStatus === "running";
+    const optimizeResult = node.metadata?.promptOptimizePrompt || "";
+    const optimizeError = node.metadata?.promptOptimizeError || "";
+    const canOptimize = isH3 && Boolean(draft.trim()) && !isRunning && !optimizeRunning;
+    const canOptimizeImage = isImage && Boolean(draft.trim()) && !isRunning && !optimizeRunning;
     const captionReady = mode === "text" && Boolean(captionEngine);
     const captionStatus = mode === "text" ? node.metadata?.captionStatus : undefined;
     const captionRunning = mode === "text" && captionStatus === "running";
@@ -189,7 +191,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
 
     const optimizePrompt = async () => {
         const text = draft.trim();
-        if (!text || optimizing) return;
+        if (!text || optimizeRunning) return;
         commitPrompt(draft);
         const selectedRefs =
             workflowId === "video-h3-ref2va"
@@ -213,9 +215,9 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                     : frameMode === "both" && selectedRefs.length >= 2
                       ? "首尾帧视频(FL2VA)"
                       : "首帧图生视频(I2VA)";
-        setOptimizing(true);
-        setOptimizeError("");
-        setOptimizedPrompt("");
+        const controller = new AbortController();
+        registerPromptOptimizeJob(node.id, controller);
+        onConfigChange(node.id, { promptOptimizeStatus: "running", promptOptimizeKind: "h3", promptOptimizePrompt: undefined, promptOptimizeError: undefined });
         try {
             const images = selectedRefs.length ? await resolveCanvasReferenceImages(selectedRefs, nodes) : [];
             const result = await requestPromptOptimize(config, {
@@ -224,23 +226,24 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                 duration: Number(config.videoSeconds) || 5,
                 referenceNote,
                 images,
-            });
-            setOptimizedPrompt(result.prompt);
+            }, { signal: controller.signal });
+            onConfigChange(node.id, { promptOptimizeStatus: "done", promptOptimizePrompt: result.prompt });
         } catch (error) {
-            setOptimizeError(error instanceof Error ? error.message : t("canvas.promptPanel.optimizeFailed"));
+            if (controller.signal.aborted) clearOptimizePreview();
+            else onConfigChange(node.id, { promptOptimizeStatus: "error", promptOptimizeError: error instanceof Error ? error.message : t("canvas.promptPanel.optimizeFailed") });
         } finally {
-            setOptimizing(false);
+            releasePromptOptimizeJob(node.id, controller);
         }
     };
 
     const optimizeImagePrompt = async () => {
         const text = draft.trim();
-        if (!text || optimizing) return;
+        if (!text || optimizeRunning) return;
         commitPrompt(draft);
         const selectedRefs = imageReferences.slice(0, 8);
-        setOptimizing(true);
-        setOptimizeError("");
-        setOptimizedPrompt("");
+        const controller = new AbortController();
+        registerPromptOptimizeJob(node.id, controller);
+        onConfigChange(node.id, { promptOptimizeStatus: "running", promptOptimizeKind: "image", promptOptimizePrompt: undefined, promptOptimizeError: undefined });
         try {
             const images = selectedRefs.length ? await resolveCanvasReferenceImages(selectedRefs, nodes) : [];
             const result = await requestImagePromptOptimize(config, {
@@ -248,17 +251,33 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                 mode: images.length ? "image" : "text",
                 language: "zh",
                 images,
-            });
-            setOptimizedPrompt(result.prompt);
+            }, { signal: controller.signal });
+            onConfigChange(node.id, { promptOptimizeStatus: "done", promptOptimizePrompt: result.prompt });
         } catch (error) {
-            setOptimizeError(error instanceof Error ? error.message : t("canvas.promptPanel.optimizeFailed"));
+            if (controller.signal.aborted) clearOptimizePreview();
+            else onConfigChange(node.id, { promptOptimizeStatus: "error", promptOptimizeError: error instanceof Error ? error.message : t("canvas.promptPanel.optimizeFailed") });
         } finally {
-            setOptimizing(false);
+            releasePromptOptimizeJob(node.id, controller);
         }
     };
 
+    useEffect(() => {
+        if (node.metadata?.promptOptimizeStatus !== "running" || hasPromptOptimizeJob(node.id)) return;
+        clearOptimizePreview();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [node.id, node.metadata?.promptOptimizeStatus]);
+
     const clearCaptionPreview = () => {
         onConfigChange(node.id, { captionStatus: undefined, captionPrompt: undefined, captionError: undefined });
+    };
+
+    const clearOptimizePreview = () => {
+        onConfigChange(node.id, { promptOptimizeStatus: undefined, promptOptimizeKind: undefined, promptOptimizePrompt: undefined, promptOptimizeError: undefined });
+    };
+
+    const stopOptimize = () => {
+        abortPromptOptimizeJob(node.id);
+        clearOptimizePreview();
     };
 
     const captionPrompt = async () => {
@@ -335,12 +354,12 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                                 type="text"
                                 className="!h-8 shrink-0 !rounded-full !px-2 text-xs"
                                 style={{ color: theme.node.text }}
-                                icon={optimizing ? <LoaderCircle className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+                                icon={optimizeRunning ? <LoaderCircle className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
                                 disabled={!canOptimize}
                                 onClick={() => void optimizePrompt()}
                                 aria-label={t("canvas.promptPanel.optimize")}
                             >
-                                {optimizing ? t("canvas.promptPanel.optimizing") : t("canvas.promptPanel.optimize")}
+                                {optimizeRunning ? t("canvas.promptPanel.optimizing") : t("canvas.promptPanel.optimize")}
                             </Button>
                         </Tooltip>
                     ) : null}
@@ -350,12 +369,12 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                                 type="text"
                                 className="!h-8 shrink-0 !rounded-full !px-2 text-xs"
                                 style={{ color: theme.node.text }}
-                                icon={optimizing ? <LoaderCircle className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+                                icon={optimizeRunning ? <LoaderCircle className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
                                 disabled={!canOptimizeImage}
                                 onClick={() => void optimizeImagePrompt()}
                                 aria-label={t("canvas.promptPanel.optimizeImage")}
                             >
-                                {optimizing ? t("canvas.promptPanel.optimizing") : t("canvas.promptPanel.optimizeImage")}
+                                {optimizeRunning ? t("canvas.promptPanel.optimizing") : t("canvas.promptPanel.optimizeImage")}
                             </Button>
                         </Tooltip>
                     ) : null}
@@ -453,17 +472,14 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                 </Button>
             </div>
             {(() => {
-                const previewRunning = mode === "text" ? captionRunning : optimizing;
-                const previewPrompt = mode === "text" ? captionResult : optimizedPrompt;
+                const previewRunning = mode === "text" ? captionRunning : optimizeRunning;
+                const previewPrompt = mode === "text" ? captionResult : optimizeResult;
                 const previewError = mode === "text" ? captionError : optimizeError;
                 const previewVisible = Boolean(previewRunning || previewPrompt || previewError);
                 if (!previewVisible) return null;
                 const clearPreview = () => {
                     if (mode === "text") clearCaptionPreview();
-                    else {
-                        setOptimizedPrompt("");
-                        setOptimizeError("");
-                    }
+                    else clearOptimizePreview();
                 };
                 return (
                 <div className="mt-2 rounded-xl border p-2" style={{ borderColor: theme.toolbar.border, background: theme.toolbar.panel }}>
@@ -476,6 +492,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                             icon={<X className="size-3.5" />}
                             onClick={() => {
                                 if (mode === "text" && captionRunning) stopCaption();
+                                else if (mode !== "text" && optimizeRunning) stopOptimize();
                                 else clearPreview();
                             }}
                             aria-label={t(mode === "text" && captionRunning ? "canvas.promptPanel.captionStop" : "canvas.promptPanel.optimizeCancel")}

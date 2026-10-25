@@ -92,6 +92,10 @@ export type CanvasNodeMetadata = {
     captionPrompt?: string;
     captionError?: string;
     captionEngineUsed?: "qwen35" | "florence";
+    promptOptimizeStatus?: "running" | "done" | "error";
+    promptOptimizeKind?: "h3" | "image";
+    promptOptimizePrompt?: string;
+    promptOptimizeError?: string;
     outpaint?: { left: number; top: number; right: number; bottom: number; width: number; height: number };
     layout?: CanvasMossLayout;
     audioVoice?: string;
