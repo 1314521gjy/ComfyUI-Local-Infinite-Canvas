@@ -1,7 +1,7 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from "react";
 import { App, Empty, Input, Popconfirm, Select, Spin, Tag } from "antd";
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Check, ChevronRight, Download, Eye, FileText, Image as ImageIcon, LayoutGrid, ListChecks, Music2, Plus, Rows3, Search, Settings2, Square, Trash2, Type, Video } from "lucide-react";
+import { BookOpen, Check, ChevronRight, Download, Eye, FileText, Image as ImageIcon, LayoutGrid, ListChecks, Music2, Plus, RefreshCw, Rows3, Search, Settings2, Sparkles, Square, Trash2, Type, Video } from "lucide-react";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 
@@ -15,6 +15,8 @@ import { fetchSourcePrompts, type Prompt } from "@/services/api/prompts";
 import { uploadMediaFile } from "@/services/file-storage";
 import { previewUrlFor, subscribeImagePreviews, getImagePreviewRevision, uploadImage } from "@/services/image-storage";
 import { useAssetStore, type Asset, type AssetKind } from "@/stores/use-asset-store";
+import { useEffectiveConfig } from "@/stores/use-config-store";
+import { fetchFreeWorkflows, type FreeWorkflowSummary } from "@/services/api/free-workflow";
 import { usePromptSourceStore } from "@/stores/use-prompt-source-store";
 import { CANVAS_SIDE_PANEL_MAX_WIDTH, CANVAS_SIDE_PANEL_MIN_WIDTH, CANVAS_SIDE_PANEL_MOTION_MS, useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -25,7 +27,7 @@ import type { InsertAssetPayload } from "./asset-picker-modal";
 const PANEL_MOTION_SECONDS = CANVAS_SIDE_PANEL_MOTION_MS / 1000;
 const PANEL_EASE = [0.22, 1, 0.36, 1] as const;
 
-type PanelTab = "canvas" | "assets" | "prompts";
+type PanelTab = "canvas" | "assets" | "free" | "prompts";
 
 type Props = {
     nodes: CanvasNodeData[];
@@ -36,6 +38,7 @@ type Props = {
     onHoverNode: (nodeId: string | null) => void;
     onHoverImage?: (nodeId: string, imageId: string | null) => void;
     onInsertAsset: (payload: InsertAssetPayload) => void;
+    onAddFreeCard?: (workflow: FreeWorkflowSummary) => void;
 };
 
 const NODE_TYPE_ICON: Record<string, typeof Square> = {
@@ -44,6 +47,7 @@ const NODE_TYPE_ICON: Record<string, typeof Square> = {
     [CanvasNodeType.Audio]: Music2,
     [CanvasNodeType.Text]: Type,
     [CanvasNodeType.Config]: Settings2,
+    [CanvasNodeType.FreeCard]: Sparkles,
     [CanvasNodeType.Group]: Square,
 };
 
@@ -54,7 +58,7 @@ const STATUS_COLOR: Record<string, string> = {
     idle: "transparent",
 };
 
-export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, onPreviewImage, onHoverNode, onHoverImage, onInsertAsset }: Props) {
+export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, onPreviewImage, onHoverNode, onHoverImage, onInsertAsset, onAddFreeCard }: Props) {
     const { t } = useTranslation();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const [tab, setTab] = useState<PanelTab>("canvas");
@@ -106,6 +110,7 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreview
                 <div className="flex items-center gap-5 px-4 pt-3.5">
                     <TabButton label={t("canvas.sidePanel.canvas")} active={tab === "canvas"} theme={theme} onClick={() => setTab("canvas")} />
                     <TabButton label={t("canvas.sidePanel.assets")} active={tab === "assets"} theme={theme} onClick={() => setTab("assets")} />
+                    {LOCAL_ONLY ? <TabButton label={t("canvas.sidePanel.freeCards")} active={tab === "free"} theme={theme} onClick={() => setTab("free")} /> : null}
                     {!LOCAL_ONLY ? <TabButton label={t("canvas.sidePanel.prompts")} active={tab === "prompts"} theme={theme} onClick={() => setTab("prompts")} /> : null}
                 </div>
                 <div className="mt-2 min-h-0 flex-1 overflow-hidden">
@@ -113,6 +118,8 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreview
                         <CanvasNodesTab nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={onFocusNode} onPreviewNode={onPreviewNode} onPreviewImage={onPreviewImage} onHoverNode={onHoverNode} onHoverImage={onHoverImage} theme={theme} />
                     ) : tab === "assets" ? (
                         <CanvasAssetsTab onInsert={onInsertAsset} theme={theme} />
+                    ) : tab === "free" ? (
+                        <CanvasFreeCardsTab theme={theme} onAdd={onAddFreeCard} />
                     ) : !LOCAL_ONLY ? (
                         <CanvasPromptsTab onInsert={onInsertAsset} theme={theme} />
                     ) : null}
@@ -136,7 +143,7 @@ function TabButton({ label, active, theme, onClick }: { label: string; active: b
 // Canvas tab: list nodes and center, zoom, and select the clicked node.
 // ---------------------------------------------------------------------------
 
-const NODE_FILTER_VALUES = ["all", CanvasNodeType.Image, CanvasNodeType.Video, CanvasNodeType.Text, CanvasNodeType.Audio, CanvasNodeType.Config, CanvasNodeType.Group];
+const NODE_FILTER_VALUES = ["all", CanvasNodeType.Image, CanvasNodeType.Video, CanvasNodeType.Text, CanvasNodeType.Audio, CanvasNodeType.Config, CanvasNodeType.FreeCard, CanvasNodeType.Group];
 
 function nodePreviewText(node: CanvasNodeData) {
     if (node.type === CanvasNodeType.Text) return node.metadata?.content || node.metadata?.prompt || "";
@@ -741,6 +748,90 @@ function PromptRow({ item, theme, onInsert, onView }: { item: Prompt; theme: Can
                 >
                     <Plus className="size-3.5" />
                 </button>
+            </div>
+        </div>
+    );
+}
+
+function CanvasFreeCardsTab({ theme, onAdd }: { theme: CanvasTheme; onAdd?: (workflow: FreeWorkflowSummary) => void }) {
+    const { t } = useTranslation();
+    const config = useEffectiveConfig();
+    const [items, setItems] = useState<FreeWorkflowSummary[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState("");
+
+    const load = async () => {
+        setLoading(true);
+        setError("");
+        try {
+            setItems(await fetchFreeWorkflows(config, true));
+        } catch (reason) {
+            setError(reason instanceof Error ? reason.message : t("canvas.sidePanel.freeCardsLoadFailed"));
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        void load();
+        // Refresh when the local gateway/channel changes.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [config.baseUrl]);
+
+    return (
+        <div className="flex h-full flex-col">
+            <div className="flex items-center gap-2 px-3 pb-2.5 pt-1">
+                <span className="min-w-0 truncate text-xs font-medium opacity-60">{t("canvas.sidePanel.freeCards")}</span>
+                {items.length ? <span className="shrink-0 text-xs opacity-35">{items.length}</span> : null}
+                <button
+                    type="button"
+                    className="ml-auto grid size-6 place-items-center rounded-md opacity-55 transition hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"
+                    title={t("canvas.sidePanel.freeCardsRefresh")}
+                    aria-label={t("canvas.sidePanel.freeCardsRefresh")}
+                    onClick={() => void load()}
+                >
+                    <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
+                </button>
+            </div>
+            <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+                {loading ? (
+                    <div className="grid h-32 place-items-center"><Spin size="small" /></div>
+                ) : error ? (
+                    <div className="grid h-32 place-items-center px-4 text-center text-xs opacity-60">{error}</div>
+                ) : items.length ? (
+                    <div className="space-y-1">
+                        {items.map((item) => (
+                            <div key={item.id} className="group flex items-center gap-2.5 rounded-lg px-2 py-2 transition hover:bg-black/5 dark:hover:bg-white/5">
+                                <span className="grid size-9 shrink-0 place-items-center rounded-lg" style={{ background: theme.node.panel }}>
+                                    <Sparkles className="size-4 opacity-60" />
+                                </span>
+                                <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onAdd?.(item)} disabled={!onAdd}>
+                                    <div className="flex min-w-0 items-center gap-1.5">
+                                        <span className="truncate text-sm font-medium">{item.name}</span>
+                                        {item.sourceChanged ? <span className="size-1.5 shrink-0 rounded-full bg-amber-500" title={t("canvas.freeCard.sourceChanged")} /> : null}
+                                    </div>
+                                    <div className="mt-0.5 truncate text-[11px] opacity-50">
+                                        {item.outputType === "video" ? t("canvas.freeCard.videoWorkflow") : t("canvas.freeCard.imageWorkflow")} · {item.sourceRel}
+                                    </div>
+                                </button>
+                                <button
+                                    type="button"
+                                    className="grid size-7 shrink-0 place-items-center rounded-md opacity-60 transition hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10"
+                                    style={{ color: theme.toolbar.activeText }}
+                                    title={t("canvas.sidePanel.addFreeCard")}
+                                    aria-label={t("canvas.sidePanel.addFreeCard")}
+                                    onClick={() => onAdd?.(item)}
+                                >
+                                    <Plus className="size-3.5" />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={<span className="text-xs opacity-55">{t("canvas.sidePanel.freeCardsEmpty")}</span>}>
+                        <div className="text-xs opacity-45">{t("canvas.sidePanel.freeCardsHint")}</div>
+                    </Empty>
+                )}
             </div>
         </div>
     );

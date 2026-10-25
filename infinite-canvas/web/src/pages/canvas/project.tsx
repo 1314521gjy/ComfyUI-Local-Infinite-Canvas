@@ -6,6 +6,7 @@ import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 
 import { requestEdit, requestGeneration, requestImageQuestion, requestUpscale } from "@/services/api/image";
+import { createFreeWorkflowVideoTask, requestFreeWorkflowImage, type FreeWorkflowSummary } from "@/services/api/free-workflow";
 import { bindStepProgress, unbindStepProgress } from "@/services/api/step-progress";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { createVideoGenerationTask, createVideoUpscaleTask, isVideoTaskFailed, storeGeneratedVideo, waitForVideoGenerationTask, type VideoPreview } from "@/services/api/video";
@@ -42,6 +43,7 @@ import { InfiniteCanvas } from "@/components/canvas/infinite-canvas";
 import { Minimap } from "@/components/canvas/canvas-mini-map";
 import { CanvasNode } from "@/components/canvas/canvas-node";
 import { CanvasNodePromptPanel, type CanvasNodeGenerationMode } from "@/components/canvas/canvas-node-prompt-panel";
+import { CanvasFreeCardPanel, freeCardInfoFromSummary } from "@/components/canvas/canvas-free-card-panel";
 import { CanvasToolbar } from "@/components/canvas/canvas-toolbar";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { CanvasSidePanel } from "@/components/canvas/canvas-side-panel";
@@ -3382,6 +3384,186 @@ function InfiniteCanvasPage() {
     // CanvasNode uses React.memo, but new prop references would invalidate it on every render and rerender every node
     // during click, hover, or viewport changes, which is especially expensive for Markdown. These useCallback values
     // and their memoized map/handler dependencies remain stable during interaction, so unchanged nodes do not rerender.
+    const generateFreeCard = useCallback(
+        async (nodeId: string, prompt: string) => {
+            const sourceNode = nodesRef.current.find((item) => item.id === nodeId);
+            const info = sourceNode?.metadata?.freeCard;
+            if (!sourceNode || !info) return;
+            const effectivePrompt = prompt.trim();
+            if (info.prompt && !effectivePrompt) {
+                message.warning(t("canvas.freeCard.needPrompt"));
+                return;
+            }
+            const generationConfig = buildGenerationConfig(effectiveConfig, sourceNode, info.outputType === "video" ? "video" : "image");
+            if (!isAiConfigReady(generationConfig, generationConfig.model)) {
+                openConfigDialog(true);
+                return;
+            }
+            const runController = startGenerationRequest(nodeId, nodeId, nodeId);
+            setRunningNodeId(nodeId);
+            setNodes((prev) => prev.map((item) => (item.id === nodeId ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_LOADING, errorDetails: undefined, prompt: effectivePrompt, composerContent: effectivePrompt } } : item)));
+            let childId = "";
+            try {
+                const context = await hydrateNodeGenerationContext(buildNodeGenerationContext(nodeId, nodesRef.current, connectionsRef.current, effectivePrompt));
+                if (runController.signal.aborted) return;
+                const references = context.referenceImages.slice(0, Math.max(0, info.imageInputs));
+                const count = info.count != null ? Math.max(1, Math.min(15, Math.floor(Number(sourceNode.metadata?.count ?? info.count) || 1))) : 1;
+                const size = sourceNode.metadata?.size || (info.size ? `${info.size.width}x${info.size.height}` : undefined);
+                const seed = sourceNode.metadata?.seed || info.seed || "";
+                const seedFixed = (sourceNode.metadata?.seedFixed || "false") === "true";
+
+                if (info.outputType === "video") {
+                    childId = nanoid();
+                    const spec = NODE_DEFAULT_SIZE[CanvasNodeType.Video];
+                    const videoNode: CanvasNodeData = {
+                        id: childId,
+                        type: CanvasNodeType.Video,
+                        title: effectivePrompt.slice(0, 32) || info.name,
+                        position: { x: sourceNode.position.x + sourceNode.width + 96, y: sourceNode.position.y },
+                        width: spec.width,
+                        height: spec.height,
+                        metadata: {
+                            prompt: effectivePrompt,
+                            status: NODE_STATUS_LOADING,
+                            model: effectiveConfig.videoModel || effectiveConfig.model,
+                            size,
+                            freeWorkflowId: info.id,
+                        },
+                    };
+                    setNodes((prev) => [...prev, videoNode]);
+                    setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: nodeId, toNodeId: childId }]);
+                    const controller = startGenerationRequest(childId, nodeId, nodeId, runController);
+                    const taskId = await createFreeWorkflowVideoTask(effectiveConfig, info.id, { prompt: effectivePrompt, size, count, seed, seedFixed, images: references, signal: controller.signal });
+                    setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, metadata: { ...item.metadata, videoTaskId: taskId, videoTaskProvider: "openai" } } : item)));
+                    const localVideoModel = effectiveConfig.videoModel || effectiveConfig.model;
+                    const video = await storeGeneratedVideo(
+                        await waitForVideoGenerationTask(
+                            effectiveConfig,
+                            { id: taskId, provider: "openai", model: localVideoModel },
+                            {
+                                signal: controller.signal,
+                                onPreview: (preview) => updateVideoPreview(childId, preview),
+                                onSteps: (steps) => updateVideoSteps(childId, steps),
+                            },
+                        ),
+                    );
+                    setNodes((prev) =>
+                        prev.map((item) =>
+                            item.id === childId
+                                ? applyGeneratedVideo(item, video, { prompt: effectivePrompt, model: localVideoModel, size, freeWorkflowId: info.id, previewUrl: undefined, previewMime: undefined, previewStep: undefined, previewTotal: undefined })
+                                : item.id === nodeId
+                                  ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_SUCCESS, errorDetails: undefined } }
+                                  : item,
+                        ),
+                    );
+                } else {
+                    childId = nanoid();
+                    const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
+                    const imageIds = Array.from({ length: count }, () => nanoid());
+                    const imageNode: CanvasNodeData = {
+                        id: childId,
+                        type: CanvasNodeType.Image,
+                        title: effectivePrompt.slice(0, 32) || info.name,
+                        position: { x: sourceNode.position.x + sourceNode.width + 96, y: sourceNode.position.y + sourceNode.height / 2 - imageConfig.height / 2 },
+                        width: imageConfig.width,
+                        height: imageConfig.height,
+                        metadata: {
+                            prompt: effectivePrompt,
+                            status: NODE_STATUS_LOADING,
+                            model: info.name,
+                            size,
+                            generationType: "generation",
+                            count,
+                            freeWorkflowId: info.id,
+                            images: imageIds.map((id) => ({ id, status: NODE_STATUS_LOADING, content: "", naturalWidth: 0, naturalHeight: 0, bytes: 0, mimeType: "" })),
+                        },
+                    };
+                    setNodes((prev) => [...prev, imageNode]);
+                    setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: nodeId, toNodeId: childId }]);
+                    const controller = startGenerationRequest(childId, nodeId, nodeId, runController);
+                    const images = await requestFreeWorkflowImage(effectiveConfig, info.id, { prompt: effectivePrompt, size, count, seed, seedFixed, images: references, signal: controller.signal });
+                    const uploadedItems: CanvasNodeImage[] = [];
+                    let firstUploaded: Awaited<ReturnType<typeof uploadImage>> | null = null;
+                    for (let index = 0; index < images.length; index += 1) {
+                        const uploaded = await uploadImage(images[index].dataUrl, { signal: controller.signal });
+                        if (!firstUploaded) firstUploaded = uploaded;
+                        uploadedItems.push({ id: imageIds[index] || nanoid(), status: NODE_STATUS_SUCCESS, content: uploaded.url, storageKey: uploaded.storageKey, naturalWidth: uploaded.width, naturalHeight: uploaded.height, bytes: uploaded.bytes, mimeType: uploaded.mimeType });
+                    }
+                    if (!firstUploaded || !uploadedItems.length) throw new Error(t("canvas.projectPage.generationFailed"));
+                    const imageSize = fitNodeSize(firstUploaded.width, firstUploaded.height, imageConfig.width, imageConfig.height);
+                    setNodes((prev) =>
+                        prev.map((item) =>
+                            item.id === childId
+                                ? {
+                                      ...item,
+                                      width: imageSize.width,
+                                      height: imageSize.height,
+                                      position: { x: item.position.x + item.width / 2 - imageSize.width / 2, y: item.position.y + item.height / 2 - imageSize.height / 2 },
+                                      metadata: {
+                                          ...item.metadata,
+                                          ...imageMetadata(firstUploaded),
+                                          images: uploadedItems,
+                                          primaryImageId: uploadedItems[0].id,
+                                          prompt: effectivePrompt,
+                                          model: info.name,
+                                          size,
+                                          generationType: "generation",
+                                          count,
+                                          freeWorkflowId: info.id,
+                                          status: NODE_STATUS_SUCCESS,
+                                          errorDetails: undefined,
+                                      },
+                                  }
+                                : item.id === nodeId
+                                  ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_SUCCESS, errorDetails: undefined } }
+                                  : item,
+                        ),
+                    );
+                }
+            } catch (error) {
+                if (isGenerationCanceled(error)) {
+                    setNodes((prev) => prev.map((item) => (item.id === nodeId ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_IDLE, errorDetails: undefined } } : item)));
+                    return;
+                }
+                const errorDetails = error instanceof Error ? error.message : t("canvas.projectPage.generationFailed");
+                message.error(errorDetails);
+                setNodes((prev) =>
+                    prev.map((item) =>
+                        item.id === nodeId
+                            ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails } }
+                            : item.id === childId
+                              ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails } }
+                              : item,
+                    ),
+                );
+            } finally {
+                finishGenerationRequest(childId, runController);
+                finishGenerationRequest(nodeId, runController);
+                setRunningNodeId(null);
+            }
+        },
+        [effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, startGenerationRequest, t, updateVideoPreview, updateVideoSteps],
+    );
+
+    const addFreeCardFromLibrary = useCallback(
+        (workflow: FreeWorkflowSummary) => {
+            const card = freeCardInfoFromSummary(workflow);
+            const node = createCanvasNode(CanvasNodeType.FreeCard, getCanvasCenter(), {
+                freeCard: card,
+                size: workflow.size ? `${workflow.size.width}x${workflow.size.height}` : undefined,
+                count: workflow.count ?? 1,
+                seed: workflow.seed || "",
+                seedFixed: "false",
+                prompt: "",
+            });
+            setNodes((prev) => [...prev, node]);
+            setSelectedNodeIds(new Set([node.id]));
+            setSelectedConnectionId(null);
+            setDialogNodeId(node.id);
+        },
+        [getCanvasCenter],
+    );
+
     const handleNodeHoverStart = useCallback((nodeId: string) => {
         if (nodeDraggingRef.current) return;
         setHoveredNodeId(nodeId);
@@ -3446,6 +3628,18 @@ function InfiniteCanvasPage() {
         (panelNode: CanvasNodeData) =>
             getNodeDefinition(panelNode.type)?.Panel ? (
                 renderPluginPanel(panelNode)
+            ) : panelNode.type === CanvasNodeType.FreeCard ? (
+                <CanvasFreeCardPanel
+                    node={panelNode}
+                    nodes={nodes}
+                    connectedNodes={connectedNodesByNodeId.get(panelNode.id) || []}
+                    isRunning={runningNodeId === panelNode.id}
+                    onChange={(patch) => handleConfigNodeChange(panelNode.id, patch)}
+                    onGenerate={(nodeId, prompt) => void generateFreeCard(nodeId, prompt)}
+                    onStop={confirmStopGeneration}
+                    onDisconnectReference={disconnectNodeReference}
+                    onStartReferenceSelection={startNodeReferenceSelection}
+                />
             ) : panelNode.type === CanvasNodeType.Config ? (
                 <CanvasConfigComposer
                     nodeId={panelNode.id}
@@ -3481,7 +3675,7 @@ function InfiniteCanvasPage() {
                     }}
                 />
             ),
-        [configInputsById, confirmStopGeneration, connectedNodesByNodeId, disconnectNodeReference, handleConfigNodeChange, handleGenerateNode, handleNodePromptChange, mentionReferencesByNodeId, nodes, renderPluginPanel, runningNodeId, startNodeReferenceSelection],
+        [configInputsById, confirmStopGeneration, connectedNodesByNodeId, disconnectNodeReference, generateFreeCard, handleConfigNodeChange, handleGenerateNode, handleNodePromptChange, mentionReferencesByNodeId, nodes, renderPluginPanel, runningNodeId, startNodeReferenceSelection],
     );
 
     const renderNodeContentPanel = useCallback(
@@ -3537,7 +3731,7 @@ function InfiniteCanvasPage() {
 
     return (
         <main className="flex h-full min-h-0 overflow-hidden" style={{ background: theme.canvas.background, color: theme.node.text }}>
-            <CanvasSidePanel nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={focusNode} onPreviewNode={setPreviewNodeId} onPreviewImage={handleSidebarPreviewImage} onHoverNode={handleSidebarHoverNode} onHoverImage={handleSidebarHoverImage} onInsertAsset={handleAssetInsert} />
+            <CanvasSidePanel nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={focusNode} onPreviewNode={setPreviewNodeId} onPreviewImage={handleSidebarPreviewImage} onHoverNode={handleSidebarHoverNode} onHoverImage={handleSidebarHoverImage} onInsertAsset={handleAssetInsert} onAddFreeCard={addFreeCardFromLibrary} />
             <section className="relative min-w-0 flex-1 overflow-hidden">
                 <CanvasTopBar
                     title={currentProject?.title || t("canvas.projectPage.untitledCanvas")}
@@ -3756,6 +3950,7 @@ function InfiniteCanvasPage() {
                     onAddAudio={() => createNode(CanvasNodeType.Audio)}
                     onAddText={() => createNode(CanvasNodeType.Text)}
                     onAddConfig={() => createNode(CanvasNodeType.Config)}
+                    onAddFreeCard={() => createNode(CanvasNodeType.FreeCard)}
                     onAddGroup={() => createNode(CanvasNodeType.Group)}
                     onAddExtensionNode={(type) => createNode(type)}
                     onUndo={undoCanvas}

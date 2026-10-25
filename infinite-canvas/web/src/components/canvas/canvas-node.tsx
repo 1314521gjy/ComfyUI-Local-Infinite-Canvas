@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
-import { ChevronRight, Copy, Download, Group, Image as ImageIcon, Music2, Puzzle, RefreshCw, Star, Trash2, Video } from "lucide-react";
+import { ChevronRight, Copy, Download, Group, Image as ImageIcon, Music2, Puzzle, RefreshCw, Sparkles, Star, Trash2, Video } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes } from "@/lib/image-utils";
@@ -490,8 +490,27 @@ const nodeContentRenderers = {
     [CanvasNodeType.Config]: EmptyImageContent,
     [CanvasNodeType.Video]: VideoNodeContent,
     [CanvasNodeType.Audio]: AudioNodeContent,
+    [CanvasNodeType.FreeCard]: FreeCardNodeContent,
     [CanvasNodeType.Group]: GroupNodeContent,
 } satisfies Record<CanvasNodeType, (props: NodeContentRendererProps) => ReactNode>;
+
+function FreeCardNodeContent({ node, theme }: NodeContentRendererProps) {
+    const { t } = useTranslation();
+    const info = node.metadata?.freeCard;
+    return (
+        <div className="flex h-full w-full flex-col items-center justify-center gap-3 px-6 text-center">
+            <div className="grid size-12 place-items-center rounded-2xl" style={{ background: theme.toolbar.activeBg, color: theme.node.text }}>
+                <Sparkles className="size-6" />
+            </div>
+            <div className="max-w-full truncate text-sm font-semibold" style={{ color: theme.node.text }}>
+                {info?.name || t("canvas.freeCard.emptyTitle")}
+            </div>
+            <div className="text-xs" style={{ color: theme.node.muted }}>
+                {info ? (info.outputType === "video" ? t("canvas.freeCard.videoWorkflow") : t("canvas.freeCard.imageWorkflow")) : t("canvas.freeCard.emptyHint")}
+            </div>
+        </div>
+    );
+}
 
 function GroupNodeContent({ node, theme, groupChildCount }: NodeContentRendererProps) {
     const { t } = useTranslation();

@@ -15,6 +15,7 @@ export enum CanvasNodeType {
     Config = "config",
     Video = "video",
     Audio = "audio",
+    FreeCard = "free-card",
     Group = "group",
 }
 
@@ -24,6 +25,22 @@ export type CanvasNodeTypeId = CanvasNodeType | (string & {});
 export type CanvasNodeStatus = "idle" | "success" | "loading" | "error";
 export type CanvasGenerationMode = "text" | "image" | "video" | "audio";
 export type CanvasImageGenerationType = "generation" | "edit";
+
+export type CanvasFreeCardInfo = {
+    id: string;
+    name: string;
+    sourceRel: string;
+    sourceFormat: "ui" | "api";
+    outputType: "image" | "video";
+    prompt: boolean;
+    imageInputs: number;
+    size?: { width: number; height: number } | null;
+    count?: number | null;
+    hasSeed?: boolean;
+    seed?: string | null;
+    warnings?: string[];
+    archived?: boolean;
+};
 
 export type CanvasNodeImage = {
     id: string;
@@ -121,6 +138,8 @@ export type CanvasNodeMetadata = {
     stepProgress?: { step: number; total: number; complete?: boolean };
     seed?: string;
     seedFixed?: string;
+    freeCard?: CanvasFreeCardInfo;
+    freeWorkflowId?: string;
     groupId?: string;
     interactive?: boolean; // Plugin node interaction/move state; see CanvasNodeDefinition.interactionToggle.
     params?: Record<string, unknown>; // Per-node model params (e.g. LoRA stack).

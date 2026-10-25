@@ -14,12 +14,13 @@ import { createSessionTracker } from "./sessions.js";
 import { createSetupManager } from "./setup.js";
 import { createPromptOptimizer } from "./prompt-optimizer.js";
 import { createPreviewHub } from "./preview-hub.js";
+import { createFreeWorkflowStore, applyFreeInputs } from "./free-workflows.js";
 import { applyMossLayoutPrompt } from "./layout-prompt.js";
-import { runImage, runVideo } from "./runner.js";
+import { runImage, runVideo, runWorkflow } from "./runner.js";
 import { readSystemStats } from "./system-stats.js";
 import { createTaskStore } from "./tasks.js";
 import { applyUpdate, checkForUpdate } from "./update.js";
-import { extFromMime, jsonError, nowIso, randomId, safeFileName, sleep } from "./util.js";
+import { extFromMime, jsonError, nowIso, parseSize, randomId, safeFileName, sleep } from "./util.js";
 
 class HttpError extends Error {
   constructor(message, { status = 400, code = "bad_request", details } = {}) {
@@ -39,7 +40,7 @@ function corsMiddleware(config) {
       res.setHeader("Access-Control-Allow-Origin", config.corsOrigins.includes("*") ? "*" : origin);
       res.setHeader("Vary", "Origin");
     }
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Requested-With, X-Request-Id");
     res.setHeader("Access-Control-Expose-Headers", "X-Request-Id");
     res.setHeader("Access-Control-Max-Age", "86400");
@@ -179,6 +180,14 @@ export async function createGatewayApp(overrides = {}) {
     maxTasks: config.maxStoredTasks,
   });
   await tasks.load();
+  const freeWorkflows = createFreeWorkflowStore({
+    dataDir: config.dataDir,
+    comfyWorkflowsDir: config.comfyWorkflowsDir,
+    comfy,
+    logger,
+    maxWorkflowBytes: config.maxWorkflowBytes,
+  });
+  await freeWorkflows.load();
   const sessions = createSessionTracker({ staleMs: config.sessionStaleSec * 1000 });
   const setup = createSetupManager({ config, registry, comfy, logger });
   let lastOOM = null;
@@ -445,6 +454,168 @@ export async function createGatewayApp(overrides = {}) {
     const removed = await registry.remove(req.params.id);
     if (!removed) throw new HttpError("工作流不存在", { status: 404, code: "workflow_not_found" });
     res.json({ ok: true });
+  });
+
+  const requireFreeWorkflow = (id) => {
+    const entry = freeWorkflows.get(id);
+    if (!entry) throw new HttpError("自由卡片不存在", { status: 404, code: "free_workflow_not_found" });
+    return entry;
+  };
+
+  app.get("/api/free-workflows/sources", async (_req, res) => {
+    res.json({ sources: await freeWorkflows.listSources(), dir: config.comfyWorkflowsDir || "" });
+  });
+
+  app.get("/api/free-workflows", async (req, res) => {
+    const archived = req.query.archived === "1" || req.query.archived === "true";
+    res.json({ workflows: await freeWorkflows.list(archived ? { archived: true } : {}) });
+  });
+
+  app.post("/api/free-workflows/import", async (req, res) => {
+    const relative = String(req.body?.path || "").trim();
+    if (!relative) throw new HttpError("缺少工作流路径", { status: 400, code: "missing_workflow_path" });
+    try {
+      const entry = await freeWorkflows.importSource(relative);
+      res.status(201).json({ workflow: await freeWorkflows.publicEntry(entry) });
+    } catch (error) {
+      throw new HttpError(`导入工作流失败：${error.message}`, { status: 400, code: "free_workflow_import_failed", details: error.details });
+    }
+  });
+
+  app.get("/api/free-workflows/:id", async (req, res) => {
+    const entry = requireFreeWorkflow(req.params.id);
+    res.json({ workflow: await freeWorkflows.publicEntry(entry) });
+  });
+
+  app.get("/api/free-workflows/:id/open", (req, res) => {
+    const entry = requireFreeWorkflow(req.params.id);
+    res.json({ url: config.comfyUrl, name: entry.name, sourceRel: entry.sourceRel, sourceFormat: entry.sourceFormat });
+  });
+
+  app.post("/api/free-workflows/:id/sync", async (req, res) => {
+    try {
+      const result = await freeWorkflows.sync(req.params.id);
+      res.json({ changed: result.changed, workflow: await freeWorkflows.publicEntry(result.entry) });
+    } catch (error) {
+      throw new HttpError(`同步工作流失败：${error.message}`, { status: 409, code: "free_workflow_sync_failed" });
+    }
+  });
+
+  app.patch("/api/free-workflows/:id", async (req, res) => {
+    const entry = await freeWorkflows.setArchived(req.params.id, Boolean(req.body?.archived));
+    res.json({ workflow: await freeWorkflows.publicEntry(entry) });
+  });
+
+  app.post("/v1/free-workflows/:id/images", upload.any(), async (req, res) => {
+    const entry = requireFreeWorkflow(req.params.id);
+    if (entry.bindings?.outputType !== "image") {
+      throw new HttpError("这个自由卡片不是图片工作流", { status: 400, code: "free_workflow_not_image" });
+    }
+    const body = req.body || {};
+    const prompt = String(body.prompt || "");
+    if (entry.bindings?.prompt && !prompt.trim()) {
+      throw new HttpError("这个工作流需要正向提示词", { status: 400, code: "missing_prompt" });
+    }
+    const uploadedImages = await uploadImages(comfy, orderedPromptImages(req.files || []));
+    const parsedSize = parseSize(body.size);
+    const workflow = applyFreeInputs(entry.workflow, entry.bindings, {
+      prompt,
+      uploadedImages,
+      size: parsedSize ? { width: parsedSize.width, height: parsedSize.height } : undefined,
+      count: body.n ?? body.count,
+      seed: body.seed,
+      seedFixed: body.seedFixed,
+    });
+    const abort = abortOnDisconnect(req, res, registerActiveRequest);
+    let result;
+    try {
+      result = await runWorkflow({
+        entry: { name: entry.name, type: "image", workflow, bindings: {}, defaults: {}, presets: {} },
+        context: buildContext({ prompt, count: 1 }),
+        comfy,
+        timeoutMs: config.requestTimeoutMs,
+        pollIntervalMs: config.pollIntervalMs,
+        signal: abort.signal,
+        requestId: req.id,
+        includePreviewOutputs: true,
+        logger,
+      });
+    } catch (error) {
+      if (abort.signal.aborted) {
+        logger.info(`free image ${entry.name} 请求被客户端中断 ${req.id}`);
+        return;
+      }
+      throw error;
+    } finally {
+      abort.cleanup();
+    }
+    const files = result.files.filter((file) => /^image\//i.test(file.mimeType) || /\.(png|jpe?g|webp)$/i.test(file.filename));
+    if (!files.length) throw new HttpError("自由工作流没有返回图片", { status: 502, code: "no_images" });
+    logger.info(`free image ${entry.name} -> ${result.promptId} (${files.length} file(s)) ${req.id}`);
+    const responseFormat = String(body.response_format || "b64_json").toLowerCase();
+    const data = [];
+    for (const file of files) {
+      if (responseFormat === "url") {
+        const saved = await tasks.saveOutput(randomId("img_"), file.buffer, extFromMime(file.mimeType, file.filename, "png"));
+        data.push({ url: saved.url });
+      } else {
+        data.push({ b64_json: file.buffer.toString("base64") });
+      }
+    }
+    res.json({ created: Math.floor(Date.now() / 1000), data });
+  });
+
+  app.post("/v1/free-workflows/:id/videos", upload.any(), async (req, res) => {
+    const entry = requireFreeWorkflow(req.params.id);
+    if (entry.bindings?.outputType !== "video") {
+      throw new HttpError("这个自由卡片不是视频工作流", { status: 400, code: "free_workflow_not_video" });
+    }
+    const body = req.body || {};
+    const prompt = String(body.prompt || "");
+    if (entry.bindings?.prompt && !prompt.trim()) {
+      throw new HttpError("这个工作流需要正向提示词", { status: 400, code: "missing_prompt" });
+    }
+    const uploadedImages = await uploadImages(comfy, orderedPromptImages(req.files || []));
+    const parsedSize = parseSize(body.size);
+    const workflow = applyFreeInputs(entry.workflow, entry.bindings, {
+      prompt,
+      uploadedImages,
+      size: parsedSize ? { width: parsedSize.width, height: parsedSize.height } : undefined,
+      count: body.n ?? body.count,
+      seed: body.seed,
+      seedFixed: body.seedFixed,
+    });
+    const task = tasks.create({
+      model: entry.name,
+      request: {
+        prompt,
+        size: body.size,
+        images: uploadedImages.map((image) => image.name),
+      },
+    });
+    tasks.enqueue(task, async (_task, progress, signal) => {
+      const result = await runVideo({
+        entry: { name: entry.name, type: "video", workflow, bindings: {}, defaults: {}, presets: {} },
+        context: buildContext({ prompt, count: 1 }),
+        comfy,
+        timeoutMs: config.videoTimeoutMs,
+        pollIntervalMs: config.pollIntervalMs,
+        signal,
+        requestId: req.id,
+        includePreviewOutputs: true,
+        onProgress: progress,
+        logger,
+      });
+      const file = result.files[0];
+      return {
+        buffer: file.buffer,
+        ext: extFromMime(file.mimeType, file.filename, "mp4"),
+        mimeType: file.mimeType,
+        promptId: result.promptId,
+      };
+    });
+    logger.info(`free video ${entry.name} queued ${task.id} ${req.id}`);
+    res.json({ id: task.id, object: "video", status: "queued", progress: 0, created_at: Math.floor(Date.now() / 1000) });
   });
 
   app.post("/v1/images/generations", async (req, res) => {

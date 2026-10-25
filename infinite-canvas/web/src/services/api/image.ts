@@ -115,7 +115,7 @@ export function localGatewayRoot(baseUrl: string) {
 }
 
 // 本地网关的显式取消：不依赖浏览器关闭 XHR 连接的时机。
-function attachLocalCancel(config: AiConfig, requestId: string, signal?: AbortSignal) {
+export function attachLocalCancel(config: AiConfig, requestId: string, signal?: AbortSignal) {
     const root = localGatewayRoot(config.baseUrl);
     if (!root || !signal) return null;
     const onAbort = () => {
@@ -130,7 +130,7 @@ function attachLocalCancel(config: AiConfig, requestId: string, signal?: AbortSi
 }
 
 // 网关只能在本请求被 ComfyUI 接收后才知道 prompt_id，所以按 requestId 轮询步骤。
-function attachLocalProgress(config: AiConfig, requestId: string, signal?: AbortSignal) {
+export function attachLocalProgress(config: AiConfig, requestId: string, signal?: AbortSignal) {
     const root = localGatewayRoot(config.baseUrl);
     if (!root || !signal) return null;
     let stopped = false;

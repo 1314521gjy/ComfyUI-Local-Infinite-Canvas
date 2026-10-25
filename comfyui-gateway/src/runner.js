@@ -46,14 +46,14 @@ function historyError(history) {
   return "";
 }
 
-function collectOutputFiles(history) {
+function collectOutputFiles(history, { includePreview = false } = {}) {
   const files = [];
   const seen = new Set();
   for (const [nodeId, output] of Object.entries(history?.outputs || {})) {
     for (const key of ["images", "gifs", "videos"]) {
       for (const item of output?.[key] || []) {
         if (!item?.filename) continue;
-        if (item.type && item.type !== "output") continue;
+        if (item.type && item.type !== "output" && !(includePreview && item.type === "temp")) continue;
         const dedupe = `${item.type || "output"}:${item.subfolder || ""}:${item.filename}`;
         if (seen.has(dedupe)) continue;
         seen.add(dedupe);
@@ -64,7 +64,7 @@ function collectOutputFiles(history) {
   return files;
 }
 
-export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 * 1000, pollIntervalMs = 750, signal, requestId, onProgress, logger, loraCatalog }) {
+export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 * 1000, pollIntervalMs = 750, signal, requestId, onProgress, logger, loraCatalog, includePreviewOutputs = false }) {
   if (signal?.aborted) throw new GenerationError("生成已取消", { status: 400, code: "cancelled" });
   const resolved = resolveForMode(entry, context.mode);
   const params = resolved.baseModelParams ? { ...resolved.baseModelParams, ...(context.params || {}) } : context.params;
@@ -125,7 +125,7 @@ export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 *
     }
     onProgress?.({ phase: "completed", promptId, progress: 0.65 });
 
-    const files = collectOutputFiles(history);
+    const files = collectOutputFiles(history, { includePreview: includePreviewOutputs });
     if (!files.length) throw new GenerationError("ComfyUI 没有返回任何输出文件", { status: 502, code: "no_output_files" });
 
     const outputs = [];
@@ -148,7 +148,7 @@ export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 *
   }
 }
 
-export async function runImage({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, requestId, onProgress, logger, loraCatalog }) {
+export async function runImage({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, requestId, onProgress, logger, loraCatalog, includePreviewOutputs = false }) {
   const count = context.count || 1;
   const all = [];
   let lastPromptId;
@@ -164,6 +164,7 @@ export async function runImage({ entry, context, comfy, timeoutMs, pollIntervalM
       requestId,
       logger,
       loraCatalog,
+      includePreviewOutputs,
       onProgress: (event) => onProgress?.({ ...event, attempt, attempts: count }),
     });
     lastPromptId = result.promptId;
@@ -172,8 +173,8 @@ export async function runImage({ entry, context, comfy, timeoutMs, pollIntervalM
   return { promptId: lastPromptId, files: all.slice(0, count) };
 }
 
-export async function runVideo({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, requestId, onProgress, logger, loraCatalog }) {
-  const result = await runWorkflow({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, requestId, logger, loraCatalog, onProgress });
+export async function runVideo({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, requestId, onProgress, logger, loraCatalog, includePreviewOutputs = false }) {
+  const result = await runWorkflow({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, requestId, logger, loraCatalog, includePreviewOutputs, onProgress });
   const video = result.files.find((file) => /^video\//i.test(file.mimeType) || /\.(mp4|webm|mov)$/i.test(file.filename));
   if (!video) {
     throw new GenerationError("视频工作流没有返回视频文件（只拿到了图片/动图）", { status: 502, code: "no_video_output", details: result.files.map((file) => file.filename) });
