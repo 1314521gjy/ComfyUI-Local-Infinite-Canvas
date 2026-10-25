@@ -87,6 +87,12 @@ start-local.bat
 - 下载 zip 安装的用户当前可以查看更新并手动下载；自动替换发布包的更新器在后续版本加入。`update.json` 同时提供版本、说明和下载地址。
 - 发布新版本：同时更新根目录 `VERSION`、`update.json`、`CHANGELOG.md`，重新构建 `infinite-canvas/web`，并提交 `web/dist`。
 
+## 国内镜像
+
+- ModelScope 数据集镜像：https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas
+- 国内克隆：`git clone https://www.modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas.git`
+- 从魔搭克隆时远端默认分支是 `master`；网关更新逻辑会自动识别 `main`/`master`，不需要手动改 `UPDATE_BRANCH`。
+
 ## 安全提示
 
 - 网关、ComfyUI、启动器控制接口默认只绑 `127.0.0.1`，**没有鉴权**。

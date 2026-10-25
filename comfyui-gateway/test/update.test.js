@@ -97,3 +97,34 @@ test("git install fetches, dry-runs and fast-forwards an update", async () => {
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test("git install auto-detects master when the configured branch is main", async () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "gateway-update-master-"));
+  const remote = path.join(base, "remote.git");
+  const seed = path.join(base, "seed");
+  const app = path.join(base, "app");
+  try {
+    execFileSync("git", ["init", "--bare", "--initial-branch=master", remote], { stdio: "ignore" });
+    execFileSync("git", ["init", "--initial-branch=master", seed], { stdio: "ignore" });
+    writeVersion(seed, "v0.20.0");
+    writeManifest(seed, "v0.20.0", "initial");
+    git(seed, "add", ".");
+    git(seed, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "initial");
+    git(seed, "remote", "add", "origin", remote);
+    git(seed, "push", "-u", "origin", "master");
+    execFileSync("git", ["clone", remote, app], { stdio: "ignore" });
+
+    writeVersion(seed, "v0.20.1");
+    writeManifest(seed, "v0.20.1", "master update");
+    git(seed, "add", ".");
+    git(seed, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "v0.20.1");
+    git(seed, "push", "origin", "master");
+
+    const check = await checkForUpdate(configFor(app), { fetchRemote: true });
+    assert.equal(check.remote.branch, "master");
+    assert.equal(check.latestVersion, "v0.20.1");
+    assert.equal(check.updateAvailable, true);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});

@@ -76,9 +76,35 @@ function readCurrentVersion(config) {
   return cleanVersion(readLocalManifest(config)?.version) || "v0.0.0";
 }
 
-async function readRemoteManifest(config) {
-  await git(config, ["fetch", "--quiet", "--prune", config.updateRemote, config.updateBranch], config.updateFetchTimeoutMs);
-  const ref = `${config.updateRemote}/${config.updateBranch}`;
+async function resolveBranch(config) {
+  const remote = config.updateRemote;
+  const candidates = [];
+  if (config.updateBranch) candidates.push(config.updateBranch);
+  try {
+    const { stdout } = await git(config, ["symbolic-ref", "--short", `refs/remotes/${remote}/HEAD`], 3000);
+    const head = stdout.trim().replace(new RegExp(`^${remote}/`), "");
+    if (head) candidates.push(head);
+  } catch {
+    // origin/HEAD 不存在时按 main/master 探测。
+  }
+  candidates.push("main", "master");
+  const seen = new Set();
+  for (const branch of candidates) {
+    if (!branch || seen.has(branch)) continue;
+    seen.add(branch);
+    try {
+      await git(config, ["rev-parse", "--verify", `refs/remotes/${remote}/${branch}`], 3000);
+      return branch;
+    } catch {
+      // 试下一个分支。
+    }
+  }
+  return config.updateBranch || "main";
+}
+
+async function readRemoteManifest(config, branch) {
+  await git(config, ["fetch", "--quiet", "--prune", config.updateRemote, branch], config.updateFetchTimeoutMs);
+  const ref = `${config.updateRemote}/${branch}`;
   try {
     const { stdout } = await git(config, ["show", `${ref}:update.json`], 10000);
     const manifest = JSON.parse(stdout);
@@ -96,9 +122,9 @@ async function readRemoteManifest(config) {
   }
 }
 
-async function readRemoteManifestNoFetch(config) {
+async function readRemoteManifestNoFetch(config, branch) {
   try {
-    const ref = `${config.updateRemote}/${config.updateBranch}`;
+    const ref = `${config.updateRemote}/${branch}`;
     const { stdout } = await git(config, ["show", `${ref}:update.json`], 5000);
     const manifest = JSON.parse(stdout);
     return manifest?.version ? manifest : null;
@@ -131,8 +157,10 @@ export async function checkForUpdate(config, { fetchRemote = false } = {}) {
   let source = manifest ? "local" : "none";
   let dirty = false;
   let gitError = "";
+  let branch = config.updateBranch;
 
   if (installType === "git") {
+    branch = await resolveBranch(config);
     try {
       const status = await git(config, ["status", "--porcelain", "--untracked-files=no"], 8000);
       dirty = status.stdout.trim().length > 0;
@@ -144,13 +172,13 @@ export async function checkForUpdate(config, { fetchRemote = false } = {}) {
 
     if (fetchRemote) {
       try {
-        manifest = await readRemoteManifest(config);
+        manifest = await readRemoteManifest(config, branch);
         source = "git";
       } catch (error) {
         warnings.push(`无法获取远端更新：${describeGitError(error)}`);
       }
     } else {
-      const remoteManifest = await readRemoteManifestNoFetch(config);
+      const remoteManifest = await readRemoteManifestNoFetch(config, branch);
       if (remoteManifest) {
         manifest = remoteManifest;
         source = "git-tracking";
@@ -190,7 +218,7 @@ export async function checkForUpdate(config, { fetchRemote = false } = {}) {
     publishedAt: String(manifest?.publishedAt || ""),
     repository: String(manifest?.repository || ""),
     downloadUrl: String(manifest?.downloadUrl || ""),
-    remote: { name: config.updateRemote, branch: config.updateBranch, fetched: fetchRemote },
+    remote: { name: config.updateRemote, branch, fetched: fetchRemote },
     warnings,
   };
 }
@@ -211,7 +239,8 @@ export async function applyUpdate(config, { dryRun = false } = {}) {
     if (check.installType !== "git") throw updateError(check.applyReason || "当前安装不支持一键更新", "not_git_install");
     if (check.dirty) throw updateError(check.applyReason || "工作区有未提交的修改", "dirty_worktree");
 
-    const commands = [`git fetch ${config.updateRemote} ${config.updateBranch}`, `git pull --ff-only ${config.updateRemote} ${config.updateBranch}`];
+    const branch = check.remote?.branch || config.updateBranch;
+    const commands = [`git fetch ${config.updateRemote} ${branch}`, `git pull --ff-only ${config.updateRemote} ${branch}`];
     if (dryRun) {
       return {
         ok: true,
@@ -225,7 +254,7 @@ export async function applyUpdate(config, { dryRun = false } = {}) {
     const beforeHead = (await git(config, ["rev-parse", "HEAD"], 8000)).stdout.trim();
     let pullOutput = "";
     try {
-      pullOutput = (await git(config, ["pull", "--ff-only", config.updateRemote, config.updateBranch], config.updateApplyTimeoutMs)).stdout;
+      pullOutput = (await git(config, ["pull", "--ff-only", config.updateRemote, branch], config.updateApplyTimeoutMs)).stdout;
     } catch (error) {
       throw updateError(`git pull 失败：${describeGitError(error)}`, "pull_failed");
     }
