@@ -46,7 +46,7 @@
           "node": "4",
           "input": "steps",
           "from": "quality.steps",
-          "default": 8
+          "default": 10
         },
         "cfg": {
           "node": "4",
