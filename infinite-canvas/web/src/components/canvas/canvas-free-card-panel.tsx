@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { App, Button, Popover, Select } from "antd";
 import { Archive, ExternalLink, RefreshCw, Settings2, Sparkles, Square, ArrowUp } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { CanvasNodeReferenceBar } from "@/components/canvas/canvas-node-reference-bar";
-import { ImageSettingsPanel, ImageSettingsTheme } from "@/components/image-settings-panel";
+import { ImageSettingsPanel, ImageSettingsTheme, OptionPill } from "@/components/image-settings-panel";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { getGroupResourceNodes } from "@/lib/canvas/canvas-resource-references";
+import { normalizePixelSize } from "@/lib/media-size";
 import { requestImagePromptOptimize } from "@/services/api/image";
 import {
     archiveFreeWorkflow,
@@ -17,6 +18,7 @@ import {
     freeWorkflowComfyUrl,
     importFreeWorkflow,
     syncFreeWorkflow,
+    type FreeWorkflowPreset,
     type FreeWorkflowSource,
     type FreeWorkflowSummary,
 } from "@/services/api/free-workflow";
@@ -35,6 +37,13 @@ type CanvasFreeCardPanelProps = {
     onStartReferenceSelection: (nodeId: string) => void;
 };
 
+const RATIO_ORDER = ["1:1", "2:3", "3:2", "4:3", "3:4", "16:9", "9:16", "21:9", "9:21"];
+
+// Reuse one named ComfyUI window for this tab so repeated clicks do not pile
+// up editor tabs. Browsers keep the name across reloads of the canvas page.
+let comfyEditorWindow: Window | null = null;
+let comfyEditorUrl = "";
+
 export function freeCardInfoFromSummary(summary: FreeWorkflowSummary): CanvasFreeCardInfo {
     return {
         id: summary.id,
@@ -45,12 +54,25 @@ export function freeCardInfoFromSummary(summary: FreeWorkflowSummary): CanvasFre
         prompt: summary.prompt,
         imageInputs: summary.imageInputs,
         size: summary.size,
+        aspectRatio: summary.aspectRatio,
+        aspectRatios: summary.aspectRatios,
         count: summary.count,
         hasSeed: summary.hasSeed,
         seed: summary.seed,
         warnings: summary.warnings,
         archived: summary.archived,
     };
+}
+
+function pixelSize(size: string | undefined) {
+    const match = String(size || "").match(/^(\d+)x(\d+)$/i);
+    return match ? `${match[1]}×${match[2]}` : size || "";
+}
+
+function settingsSizeLabel(size: string | undefined) {
+    const normalized = normalizePixelSize(size);
+    if (normalized && normalized !== size) return `${size} → ${pixelSize(normalized)}`;
+    return pixelSize(size);
 }
 
 export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, onChange, onGenerate, onStop, onDisconnectReference, onStartReferenceSelection }: CanvasFreeCardPanelProps) {
@@ -61,6 +83,7 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
     const info = node.metadata?.freeCard;
     const [sources, setSources] = useState<FreeWorkflowSource[]>([]);
     const [sourcesLoading, setSourcesLoading] = useState(false);
+    const [sourcesError, setSourcesError] = useState("");
     const [summary, setSummary] = useState<FreeWorkflowSummary | null>(null);
     const [prompt, setPrompt] = useState(node.metadata?.prompt || "");
     const [importing, setImporting] = useState(false);
@@ -73,23 +96,22 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
         setPrompt(node.metadata?.prompt || "");
     }, [node.id, node.metadata?.prompt]);
 
-    useEffect(() => {
-        let canceled = false;
+    const loadSources = useCallback(async () => {
         setSourcesLoading(true);
-        void fetchFreeWorkflowSources(config)
-            .then((items) => {
-                if (!canceled) setSources(items);
-            })
-            .catch(() => {
-                if (!canceled) setSources([]);
-            })
-            .finally(() => {
-                if (!canceled) setSourcesLoading(false);
-            });
-        return () => {
-            canceled = true;
-        };
-    }, [config]);
+        setSourcesError("");
+        try {
+            setSources(await fetchFreeWorkflowSources(config));
+        } catch (error) {
+            setSources([]);
+            setSourcesError(error instanceof Error ? error.message : t("canvas.freeCard.sourcesFailed"));
+        } finally {
+            setSourcesLoading(false);
+        }
+    }, [config, t]);
+
+    useEffect(() => {
+        void loadSources();
+    }, [loadSources]);
 
     useEffect(() => {
         if (!info?.id) {
@@ -123,13 +145,44 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
             }));
     }, [connectedNodes, nodes]);
 
-    const setCard = (next: FreeWorkflowSummary) => {
+    const sizeText = node.metadata?.size || (info?.size ? `${info.size.width}x${info.size.height}` : "");
+    const countValue = node.metadata?.count ?? info?.count ?? 1;
+    const seedValue = node.metadata?.seed || info?.seed || "";
+    const seedFixed = node.metadata?.seedFixed || "false";
+    const ratioOptions = useMemo(() => {
+        const available = new Set(info?.aspectRatios || []);
+        const ordered = RATIO_ORDER.filter((ratio) => available.has(ratio));
+        const extra = [...available].filter((ratio) => !RATIO_ORDER.includes(ratio));
+        return [...ordered, ...extra];
+    }, [info?.aspectRatios]);
+    const ratioValue = node.metadata?.aspectRatio || info?.aspectRatio || ratioOptions[0] || "";
+    const hasSeedSetting = Boolean(info && (info.hasSeed || info.seed != null));
+    const hasSettings = Boolean(info && (info.size || ratioOptions.length || info.count != null || hasSeedSetting));
+    const settingsSummary = [
+        info?.size && sizeText ? settingsSizeLabel(sizeText) : "",
+        ratioOptions.length && ratioValue ? ratioValue : "",
+        info?.count != null ? t("canvas.freeCard.countSummary", { count: countValue }) : "",
+        hasSeedSetting && seedFixed === "true" && seedValue ? t("canvas.freeCard.seedSummary", { seed: seedValue }) : "",
+    ]
+        .filter(Boolean)
+        .join(" · ");
+
+    const setCard = (next: FreeWorkflowSummary, { resetSettings = false } = {}) => {
         const card = freeCardInfoFromSummary(next);
         const patch: Partial<CanvasNodeData["metadata"]> = { freeCard: card };
-        if (next.size) patch.size = `${next.size.width}x${next.size.height}`;
-        if (next.count != null) patch.count = next.count;
-        if (next.seed != null) patch.seed = next.seed;
-        patch.seedFixed = node.metadata?.seedFixed || "false";
+        const current = node.metadata || {};
+        if (resetSettings) {
+            patch.size = next.size ? `${next.size.width}x${next.size.height}` : undefined;
+            patch.aspectRatio = card.aspectRatio || "";
+            patch.count = next.count ?? 1;
+            patch.seed = next.seed || "";
+            patch.seedFixed = current.seedFixed || "false";
+        } else {
+            if (!current.size && next.size) patch.size = `${next.size.width}x${next.size.height}`;
+            if (!current.aspectRatio && card.aspectRatio) patch.aspectRatio = card.aspectRatio;
+            if (current.count == null && next.count != null) patch.count = next.count;
+            if (!current.seed && next.seed) patch.seed = next.seed;
+        }
         onChange(patch);
         setSummary(next);
     };
@@ -139,8 +192,8 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
         setImporting(true);
         try {
             const next = await importFreeWorkflow(config, relative);
-            setCard(next);
-            message.success(t("canvas.freeCard.title"));
+            setCard(next, { resetSettings: true });
+            message.success(t("canvas.freeCard.imported"));
         } catch (error) {
             message.error(error instanceof Error ? error.message : t("canvas.freeCard.importFailed"));
         } finally {
@@ -164,9 +217,16 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
 
     const archiveCard = async () => {
         if (!info?.id || info.archived) return;
+        const preset: FreeWorkflowPreset = {
+            size: info.size ? normalizePixelSize(sizeText) || undefined : undefined,
+            aspectRatio: ratioOptions.length ? ratioValue || undefined : undefined,
+            count: info.count != null ? countValue : undefined,
+            seed: hasSeedSetting ? seedValue || undefined : undefined,
+            seedFixed,
+        };
         setArchiving(true);
         try {
-            const next = await archiveFreeWorkflow(config, info.id, true);
+            const next = await archiveFreeWorkflow(config, info.id, true, preset);
             setCard(next);
             message.success(t("canvas.freeCard.cardArchived"));
         } catch (error) {
@@ -180,8 +240,24 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
         if (!info?.id) return;
         try {
             const target = await freeWorkflowComfyUrl(config, info.id);
-            window.open(target.url, "_blank", "noopener,noreferrer");
-            message.info(t("canvas.freeCard.openHint", { name: target.name || info.name }));
+            if (comfyEditorWindow && !comfyEditorWindow.closed) {
+                if (comfyEditorUrl !== target.url) {
+                    comfyEditorWindow.location.href = target.url;
+                    comfyEditorUrl = target.url;
+                }
+                comfyEditorWindow.focus();
+            } else {
+                const nextWindow = window.open(target.url, "infinite-canvas-comfyui");
+                if (!nextWindow) {
+                    message.warning(t("canvas.freeCard.openBlocked"));
+                    return;
+                }
+                comfyEditorWindow = nextWindow;
+                comfyEditorUrl = target.url;
+                nextWindow.focus();
+            }
+            if (target.bridge) message.info(t("canvas.freeCard.openHint", { name: target.name || info.name }));
+            else message.warning(t("canvas.freeCard.openBridgeMissing", { name: target.name || info.name, reason: target.bridgeReason || "" }));
         } catch (error) {
             message.error(error instanceof Error ? error.message : t("canvas.freeCard.saveFailed"));
         }
@@ -226,16 +302,12 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
         () =>
             sources.map((source) => ({
                 value: source.relative,
-                label: `${source.name}${source.folder ? ` · ${source.folder}` : ""}${source.format === "ui" ? " · UI" : source.format === "api" ? " · API" : " · 不可用"}`,
+                label: `${source.name}${source.folder ? ` · ${source.folder}` : ""}${source.format === "ui" ? " · UI" : source.format === "api" ? " · API" : ` · ${t("canvas.freeCard.unavailable")}`}`,
                 disabled: source.format === "invalid",
             })),
-        [sources],
+        [sources, t],
     );
 
-    const sizeText = node.metadata?.size || (info?.size ? `${info.size.width}x${info.size.height}` : "");
-    const countValue = node.metadata?.count ?? info?.count ?? 1;
-    const seedValue = node.metadata?.seed || info?.seed || "";
-    const seedFixed = node.metadata?.seedFixed || "false";
     const settingsConfig = {
         ...config,
         size: sizeText || "auto",
@@ -243,16 +315,39 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
         seed: seedValue,
         seedFixed,
     };
-    const hasSettings = Boolean(info && (info.size || info.count != null || info.hasSeed || info.seed != null));
     const warnings = [...(info?.warnings || []), ...(summary?.warnings || [])].filter((item, index, list) => list.indexOf(item) === index);
+    const ratioBlock = ratioOptions.length ? (
+        <div className="space-y-2">
+            <div className="text-xs font-medium" style={{ color: theme.node.muted }}>
+                {t("canvas.freeCard.aspectRatio")}
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+                {ratioOptions.map((ratio) => (
+                    <OptionPill key={ratio} selected={ratioValue === ratio} theme={theme} onClick={() => onChange({ aspectRatio: ratio })}>
+                        {ratio}
+                    </OptionPill>
+                ))}
+            </div>
+            <div className="text-[11px] leading-4" style={{ color: theme.node.muted }}>
+                {t("canvas.freeCard.aspectRatioHint")}
+            </div>
+        </div>
+    ) : null;
 
     return (
         <ImageSettingsTheme theme={theme}>
-            <div className="thin-scrollbar max-h-[72vh] w-[540px] space-y-3 overflow-y-auto rounded-2xl border px-4 py-4 shadow-[0_18px_50px_rgba(28,25,23,.18)]" style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}>
+            <div
+                className="thin-scrollbar max-h-[72vh] w-[540px] space-y-3 overflow-y-auto rounded-2xl border px-4 py-4 shadow-[0_18px_50px_rgba(28,25,23,.18)]"
+                style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
+                onPointerDown={(event) => event.stopPropagation()}
+                onMouseDown={(event) => event.stopPropagation()}
+            >
                 <div className="flex items-center gap-2">
                     <Sparkles className="size-4" style={{ color: theme.node.text }} />
                     <span className="text-sm font-semibold">{t("canvas.freeCard.title")}</span>
-                    <span className="min-w-0 truncate text-xs" style={{ color: theme.node.muted }}>{info?.name || t("canvas.freeCard.emptyTitle")}</span>
+                    <span className="min-w-0 truncate text-xs" style={{ color: theme.node.muted }}>
+                        {info?.name || t("canvas.freeCard.emptyTitle")}
+                    </span>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -265,15 +360,18 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
                         options={sourceOptions}
                         loading={sourcesLoading || importing}
                         onChange={(value) => void selectSource(value)}
-                        notFoundContent={t("canvas.freeCard.sourcesEmpty")}
+                        notFoundContent={sourcesLoading ? t("canvas.freeCard.loadingSources") : sourcesError || t("canvas.freeCard.sourcesEmpty")}
                     />
+                    <Button size="small" icon={<RefreshCw className={`size-3.5 ${sourcesLoading ? "animate-spin" : ""}`} />} title={t("canvas.freeCard.refreshSources")} disabled={importing} onClick={() => void loadSources()} />
                     {info ? (
                         <Button size="small" icon={<RefreshCw className={`size-3.5 ${syncing ? "animate-spin" : ""}`} />} disabled={syncing || isRunning} onClick={() => void syncCard()}>
                             {syncing ? t("canvas.freeCard.syncing") : t("canvas.freeCard.sync")}
                         </Button>
                     ) : null}
                 </div>
-                <div className="text-[11px]" style={{ color: theme.node.muted }}>{t("canvas.freeCard.sourceHint")}</div>
+                <div className="text-[11px]" style={{ color: sourcesError ? "#f87171" : theme.node.muted }}>
+                    {sourcesError || t("canvas.freeCard.sourceHint")}
+                </div>
 
                 {info ? (
                     <>
@@ -285,10 +383,19 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
                             {summary?.sourceChanged ? <span className="text-amber-500">· {t("canvas.freeCard.sourceChanged")}</span> : null}
                         </div>
 
+                        {hasSettings ? (
+                            <div className="rounded-lg px-2.5 py-2 text-[11px] leading-5" style={{ background: theme.node.fill, color: theme.node.muted }}>
+                                <span className="font-medium">{t("canvas.freeCard.currentSettings")}</span>
+                                <span>：{settingsSummary || t("canvas.freeCard.noSettings")}</span>
+                            </div>
+                        ) : null}
+
                         {info.prompt ? (
                             <div className="space-y-2">
                                 <div className="flex items-center justify-between gap-2">
-                                    <span className="text-xs font-medium" style={{ color: theme.node.muted }}>{t("canvas.freeCard.prompt")}</span>
+                                    <span className="text-xs font-medium" style={{ color: theme.node.muted }}>
+                                        {t("canvas.freeCard.prompt")}
+                                    </span>
                                     <Button size="small" type="text" icon={<Sparkles className="size-3.5" />} loading={optimizing} onClick={() => void optimizePrompt()}>
                                         {optimizing ? t("canvas.freeCard.optimizing") : t("canvas.freeCard.optimize")}
                                     </Button>
@@ -308,7 +415,9 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
                             <div>
                                 <div className="mb-1 flex items-center gap-2 text-xs" style={{ color: theme.node.muted }}>
                                     <span>{t("canvas.freeCard.imageInputs")}</span>
-                                    <span>{imageReferences.length}/{info.imageInputs}</span>
+                                    <span>
+                                        {imageReferences.length}/{info.imageInputs}
+                                    </span>
                                 </div>
                                 <CanvasNodeReferenceBar nodeId={node.id} nodes={nodes} connectedNodes={imageConnectedNodes} onDisconnect={onDisconnectReference} onStartSelection={onStartReferenceSelection} />
                             </div>
@@ -317,7 +426,9 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
                         {warnings.length ? (
                             <div className="rounded-lg px-2.5 py-2 text-[11px] leading-5" style={{ background: theme.node.fill, color: theme.node.muted }}>
                                 <div className="mb-0.5 font-medium">{t("canvas.freeCard.warnings")}</div>
-                                {warnings.slice(0, 3).map((warning) => <div key={warning}>· {warning}</div>)}
+                                {warnings.slice(0, 3).map((warning) => (
+                                    <div key={warning}>· {warning}</div>
+                                ))}
                             </div>
                         ) : null}
 
@@ -330,34 +441,47 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
                                         onOpenChange={setSettingsOpen}
                                         placement="topLeft"
                                         content={
-                                            <ImageSettingsPanel
-                                                config={settingsConfig}
-                                                onConfigChange={(key, value) => {
-                                                    if (key === "count") onChange({ count: Number(value) || 1 });
-                                                    else if (key === "seed") onChange({ seed: value });
-                                                    else if (key === "seedFixed") onChange({ seedFixed: value });
-                                                    else if (key === "size") onChange({ size: value });
-                                                }}
-                                                theme={theme}
-                                                showTitle={false}
-                                                showSize={Boolean(info.size)}
-                                                showTransparent={false}
-                                                showCount={info.count != null}
-                                                showSeed={info.hasSeed || info.seed != null}
-                                                className="w-[320px] space-y-4"
-                                            />
+                                            <div className="space-y-4" onPointerDown={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()}>
+                                                {ratioBlock}
+                                                <ImageSettingsPanel
+                                                    config={settingsConfig}
+                                                    onConfigChange={(key, value) => {
+                                                        if (key === "count") onChange({ count: Number(value) || 1 });
+                                                        else if (key === "seed") onChange({ seed: value });
+                                                        else if (key === "seedFixed") onChange({ seedFixed: value });
+                                                        else if (key === "size") onChange({ size: value });
+                                                    }}
+                                                    theme={theme}
+                                                    showTitle={false}
+                                                    showSize={Boolean(info.size)}
+                                                    showTransparent={false}
+                                                    showCount={info.count != null}
+                                                    showSeed={hasSeedSetting}
+                                                    className="w-[320px] space-y-4"
+                                                />
+                                            </div>
                                         }
                                     >
-                                        <Button size="small" icon={<Settings2 className="size-3.5" />}>{t("canvas.freeCard.settings")}</Button>
+                                        <Button size="small" icon={<Settings2 className="size-3.5" />} title={settingsSummary ? `${t("canvas.freeCard.settings")} · ${settingsSummary}` : undefined}>
+                                            {settingsSummary ? `${t("canvas.freeCard.settings")} · ${settingsSummary}` : t("canvas.freeCard.settings")}
+                                        </Button>
                                     </Popover>
                                 ) : null}
-                                <Button size="small" icon={<ExternalLink className="size-3.5" />} disabled={isRunning} onClick={() => void openComfyUI()}>{t("canvas.freeCard.openInComfy")}</Button>
-                                <Button size="small" icon={<Archive className="size-3.5" />} loading={archiving} disabled={isRunning || info.archived} onClick={() => void archiveCard()}>{t("canvas.freeCard.archive")}</Button>
+                                <Button size="small" icon={<ExternalLink className="size-3.5" />} disabled={isRunning} onClick={() => void openComfyUI()}>
+                                    {t("canvas.freeCard.openInComfy")}
+                                </Button>
+                                <Button size="small" icon={<Archive className="size-3.5" />} loading={archiving} disabled={isRunning || info.archived} onClick={() => void archiveCard()}>
+                                    {t("canvas.freeCard.archive")}
+                                </Button>
                             </div>
                             {isRunning ? (
-                                <Button danger icon={<Square className="size-3.5" />} onClick={() => onStop(node.id)}>{t("canvas.freeCard.stop")}</Button>
+                                <Button danger icon={<Square className="size-3.5" />} onClick={() => onStop(node.id)}>
+                                    {t("canvas.freeCard.stop")}
+                                </Button>
                             ) : (
-                                <Button type="primary" icon={<ArrowUp className="size-3.5" />} onClick={generate}>{t("canvas.freeCard.generate")}</Button>
+                                <Button type="primary" icon={<ArrowUp className="size-3.5" />} onClick={generate}>
+                                    {t("canvas.freeCard.generate")}
+                                </Button>
                             )}
                         </div>
                     </>

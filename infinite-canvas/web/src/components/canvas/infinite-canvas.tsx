@@ -4,6 +4,11 @@ import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { ViewportTransform } from "@/types/canvas";
 
+// Ant Design renders dropdowns/popovers in portals. React still bubbles their
+// pointer events through this canvas, so without this guard a click on an
+// option would be treated as a background click and close the node panel.
+const OVERLAY_SELECTOR = "[data-canvas-no-zoom],.ant-select-dropdown,.ant-dropdown,.ant-popover,.ant-picker-dropdown,.ant-tooltip,.ant-modal-root,.ant-notification,.ant-message";
+
 type InfiniteCanvasProps = {
     containerRef: React.RefObject<HTMLDivElement | null>;
     viewport: ViewportTransform;
@@ -108,7 +113,7 @@ export function InfiniteCanvas({ containerRef, viewport, tool, backgroundMode = 
 
     const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
         const target = event.target instanceof Element ? event.target : null;
-        if (target?.closest("[data-canvas-no-zoom]")) return;
+        if (target?.closest(OVERLAY_SELECTOR)) return;
         if (target?.closest("[data-connection-create-menu]")) return;
         const isBackgroundClick = !target?.closest("[data-node-id],[data-connection-id]");
         const temporaryTool = event.ctrlKey || isSpacePressed;
@@ -141,7 +146,8 @@ export function InfiniteCanvas({ containerRef, viewport, tool, backgroundMode = 
 
     const handleDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
         const target = event.target instanceof Element ? event.target : null;
-        if (target?.closest("[data-canvas-no-zoom],[data-node-id],[data-connection-id]")) return;
+        if (target?.closest(OVERLAY_SELECTOR)) return;
+        if (target?.closest("[data-node-id],[data-connection-id]")) return;
         onCanvasDoubleClick?.(event);
     };
 

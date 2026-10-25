@@ -23,6 +23,21 @@ function isVideoOutputClass(classType) {
 }
 const BASIC_WIDGET_TYPES = new Set(["INT", "FLOAT", "STRING", "BOOLEAN", "COMBO"]);
 
+// ResolutionSelector and similar combo nodes use labels like "16:9 (Widescreen)".
+export function canonicalAspectRatio(value) {
+  const match = String(value || "").trim().match(/^(\d+(?:\.\d+)?)\s*[:/x]\s*(\d+(?:\.\d+)?)/i);
+  if (!match) return "";
+  return `${Number(match[1])}:${Number(match[2])}`;
+}
+
+function comboOptions(objectInfo, classType, inputName) {
+  const input = objectInfo?.[classType]?.input;
+  const spec = input?.required?.[inputName] ?? input?.optional?.[inputName];
+  if (Array.isArray(spec) && Array.isArray(spec[1]?.options)) return spec[1].options;
+  if (Array.isArray(spec?.options)) return spec.options;
+  return [];
+}
+
 // Nodes whose widget order is not obvious from object_info alone.
 const WIDGET_ORDER = {
   KSampler: ["seed", "control_after_generate", "steps", "cfg", "sampler_name", "scheduler", "denoise"],
@@ -231,7 +246,7 @@ function numericInput(node, name) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-export function detectFreeBindings(workflow) {
+export function detectFreeBindings(workflow, objectInfo = {}) {
   const entries = listNodes(workflow);
   const outputs = entries.filter(([, node]) => isImageOutputClass(node.class_type) || isVideoOutputClass(node.class_type));
   const outputType = outputs.some(([, node]) => isVideoOutputClass(node.class_type)) ? "video" : outputs.some(([, node]) => isImageOutputClass(node.class_type)) ? "image" : null;
@@ -290,6 +305,22 @@ export function detectFreeBindings(workflow) {
     .map(([id, node]) => ({ node: id, widthInput: "width", heightInput: "height", width: numericInput(node, "width"), height: numericInput(node, "height") }));
   if (sizes.length > 1) warnings.push(`检测到 ${sizes.length} 个尺寸节点，修改尺寸时会同时写入；默认取节点 ${sizes[0].node} 的值。`);
 
+  const ratios = entries
+    .filter(([id, node]) => reachable.has(id) && typeof node.inputs?.aspect_ratio === "string")
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([id, node]) => {
+      const options = comboOptions(objectInfo, node.class_type, "aspect_ratio");
+      const values = options.length ? options : [node.inputs.aspect_ratio];
+      return {
+        node: id,
+        input: "aspect_ratio",
+        value: node.inputs.aspect_ratio,
+        options,
+        ratios: [...new Set(values.map(canonicalAspectRatio).filter(Boolean))],
+      };
+    })
+    .filter((binding) => binding.ratios.length);
+
   const batches = entries
     .filter(([id, node]) => reachable.has(id) && numericInput(node, "batch_size") !== null)
     .sort(([a], [b]) => Number(a) - Number(b))
@@ -309,6 +340,7 @@ export function detectFreeBindings(workflow) {
     prompt,
     images,
     sizes,
+    ratios,
     batches,
     seeds,
     warnings,
@@ -316,11 +348,16 @@ export function detectFreeBindings(workflow) {
 }
 
 export function bindingSummary(bindings) {
+  const ratioBindings = bindings.ratios || [];
+  const aspectRatios = [...new Set(ratioBindings.flatMap((binding) => binding.ratios || []))];
+  const aspectRatio = canonicalAspectRatio(ratioBindings[0]?.value) || aspectRatios[0] || null;
   return {
     outputType: bindings.outputType || null,
     prompt: Boolean(bindings.prompt),
     imageInputs: bindings.images?.length || 0,
     size: bindings.sizes?.[0] ? { width: bindings.sizes[0].width, height: bindings.sizes[0].height } : null,
+    aspectRatio,
+    aspectRatios,
     count: bindings.batches?.[0]?.default ?? null,
     hasSeed: Boolean(bindings.seeds?.length),
     seed: Number(bindings.seeds?.[0]?.default) > 0 ? String(bindings.seeds[0].default) : null,

@@ -33,6 +33,8 @@ export function loadConfig(overrides = {}) {
     port,
     host,
     comfyUrl: String(overrides.comfyUrl ?? process.env.COMFY_URL ?? "http://127.0.0.1:8188").replace(/\/+$/, ""),
+    comfyDir: String(overrides.comfyDir ?? process.env.COMFYUI_DIR ?? "").trim(),
+    comfyFrontendDir: String(overrides.comfyFrontendDir ?? process.env.COMFY_FRONTEND_DIR ?? "").trim(),
     comfyWorkflowsDir: String(overrides.comfyWorkflowsDir ?? process.env.COMFY_WORKFLOWS_DIR ?? "").trim(),
     scanOnStart: overrides.scanOnStart ?? process.env.SCAN_ON_START !== "0",
     watchWorkflows: overrides.watchWorkflows ?? process.env.WATCH_WORKFLOWS !== "0",
@@ -65,6 +67,8 @@ export function loadConfig(overrides = {}) {
     version: "0.1.0",
   };
   if (config.comfyWorkflowsDir) config.comfyWorkflowsDir = path.resolve(config.comfyWorkflowsDir);
+  if (config.comfyDir) config.comfyDir = path.resolve(config.comfyDir);
+  if (config.comfyFrontendDir) config.comfyFrontendDir = path.resolve(config.comfyFrontendDir);
   fs.mkdirSync(config.workflowDir, { recursive: true });
   fs.mkdirSync(config.dataDir, { recursive: true });
   fs.mkdirSync(config.outputDir, { recursive: true });

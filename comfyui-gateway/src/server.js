@@ -7,6 +7,7 @@ import express from "express";
 import multer from "multer";
 
 import { buildContext } from "./bindings.js";
+import { createComfyBridge } from "./comfy-bridge.js";
 import { createComfyClient } from "./comfy-client.js";
 import { createLogger, loadConfig } from "./config.js";
 import { createRegistry } from "./registry.js";
@@ -188,6 +189,9 @@ export async function createGatewayApp(overrides = {}) {
     maxWorkflowBytes: config.maxWorkflowBytes,
   });
   await freeWorkflows.load();
+  const comfyBridge = createComfyBridge({ config, logger });
+  const bridgeStatus = await comfyBridge.ensure();
+  if (!bridgeStatus.installed) logger.warn(`ComfyUI 工作流桥接未安装：${bridgeStatus.reason || "未知原因"}`);
   const sessions = createSessionTracker({ staleMs: config.sessionStaleSec * 1000 });
   const setup = createSetupManager({ config, registry, comfy, logger });
   let lastOOM = null;
@@ -487,9 +491,29 @@ export async function createGatewayApp(overrides = {}) {
     res.json({ workflow: await freeWorkflows.publicEntry(entry) });
   });
 
-  app.get("/api/free-workflows/:id/open", (req, res) => {
+  app.get("/api/free-workflows/:id/ui", async (req, res) => {
     const entry = requireFreeWorkflow(req.params.id);
-    res.json({ url: config.comfyUrl, name: entry.name, sourceRel: entry.sourceRel, sourceFormat: entry.sourceFormat });
+    try {
+      res.json(await freeWorkflows.readRawWorkflow(entry));
+    } catch (error) {
+      throw new HttpError(`读取工作流失败：${error.message}`, { status: 409, code: "free_workflow_read_failed" });
+    }
+  });
+
+  app.get("/api/free-workflows/:id/open", async (req, res) => {
+    const entry = requireFreeWorkflow(req.params.id);
+    const bridge = await comfyBridge.ensure();
+    const target = new URL(config.comfyUrl);
+    target.searchParams.set("local_canvas_open", entry.id);
+    target.searchParams.set("local_canvas_gw", `${req.protocol}://${req.get("host")}`);
+    res.json({
+      url: target.toString(),
+      name: entry.name,
+      sourceRel: entry.sourceRel,
+      sourceFormat: entry.sourceFormat,
+      bridge: Boolean(bridge.installed),
+      bridgeReason: bridge.installed ? undefined : bridge.reason,
+    });
   });
 
   app.post("/api/free-workflows/:id/sync", async (req, res) => {
@@ -502,7 +526,7 @@ export async function createGatewayApp(overrides = {}) {
   });
 
   app.patch("/api/free-workflows/:id", async (req, res) => {
-    const entry = await freeWorkflows.setArchived(req.params.id, Boolean(req.body?.archived));
+    const entry = await freeWorkflows.setArchived(req.params.id, Boolean(req.body?.archived), req.body?.preset);
     res.json({ workflow: await freeWorkflows.publicEntry(entry) });
   });
 
@@ -525,6 +549,7 @@ export async function createGatewayApp(overrides = {}) {
       count: body.n ?? body.count,
       seed: body.seed,
       seedFixed: body.seedFixed,
+      ratio: body.ratio,
     });
     const abort = abortOnDisconnect(req, res, registerActiveRequest);
     let result;
@@ -584,6 +609,7 @@ export async function createGatewayApp(overrides = {}) {
       count: body.n ?? body.count,
       seed: body.seed,
       seedFixed: body.seedFixed,
+      ratio: body.ratio,
     });
     const task = tasks.create({
       model: entry.name,

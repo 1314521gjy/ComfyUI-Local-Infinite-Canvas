@@ -92,6 +92,13 @@ export function computeMediaSize(scale: string, ratio: string) {
     return imageSizePresets[normalizedScale][ratio];
 }
 
+export function normalizePixelSize(value: string | undefined, scale = "1k") {
+    if (!value) return undefined;
+    if (parsePixelSize(value)) return value;
+    if (parseAspectRatio(value)) return computeMediaSize(scale, value);
+    return undefined;
+}
+
 export function readMediaDimensions(size: string, scale: string, ratio: string) {
     const pixels = parsePixelSize(size);
     if (pixels) return pixels;

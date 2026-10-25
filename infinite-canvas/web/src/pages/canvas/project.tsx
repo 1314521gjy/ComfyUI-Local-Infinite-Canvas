@@ -76,6 +76,7 @@ import {
     sourceNodeReferenceImages,
 } from "@/lib/canvas/canvas-generation-helpers";
 import { getNodeDefinition, isBuiltinNodeType as isBuiltinType, useNodeRegistryVersion } from "@/lib/canvas/node-registry";
+import { normalizePixelSize } from "@/lib/media-size";
 import { registerBuiltinNodes } from "@/components/canvas/nodes/builtin-nodes";
 import { CanvasPluginManagerModal } from "@/components/canvas/canvas-plugin-manager-modal";
 import { CanvasRefreshShell } from "@/components/canvas/canvas-refresh-shell";
@@ -3408,7 +3409,8 @@ function InfiniteCanvasPage() {
                 if (runController.signal.aborted) return;
                 const references = context.referenceImages.slice(0, Math.max(0, info.imageInputs));
                 const count = info.count != null ? Math.max(1, Math.min(15, Math.floor(Number(sourceNode.metadata?.count ?? info.count) || 1))) : 1;
-                const size = sourceNode.metadata?.size || (info.size ? `${info.size.width}x${info.size.height}` : undefined);
+                const size = normalizePixelSize(sourceNode.metadata?.size || (info.size ? `${info.size.width}x${info.size.height}` : undefined));
+                const ratio = sourceNode.metadata?.aspectRatio || info.aspectRatio || "";
                 const seed = sourceNode.metadata?.seed || info.seed || "";
                 const seedFixed = (sourceNode.metadata?.seedFixed || "false") === "true";
 
@@ -3433,7 +3435,7 @@ function InfiniteCanvasPage() {
                     setNodes((prev) => [...prev, videoNode]);
                     setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: nodeId, toNodeId: childId }]);
                     const controller = startGenerationRequest(childId, nodeId, nodeId, runController);
-                    const taskId = await createFreeWorkflowVideoTask(effectiveConfig, info.id, { prompt: effectivePrompt, size, count, seed, seedFixed, images: references, signal: controller.signal });
+                    const taskId = await createFreeWorkflowVideoTask(effectiveConfig, info.id, { prompt: effectivePrompt, size, ratio, count, seed, seedFixed, images: references, signal: controller.signal });
                     setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, metadata: { ...item.metadata, videoTaskId: taskId, videoTaskProvider: "openai" } } : item)));
                     const localVideoModel = effectiveConfig.videoModel || effectiveConfig.model;
                     const video = await storeGeneratedVideo(
@@ -3481,7 +3483,7 @@ function InfiniteCanvasPage() {
                     setNodes((prev) => [...prev, imageNode]);
                     setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: nodeId, toNodeId: childId }]);
                     const controller = startGenerationRequest(childId, nodeId, nodeId, runController);
-                    const images = await requestFreeWorkflowImage(effectiveConfig, info.id, { prompt: effectivePrompt, size, count, seed, seedFixed, images: references, signal: controller.signal });
+                    const images = await requestFreeWorkflowImage(effectiveConfig, info.id, { prompt: effectivePrompt, size, ratio, count, seed, seedFixed, images: references, signal: controller.signal });
                     const uploadedItems: CanvasNodeImage[] = [];
                     let firstUploaded: Awaited<ReturnType<typeof uploadImage>> | null = null;
                     for (let index = 0; index < images.length; index += 1) {
@@ -3548,12 +3550,14 @@ function InfiniteCanvasPage() {
     const addFreeCardFromLibrary = useCallback(
         (workflow: FreeWorkflowSummary) => {
             const card = freeCardInfoFromSummary(workflow);
+            const preset = workflow.preset || {};
             const node = createCanvasNode(CanvasNodeType.FreeCard, getCanvasCenter(), {
                 freeCard: card,
-                size: workflow.size ? `${workflow.size.width}x${workflow.size.height}` : undefined,
-                count: workflow.count ?? 1,
-                seed: workflow.seed || "",
-                seedFixed: "false",
+                size: preset.size || (workflow.size ? `${workflow.size.width}x${workflow.size.height}` : undefined),
+                aspectRatio: preset.aspectRatio || workflow.aspectRatio || undefined,
+                count: preset.count ?? workflow.count ?? 1,
+                seed: preset.seed || workflow.seed || "",
+                seedFixed: preset.seedFixed || "false",
                 prompt: "",
             });
             setNodes((prev) => [...prev, node]);

@@ -16,6 +16,14 @@ export type FreeWorkflowSource = {
     updatedAt: string;
 };
 
+export type FreeWorkflowPreset = {
+    size?: string;
+    aspectRatio?: string;
+    count?: number;
+    seed?: string;
+    seedFixed?: string;
+};
+
 export type FreeWorkflowSummary = {
     id: string;
     name: string;
@@ -30,15 +38,19 @@ export type FreeWorkflowSummary = {
     prompt: boolean;
     imageInputs: number;
     size: { width: number; height: number } | null;
+    aspectRatio?: string | null;
+    aspectRatios?: string[];
     count: number | null;
     hasSeed: boolean;
     seed: string | null;
+    preset?: FreeWorkflowPreset | null;
     warnings: string[];
 };
 
 export type FreeWorkflowRequest = {
     prompt: string;
     size?: string;
+    ratio?: string;
     count?: number;
     seed?: string;
     seedFixed?: boolean;
@@ -101,24 +113,32 @@ export async function syncFreeWorkflow(config: AiConfig, id: string): Promise<{ 
     }
 }
 
-export async function archiveFreeWorkflow(config: AiConfig, id: string, archived = true): Promise<FreeWorkflowSummary> {
+export async function archiveFreeWorkflow(config: AiConfig, id: string, archived = true, preset?: FreeWorkflowPreset): Promise<FreeWorkflowSummary> {
     const root = gatewayRoot(config);
-    const response = await axios.patch<{ workflow?: FreeWorkflowSummary }>(`${root}/api/free-workflows/${encodeURIComponent(id)}`, { archived }, { timeout: 30000 });
+    const response = await axios.patch<{ workflow?: FreeWorkflowSummary }>(`${root}/api/free-workflows/${encodeURIComponent(id)}`, { archived, preset }, { timeout: 30000 });
     if (!response.data?.workflow) throw new Error("归档自由卡片失败");
     return response.data.workflow;
 }
 
-export async function freeWorkflowComfyUrl(config: AiConfig, id: string): Promise<{ url: string; name: string; sourceRel: string; sourceFormat: "ui" | "api" }> {
+export async function freeWorkflowComfyUrl(config: AiConfig, id: string): Promise<{ url: string; name: string; sourceRel: string; sourceFormat: "ui" | "api"; bridge: boolean; bridgeReason?: string }> {
     const root = gatewayRoot(config);
-    const response = await axios.get<{ url?: string; name?: string; sourceRel?: string; sourceFormat?: "ui" | "api" }>(`${root}/api/free-workflows/${encodeURIComponent(id)}/open`, { timeout: 10000 });
+    const response = await axios.get<{ url?: string; name?: string; sourceRel?: string; sourceFormat?: "ui" | "api"; bridge?: boolean; bridgeReason?: string }>(`${root}/api/free-workflows/${encodeURIComponent(id)}/open`, { timeout: 15000 });
     if (!response.data?.url) throw new Error("无法获取 ComfyUI 地址");
-    return { url: response.data.url, name: response.data.name || "", sourceRel: response.data.sourceRel || "", sourceFormat: response.data.sourceFormat || "ui" };
+    return {
+        url: response.data.url,
+        name: response.data.name || "",
+        sourceRel: response.data.sourceRel || "",
+        sourceFormat: response.data.sourceFormat || "ui",
+        bridge: Boolean(response.data.bridge),
+        bridgeReason: response.data.bridgeReason,
+    };
 }
 
 async function buildFormData(config: AiConfig, request: FreeWorkflowRequest) {
     const formData = new FormData();
     formData.set("prompt", request.prompt);
     if (request.size) formData.set("size", request.size);
+    if (request.ratio) formData.set("ratio", request.ratio);
     if (request.count) formData.set("n", String(request.count));
     if (request.seed) formData.set("seed", request.seed);
     formData.set("seedFixed", request.seedFixed ? "true" : "false");

@@ -13,6 +13,15 @@ const objectInfo = {
   SaveImage: { input: { required: { images: ["IMAGE", {}], filename_prefix: ["STRING", {}] } } },
   LoadImage: { input: { required: { image: [["input.png"], { image_upload: true }] } } },
   ImageScale: { input: { required: { image: ["IMAGE", {}], width: ["INT", {}], height: ["INT", {}] } } },
+  ResolutionSelector: {
+    input: {
+      required: {
+        aspect_ratio: ["COMBO", { options: ["1:1 (Square)", "9:16 (Portrait Widescreen)", "16:9 (Widescreen)", "4:3 (Standard)"] }],
+        megapixels: ["FLOAT", {}],
+        multiple: ["INT", {}],
+      },
+    },
+  },
 };
 
 function uiNode(id, type, inputs, widgetsValuesNamed, mode = 0) {
@@ -82,4 +91,20 @@ test("free inputs patch the workflow and randomize seed when not fixed", () => {
   assert.notEqual(patched[3].inputs.seed, 42);
   const fixed = applyFreeInputs(workflow, bindings, { prompt: "new", seed: "123", seedFixed: true });
   assert.equal(fixed[3].inputs.seed, 123);
+});
+
+test("resolution selector aspect ratio is detected and patched", () => {
+  const workflow = {
+    1: { class_type: "ResolutionSelector", inputs: { aspect_ratio: "16:9 (Widescreen)", megapixels: 1, multiple: 32 } },
+    2: { class_type: "SaveImage", inputs: { images: ["1", 0], filename_prefix: "out" } },
+  };
+  const bindings = detectFreeBindings(workflow, objectInfo);
+  assert.equal(bindings.ratios.length, 1);
+  assert.equal(bindings.ratios[0].node, "1");
+  assert.ok(bindings.ratios[0].ratios.includes("16:9"));
+  assert.ok(bindings.ratios[0].ratios.includes("9:16"));
+  const patched = applyFreeInputs(workflow, bindings, { ratio: "9:16" });
+  assert.equal(patched[1].inputs.aspect_ratio, "9:16 (Portrait Widescreen)");
+  const unchanged = applyFreeInputs(workflow, bindings, { ratio: "auto" });
+  assert.equal(unchanged[1].inputs.aspect_ratio, "16:9 (Widescreen)");
 });

@@ -300,6 +300,7 @@ function spawnGateway(cfg, comfyUrl, workflowsDir) {
     PORT: String(cfg.gatewayPort),
     HOST: "127.0.0.1",
     COMFY_URL: comfyUrl,
+    ...(cfg.comfyDir ? { COMFYUI_DIR: cfg.comfyDir } : {}),
     ...(cfg.launcherControlUrl ? { LAUNCHER_CONTROL_URL: cfg.launcherControlUrl } : {}),
   };
   if (workflowsDir) env.COMFY_WORKFLOWS_DIR = workflowsDir;

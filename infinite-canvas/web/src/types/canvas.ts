@@ -35,6 +35,8 @@ export type CanvasFreeCardInfo = {
     prompt: boolean;
     imageInputs: number;
     size?: { width: number; height: number } | null;
+    aspectRatio?: string | null;
+    aspectRatios?: string[];
     count?: number | null;
     hasSeed?: boolean;
     seed?: string | null;
@@ -138,6 +140,7 @@ export type CanvasNodeMetadata = {
     stepProgress?: { step: number; total: number; complete?: boolean };
     seed?: string;
     seedFixed?: string;
+    aspectRatio?: string;
     freeCard?: CanvasFreeCardInfo;
     freeWorkflowId?: string;
     groupId?: string;

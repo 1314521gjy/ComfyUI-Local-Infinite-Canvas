@@ -3,7 +3,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 
 import { isApiWorkflow, isUiWorkflow } from "./registry.js";
-import { bindingSummary, convertUiWorkflow, detectFreeBindings } from "./ui-workflow.js";
+import { bindingSummary, canonicalAspectRatio, convertUiWorkflow, detectFreeBindings } from "./ui-workflow.js";
 import { deepClone, nowIso, randomId, writeJsonAtomic } from "./util.js";
 
 const FILE_NAME = "free-workflows.json";
@@ -23,7 +23,7 @@ function imageValue(uploaded) {
   return uploaded.subfolder ? `${uploaded.subfolder}/${uploaded.name}` : uploaded.name;
 }
 
-export function applyFreeInputs(workflow, bindings, { prompt, uploadedImages = [], size, count, seed, seedFixed } = {}) {
+export function applyFreeInputs(workflow, bindings, { prompt, uploadedImages = [], size, count, seed, seedFixed, ratio } = {}) {
   const next = deepClone(workflow || {});
   if (bindings.prompt) {
     const node = next[bindings.prompt.node];
@@ -41,6 +41,16 @@ export function applyFreeInputs(workflow, bindings, { prompt, uploadedImages = [
       if (!node?.inputs) continue;
       node.inputs[binding.widthInput] = size.width;
       node.inputs[binding.heightInput] = size.height;
+    }
+  }
+  const wantedRatio = canonicalAspectRatio(ratio);
+  if (wantedRatio) {
+    for (const binding of bindings.ratios || []) {
+      const node = next[binding.node];
+      if (!node?.inputs) continue;
+      const options = binding.options || [];
+      const match = options.find((option) => canonicalAspectRatio(option) === wantedRatio);
+      if (match) node.inputs[binding.input] = match;
     }
   }
   const normalizedCount = Math.max(1, Math.min(15, Math.floor(Number(count) || 1)));
@@ -126,6 +136,23 @@ export function createFreeWorkflowStore({ dataDir, comfyWorkflowsDir = "", comfy
     throw new Error("不是 ComfyUI UI 或 API 工作流");
   }
 
+  async function readRawWorkflow(entry) {
+    const sourcePath = resolveSource(entry.sourceRel);
+    const stat = await fsp.stat(sourcePath);
+    if (!stat.isFile()) throw new Error("工作流不是文件");
+    if (stat.size > maxWorkflowBytes) throw new Error("工作流文件过大");
+    const text = (await fsp.readFile(sourcePath, "utf8")).replace(/^\uFEFF/, "");
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      throw new Error("工作流 JSON 无法解析");
+    }
+    if (isApiWorkflow(parsed)) return { workflow: parsed, format: "api", sourceRel: entry.sourceRel, name: entry.name };
+    if (isUiWorkflow(parsed)) return { workflow: parsed, format: "ui", sourceRel: entry.sourceRel, name: entry.name };
+    throw new Error("不是 ComfyUI UI 或 API 工作流");
+  }
+
   async function scanDir(dir, root, out) {
     let items;
     try {
@@ -189,7 +216,7 @@ export function createFreeWorkflowStore({ dataDir, comfyWorkflowsDir = "", comfy
 
   async function importSource(relative) {
     const source = await readSource(relative);
-    const bindings = detectFreeBindings(source.workflow);
+    const bindings = detectFreeBindings(source.workflow, await getObjectInfo());
     const warnings = [...(source.warnings || []), ...(bindings.warnings || [])];
     const stat = await fsp.stat(source.sourcePath);
     const entry = {
@@ -201,6 +228,7 @@ export function createFreeWorkflowStore({ dataDir, comfyWorkflowsDir = "", comfy
       sourceUpdatedAt: new Date(stat.mtimeMs).toISOString(),
       workflow: source.workflow,
       bindings,
+      preset: null,
       warnings,
       archivedAt: null,
       createdAt: nowIso(),
@@ -218,7 +246,7 @@ export function createFreeWorkflowStore({ dataDir, comfyWorkflowsDir = "", comfy
     const changed = await sourceChanged(entry);
     if (!changed) return { changed: false, entry };
     const source = await readSource(entry.sourceRel);
-    const bindings = detectFreeBindings(source.workflow);
+    const bindings = detectFreeBindings(source.workflow, await getObjectInfo());
     entry.workflow = source.workflow;
     entry.bindings = bindings;
     entry.warnings = [...(source.warnings || []), ...(bindings.warnings || [])];
@@ -230,10 +258,19 @@ export function createFreeWorkflowStore({ dataDir, comfyWorkflowsDir = "", comfy
     return { changed: true, entry };
   }
 
-  async function setArchived(id, archived) {
+  async function setArchived(id, archived, preset) {
     const entry = entries.get(id);
     if (!entry) throw new Error("自由卡片不存在");
     entry.archivedAt = archived ? entry.archivedAt || nowIso() : null;
+    if (preset && typeof preset === "object") {
+      entry.preset = {
+        size: typeof preset.size === "string" && preset.size.trim() ? preset.size.trim() : undefined,
+        aspectRatio: canonicalAspectRatio(preset.aspectRatio) || undefined,
+        count: Number.isFinite(Number(preset.count)) && Number(preset.count) >= 1 ? Math.floor(Number(preset.count)) : undefined,
+        seed: preset.seed !== undefined && preset.seed !== null && String(preset.seed).trim() ? String(preset.seed).trim() : undefined,
+        seedFixed: String(preset.seedFixed || "") === "true" ? "true" : "false",
+      };
+    }
     entry.updatedAt = nowIso();
     await persist();
     return entry;
@@ -256,6 +293,7 @@ export function createFreeWorkflowStore({ dataDir, comfyWorkflowsDir = "", comfy
       createdAt: entry.createdAt,
       updatedAt: entry.updatedAt,
       sourceChanged: await sourceChanged(entry),
+      preset: entry.preset || null,
       ...bindingSummary(entry.bindings || {}),
       warnings: entry.warnings || [],
     };
@@ -271,5 +309,5 @@ export function createFreeWorkflowStore({ dataDir, comfyWorkflowsDir = "", comfy
     return result;
   }
 
-  return { load, listSources, importSource, sync, setArchived, get, publicEntry, list, applyFreeInputs };
+  return { load, listSources, importSource, sync, setArchived, get, publicEntry, list, applyFreeInputs, readRawWorkflow };
 }
