@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState } from "react";
-import { Cpu, Layers } from "lucide-react";
+import { Cpu, Layers, ScanText } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
@@ -16,6 +16,8 @@ import {
     type ModelCapability,
 } from "@/stores/use-config-store";
 
+type ModelPickerExtraOption = { value: string; label: string };
+
 type ModelPickerProps = {
     config: AiConfig;
     value?: string;
@@ -24,16 +26,22 @@ type ModelPickerProps = {
     className?: string;
     fullWidth?: boolean;
     placeholder?: string;
+    extraOptions?: ModelPickerExtraOption[];
     onMissingConfig?: () => void;
 };
 
-export function ModelPicker({ config, value, onChange, capability, className, fullWidth = false, placeholder, onMissingConfig }: ModelPickerProps) {
+export function ModelPicker({ config, value, onChange, capability, className, fullWidth = false, placeholder, extraOptions = [], onMissingConfig }: ModelPickerProps) {
     const { t } = useTranslation();
     const pickerId = useId();
     const [open, setOpen] = useState(false);
-    const options = useMemo(() => Array.from(new Set([...(config.channelMode === "local" && !capability ? [value] : []), ...selectableModelsByCapability(config, capability)].filter((model): model is string => Boolean(model)))), [capability, config, value]);
+    const options = useMemo(
+        () => Array.from(new Set([...(config.channelMode === "local" && !capability ? [value] : []), ...selectableModelsByCapability(config, capability), ...extraOptions.map((option) => option.value)].filter((model): model is string => Boolean(model)))),
+        [capability, config, extraOptions, value],
+    );
     const current = value || "";
     const pickerPlaceholder = placeholder || t("settingsPanels.model.select");
+    const optionLabel = (model: string) => extraOptions.find((option) => option.value === model)?.label || modelOptionLabel(config, model);
+    const currentExtra = extraOptions.find((option) => option.value === current);
 
     useEffect(() => {
         const closeOtherPicker = (event: Event) => {
@@ -63,10 +71,10 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
                 )}
                 onMouseDown={(event) => event.stopPropagation()}
                 onPointerDown={(event) => event.stopPropagation()}
-                title={current ? modelOptionLabel(config, current) : pickerPlaceholder}
+                title={current ? optionLabel(current) : pickerPlaceholder}
             >
-                <ModelIcon model={current} />
-                <span className="canvas-model-picker-text min-w-0 flex-1 truncate text-left">{current ? modelOptionLabel(config, current) : pickerPlaceholder}</span>
+                {currentExtra ? <ScanText className="size-4 shrink-0 opacity-70" /> : <ModelIcon model={current} />}
+                <span className="canvas-model-picker-text min-w-0 flex-1 truncate text-left">{current ? optionLabel(current) : pickerPlaceholder}</span>
             </SelectTrigger>
             <SelectContent
                 data-canvas-no-zoom
@@ -79,11 +87,21 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
                 onMouseDown={(event) => event.stopPropagation()}
             >
                 {options.length ? (
-                    options.map((model) => (
-                        <SelectItem key={model} value={model} textValue={modelOptionLabel(config, model)}>
-                            <ModelLabel config={config} model={model} />
-                        </SelectItem>
-                    ))
+                    options.map((model) => {
+                        const extra = extraOptions.find((option) => option.value === model);
+                        return (
+                            <SelectItem key={model} value={model} textValue={optionLabel(model)}>
+                                {extra ? (
+                                    <span className="flex min-w-0 items-center gap-2">
+                                        <ScanText className="size-4 shrink-0 opacity-70" />
+                                        <span className="truncate">{extra.label}</span>
+                                    </span>
+                                ) : (
+                                    <ModelLabel config={config} model={model} />
+                                )}
+                            </SelectItem>
+                        );
+                    })
                 ) : (
                     <SelectItem value="__empty__" disabled>
                         {emptyModelLabel(config, capability)}

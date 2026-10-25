@@ -86,7 +86,8 @@ export type CanvasNodeMetadata = {
     watermark?: string;
     videoMode?: string;
     frameMode?: "first" | "last" | "both";
-    imageMode?: "edit" | "inpaint" | "outpaint" | "layout";
+    imageMode?: "t2i" | "edit" | "inpaint" | "outpaint" | "layout";
+    captionEngine?: "qwen35" | "florence";
     outpaint?: { left: number; top: number; right: number; bottom: number; width: number; height: number };
     layout?: CanvasMossLayout;
     audioVoice?: string;
