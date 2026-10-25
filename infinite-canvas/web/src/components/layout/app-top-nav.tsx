@@ -25,7 +25,7 @@ export function AppTopNav() {
     const panelOpen = useAgentStore((state) => state.panelOpen);
     const hideHeader = /^\/canvas\/[^/]+/.test(pathname);
     const slug = pathname.split("/").filter(Boolean)[0];
-    const visibleTools = LOCAL_ONLY ? navigationTools.filter((tool) => tool.slug !== "prompts") : navigationTools;
+    const visibleTools = LOCAL_ONLY ? navigationTools.filter((tool) => !["prompts", "image", "video"].includes(tool.slug)) : navigationTools;
     const activeToolSlug = visibleTools.some((tool) => tool.slug === slug) ? (slug as NavigationToolSlug) : undefined;
 
     useEffect(() => {

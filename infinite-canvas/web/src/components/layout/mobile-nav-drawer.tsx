@@ -14,7 +14,7 @@ type MobileNavDrawerProps = {
 
 export function MobileNavDrawer({ open, activeToolSlug, onClose }: MobileNavDrawerProps) {
     const { t } = useTranslation();
-    const visibleTools = LOCAL_ONLY ? navigationTools.filter((tool) => tool.slug !== "prompts") : navigationTools;
+    const visibleTools = LOCAL_ONLY ? navigationTools.filter((tool) => !["prompts", "image", "video"].includes(tool.slug)) : navigationTools;
 
     return (
         <Drawer title={t("topNav.navigation")} placement="left" size={280} open={open} onClose={onClose} className="md:hidden">

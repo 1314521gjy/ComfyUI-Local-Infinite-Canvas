@@ -23,8 +23,8 @@ export const router = createBrowserRouter([
         ),
         children: [
             { path: "/", element: <HomePage /> },
-            { path: "/image", element: <ImagePage /> },
-            { path: "/video", element: <VideoPage /> },
+            { path: "/image", element: LOCAL_ONLY ? <NotFound /> : <ImagePage /> },
+            { path: "/video", element: LOCAL_ONLY ? <NotFound /> : <VideoPage /> },
             { path: "/assets", element: <AssetsPage /> },
             { path: "/prompts", element: LOCAL_ONLY ? <NotFound /> : <PromptsPage /> },
             { path: "/canvas", element: <CanvasPage /> },
