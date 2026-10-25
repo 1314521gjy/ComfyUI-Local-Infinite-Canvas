@@ -230,7 +230,7 @@ function ImageSettingsPortal({
                             </div>
                         </div>
                     ) : null}
-                    <ImageSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" />
+                    <ImageSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" maxCount={10} />
                 </div>
             )}
         </div>,

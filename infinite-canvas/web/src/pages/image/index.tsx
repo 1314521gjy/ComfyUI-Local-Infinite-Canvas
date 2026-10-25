@@ -6,7 +6,7 @@ import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 
 import { ImageSettingsPanel } from "@/components/image-settings-panel";
-import { ModelPicker } from "@/components/model-picker";
+import { BaseModelPicker, WorkflowModelPicker } from "@/components/model-picker";
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { LOCAL_ONLY } from "@/constant/app-mode";
@@ -563,10 +563,17 @@ function GenerationSettings({ config, model, updateConfig, openConfigDialog }: {
 
     return (
         <>
-            <label className="col-span-2 block min-w-0 sm:col-span-1">
+            <div className="col-span-2 min-w-0">
                 <span className="mb-1.5 block text-sm font-semibold sm:mb-2 sm:text-base">{t("workbench.model")}</span>
-                <ModelPicker config={config} value={model} onChange={(value) => updateConfig("imageModel", value)} capability="image" fullWidth onMissingConfig={() => openConfigDialog(false)} />
-            </label>
+                <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
+                    <div className="min-w-0 flex-1">
+                        <WorkflowModelPicker config={config} value={model} onChange={(value) => updateConfig("imageModel", value)} capability="image" fullWidth onMissingConfig={() => openConfigDialog(false)} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                        <BaseModelPicker config={config} value={model} onChange={(value) => updateConfig("imageModel", value)} fullWidth />
+                    </div>
+                </div>
+            </div>
             <div className="col-span-2">
                 <ImageSettingsPanel config={config} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" maxCount={10} />
             </div>

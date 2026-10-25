@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { LOCAL_ONLY } from "@/constant/app-mode";
-import { ModelPicker } from "@/components/model-picker";
+import { BaseModelPicker, WorkflowModelPicker } from "@/components/model-picker";
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeValue, videoModeLabel, videoSizeLabel } from "@/components/video-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -84,6 +84,8 @@ export default function VideoPage() {
     const addAsset = useAssetStore((state) => state.addAsset);
     const [prompt, setPrompt] = useState("");
     const [references, setReferences] = useState<ReferenceImage[]>([]);
+    const [frameModeOverride, setFrameModeOverride] = useState<"first" | "last" | "both" | undefined>(undefined);
+    const frameMode = frameModeOverride || (references.length >= 2 ? "both" : "first");
     const [results, setResults] = useState<GenerationResult[]>([]);
     const [logs, setLogs] = useState<GenerationLog[]>([]);
     const [running, setRunning] = useState(false);
@@ -233,7 +235,7 @@ export default function VideoPage() {
             openConfigDialog(true);
             return null;
         }
-        return { text, config: buildVideoConfig(effectiveConfig, model), references: [...references] };
+        return { text, config: buildVideoConfig(effectiveConfig, model, frameMode), references: [...references] };
     };
 
     const retryResult = () => {
@@ -315,7 +317,7 @@ export default function VideoPage() {
         setRunning(true);
         setStartedAt((value) => value || performance.now());
         setResults((value) => (value.length ? value : [{ id: log.id, status: "pending" }]));
-        const taskConfig = buildVideoConfig({ ...effectiveConfig, ...log.config }, log.task.model || log.model);
+        const taskConfig = buildVideoConfig({ ...effectiveConfig, ...log.config }, log.task.model || log.model, frameMode);
         try {
             for (;;) {
                 const state = await pollVideoGenerationTask(configOverride || taskConfig, log.task);
@@ -455,7 +457,14 @@ export default function VideoPage() {
                             </div>
 
                             <div className="hidden gap-4 sm:grid sm:grid-cols-2">
-                                <GenerationSettings config={effectiveConfig} model={model} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
+                                <GenerationSettings
+                                    config={effectiveConfig}
+                                    model={model}
+                                    updateConfig={updateConfig}
+                                    openConfigDialog={openConfigDialog}
+                                    frameMode={frameMode}
+                                    onFrameModeChange={setFrameModeOverride}
+                                />
                             </div>
                         </div>
 
@@ -500,7 +509,14 @@ export default function VideoPage() {
             </Drawer>
             <Drawer title={t("workbench.settings")} placement="bottom" height="82vh" open={settingsOpen} onClose={() => setSettingsOpen(false)}>
                 <div className="grid grid-cols-2 gap-3 pb-4">
-                    <GenerationSettings config={effectiveConfig} model={model} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
+                    <GenerationSettings
+                        config={effectiveConfig}
+                        model={model}
+                        updateConfig={updateConfig}
+                        openConfigDialog={openConfigDialog}
+                        frameMode={frameMode}
+                        onFrameModeChange={setFrameModeOverride}
+                    />
                 </div>
             </Drawer>
             <PromptSelectDialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen} onSelect={setPrompt} />
@@ -512,30 +528,51 @@ export default function VideoPage() {
     );
 }
 
-function GenerationSettings({ config, model, updateConfig, openConfigDialog }: { config: AiConfig; model: string; updateConfig: UpdateAiConfig; openConfigDialog: (shouldPromptContinue?: boolean) => void }) {
+function GenerationSettings({
+    config,
+    model,
+    updateConfig,
+    openConfigDialog,
+    frameMode,
+    onFrameModeChange,
+}: {
+    config: AiConfig;
+    model: string;
+    updateConfig: UpdateAiConfig;
+    openConfigDialog: (shouldPromptContinue?: boolean) => void;
+    frameMode: "first" | "last" | "both";
+    onFrameModeChange: (value: "first" | "last" | "both") => void;
+}) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const { t } = useTranslation();
 
     return (
         <>
-            <label className="col-span-2 block min-w-0 sm:col-span-1">
+            <div className="col-span-2 min-w-0">
                 <span className="mb-1.5 block text-sm font-semibold sm:mb-2 sm:text-base">{t("workbench.model")}</span>
-                <ModelPicker
-                    config={config}
-                    value={model}
-                    onChange={(value) => {
-                        updateConfig("videoModel", value);
-                        const videoMode = videoModelModePatch(config, value).videoMode;
-                        if (videoMode) updateConfig("videoMode", videoMode);
-                    }}
-                    capability="video"
-                    fullWidth
-                    onMissingConfig={() => openConfigDialog(false)}
-                />
-            </label>
+                <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
+                    <div className="min-w-0 flex-1">
+                        <WorkflowModelPicker
+                            config={config}
+                            value={model}
+                            onChange={(value) => {
+                                updateConfig("videoModel", value);
+                                const videoMode = videoModelModePatch(config, value).videoMode;
+                                if (videoMode) updateConfig("videoMode", videoMode);
+                            }}
+                            capability="video"
+                            fullWidth
+                            onMissingConfig={() => openConfigDialog(false)}
+                        />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                        <BaseModelPicker config={config} value={model} onChange={(value) => updateConfig("videoModel", value)} fullWidth />
+                    </div>
+                </div>
+            </div>
             <div className="col-span-2">
                 <VideoSettingsPanel
-                    config={config}
+                    config={{ ...config, model }}
                     onConfigChange={(key, value) => updateConfig(key, value)}
                     onModeChange={(value) => {
                         const workflowId = value === "reference" ? "video-h3-ref2va" : value === "frames" ? "video-h3-frames" : "video-h3-t2v";
@@ -543,6 +580,8 @@ function GenerationSettings({ config, model, updateConfig, openConfigDialog }: {
                         updateConfig("videoMode", value);
                         if (nextModel) updateConfig("videoModel", nextModel);
                     }}
+                    frameMode={frameMode}
+                    onFrameModeChange={onFrameModeChange}
                     theme={theme}
                     showTitle={false}
                     className="space-y-4"
@@ -796,7 +835,7 @@ function buildLog({ prompt, model, config, references, durationMs, status, task,
     };
 }
 
-function buildVideoConfig(config: AiConfig, model: string): AiConfig {
+function buildVideoConfig(config: AiConfig, model: string, frameMode?: "first" | "last" | "both"): AiConfig {
     return {
         ...config,
         model,
@@ -807,6 +846,7 @@ function buildVideoConfig(config: AiConfig, model: string): AiConfig {
         videoGenerateAudio: String(boolConfig(config.videoGenerateAudio, true)),
         videoWatermark: String(boolConfig(config.videoWatermark, false)),
         videoMode: config.videoMode === "reference" || config.videoMode === "text" ? config.videoMode : "frames",
+        frameMode,
     };
 }
 
