@@ -88,6 +88,10 @@ export type CanvasNodeMetadata = {
     frameMode?: "first" | "last" | "both";
     imageMode?: "t2i" | "edit" | "inpaint" | "outpaint" | "layout";
     captionEngine?: "qwen35" | "florence";
+    captionStatus?: "running" | "done" | "error";
+    captionPrompt?: string;
+    captionError?: string;
+    captionEngineUsed?: "qwen35" | "florence";
     outpaint?: { left: number; top: number; right: number; bottom: number; width: number; height: number };
     layout?: CanvasMossLayout;
     audioVoice?: string;

@@ -18,6 +18,7 @@ import { resolveCanvasReferenceImages } from "@/lib/canvas/canvas-resource-refer
 import { requestImageCaption, requestImagePromptOptimize, requestPromptOptimize, type ImageCaptionEngine, type PromptOptimizeMode } from "@/services/api/image";
 import { videoModelForWorkflow, videoModelModePatch } from "@/lib/canvas/video-model-mode";
 import { CanvasNodeReferenceBar } from "./canvas-node-reference-bar";
+import { abortCaptionJob, hasCaptionJob, registerCaptionJob, releaseCaptionJob } from "@/lib/canvas/caption-jobs";
 
 export type CanvasNodeGenerationMode = CanvasGenerationMode;
 
@@ -62,8 +63,6 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     const [optimizing, setOptimizing] = useState(false);
     const [optimizedPrompt, setOptimizedPrompt] = useState("");
     const [optimizeError, setOptimizeError] = useState("");
-    const [captionEngineUsed, setCaptionEngineUsed] = useState<ImageCaptionEngine>("qwen35");
-    const captionAbortRef = useRef<AbortController | null>(null);
     const lastAutoPromptRef = useRef("");
     const imageReferences = mentionReferences.filter((reference) => reference.kind === "image");
     const referencePrompt = mentionReferences
@@ -77,8 +76,13 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     const isImage = mode === "image";
     const canOptimize = isH3 && Boolean(draft.trim()) && !isRunning && !optimizing;
     const canOptimizeImage = isImage && Boolean(draft.trim()) && !isRunning && !optimizing;
-    const canCaption = mode === "text" && Boolean(captionEngine) && imageReferences.length > 0 && !isRunning && !optimizing;
     const captionReady = mode === "text" && Boolean(captionEngine);
+    const captionStatus = mode === "text" ? node.metadata?.captionStatus : undefined;
+    const captionRunning = mode === "text" && captionStatus === "running";
+    const captionResult = mode === "text" ? node.metadata?.captionPrompt || "" : "";
+    const captionError = mode === "text" ? node.metadata?.captionError || "" : "";
+    const captionEngineUsed = node.metadata?.captionEngineUsed || captionEngine || "qwen35";
+    const canCaption = mode === "text" && Boolean(captionEngine) && imageReferences.length > 0 && !isRunning && !captionRunning;
     const hasMediaReferences = mentionReferences.some((reference) => reference.kind !== "text");
     const textVideoHasReferences = isH3T2V && hasMediaReferences;
     const frameMode: "first" | "last" | "both" =
@@ -253,30 +257,39 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
         }
     };
 
+    const clearCaptionPreview = () => {
+        onConfigChange(node.id, { captionStatus: undefined, captionPrompt: undefined, captionError: undefined });
+    };
+
     const captionPrompt = async () => {
         if (!captionEngine || !canCaption) return;
         const controller = new AbortController();
-        captionAbortRef.current = controller;
-        setOptimizing(true);
-        setOptimizeError("");
-        setOptimizedPrompt("");
-        setCaptionEngineUsed(captionEngine);
+        registerCaptionJob(node.id, controller);
+        onConfigChange(node.id, { captionStatus: "running", captionEngineUsed: captionEngine, captionPrompt: undefined, captionError: undefined });
         try {
             const images = await resolveCanvasReferenceImages(imageReferences.slice(0, 1), nodes);
             if (!images.length) throw new Error(t("canvas.promptPanel.captionNoImage"));
             const result = await requestImageCaption(config, { images, language: "zh", engine: captionEngine }, { signal: controller.signal });
-            setOptimizedPrompt(result.prompt);
+            onConfigChange(node.id, { captionStatus: "done", captionPrompt: result.prompt });
         } catch (error) {
-            if (!controller.signal.aborted) setOptimizeError(error instanceof Error ? error.message : t("canvas.promptPanel.optimizeFailed"));
+            if (controller.signal.aborted) clearCaptionPreview();
+            else onConfigChange(node.id, { captionStatus: "error", captionError: error instanceof Error ? error.message : t("canvas.promptPanel.optimizeFailed") });
         } finally {
-            if (captionAbortRef.current === controller) captionAbortRef.current = null;
-            setOptimizing(false);
+            releaseCaptionJob(node.id, controller);
         }
     };
 
     const stopCaption = () => {
-        captionAbortRef.current?.abort();
+        abortCaptionJob(node.id);
+        clearCaptionPreview();
     };
+
+    useEffect(() => {
+        if (mode !== "text" || node.metadata?.captionStatus !== "running" || hasCaptionJob(node.id)) return;
+        // A page reload loses the in-memory controller; do not leave a stale running state.
+        clearCaptionPreview();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [mode, node.id, node.metadata?.captionStatus]);
 
     const openExpandedEditor = () => {
         setExpanded(true);
@@ -404,26 +417,29 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                 </div>
                 <Button
                     type="primary"
-                    className={`ml-auto !h-10 shrink-0 !rounded-full ${isRunning || (captionReady && optimizing) ? "!min-w-10 !px-2" : "!min-w-16 !px-3"}`}
-                    danger={isRunning || (captionReady && optimizing)}
-                    disabled={!isRunning && !(captionReady ? imageReferences.length : draft.trim())}
-                    title={captionReady ? (optimizing ? t("canvas.promptPanel.captionStop") : imageReferences.length ? t("canvas.promptPanel.captionHint") : t("canvas.promptPanel.captionNoImage")) : isRunning ? t("canvas.promptPanel.stop") : undefined}
+                    className={`ml-auto !h-10 shrink-0 !rounded-full ${isRunning || captionRunning ? "!min-w-10 !px-2" : "!min-w-16 !px-3"}`}
+                    danger={isRunning || captionRunning}
+                    disabled={!isRunning && !captionRunning && !(captionReady ? imageReferences.length : draft.trim())}
+                    title={captionRunning ? t("canvas.promptPanel.captionStop") : captionReady ? (imageReferences.length ? t("canvas.promptPanel.captionHint") : t("canvas.promptPanel.captionNoImage")) : isRunning ? t("canvas.promptPanel.stop") : undefined}
                     onClick={() => {
                         if (isRunning) {
                             onStop(node.id);
                             return;
                         }
+                        if (captionRunning) {
+                            stopCaption();
+                            return;
+                        }
                         if (captionReady) {
-                            if (optimizing) stopCaption();
-                            else void captionPrompt();
+                            void captionPrompt();
                             return;
                         }
                         submit();
                     }}
-                    aria-label={t(isRunning || (captionReady && optimizing) ? "canvas.promptPanel.captionStop" : captionReady ? "canvas.promptPanel.caption" : "canvas.promptPanel.generate")}
+                    aria-label={t(isRunning || captionRunning ? "canvas.promptPanel.captionStop" : captionReady ? "canvas.promptPanel.caption" : "canvas.promptPanel.generate")}
                 >
                     <span className="flex items-center gap-1.5">
-                        {isRunning || (captionReady && optimizing) ? (
+                        {isRunning || captionRunning ? (
                             <>
                                 <LoaderCircle className="size-4 animate-spin" />
                                 <Square className="size-3.5 fill-current" />
@@ -436,7 +452,20 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                     </span>
                 </Button>
             </div>
-            {optimizing || optimizedPrompt || optimizeError ? (
+            {(() => {
+                const previewRunning = mode === "text" ? captionRunning : optimizing;
+                const previewPrompt = mode === "text" ? captionResult : optimizedPrompt;
+                const previewError = mode === "text" ? captionError : optimizeError;
+                const previewVisible = Boolean(previewRunning || previewPrompt || previewError);
+                if (!previewVisible) return null;
+                const clearPreview = () => {
+                    if (mode === "text") clearCaptionPreview();
+                    else {
+                        setOptimizedPrompt("");
+                        setOptimizeError("");
+                    }
+                };
+                return (
                 <div className="mt-2 rounded-xl border p-2" style={{ borderColor: theme.toolbar.border, background: theme.toolbar.panel }}>
                     <div className="mb-1 flex items-center justify-between gap-2">
                         <span className="text-xs font-medium">{t(isImage ? "canvas.promptPanel.optimizeImageTitle" : mode === "text" ? "canvas.promptPanel.captionTitle" : "canvas.promptPanel.optimizeTitle")}{mode === "text" ? ` · ${captionEngineUsed === "florence" ? "Florence" : "Qwen3.5-9B"}` : ""}</span>
@@ -446,28 +475,24 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                             className="!h-6 !w-6 !min-w-6 !rounded-full !p-0"
                             icon={<X className="size-3.5" />}
                             onClick={() => {
-                                if (optimizing) {
-                                    stopCaption();
-                                    return;
-                                }
-                                setOptimizedPrompt("");
-                                setOptimizeError("");
+                                if (mode === "text" && captionRunning) stopCaption();
+                                else clearPreview();
                             }}
-                            aria-label={t(optimizing ? "canvas.promptPanel.captionStop" : "canvas.promptPanel.optimizeCancel")}
+                            aria-label={t(mode === "text" && captionRunning ? "canvas.promptPanel.captionStop" : "canvas.promptPanel.optimizeCancel")}
                         />
                     </div>
-                    {optimizing ? (
+                    {previewRunning ? (
                         <div className="flex items-center gap-2 text-xs opacity-70">
                             <LoaderCircle className="size-3.5 animate-spin" />
                             <span>{t(mode === "text" ? "canvas.promptPanel.captioning" : "canvas.promptPanel.optimizing")}</span>
                         </div>
                     ) : null}
-                    {optimizeError ? <div className="text-xs text-[#ef4444]">{optimizeError}</div> : null}
-                    {optimizedPrompt ? (
+                    {previewError ? <div className="text-xs text-[#ef4444]">{previewError}</div> : null}
+                    {previewPrompt ? (
                         <>
                             <textarea
                                 readOnly
-                                value={optimizedPrompt}
+                                value={previewPrompt}
                                 className="thin-scrollbar mt-2 h-40 w-full resize-none rounded-lg border p-2 text-xs leading-5 outline-none"
                                 style={{ borderColor: theme.toolbar.border, background: "transparent", color: theme.node.text }}
                                 onWheel={(event) => event.stopPropagation()}
@@ -475,19 +500,15 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                             <div className="mt-2 flex justify-end gap-2">
                                 <Button
                                     size="small"
-                                    onClick={() => {
-                                        setOptimizedPrompt("");
-                                        setOptimizeError("");
-                                    }}
+                                    onClick={clearPreview}
                                 >
                                     {t("canvas.promptPanel.optimizeCancel")}
                                 </Button>
                                 <Button
                                     size="small"
                                     onClick={() => {
-                                        applyPromptResult(draft.trim() ? `${draft.trim()}\n\n${optimizedPrompt}` : optimizedPrompt);
-                                        setOptimizedPrompt("");
-                                        setOptimizeError("");
+                                        applyPromptResult(draft.trim() ? `${draft.trim()}\n\n${previewPrompt}` : previewPrompt);
+                                        clearPreview();
                                     }}
                                 >
                                     {t("canvas.promptPanel.appendPrompt")}
@@ -496,9 +517,8 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                                     size="small"
                                     type="primary"
                                     onClick={() => {
-                                        applyPromptResult(optimizedPrompt);
-                                        setOptimizedPrompt("");
-                                        setOptimizeError("");
+                                        applyPromptResult(previewPrompt);
+                                        clearPreview();
                                     }}
                                 >
                                     {t("canvas.promptPanel.replacePrompt")}
@@ -507,7 +527,8 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                         </>
                     ) : null}
                 </div>
-            ) : null}
+                );
+            })()}
             <Modal title={t("canvas.promptPanel.editorTitle")} open={expanded} centered width={760} footer={null} onCancel={() => { commitPrompt(); setExpanded(false); }} destroyOnHidden>
                 <div data-canvas-no-zoom className="pt-2" onWheelCapture={(event) => event.stopPropagation()}>
                     <CanvasNodeReferenceBar nodeId={node.id} nodes={nodes} connectedNodes={connectedNodes} onDisconnect={onDisconnectReference} onStartSelection={(nodeId) => { setExpanded(false); onStartReferenceSelection?.(nodeId); }} addDisabled={isH3T2V} addDisabledHint={t("canvas.promptPanel.videoTextAddDisabled")} />
