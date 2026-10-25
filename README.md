@@ -90,7 +90,8 @@ start-local.bat
 ## 国内镜像
 
 - ModelScope 数据集镜像：https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas
-- 国内克隆：`git clone https://www.modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas.git`
+- 国内克隆前先安装 Git LFS（`git lfs install`）；魔搭对 `web/dist`、锁文件等使用 LFS，未安装会得到指针文件：
+  `git lfs install && git clone https://www.modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas.git`
 - 从魔搭克隆时远端默认分支是 `master`；网关更新逻辑会自动识别 `main`/`master`，不需要手动改 `UPDATE_BRANCH`。
 
 ## 安全提示
