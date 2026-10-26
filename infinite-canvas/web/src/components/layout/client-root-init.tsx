@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { useConfigStore } from "@/stores/use-config-store";
 import { usePromptSourceScheduler } from "@/hooks/use-prompt-source-scheduler";
 import { useLocalGatewaySync } from "@/hooks/use-local-gateway-sync";
+import { useSkinUnlockPersistence } from "@/hooks/use-skin-unlock-persistence";
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
     const { message } = App.useApp();
@@ -16,6 +17,7 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
 
     usePromptSourceScheduler();
     useLocalGatewaySync();
+    useSkinUnlockPersistence();
 
     useEffect(() => {
         if (handledConfigParams.current) return;

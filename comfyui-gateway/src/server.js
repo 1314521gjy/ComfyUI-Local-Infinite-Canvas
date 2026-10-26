@@ -18,6 +18,7 @@ import { createPreviewHub } from "./preview-hub.js";
 import { createFreeWorkflowStore, applyFreeInputs } from "./free-workflows.js";
 import { applyMossLayoutPrompt } from "./layout-prompt.js";
 import { runImage, runVideo, runWorkflow } from "./runner.js";
+import { createSkinUnlockStore } from "./skin-unlocks.js";
 import { readSystemStats } from "./system-stats.js";
 import { createTaskStore } from "./tasks.js";
 import { applyUpdate, checkForUpdate } from "./update.js";
@@ -189,6 +190,8 @@ export async function createGatewayApp(overrides = {}) {
     maxWorkflowBytes: config.maxWorkflowBytes,
   });
   await freeWorkflows.load();
+  const skinUnlocks = createSkinUnlockStore({ dataDir: config.dataDir, logger });
+  await skinUnlocks.load();
   const comfyBridge = createComfyBridge({ config, logger });
   const bridgeStatus = await comfyBridge.ensure();
   if (!bridgeStatus.installed) logger.warn(`ComfyUI 工作流桥接未安装：${bridgeStatus.reason || "未知原因"}`);
@@ -251,6 +254,15 @@ export async function createGatewayApp(overrides = {}) {
 
   app.get("/api/setup/status", (_req, res) => {
     res.json({ ok: true, status: setup.status(), comfyUrl: config.comfyUrl });
+  });
+
+  app.get("/api/skin-unlocks", (_req, res) => {
+    res.json({ ok: true, unlocked: skinUnlocks.list(), entries: skinUnlocks.entries() });
+  });
+
+  app.post("/api/skin-unlocks", async (req, res) => {
+    const entry = await skinUnlocks.unlock(req.body?.skinId);
+    res.json({ ok: true, unlocked: skinUnlocks.list(), entry });
   });
 
   app.get("/api/loras", (req, res) => {
@@ -1172,7 +1184,7 @@ export async function createGatewayApp(overrides = {}) {
     );
   });
 
-  return { app, config, logger, registry, tasks, sessions, setup, comfy };
+  return { app, config, logger, registry, tasks, sessions, setup, comfy, skinUnlocks };
 }
 
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;

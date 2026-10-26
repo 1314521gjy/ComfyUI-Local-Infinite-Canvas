@@ -13,6 +13,7 @@ type ThemeStore = {
     setTheme: (theme: ThemeName) => void;
     setCardSkin: (cardSkin: CardSkinId) => void;
     unlockCardSkin: (skinId: CardSkinId) => void;
+    mergeUnlockedCardSkins: (skinIds: CardSkinId[]) => void;
 };
 
 export const useThemeStore = create<ThemeStore>()(
@@ -32,6 +33,11 @@ export const useThemeStore = create<ThemeStore>()(
                     unlockedCardSkins: state.unlockedCardSkins.includes(skinId) ? state.unlockedCardSkins : [...state.unlockedCardSkins, skinId],
                     cardSkin: skinId,
                 })),
+            mergeUnlockedCardSkins: (skinIds) =>
+                set((state) => {
+                    const next = [...new Set([...state.unlockedCardSkins, ...skinIds])];
+                    return next.length === state.unlockedCardSkins.length ? state : { unlockedCardSkins: next };
+                }),
         }),
         { name: "infinite-canvas:theme_store" },
     ),

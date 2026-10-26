@@ -21,6 +21,7 @@ import { computeMediaSize, inferMediaRatio, inferMediaScale, mediaScaleOptions, 
 import { progressRingSkins } from "@/lib/canvas/progress-ring-skins";
 import { cardSkinIds, getCanvasTheme, type CardSkinId } from "@/lib/canvas-theme";
 import { isCardSkinLocked, verifySkinPassword } from "@/lib/canvas/skin-unlocks";
+import { persistSkinUnlock } from "@/services/api/skin-unlocks";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { createModelChannel, modelOptionsFromChannels, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 
@@ -119,6 +120,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                 return;
             }
             unlockCardSkin(passwordSkinId);
+            void persistSkinUnlock(passwordSkinId).catch(() => undefined);
             message.success(t("config.preferences.cardSkinUnlocked", { name: t(`config.preferences.cardSkins.${passwordSkinId}.label`) }));
             setPasswordSkinId(null);
             setSkinPassword("");
