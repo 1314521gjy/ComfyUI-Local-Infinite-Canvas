@@ -552,6 +552,14 @@ export default {
             videoResolution: "默认视频分辨率",
             canvasImageCount: "画布默认生图张数",
             imageAspectRatio: "默认画幅", canvasImageCountDescription: "新建画布生图和配置节点默认使用，单个节点仍可单独覆盖。",
+            cardSkin: "卡片皮肤",
+            cardSkinDescription: "画布节点卡片和面板的底色，只影响外观，不改变工具栏和画布背景。",
+            cardSkins: {
+                warm: { label: "暖褐", description: "默认深棕色底" },
+                mist: { label: "雾蓝", description: "冷调石板蓝" },
+                forest: { label: "松绿", description: "安静的深林绿" },
+                fish: { label: "蓝色大肥鱼", description: "深蓝海面与摸鱼小鲸" },
+            },
             progressRingSkin: "进度光带皮肤",
             progressRingSkinDescription: "图片和视频生成时卡片周围的充能光效，只影响外观。",
             progressRingSkins: {

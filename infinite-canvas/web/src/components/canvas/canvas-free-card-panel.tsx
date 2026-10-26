@@ -6,8 +6,8 @@ import { useTranslation } from "react-i18next";
 import { CanvasNodeReferenceBar } from "@/components/canvas/canvas-node-reference-bar";
 import { ImageSettingsPanel, ImageSettingsTheme, OptionPill } from "@/components/image-settings-panel";
 import { useEffectiveConfig } from "@/stores/use-config-store";
-import { useThemeStore } from "@/stores/use-theme-store";
-import { canvasThemes } from "@/lib/canvas-theme";
+
+import { useCanvasTheme } from "@/lib/canvas/use-canvas-theme";
 import { getGroupResourceNodes } from "@/lib/canvas/canvas-resource-references";
 import { normalizePixelSize } from "@/lib/media-size";
 import { requestImagePromptOptimize } from "@/services/api/image";
@@ -78,7 +78,7 @@ function settingsSizeLabel(size: string | undefined) {
 export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, onChange, onGenerate, onStop, onDisconnectReference, onStartReferenceSelection }: CanvasFreeCardPanelProps) {
     const { t } = useTranslation();
     const { message } = App.useApp();
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const theme = useCanvasTheme();
     const config = useEffectiveConfig();
     const info = node.metadata?.freeCard;
     const [sources, setSources] = useState<FreeWorkflowSource[]>([]);

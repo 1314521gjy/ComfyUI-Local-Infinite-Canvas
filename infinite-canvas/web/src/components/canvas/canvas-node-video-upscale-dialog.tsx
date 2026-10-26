@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { Button, Modal } from "antd";
 import { Maximize2 } from "lucide-react";
 
-import { canvasThemes } from "@/lib/canvas-theme";
-import { useThemeStore } from "@/stores/use-theme-store";
+
 import type { CanvasNodeData } from "@/types/canvas";
+import { useCanvasTheme } from "@/lib/canvas/use-canvas-theme";
 
 export type CanvasVideoUpscaleParams = { scale: 1.5 | 2; resolution: number; fps: number };
 
@@ -16,7 +16,7 @@ type Props = {
 };
 
 export function CanvasNodeVideoUpscaleDialog({ open, node, onClose, onConfirm }: Props) {
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const theme = useCanvasTheme();
     const [scale, setScale] = useState<1.5 | 2>(1.5);
     const [sourceSize, setSourceSize] = useState({ width: 0, height: 0 });
 

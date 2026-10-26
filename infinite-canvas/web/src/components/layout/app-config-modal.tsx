@@ -19,6 +19,7 @@ import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webd
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
 import { computeMediaSize, inferMediaRatio, inferMediaScale, mediaScaleOptions, parseVideoResolution } from "@/lib/media-size";
 import { progressRingSkins } from "@/lib/canvas/progress-ring-skins";
+import { cardSkinIds, getCanvasTheme } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { createModelChannel, modelOptionsFromChannels, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 
@@ -65,6 +66,8 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const [webdavDomainProgress, setWebdavDomainProgress] = useState(createWebdavDomainProgress);
     const config = useConfigStore((state) => state.config);
     const appTheme = useThemeStore((state) => state.theme);
+    const cardSkin = useThemeStore((state) => state.cardSkin) || "warm";
+    const setCardSkin = useThemeStore((state) => state.setCardSkin);
     const webdav = useConfigStore((state) => state.webdav);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const updateWebdavConfig = useConfigStore((state) => state.updateWebdavConfig);
@@ -289,6 +292,37 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                         </>
                                     ) : null}
                                 </div>
+                                <Form.Item label={t("config.preferences.cardSkin")} extra={t("config.preferences.cardSkinDescription")} className="mb-4">
+                                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                                        {cardSkinIds.map((id) => {
+                                            const selected = cardSkin === id;
+                                            const palette = getCanvasTheme(appTheme, id).node;
+                                            return (
+                                                <button
+                                                    key={id}
+                                                    type="button"
+                                                    onClick={() => setCardSkin(id)}
+                                                    className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition ${selected ? "border-stone-900 bg-stone-100 dark:border-stone-100 dark:bg-white/10" : "border-stone-200 hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-white/5"}`}
+                                                >
+                                                    <span className="grid h-10 w-16 shrink-0 place-items-center overflow-hidden rounded-md border" style={{ background: palette.fill, borderColor: palette.stroke }}>
+                                                        {id === "fish" ? (
+                                                            <img src="/skins/blue-fat-fish.png" alt="" draggable={false} className="size-10 object-contain" />
+                                                        ) : (
+                                                            <span className="space-y-1">
+                                                                <span className="block h-1 w-8 rounded-full" style={{ background: palette.text, opacity: 0.85 }} />
+                                                                <span className="block h-1 w-5 rounded-full" style={{ background: palette.muted, opacity: 0.65 }} />
+                                                            </span>
+                                                        )}
+                                                    </span>
+                                                    <span className="min-w-0">
+                                                        <span className="block text-sm font-medium">{t(`config.preferences.cardSkins.${id}.label`)}</span>
+                                                        <span className="mt-0.5 block truncate text-[11px] opacity-60">{t(`config.preferences.cardSkins.${id}.description`)}</span>
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </Form.Item>
                                 <Form.Item label={t("config.preferences.progressRingSkin")} extra={t("config.preferences.progressRingSkinDescription")} className="mb-4">
                                     <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                                         {progressRingSkins.map((skin) => {

@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { Button, Input, Modal } from "antd";
 import { Minimize2 } from "lucide-react";
 
-import { canvasThemes } from "@/lib/canvas-theme";
-import { useThemeStore } from "@/stores/use-theme-store";
+
+import { useCanvasTheme } from "@/lib/canvas/use-canvas-theme";
 
 export type CanvasOutpaintPayload = {
     prompt: string;
@@ -56,7 +56,7 @@ function clampOffset(x: number, y: number, canvas: { width: number; height: numb
 }
 
 export function CanvasNodeOutpaintDialog({ dataUrl, open, promptDefault = "", onClose, onConfirm }: CanvasNodeOutpaintDialogProps) {
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const theme = useCanvasTheme();
     const boardRef = useRef<HTMLDivElement>(null);
     const dragRef = useRef<{ startX: number; startY: number; offsetX: number; offsetY: number } | null>(null);
     const initRef = useRef<{ dataUrl: string; promptDefault: string } | null>(null);

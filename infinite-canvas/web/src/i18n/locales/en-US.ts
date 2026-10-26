@@ -552,6 +552,14 @@ export default {
             videoResolution: "Default video resolution",
             canvasImageCount: "Default canvas image count",
             imageAspectRatio: "Default aspect ratio", canvasImageCountDescription: "Used by new canvas image and configuration nodes. Individual nodes can override it.",
+            cardSkin: "Card skin",
+            cardSkinDescription: "Background tint for canvas node cards and panels. Appearance only; toolbar and canvas background stay unchanged.",
+            cardSkins: {
+                warm: { label: "Warm Umber", description: "The default deep brown" },
+                mist: { label: "Mist Blue", description: "Cool slate blue" },
+                forest: { label: "Pine", description: "Quiet deep forest green" },
+                fish: { label: "Blue Fat Fish", description: "Deep sea blue with a goofy little whale" },
+            },
             progressRingSkin: "Progress ring skin",
             progressRingSkinDescription: "Charging glow around image and video cards while generating. Appearance only.",
             progressRingSkins: {

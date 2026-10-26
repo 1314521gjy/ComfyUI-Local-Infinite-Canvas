@@ -2,8 +2,8 @@ import { useId } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useThemeStore } from "@/stores/use-theme-store";
+import { useCanvasTheme } from "@/lib/canvas/use-canvas-theme";
 import { useConfigStore } from "@/stores/use-config-store";
-import { canvasThemes } from "@/lib/canvas-theme";
 import { getProgressRingSkin, type ProgressRingPalette } from "@/lib/canvas/progress-ring-skins";
 
 const ringPad = 2;
@@ -12,7 +12,7 @@ const ringRadius = 26;
 export function CanvasNodeProgressRing({ width, height, step, total, complete = false }: { width: number; height: number; step: number; total: number; complete?: boolean }) {
     const themeName = useThemeStore((state) => state.theme);
     const skinId = useConfigStore((state) => state.config.progressRingSkin);
-    const theme = canvasThemes[themeName];
+    const theme = useCanvasTheme();
     const dark = themeName === "dark";
     const skin = getProgressRingSkin(skinId);
     const palette = dark ? skin.dark : skin.light;

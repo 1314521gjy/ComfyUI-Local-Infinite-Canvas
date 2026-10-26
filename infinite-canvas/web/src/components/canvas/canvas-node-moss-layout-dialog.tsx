@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { Button, Input, Modal } from "antd";
 import { ArrowDown, ArrowUp, Trash2 } from "lucide-react";
 
-import { canvasThemes } from "@/lib/canvas-theme";
-import { useThemeStore } from "@/stores/use-theme-store";
+
+import { useCanvasTheme } from "@/lib/canvas/use-canvas-theme";
 import type { CanvasMossLayout, CanvasMossLayoutRegion } from "@/types/canvas";
 
 export type CanvasMossLayoutPayload = CanvasMossLayout;
@@ -51,7 +51,7 @@ function buildDisplayPrompt(summary: string, regions: CanvasMossLayoutRegion[]) 
 }
 
 export function CanvasNodeMossLayoutDialog({ open, dataUrl, promptDefault = "", size, modelLabel, layout, onClose, onConfirm }: Props) {
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const theme = useCanvasTheme();
     const boardRef = useRef<HTMLDivElement>(null);
     const drawRef = useRef<{ x: number; y: number } | null>(null);
     const moveRef = useRef<{ id: string; startX: number; startY: number; originX: number; originY: number; width: number; height: number } | null>(null);
