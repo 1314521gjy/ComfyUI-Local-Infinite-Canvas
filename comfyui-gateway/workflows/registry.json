@@ -2021,7 +2021,7 @@
     {
       "id": "image-moss-sft-50step",
       "name": "image-moss-sft-50step",
-      "label": "MOSS-Image 高质量 50步 · TE",
+      "label": "MOSS-Image 高质量 50步",
       "type": "image",
       "description": "MOSS-Image SFT bf16 高质量版；默认 50 步 / cfg3.5 / euler simple，SLG 跳过第 22 层，并内置 TE-Speed-MOSS 跳步加速（默认 te_predictor 2 / reuse 0.12 / error 0.06；实测 1.44×）。",
       "file": "image-moss-sft-50step.json",
@@ -3019,7 +3019,7 @@
     {
       "id": "image-moss-sft-int8-50step",
       "name": "image-moss-sft-int8-50step",
-      "label": "MOSS-Image 低显存 int8 50步 · TE",
+      "label": "MOSS-Image 低显存 int8 50步",
       "type": "image",
       "description": "MOSS-Image SFT int8 + Qwen3.5 INT8 TE + 全量 FLUX.2 VAE；50步/cfg3.5，SLG 第22层，TE-Speed-MOSS 跳步；不挂 8步 LoRA。",
       "file": "image-moss-sft-int8-50step.json",
