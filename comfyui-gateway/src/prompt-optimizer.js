@@ -73,8 +73,10 @@ function stripReasoning(text) {
 
 function sanitizeH3Prompt(text) {
   let out = stripReasoning(text);
+  const reference = out.search(/subject_definitions\s*:/i);
   const main = out.search(/integrated_multimodal_description\s*:/i);
-  if (main > 0) out = out.slice(main);
+  if (reference >= 0 && (main < 0 || reference < main)) out = out.slice(reference);
+  else if (main > 0) out = out.slice(main);
   else if (main < 0) {
     const alt = out.search(/overall_soundscape\s*:|non_diegetic_music\s*:/i);
     if (alt > 0) out = out.slice(alt);
@@ -124,6 +126,17 @@ overall_soundscape: ...
 non_diegetic_music: ...
 
 要求：画面与声音描述使用英文；保留用户的主体与意图；不要编造品牌或画面文字；镜头时间线与总时长一致。`;
+
+const CLOUD_H3_REF_SYSTEM_PROMPT = `你是 MiniMax-H3 全参考模式（Ref2VA）视频提示词专家。请将用户输入改写为 H3 官方全参考格式，只输出以下六段，不要输出任何思考过程、分析、解释、Markdown 代码块或前后缀：
+
+subject_definitions: 逐项定义 <Subject N>（可复用的人物/物体/场景/服装等）、<Picture N>（图像参考）、<Video N>（源视频/结构参考）、<Audio N>（音频参考）；标签在全文含义一致。只作为来源引用的图片不必单独成条。
+summary: 概括任务类型、目标视频和主要参考关系。
+retention_analysis: 逐项写 fully_preserved / partially_preserved / transferred / reused，并说明保留或替换了什么。
+detailed_description: 按播放顺序写镜头、构图、主体、动作、镜头运动、光线、环境、声音和对白；明确参考内容在何时生效。
+overall_soundscape: 环境声与物理声音。
+non_diegetic_music: 观众才能听到的背景音乐。
+
+要求：六段正文用英文；对话、歌词、画面文字保留原语言；保留用户的替换/保留关系。如果任务是人物替换，必须写清用 <Picture N> 中的哪个人替换 <Video N> 里的哪个人，并逐项列出必须原样保留的人、动作、机位、背景和声音；不要把被替换的人写成保留对象。不要编造品牌或画面文字；时间线与视频总时长一致。`;
 
 const CLOUD_IMAGE_SYSTEM_PROMPT = `你是 AI 生图提示词专家。请把用户输入改写为一条可直接使用的生图/图生图提示词，只输出最终提示词本身，不要输出任何思考过程、分析、解释、Markdown 代码块、标题或前后缀。
 
@@ -201,7 +214,8 @@ async function cloudOptimize({ prompt, mode, duration, referenceNote, uploadedIm
     uploadedImages.length ? `参考图片：${uploadedImages.length} 张（云端模式仅使用文字说明）` : "",
     `用户原始提示词：\n${prompt}`,
   ].filter(Boolean).join("\n");
-  const { content, model, elapsedMs } = await cloudChat({ system: CLOUD_SYSTEM_PROMPT, userText, cloud, signal });
+  const system = /全参考|Ref2VA|Reference to Video/i.test(mode) ? CLOUD_H3_REF_SYSTEM_PROMPT : CLOUD_SYSTEM_PROMPT;
+  const { content, model, elapsedMs } = await cloudChat({ system, userText, cloud, signal });
   const result = sanitizeH3Prompt(content);
   if (!result) throw new PromptOptimizeError("云端 API 没有返回提示词", { status: 502, code: "no_prompt_output" });
   return { prompt: result, mode, duration, provider: "cloud", model, elapsedMs };

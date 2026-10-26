@@ -259,7 +259,7 @@
       "processing_percent_2": 0.9,
       "mcs": 2,
       "device": "auto",
-      "mode": "standard",
+      "mode": "8-step LoRA",
       "model": [
         "120",
         0
