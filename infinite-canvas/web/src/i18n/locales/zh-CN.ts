@@ -431,6 +431,7 @@ export default {
             preferences: "偏好设置",
             promptSources: "提示词来源",
             localStorage: "本地存储",
+            resources: "资源中心",
         },
         cloudApi: {
             title: "云端 API（提示词优化）",

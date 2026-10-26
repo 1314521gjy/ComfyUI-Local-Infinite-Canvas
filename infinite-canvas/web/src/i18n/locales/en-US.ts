@@ -431,6 +431,7 @@ export default {
             preferences: "Preferences",
             promptSources: "Prompt sources",
             localStorage: "Local storage",
+            resources: "Resources",
         },
         cloudApi: {
             title: "Cloud API (prompt optimization)",

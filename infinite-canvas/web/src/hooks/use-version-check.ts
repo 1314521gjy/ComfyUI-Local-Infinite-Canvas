@@ -56,7 +56,13 @@ export function useVersionCheck() {
     );
 
     useEffect(() => {
-        void checkLatest(false);
+        if (typeof window === "undefined") return;
+        if (window.sessionStorage.getItem("qoder-update-checked") === "1") return;
+        window.sessionStorage.setItem("qoder-update-checked", "1");
+        void (async () => {
+            const result = await checkLatest(true);
+            if (result?.updateAvailable) setOpen(true);
+        })();
     }, [checkLatest]);
 
     const openReleaseModal = useCallback(() => {

@@ -15,6 +15,7 @@ import { createLogger, loadConfig } from "./config.js";
 import { createRegistry } from "./registry.js";
 import { createSessionTracker } from "./sessions.js";
 import { createSetupManager } from "./setup.js";
+import { createResourceManager } from "./resources.js";
 import { createPromptOptimizer } from "./prompt-optimizer.js";
 import { createVideoInterpolator } from "./video-interpolation.js";
 import { createPreviewHub } from "./preview-hub.js";
@@ -224,6 +225,8 @@ export async function createGatewayApp(overrides = {}) {
   if (!bridgeStatus.installed) logger.warn(`ComfyUI 工作流桥接未安装：${bridgeStatus.reason || "未知原因"}`);
   const sessions = createSessionTracker({ staleMs: config.sessionStaleSec * 1000 });
   const setup = createSetupManager({ config, registry, comfy, logger });
+  const resources = createResourceManager({ config, setup, logger });
+  await resources.init();
   let lastOOM = null;
   const activeRequests = new Map();
   const registerActiveRequest = (id, controller) => {
@@ -282,6 +285,41 @@ export async function createGatewayApp(overrides = {}) {
 
   app.get("/api/setup/status", (_req, res) => {
     res.json({ ok: true, status: setup.status(), comfyUrl: config.comfyUrl });
+  });
+
+  app.get("/api/resources/status", (_req, res) => {
+    res.json(resources.status());
+  });
+
+  app.post("/api/resources/install", (req, res) => {
+    try {
+      const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+      const packs = Array.isArray(req.body?.packs) ? req.body.packs : [];
+      if (!ids.length && !packs.length) throw new Error("请选择要安装的资源或功能包");
+      res.json({ ok: true, job: resources.install({ ids, packs }) });
+    } catch (error) {
+      res.status(400).json({ ok: false, error: { message: error.message } });
+    }
+  });
+
+  app.get("/api/resources/jobs/:id", (req, res) => {
+    const job = resources.getJob(req.params.id);
+    if (!job) return res.status(404).json({ ok: false, error: { message: "任务不存在" } });
+    res.json({ ok: true, job });
+  });
+
+  app.post("/api/resources/jobs/:id/cancel", (req, res) => {
+    const job = resources.cancelJob(req.params.id);
+    if (!job) return res.status(404).json({ ok: false, error: { message: "任务不存在" } });
+    res.json({ ok: true, job });
+  });
+
+  app.post("/api/resources/refresh", async (_req, res) => {
+    try {
+      res.json(await resources.refresh());
+    } catch (error) {
+      res.status(500).json({ ok: false, error: { message: error.message } });
+    }
   });
 
   app.get("/api/skin-unlocks", (_req, res) => {

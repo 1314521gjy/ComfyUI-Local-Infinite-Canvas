@@ -59,11 +59,15 @@ export function loadConfig(overrides = {}) {
     maxImageCount: num(overrides.maxImageCount ?? process.env.MAX_IMAGE_COUNT, 15),
     updateEnabled: overrides.updateEnabled ?? process.env.UPDATE_ENABLED !== "0",
     updateManifestPath: path.resolve(overrides.updateManifestPath ?? process.env.UPDATE_MANIFEST_PATH ?? path.join(appRoot, "update.json")),
-    updateManifestUrl: String(overrides.updateManifestUrl ?? process.env.UPDATE_MANIFEST_URL ?? "").trim(),
+    updateManifestUrl: String(overrides.updateManifestUrl ?? process.env.UPDATE_MANIFEST_URL ?? "https://www.modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/update.json").trim(),
+    updateManifestUrlBackup: String(overrides.updateManifestUrlBackup ?? process.env.UPDATE_MANIFEST_URL_BACKUP ?? "https://raw.githubusercontent.com/1314521gjy/ComfyUI-Local-Infinite-Canvas/main/update.json").trim(),
     updateRemote: String(overrides.updateRemote ?? process.env.UPDATE_REMOTE ?? "origin").trim(),
     updateBranch: String(overrides.updateBranch ?? process.env.UPDATE_BRANCH ?? "main").trim(),
     updateFetchTimeoutMs: num(overrides.updateFetchTimeoutMs ?? process.env.UPDATE_FETCH_TIMEOUT_MS, 15000),
     updateApplyTimeoutMs: num(overrides.updateApplyTimeoutMs ?? process.env.UPDATE_APPLY_TIMEOUT_MS, 120000),
+    resourcesIndexUrl: String(overrides.resourcesIndexUrl ?? process.env.RESOURCES_INDEX_URL ?? "").trim(),
+    resourcesFetchTimeoutMs: num(overrides.resourcesFetchTimeoutMs ?? process.env.RESOURCES_FETCH_TIMEOUT_MS, 8000),
+    resourceConcurrency: num(overrides.resourceConcurrency ?? process.env.RESOURCE_CONCURRENCY, 2),
     version: "0.1.0",
   };
   if (config.comfyWorkflowsDir) config.comfyWorkflowsDir = path.resolve(config.comfyWorkflowsDir);

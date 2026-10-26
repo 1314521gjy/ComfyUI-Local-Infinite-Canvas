@@ -134,15 +134,24 @@ async function readRemoteManifestNoFetch(config, branch) {
 }
 
 async function fetchManifestUrl(config) {
-  if (!config.updateManifestUrl) throw new Error("未配置更新清单地址");
-  const response = await fetch(config.updateManifestUrl, {
-    signal: AbortSignal.timeout(config.updateFetchTimeoutMs),
-    headers: { Accept: "application/json" },
-  });
-  if (!response.ok) throw new Error(`更新清单 HTTP ${response.status}`);
-  const manifest = await response.json();
-  if (!manifest?.version) throw new Error("update.json 缺少 version");
-  return manifest;
+  const urls = [config.updateManifestUrl, config.updateManifestUrlBackup].filter(Boolean);
+  if (!urls.length) throw new Error("未配置更新清单地址");
+  const errors = [];
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(config.updateFetchTimeoutMs),
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const manifest = await response.json();
+      if (!manifest?.version) throw new Error("update.json 缺少 version");
+      return manifest;
+    } catch (error) {
+      errors.push(`${new URL(url).hostname}: ${error.message}`);
+    }
+  }
+  throw new Error(`更新清单不可用（${errors.join("；")}）`);
 }
 
 /**

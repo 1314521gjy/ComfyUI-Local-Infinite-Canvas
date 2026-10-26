@@ -1,0 +1,186 @@
+{
+  "schema": 1,
+  "version": "2026.10.26-1",
+  "channel": "stable",
+  "updatedAt": "2026-10-26T21:40:00+08:00",
+  "packs": [
+    {
+      "id": "core",
+      "label": "画布与基础工作流",
+      "description": "画布、网关、启动器和基础工作流已随安装器内置，无需下载。",
+      "minVramGb": 0,
+      "resources": [],
+      "workflows": []
+    },
+    {
+      "id": "moss",
+      "label": "MOSS-Image 均衡融合",
+      "description": "MOSS Base+SFT 按 Balanced 预设融合所需底模、文本编码器、VAE 和本地烘焙模型。50步入口另需 Windows/Python 3.13 的 TE-Speed-MOSS 编译节点（当前不自动安装）；8步入口不受影响。",
+      "minVramGb": 16,
+      "resources": [
+        "moss_image_base_bf16",
+        "moss_image_sft_bf16",
+        "qwen3.5_9b_int8_convrot",
+        "flux2-vae",
+        "moss_balanced_s100"
+      ],
+      "workflows": [
+        "image-moss-balanced-8step",
+        "image-moss-balanced-50step",
+        "image-moss-sft-8step",
+        "image-moss-sft-50step"
+      ]
+    },
+    {
+      "id": "angle",
+      "label": "Qwen 2.1 多角度",
+      "description": "Qwen Image 2.1 Turbo、Qwen3VL-8B 文本编码器和 VAE；已存在同名文件会直接复用。",
+      "minVramGb": 16,
+      "resources": [
+        "qwen_image_2.1_turbo_int8_convrot",
+        "qwen3vl_8b_int8_convrot",
+        "qwen_image_2.1_vae_bf16",
+        "qwenmultiangle"
+      ],
+      "workflows": [
+        "image-qwen21-angle",
+        "image-qwen21"
+      ]
+    },
+    {
+      "id": "h3",
+      "label": "H3 视频（后续包）",
+      "description": "H3/VDN/TRT/Triton 依赖较重，作为后续编译包提供。",
+      "planned": true,
+      "minVramGb": 32,
+      "resources": [],
+      "workflows": []
+    }
+  ],
+  "resources": [
+    {
+      "id": "moss_image_base_bf16",
+      "type": "model",
+      "label": "MOSS-Image Base bf16",
+      "target": "diffusion_models/moss_image_base_bf16.safetensors",
+      "size": 10164655808,
+      "sha256": "cacd158728a1fb9e57c408a922b54752ec71fceb566b3821269927964e62b41f",
+      "license": "MOSS-Image",
+      "sources": [
+        "https://hf-mirror.com/Comfy-Org/MOSS-Image/resolve/main/diffusion_models/moss_image_base_bf16.safetensors",
+        "https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/diffusion_models/moss_image_base_bf16.safetensors"
+      ]
+    },
+    {
+      "id": "moss_image_sft_bf16",
+      "type": "model",
+      "label": "MOSS-Image SFT bf16",
+      "target": "diffusion_models/moss_image_sft_bf16.safetensors",
+      "size": 10164655808,
+      "sha256": "f96738d8116d78b7316b57c663d8c98591ddafab7488f48e3099b7655e34ab6f",
+      "license": "MOSS-Image",
+      "sources": [
+        "https://hf-mirror.com/Comfy-Org/MOSS-Image/resolve/main/diffusion_models/moss_image_sft_bf16.safetensors",
+        "https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/diffusion_models/moss_image_sft_bf16.safetensors"
+      ]
+    },
+    {
+      "id": "qwen3.5_9b_int8_convrot",
+      "type": "model",
+      "label": "Qwen3.5-9B int8 convrot 文本编码器",
+      "target": "text_encoders/qwen3.5_9b_int8_convrot.safetensors",
+      "size": 9748121532,
+      "sha256": "32e3787472f708fa5f83624acbf5ef23f7fc89c439e05065ea57cfe5a97f025a",
+      "license": "Qwen",
+      "sources": [
+        "https://hf-mirror.com/Comfy-Org/MOSS-Image/resolve/main/text_encoders/qwen3.5_9b_int8_convrot.safetensors",
+        "https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/text_encoders/qwen3.5_9b_int8_convrot.safetensors"
+      ]
+    },
+    {
+      "id": "flux2-vae",
+      "type": "model",
+      "label": "FLUX.2 VAE",
+      "target": "vae/flux2-vae.safetensors",
+      "size": 336211292,
+      "sha256": "868fe7b343cc8f3a19dbcfcafbc3d5f888802be3f89bd81b65b3621a066ce8f3",
+      "license": "FLUX.2",
+      "sources": [
+        "https://hf-mirror.com/Comfy-Org/MOSS-Image/resolve/main/vae/flux2-vae.safetensors",
+        "https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/vae/flux2-vae.safetensors"
+      ]
+    },
+    {
+      "id": "moss_balanced_s100",
+      "type": "bake",
+      "label": "MOSS Balanced 融合模型（本地烘焙）",
+      "target": "diffusion_models/moss_balanced_s100.safetensors",
+      "size": 10164655808,
+      "requires": [
+        "moss_image_base_bf16",
+        "moss_image_sft_bf16"
+      ],
+      "builder": {
+        "preset": "Balanced",
+        "strength": 1
+      },
+      "license": "MOSS-Image"
+    },
+    {
+      "id": "qwen_image_2.1_turbo_int8_convrot",
+      "type": "model",
+      "label": "Qwen Image 2.1 Turbo int8 convrot",
+      "target": "diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors",
+      "size": 7256828688,
+      "sha256": "bc77cb2f0220311a158a10e77677f0912fac72d53a66faf78a67d7946b81f5c1",
+      "license": "Qwen-Image",
+      "sources": [
+        "https://hf-mirror.com/NidAll/Turbo-INT8-ConvRot-for-Qwen-Image-2.1/resolve/main/qwen-image-2.1-turbo-int8-convrot.safetensors",
+        "https://huggingface.co/NidAll/Turbo-INT8-ConvRot-for-Qwen-Image-2.1/resolve/main/qwen-image-2.1-turbo-int8-convrot.safetensors"
+      ]
+    },
+    {
+      "id": "qwen3vl_8b_int8_convrot",
+      "type": "model",
+      "label": "Qwen3VL-8B int8 convrot 文本编码器",
+      "target": "text_encoders/qwen3vl_8b_int8_convrot.safetensors",
+      "size": 10985825432,
+      "sha256": "5deb0b5742b7ac2b1d2a9c6c48433a98b9444954b6114b616812ebd5d977296e",
+      "license": "Qwen",
+      "note": "本地可能是不同量化版本；同名文件存在时直接复用，不校验大小。",
+      "sources": [
+        "https://hf-mirror.com/Stick9190/qwen3vl_8b_int8_convrot/resolve/main/qwen3vl_8b_int8_convrot.safetensors",
+        "https://huggingface.co/Stick9190/qwen3vl_8b_int8_convrot/resolve/main/qwen3vl_8b_int8_convrot.safetensors"
+      ]
+    },
+    {
+      "id": "qwen_image_2.1_vae_bf16",
+      "type": "model",
+      "label": "Qwen Image 2.1 VAE bf16",
+      "target": "vae/qwen_image_2.1_vae_bf16.safetensors",
+      "size": 675509688,
+      "sha256": "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
+      "license": "Qwen-Image",
+      "sources": [
+        "https://hf-mirror.com/Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors",
+        "https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors"
+      ]
+    },
+    {
+      "id": "qwenmultiangle",
+      "type": "node",
+      "label": "Qwen Multiangle Camera 节点",
+      "target": "custom_nodes/ComfyUI-qwenmultiangle",
+      "size": 0,
+      "license": "MIT",
+      "note": "安装后需重启 ComfyUI；主源 GitHub，后续可切到我们的魔搭镜像。",
+      "provides": [
+        "QwenMultiangleCameraNode"
+      ],
+      "sources": [
+        "https://github.com/jtydhr88/ComfyUI-qwenmultiangle/archive/refs/heads/main.zip",
+        "https://codeload.github.com/jtydhr88/ComfyUI-qwenmultiangle/zip/refs/heads/main"
+      ]
+    }
+  ]
+}

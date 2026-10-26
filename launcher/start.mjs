@@ -252,7 +252,17 @@ function comfyInstallInfo(dir) {
 
 function findComfyInstall(cfg) {
   const home = os.homedir();
-  const candidates = [
+  const sameFolder = [
+    ROOT,
+    path.join(ROOT, "ComfyUI"),
+    path.join(ROOT, "ComfyUI_windows_portable"),
+    path.join(ROOT, "ComfyUI_windows_portable", "ComfyUI"),
+    path.resolve(ROOT, ".."),
+    path.resolve(ROOT, "..", "ComfyUI"),
+    path.resolve(ROOT, "..", "ComfyUI_windows_portable"),
+    path.resolve(ROOT, "..", "ComfyUI_windows_portable", "ComfyUI"),
+  ];
+  const common = [
     cfg.comfyDir,
     path.join(home, "ComfyUI"),
     path.join(home, "Documents", "ComfyUI"),
@@ -264,12 +274,45 @@ function findComfyInstall(cfg) {
   ].filter(Boolean);
 
   const seen = new Set();
-  for (const raw of candidates) {
+  const inspect = (raw, via) => {
+    if (!raw) return null;
     const dir = path.resolve(raw);
     const key = dir.toLowerCase();
-    if (seen.has(key)) continue;
+    if (seen.has(key)) return null;
     seen.add(key);
     const info = comfyInstallInfo(dir);
+    if (info) log(`ComfyUI 探测命中（${via}）：${dir}`);
+    return info;
+  };
+
+  for (const dir of sameFolder) {
+    const info = inspect(dir, "同文件夹");
+    if (info) return info;
+  }
+
+  const driveRoot = path.parse(ROOT).root;
+  const skip = new Set(["windows", "program files", "program files (x86)", "programdata", "$recycle.bin", "system volume information", "recovery", "perflogs"]);
+  const started = Date.now();
+  let entries = [];
+  try {
+    entries = fs.readdirSync(driveRoot, { withFileTypes: true });
+  } catch {
+    entries = [];
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || skip.has(entry.name.toLowerCase())) continue;
+    if (Date.now() - started > 2000) break;
+    const dir = path.join(driveRoot, entry.name);
+    const info = inspect(dir, "同盘");
+    if (info) return info;
+    if (/comfy/i.test(entry.name)) {
+      const child = inspect(path.join(dir, "ComfyUI"), "同盘子目录");
+      if (child) return child;
+    }
+  }
+
+  for (const dir of common) {
+    const info = inspect(dir, "常见目录/配置");
     if (info) return info;
   }
   return null;
