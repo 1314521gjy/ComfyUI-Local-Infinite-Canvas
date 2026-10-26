@@ -322,7 +322,11 @@ export function createResourceManager({ config, setup, logger, hardware: hardwar
         const byId = new Map(resources.map((resource) => [resource.id, resource]));
         const packs = (index?.packs || []).map((pack) => {
             const items = (pack.resources || []).map((id) => byId.get(id)).filter(Boolean);
-            const missing = items.filter((item) => item.status !== "present");
+            const optionalIds = new Set(pack.optionalResources || []);
+            const requiredItems = items.filter((item) => !optionalIds.has(item.id));
+            const optionalItems = items.filter((item) => optionalIds.has(item.id));
+            const requiredMissing = requiredItems.filter((item) => item.status !== "present");
+            const optionalMissing = optionalItems.filter((item) => item.status !== "present");
             return {
                 id: pack.id,
                 label: pack.label || pack.id,
@@ -339,11 +343,19 @@ export function createResourceManager({ config, setup, logger, hardware: hardwar
                 resident: false,
                 workflows: pack.workflows || [],
                 resourceIds: pack.resources || [],
+                requiredIds: requiredItems.map((item) => item.id),
+                optionalIds: optionalItems.map((item) => item.id),
                 resources: items,
-                total: items.length,
-                present: items.length - missing.length,
-                missing: pack.planned ? 0 : missing.length,
-                missingSize: missing.reduce((sum, item) => sum + (item.size || 0), 0),
+                requiredItems,
+                optionalItems,
+                total: requiredItems.length,
+                present: requiredItems.length - requiredMissing.length,
+                missing: pack.planned ? 0 : requiredMissing.length,
+                missingSize: requiredMissing.reduce((sum, item) => sum + (item.size || 0), 0),
+                optionalTotal: optionalItems.length,
+                optionalPresent: optionalItems.length - optionalMissing.length,
+                optionalMissing: optionalMissing.length,
+                optionalSize: optionalMissing.reduce((sum, item) => sum + (item.size || 0), 0),
             };
         });
 
@@ -383,7 +395,7 @@ export function createResourceManager({ config, setup, logger, hardware: hardwar
         }
 
         const recommendedPacks = packs.filter((pack) => pack.recommended);
-        const recommendedIds = new Set(recommendedPacks.flatMap((pack) => pack.resourceIds));
+        const recommendedIds = new Set(recommendedPacks.flatMap((pack) => pack.requiredIds || pack.resourceIds));
         const recommendedResources = resources.filter((resource) => recommendedIds.has(resource.id));
         const recommendedMissing = recommendedResources.filter((resource) => resource.status !== "present");
         const missingResources = resources.filter((resource) => resource.status !== "present");

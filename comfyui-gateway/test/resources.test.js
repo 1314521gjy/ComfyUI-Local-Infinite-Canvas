@@ -238,3 +238,53 @@ test("optional alternate model packs can stay eligible without being auto-recomm
         await fsp.rm(root, { recursive: true, force: true });
     }
 });
+
+test("optional pack resources are listed separately and do not block required readiness", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-optional-test-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(path.join(comfy, "models", "vae"), { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    const index = {
+        schema: 1,
+        version: "optional-test",
+        packs: [{
+            id: "test",
+            family: "test",
+            tier: "standard",
+            resources: ["required-file", "optional-file"],
+            optionalResources: ["optional-file"],
+            requirements: { vramFloorGb: 8, weightsGb: 10, ramBaseGb: 8, safety: 0.15, recommendVramGb: 8 },
+        }],
+        resources: [
+            { id: "required-file", type: "model", label: "Required", target: "vae/required.bin", size: 100, sources: ["http://127.0.0.1:1/required.bin"] },
+            { id: "optional-file", type: "model", label: "Optional", target: "vae/optional.bin", size: 200, sources: ["http://127.0.0.1:1/optional.bin"] },
+        ],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: { loaderOptions: () => ({}), status: () => ({ comfyReachable: true }), scan: async () => ({}) },
+        logger: null,
+        hardware: { gpuName: "Test 32GB", vramTotalMb: 32768, ramTotalBytes: 64 * 1024 ** 3, ramFreeBytes: 64 * 1024 ** 3, detectedAt: new Date().toISOString(), source: "test" },
+    });
+    try {
+        await manager.init();
+        const status = manager.status();
+        const pack = status.packs[0];
+        assert.equal(pack.total, 1);
+        assert.equal(pack.missing, 1);
+        assert.equal(pack.missingSize, 100);
+        assert.equal(pack.optionalTotal, 1);
+        assert.equal(pack.optionalMissing, 1);
+        assert.equal(pack.optionalSize, 200);
+        assert.deepEqual(pack.requiredItems.map((item) => item.id), ["required-file"]);
+        assert.deepEqual(pack.optionalItems.map((item) => item.id), ["optional-file"]);
+        assert.equal(status.summary.recommendedResources, 1);
+        assert.equal(status.summary.recommendedMissing, 1);
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});

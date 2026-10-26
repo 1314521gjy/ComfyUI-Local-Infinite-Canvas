@@ -1,5 +1,5 @@
 import { App, Button, Checkbox, Progress, Tag } from "antd";
-import { AlertTriangle, CheckCircle2, Download, HardDriveDownload, RefreshCw, Server, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, Download, HardDriveDownload, RefreshCw, Server, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -22,7 +22,7 @@ const copyByLocale = {
         subtitle: "只下载缺失的资源；已有同名模型会直接复用，不会重复下载。",
         refresh: "重新扫描",
         installSelected: "安装选中",
-        installAllMissing: "安装全部缺失",
+        installPack: "安装此包",
         cancel: "取消安装",
         skip: "跳过",
         none: "未找到资源索引",
@@ -35,6 +35,11 @@ const copyByLocale = {
         offload: "内存卸载",
         showAll: "显示其他版本",
         hideAll: "收起其他版本",
+        requiredSection: "必下内容",
+        optionalSection: "选下内容",
+        optionalHint: "LoRA、低显存底模等，按需安装",
+        optionalEmpty: "此包没有选下内容",
+        optionalMissingLabel: "选下缺",
         hardwareDetected: "已识别",
         noHardware: "未识别到显卡，已显示全部版本，未做推荐。",
         noCompatible: "当前显卡暂无可推荐的版本，可展开查看全部。",
@@ -55,15 +60,17 @@ const copyByLocale = {
         target: "目标",
         license: "许可",
         note: "说明",
-        emptyMissing: "所有需要的资源都已具备。",
+        emptyMissing: "所有必下资源都已具备。",
         scanFirst: "正在读取资源状态…",
+        expand: "展开",
+        collapse: "收起",
     },
     en: {
         title: "Resource Center",
         subtitle: "Only missing files are downloaded. Existing models with the same name are reused.",
         refresh: "Rescan",
         installSelected: "Install selected",
-        installAllMissing: "Install all missing",
+        installPack: "Install pack",
         cancel: "Cancel",
         skip: "Skip",
         none: "No resource index found",
@@ -76,6 +83,11 @@ const copyByLocale = {
         offload: "Memory offload",
         showAll: "Show other versions",
         hideAll: "Hide other versions",
+        requiredSection: "Required",
+        optionalSection: "Optional",
+        optionalHint: "LoRAs, low-VRAM checkpoints, and other extras",
+        optionalEmpty: "No optional items in this pack",
+        optionalMissingLabel: "Optional missing",
         hardwareDetected: "Detected",
         noHardware: "No GPU detected; showing all versions without recommendations.",
         noCompatible: "No recommended version for this GPU; expand to see all.",
@@ -98,20 +110,70 @@ const copyByLocale = {
         note: "Note",
         emptyMissing: "All required resources are ready.",
         scanFirst: "Loading resources…",
+        expand: "Expand",
+        collapse: "Collapse",
     },
 };
 
-function statusTag(item: ResourceItem, copy: typeof copyByLocale.zh) {
+type Copy = typeof copyByLocale.zh;
+
+function statusTag(item: ResourceItem, copy: Copy) {
     if (item.status === "present") return <Tag color="green">{copy.present}</Tag>;
     if (item.status === "blocked") return <Tag color="gold">{copy.blocked}</Tag>;
     return <Tag color="orange">{copy.missing}</Tag>;
 }
 
-function packState(pack: ResourcePack, copy: typeof copyByLocale.zh) {
+function packState(pack: ResourcePack, copy: Copy) {
     if (pack.planned) return <Tag>{copy.planned}</Tag>;
     if (!pack.total) return <Tag color="green">{copy.ready}</Tag>;
     if (!pack.missing) return <Tag color="green">{copy.ready}</Tag>;
     return <Tag color="orange">{copy.missing} {pack.missing}</Tag>;
+}
+
+function ResourceCard({
+    item,
+    copy,
+    compact = false,
+    optional = false,
+    selected = false,
+    onToggle,
+}: {
+    item: ResourceItem;
+    copy: Copy;
+    compact?: boolean;
+    optional?: boolean;
+    selected?: boolean;
+    onToggle?: (checked: boolean) => void;
+}) {
+    return (
+        <div className="rounded-lg border border-stone-200 bg-white/60 p-2 dark:border-stone-800 dark:bg-white/[.02]">
+            <div className="flex items-start gap-2">
+                {optional ? (
+                    <Checkbox
+                        checked={selected}
+                        disabled={item.status === "present"}
+                        onChange={(event) => onToggle?.(event.target.checked)}
+                    />
+                ) : (
+                    <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-stone-300 dark:bg-stone-600" />
+                )}
+                <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="text-[11px] font-medium text-stone-700 dark:text-stone-200">{item.label}</span>
+                        {item.type === "bake" ? <Tag className="m-0">{copy.localBake}</Tag> : null}
+                        {statusTag(item, copy)}
+                    </div>
+                    <div className="mt-0.5 truncate text-[10px] text-stone-400 dark:text-stone-500">{item.target}</div>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-stone-400 dark:text-stone-500">
+                        <span>{copy.sources} {item.sources.length}</span>
+                        <span>{formatBytes(item.size)}</span>
+                        {!compact && item.license ? <span>{copy.license}: {item.license}</span> : null}
+                    </div>
+                    {!compact && item.note ? <div className="mt-0.5 text-[10px] leading-4 text-stone-400 dark:text-stone-500">{copy.note}: {item.note}</div> : null}
+                </div>
+            </div>
+        </div>
+    );
 }
 
 export function ResourceCenterPanel({ compact = false, footer }: { compact?: boolean; footer?: React.ReactNode }) {
@@ -124,6 +186,8 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
     const [error, setError] = useState("");
     const [job, setJob] = useState<ResourceJob | null>(null);
     const [selectedPacks, setSelectedPacks] = useState<Set<string>>(new Set());
+    const [selectedOptional, setSelectedOptional] = useState<Set<string>>(new Set());
+    const [expandedPacks, setExpandedPacks] = useState<Set<string>>(new Set());
     const [showAll, setShowAll] = useState(false);
     const pollRef = useRef<number | null>(null);
     const selectedInitialized = useRef(false);
@@ -164,6 +228,15 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
         return () => stopPolling();
     }, [load, stopPolling]);
 
+    useEffect(() => {
+        if (!status) return;
+        const available = new Set(status.resources.filter((item) => item.status !== "present").map((item) => item.id));
+        setSelectedOptional((current) => {
+            const next = new Set([...current].filter((id) => available.has(id)));
+            return next.size === current.size ? current : next;
+        });
+    }, [status]);
+
     const watchJob = useCallback((initial: ResourceJob) => {
         stopPolling();
         setJob(initial);
@@ -186,20 +259,19 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
         void tick();
     }, [copy.done, copy.failed, load, message, stopPolling]);
 
-    const startInstall = async (packs: string[]) => {
-        if (!packs.length) {
+    const startInstall = async (input: { ids?: string[]; packs?: string[] }) => {
+        if (!input.ids?.length && !input.packs?.length) {
             message.info(copy.emptyMissing);
             return;
         }
         try {
-            const next = await installResources({ packs });
+            const next = await installResources(input);
             watchJob(next);
         } catch (installError) {
             message.error(installError instanceof Error ? installError.message : String(installError));
         }
     };
 
-    const missingIds = useMemo(() => status?.resources.filter((item) => item.status !== "present").map((item) => item.id) || [], [status]);
     const recommendationAvailable = Boolean(status?.recommendationAvailable);
     const hardwareName = status?.hardware?.gpuName || "";
     const recommendedPresent = recommendationAvailable ? status?.summary.recommendedPresent || 0 : status?.summary.present || 0;
@@ -210,16 +282,44 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
         ? status?.packs || []
         : (status?.packs || []).filter((pack) => pack.recommended || pack.id === "core" || pack.planned || (pack.optional && pack.tier !== "lite"));
     const hiddenPackCount = (status?.packs || []).length - visiblePacks.length;
-    const selectedMissingPacks = useMemo(() => {
+
+    const installIds = useMemo(() => {
         if (!status) return [];
-        return status.packs.filter((pack) => selectedPacks.has(pack.id) && !pack.planned && pack.missing > 0).map((pack) => pack.id);
-    }, [selectedPacks, status]);
+        const required = status.packs
+            .filter((pack) => selectedPacks.has(pack.id) && !pack.planned)
+            .flatMap((pack) => pack.requiredItems.filter((item) => item.status !== "present").map((item) => item.id));
+        const optional = status.resources.filter((item) => selectedOptional.has(item.id) && item.status !== "present").map((item) => item.id);
+        return [...new Set([...required, ...optional])];
+    }, [selectedOptional, selectedPacks, status]);
+
+    const requiredMissingIds = useMemo(() => {
+        if (!status) return [];
+        return status.packs.filter((pack) => !pack.planned).flatMap((pack) => pack.requiredItems.filter((item) => item.status !== "present").map((item) => item.id));
+    }, [status]);
 
     const togglePack = (id: string, checked: boolean) => {
         setSelectedPacks((current) => {
             const next = new Set(current);
             if (checked) next.add(id);
             else next.delete(id);
+            return next;
+        });
+    };
+
+    const toggleOptional = (id: string, checked: boolean) => {
+        setSelectedOptional((current) => {
+            const next = new Set(current);
+            if (checked) next.add(id);
+            else next.delete(id);
+            return next;
+        });
+    };
+
+    const toggleExpanded = (id: string) => {
+        setExpandedPacks((current) => {
+            const next = new Set(current);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
             return next;
         });
     };
@@ -251,7 +351,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                         <Button size="small" icon={<RefreshCw className={`size-3.5 ${refreshing ? "animate-spin" : ""}`} />} loading={refreshing} onClick={() => void load(true)}>
                             {copy.refresh}
                         </Button>
-                        <Button size="small" type="primary" icon={<Download className="size-3.5" />} disabled={!selectedMissingPacks.length || Boolean(job && ["running"].includes(job.status))} onClick={() => void startInstall(selectedMissingPacks)}>
+                        <Button size="small" type="primary" icon={<Download className="size-3.5" />} disabled={!installIds.length || Boolean(job && ["running"].includes(job.status))} onClick={() => void startInstall({ ids: installIds })}>
                             {copy.installSelected}
                         </Button>
                     </div>
@@ -296,59 +396,89 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                         </button>
                     </div>
                 ) : null}
-                {visiblePacks.map((pack) => (
-                    <div key={pack.id} className="rounded-xl border border-stone-200 p-3 dark:border-stone-800">
-                        <div className="flex items-start gap-2">
-                            {!pack.planned && pack.total > 0 ? (
-                                <Checkbox checked={selectedPacks.has(pack.id)} disabled={!pack.missing} onChange={(event) => togglePack(pack.id, event.target.checked)} />
-                            ) : (
-                                <span className="mt-0.5 grid size-4 place-items-center text-stone-300 dark:text-stone-600">·</span>
-                            )}
-                            <div className="min-w-0 flex-1">
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <span className="text-sm font-medium">{pack.label}</span>
-                                    {pack.recommended ? <Tag color="blue">{copy.recommended}</Tag> : null}
-                                    {pack.offload ? <Tag color="gold">{copy.offload}</Tag> : null}
-                                    {pack.optional && !pack.recommended ? <Tag>{copy.optional}</Tag> : null}
-                                    {pack.eligible === false ? <Tag color="red">{copy.incompatible}</Tag> : null}
-                                    {packState(pack, copy)}
-                                    {pack.missingSize ? <span className="text-[11px] text-stone-500 dark:text-stone-400">{copy.size} {formatBytes(pack.missingSize)}</span> : null}
-                                </div>
-                                <div className="mt-0.5 text-[11px] leading-5 text-stone-500 dark:text-stone-400">{pack.description}</div>
-                                {!pack.total ? <div className="mt-1 text-[11px] text-stone-400 dark:text-stone-500">{copy.noResources}</div> : null}
-                                {pack.missing > 0 ? (
-                                    <div className="mt-2 flex justify-end">
-                                        <Button size="small" icon={<Download className="size-3.5" />} onClick={() => void startInstall([pack.id])} disabled={Boolean(job && job.status === "running")}>
-                                            {copy.installSelected}
-                                        </Button>
+                {visiblePacks.map((pack) => {
+                    const expanded = expandedPacks.has(pack.id);
+                    const selectedOptionalInPack = pack.optionalItems.filter((item) => selectedOptional.has(item.id) && item.status !== "present");
+                    const packInstallIds = [
+                        ...pack.requiredItems.filter((item) => item.status !== "present").map((item) => item.id),
+                        ...selectedOptionalInPack.map((item) => item.id),
+                    ];
+                    return (
+                        <div key={pack.id} className="rounded-xl border border-stone-200 dark:border-stone-800">
+                            <div className="flex items-start gap-2 p-3">
+                                {!pack.planned && pack.total > 0 ? (
+                                    <Checkbox checked={selectedPacks.has(pack.id)} disabled={!pack.missing} onChange={(event) => togglePack(pack.id, event.target.checked)} />
+                                ) : (
+                                    <span className="mt-0.5 grid size-4 place-items-center text-stone-300 dark:text-stone-600">·</span>
+                                )}
+                                <button type="button" className="min-w-0 flex-1 text-left" onClick={() => toggleExpanded(pack.id)} aria-expanded={expanded}>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <span className="text-sm font-medium">{pack.label}</span>
+                                        {pack.recommended ? <Tag color="blue">{copy.recommended}</Tag> : null}
+                                        {pack.offload ? <Tag color="gold">{copy.offload}</Tag> : null}
+                                        {pack.optional && !pack.recommended ? <Tag>{copy.optional}</Tag> : null}
+                                        {pack.eligible === false ? <Tag color="red">{copy.incompatible}</Tag> : null}
+                                        {packState(pack, copy)}
+                                        {pack.optionalTotal ? <Tag>{copy.optionalSection} {pack.optionalTotal}</Tag> : null}
+                                        {pack.missingSize ? <span className="text-[11px] text-stone-500 dark:text-stone-400">{copy.size} {formatBytes(pack.missingSize)}</span> : null}
                                     </div>
-                                ) : null}
-                                {!compact && pack.resources.length ? (
-                                    <div className="mt-2 space-y-1 border-t border-stone-100 pt-2 dark:border-stone-800/70">
-                                        {pack.resources.map((item) => (
-                                            <div key={item.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px]">
-                                                <div className="min-w-0">
-                                                    <span className="font-medium text-stone-700 dark:text-stone-200">{item.label}</span>
-                                                    <span className="ml-2 text-stone-400 dark:text-stone-500">{item.target}</span>
-                                                </div>
-                                                <div className="flex shrink-0 items-center gap-2">
-                                                    {item.type === "bake" ? <Tag>{copy.localBake}</Tag> : <span className="text-stone-400 dark:text-stone-500">{copy.sources} {item.sources.length}</span>}
-                                                    <span className="text-stone-400 dark:text-stone-500">{formatBytes(item.size)}</span>
-                                                    {item.status === "present" ? <CheckCircle2 className="size-3.5 text-green-600 dark:text-green-400" /> : null}
-                                                    {statusTag(item, copy)}
-                                                </div>
-                                                {item.note ? <div className="w-full text-stone-400 dark:text-stone-500">{copy.note}: {item.note}</div> : null}
-                                            </div>
-                                        ))}
-                                    </div>
-                                ) : null}
+                                    <div className={`mt-0.5 text-[11px] leading-5 text-stone-500 dark:text-stone-400 ${compact ? "line-clamp-1" : "line-clamp-2"}`}>{pack.description}</div>
+                                </button>
+                                <button type="button" className="mt-0.5 rounded-md p-1 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-600 dark:text-stone-500 dark:hover:bg-white/5 dark:hover:text-stone-300" onClick={() => toggleExpanded(pack.id)} aria-label={expanded ? copy.collapse : copy.expand}>
+                                    <ChevronDown className={`size-4 transition-transform ${expanded ? "rotate-180" : ""}`} />
+                                </button>
                             </div>
+                            {expanded ? (
+                                <div className="border-t border-stone-100 px-3 pb-3 pt-2 dark:border-stone-800/70">
+                                    <div className="mb-1.5 flex items-center justify-between text-[11px]">
+                                        <span className="font-medium text-stone-600 dark:text-stone-300">{copy.requiredSection}</span>
+                                        <span className="text-stone-400 dark:text-stone-500">{pack.present}/{pack.total}{pack.missingSize ? ` · ${copy.size} ${formatBytes(pack.missingSize)}` : ""}</span>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        {pack.requiredItems.length ? (
+                                            pack.requiredItems.map((item) => <ResourceCard key={item.id} item={item} copy={copy} compact={compact} />)
+                                        ) : (
+                                            <div className="text-[11px] text-stone-400 dark:text-stone-500">{copy.noResources}</div>
+                                        )}
+                                    </div>
+                                    <div className="mt-3 mb-1.5 flex items-center justify-between text-[11px]">
+                                        <span className="font-medium text-stone-600 dark:text-stone-300">{copy.optionalSection}</span>
+                                        <span className="text-stone-400 dark:text-stone-500">
+                                            {pack.optionalTotal ? `${copy.optionalMissingLabel} ${pack.optionalMissing}${pack.optionalSize ? ` · ${formatBytes(pack.optionalSize)}` : ""}` : copy.optionalHint}
+                                        </span>
+                                    </div>
+                                    {pack.optionalItems.length ? (
+                                        <div className="space-y-1.5">
+                                            {pack.optionalItems.map((item) => (
+                                                <ResourceCard
+                                                    key={item.id}
+                                                    item={item}
+                                                    copy={copy}
+                                                    compact={compact}
+                                                    optional
+                                                    selected={selectedOptional.has(item.id)}
+                                                    onToggle={(checked) => toggleOptional(item.id, checked)}
+                                                />
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="text-[11px] text-stone-400 dark:text-stone-500">{copy.optionalEmpty}</div>
+                                    )}
+                                    {!pack.planned && packInstallIds.length ? (
+                                        <div className="mt-2 flex justify-end">
+                                            <Button size="small" icon={<Download className="size-3.5" />} onClick={() => void startInstall({ ids: packInstallIds })} disabled={Boolean(job && job.status === "running")}>
+                                                {copy.installPack}
+                                            </Button>
+                                        </div>
+                                    ) : null}
+                                </div>
+                            ) : null}
                         </div>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
 
-            {missingIds.length === 0 && status?.summary.resources ? (
+            {requiredMissingIds.length === 0 && status?.summary.resources ? (
                 <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700 dark:border-green-900/60 dark:bg-green-950/30 dark:text-green-300">
                     <CheckCircle2 className="size-4" />{copy.emptyMissing}
                 </div>

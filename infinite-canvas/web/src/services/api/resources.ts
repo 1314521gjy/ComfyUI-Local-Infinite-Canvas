@@ -42,11 +42,19 @@ export type ResourcePack = {
     planned: boolean;
     workflows: string[];
     resourceIds: string[];
+    requiredIds: string[];
+    optionalIds: string[];
     resources: ResourceItem[];
+    requiredItems: ResourceItem[];
+    optionalItems: ResourceItem[];
     total: number;
     present: number;
     missing: number;
     missingSize: number;
+    optionalTotal: number;
+    optionalPresent: number;
+    optionalMissing: number;
+    optionalSize: number;
 };
 
 export type ResourceStatus = {

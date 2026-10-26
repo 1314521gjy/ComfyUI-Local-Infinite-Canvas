@@ -140,7 +140,8 @@
           "Z-image-ZiT-moodyPornMix_zitV7-fp8.safetensors": "moody",
           "Z-image-ZiT-超越真实BEYOND REALITY-V30.safetensors": "beyond",
           "z-image-turbo_fp8_scaled_e4m3fn_KJ.safetensors": "fp8",
-          "z_image_turbo_bf16.safetensors": "bf16"
+          "z_image_turbo_bf16.safetensors": "bf16",
+          "z_image_turbo_int8_convrot.safetensors": "int8"
         }
       },
       "label": "Z-Image Turbo"
