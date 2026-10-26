@@ -573,6 +573,8 @@ export default {
             cardSkinUnlocked: "\"{{name}}\" unlocked",
             cardSkinPasswordWrong: "Incorrect password. Please try again.",
             cardSkinPasswordUnavailable: "Password verification is unavailable in this browser.",
+            fishWhip: "Whipping mascot while generating",
+            fishWhipDescription: "With the Blue Fat Fish skin, show the whale girl whipping beside a generating card. Turn off to keep only the progress glow.",
             progressRingSkin: "Progress ring skin",
             progressRingSkinDescription: "Charging glow around image and video cards while generating. Appearance only.",
             progressRingSkins: {

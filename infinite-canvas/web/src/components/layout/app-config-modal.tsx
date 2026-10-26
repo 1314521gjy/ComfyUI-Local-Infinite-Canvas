@@ -76,6 +76,8 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const unlockedCardSkins = useThemeStore((state) => state.unlockedCardSkins);
     const setCardSkin = useThemeStore((state) => state.setCardSkin);
     const unlockCardSkin = useThemeStore((state) => state.unlockCardSkin);
+    const fishWhipEnabled = useThemeStore((state) => state.fishWhipEnabled);
+    const setFishWhipEnabled = useThemeStore((state) => state.setFishWhipEnabled);
     const webdav = useConfigStore((state) => state.webdav);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const updateWebdavConfig = useConfigStore((state) => state.updateWebdavConfig);
@@ -379,6 +381,9 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                             );
                                         })}
                                     </div>
+                                </Form.Item>
+                                <Form.Item label={t("config.preferences.fishWhip")} extra={t("config.preferences.fishWhipDescription")} className="mb-4">
+                                    <Switch checked={fishWhipEnabled} onChange={setFishWhipEnabled} />
                                 </Form.Item>
                                 <Form.Item label={t("config.preferences.progressRingSkin")} extra={t("config.preferences.progressRingSkinDescription")} className="mb-4">
                                     <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">

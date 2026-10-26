@@ -10,10 +10,12 @@ type ThemeStore = {
     theme: ThemeName;
     cardSkin: CardSkinId;
     unlockedCardSkins: CardSkinId[];
+    fishWhipEnabled: boolean;
     setTheme: (theme: ThemeName) => void;
     setCardSkin: (cardSkin: CardSkinId) => void;
     unlockCardSkin: (skinId: CardSkinId) => void;
     mergeUnlockedCardSkins: (skinIds: CardSkinId[]) => void;
+    setFishWhipEnabled: (enabled: boolean) => void;
 };
 
 export const useThemeStore = create<ThemeStore>()(
@@ -22,6 +24,7 @@ export const useThemeStore = create<ThemeStore>()(
             theme: "dark",
             cardSkin: "warm",
             unlockedCardSkins: [],
+            fishWhipEnabled: true,
             setTheme: (theme) => set({ theme }),
             setCardSkin: (cardSkin) =>
                 set((state) => {
@@ -38,6 +41,7 @@ export const useThemeStore = create<ThemeStore>()(
                     const next = [...new Set([...state.unlockedCardSkins, ...skinIds])];
                     return next.length === state.unlockedCardSkins.length ? state : { unlockedCardSkins: next };
                 }),
+            setFishWhipEnabled: (enabled) => set({ fishWhipEnabled: enabled }),
         }),
         { name: "infinite-canvas:theme_store" },
     ),

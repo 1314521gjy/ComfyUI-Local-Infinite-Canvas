@@ -130,6 +130,7 @@ export const CanvasNode = React.memo(function CanvasNode({
 }: CanvasNodeProps) {
     const theme = useCanvasTheme();
     const colorTheme = useThemeStore((state) => state.theme);
+    const fishWhipEnabled = useThemeStore((state) => state.fishWhipEnabled);
     const cardSkin = useEffectiveCardSkin();
     const fishSkin = cardSkin === "fish";
     const fishArtSize = Math.round(Math.max(15, Math.min(58, Math.min(data.height * 0.24, data.width * 0.15))));
@@ -507,7 +508,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                 {!referenceSelectionState ? <ResizeHandle corner="bottom-right" onMouseDown={handleResizeMouseDown} /> : null}
             </div>
 
-            {fishSkin && isGenerating ? (
+            {fishSkin && isGenerating && fishWhipEnabled ? (
                 <div className="pointer-events-none absolute z-[66] select-none" style={{ right: -120, bottom: 0, width: 140, height: 210 }} aria-hidden="true" data-fish-whip>
                     <div
                         className="whale-whip-bubble absolute bottom-[200px] right-0 w-max max-w-[190px] rounded-2xl border px-2.5 py-1.5 text-[12px] font-semibold leading-none shadow-lg"
