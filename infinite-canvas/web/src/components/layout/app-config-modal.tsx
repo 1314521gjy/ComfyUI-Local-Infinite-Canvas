@@ -4,7 +4,7 @@ import { ArrowLeft, ArrowRight, Cloud, ChevronDown, Download, Lock, Pencil, Plus
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { ModelPicker } from "@/components/model-picker";
+import { ModelPicker, WorkflowModelPicker } from "@/components/model-picker";
 import { imageAspectOptions } from "@/components/image-settings-panel";
 import { LOCAL_ONLY } from "@/constant/app-mode";
 import { videoResolutionOptions } from "@/components/video-settings-panel";
@@ -406,7 +406,11 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                         .filter((group) => !LOCAL_ONLY || group.capability === "image" || group.capability === "video")
                                         .map((group) => (
                                             <Form.Item key={group.modelKey} label={t(group.labelKey)} className="mb-0">
-                                                <ModelPicker config={config} value={config[group.modelKey]} onChange={(model) => updateConfig(group.modelKey, model)} capability={group.capability} fullWidth />
+                                                {group.capability === "image" || group.capability === "video" ? (
+                                                    <WorkflowModelPicker config={config} value={config[group.modelKey]} onChange={(model) => updateConfig(group.modelKey, model)} capability={group.capability} fullWidth />
+                                                ) : (
+                                                    <ModelPicker config={config} value={config[group.modelKey]} onChange={(model) => updateConfig(group.modelKey, model)} capability={group.capability} fullWidth />
+                                                )}
                                             </Form.Item>
                                         ))}
                                 </div>

@@ -78,14 +78,22 @@ export function useLocalGatewaySync() {
                                 item.models.filter((model) => model.capability === "video").map((model) => encodeChannelModel(item.id, model.name)),
                             );
                             const pick = (current: string, options: string[]) => (options.includes(current) ? current : options[0] || "");
+                            const pickImage = (current: string) => {
+                                if (imageOptions.includes(current)) return current;
+                                if (String(current).endsWith("::image-krea2-aesthetics")) {
+                                    const turbo = imageOptions.find((option) => option.endsWith("::image-krea2-turbo"));
+                                    if (turbo) return turbo;
+                                }
+                                return pick(current, imageOptions);
+                            };
                             useConfigStore.setState({
                                 config: {
                                     ...config,
                                     channels,
                                     models: modelOptionsFromChannels(channels),
-                                    imageModel: pick(config.imageModel, imageOptions),
+                                    imageModel: pickImage(config.imageModel),
                                     videoModel: pick(config.videoModel, videoOptions),
-                                    model: pick(config.model, imageOptions),
+                                    model: pickImage(config.model),
                                     baseUrl: channel.baseUrl,
                                     apiKey: channel.apiKey || "local",
                                 },

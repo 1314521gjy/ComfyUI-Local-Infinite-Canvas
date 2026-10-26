@@ -1463,7 +1463,8 @@
           "krea2_turbo_fp8_scaled.safetensors": "turbo"
         }
       },
-      "label": "Krea2 Aesthetics"
+      "label": "Krea2 Aesthetics",
+      "hidden": true
     },
     {
       "id": "image-seedvr2-upscale",

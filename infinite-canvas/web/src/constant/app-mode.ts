@@ -7,7 +7,6 @@ export const LOCAL_GATEWAY_CHANNEL_ID = "local-gateway";
 
 export const LOCAL_GATEWAY_MODELS = [
     { name: "image-z-image-turbo", capability: "image" as const },
-    { name: "image-krea2-aesthetics", capability: "image" as const },
     { name: "image-krea2-turbo", capability: "image" as const },
     { name: "image-qwen21", capability: "image" as const },
     { name: "image-moss-sft-8step", capability: "image" as const },
