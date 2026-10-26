@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026.10.27-3",
+  "version": "2026.10.27-4",
   "channel": "stable",
   "updatedAt": "2026-10-27T01:35:00+08:00",
   "packs": [
@@ -15,11 +15,12 @@
     },
     {
       "id": "moss",
-      "label": "MOSS-Image BF16",
-      "description": "按工作流安装：SFT 8/50步为默认；Balanced 8/50步可选，需 Base bf16 + SFT bf16 本地烘焙。TE 统一 INT8；8步 LoRA 为 8步工作流必下，50步需要 TE-Speed 节点。",
+      "label": "MOSS-Image",
+      "description": "BF16 与 INT8 两套精度按显卡选择：大显存推荐 BF16（SFT 8/50、Balanced 8/50），小显存推荐 INT8（SFT 8/50）。TE 统一 INT8；按工作流安装，已具备的资源不会重复下载。",
       "resources": [
         "moss_image_base_bf16",
         "moss_image_sft_bf16",
+        "moss_image_sft_int8_convrot",
         "qwen3.5_9b_int8_convrot",
         "flux2-vae",
         "moss_image_sft_8steps_lora",
@@ -31,7 +32,9 @@
         "image-moss-sft-8step",
         "image-moss-sft-50step",
         "image-moss-balanced-8step",
-        "image-moss-balanced-50step"
+        "image-moss-balanced-50step",
+        "image-moss-sft-int8-8step",
+        "image-moss-sft-int8-50step"
       ],
       "family": "moss",
       "tier": "balanced",
@@ -43,6 +46,43 @@
         "installRamGb": 40,
         "recommendVramGb": 20
       },
+      "variants": [
+        {
+          "id": "bf16",
+          "label": "BF16",
+          "tier": "balanced",
+          "workflows": [
+            "image-moss-sft-8step",
+            "image-moss-sft-50step",
+            "image-moss-balanced-8step",
+            "image-moss-balanced-50step"
+          ],
+          "requirements": {
+            "vramFloorGb": 8,
+            "weightsGb": 21,
+            "ramBaseGb": 8,
+            "safety": 0.15,
+            "installRamGb": 40,
+            "recommendVramGb": 20
+          }
+        },
+        {
+          "id": "int8",
+          "label": "INT8",
+          "tier": "lite",
+          "workflows": [
+            "image-moss-sft-int8-8step",
+            "image-moss-sft-int8-50step"
+          ],
+          "requirements": {
+            "vramFloorGb": 6,
+            "weightsGb": 15.5,
+            "ramBaseGb": 8,
+            "safety": 0.15,
+            "recommendVramGb": 6
+          }
+        }
+      ],
       "optionalResources": [
         "moss_image_base_bf16",
         "moss_balanced_s100",
@@ -72,40 +112,7 @@
           "qwen3.5_9b_int8_convrot",
           "flux2-vae",
           "tespeed_moss"
-        ]
-      },
-      "optionalLabel": "LoRA"
-    },
-    {
-      "id": "moss-lite",
-      "label": "MOSS-Image INT8（低显存）",
-      "description": "SFT int8 + INT8 TE + 全量 VAE；提供 SFT 8步和 50步（50步需 TE-Speed 节点），不提供 Balanced。8步 LoRA 只服务 8步入口；不再使用 W4A8 或 VAE small。",
-      "optional": true,
-      "resources": [
-        "moss_image_sft_int8_convrot",
-        "qwen3.5_9b_int8_convrot",
-        "flux2-vae",
-        "moss_image_sft_8steps_lora",
-        "tespeed_moss",
-        "moss_guanlan_lora"
-      ],
-      "workflows": [
-        "image-moss-sft-int8-8step",
-        "image-moss-sft-int8-50step"
-      ],
-      "family": "moss",
-      "tier": "lite",
-      "requirements": {
-        "vramFloorGb": 6,
-        "weightsGb": 15.5,
-        "ramBaseGb": 8,
-        "safety": 0.15,
-        "recommendVramGb": 6
-      },
-      "optionalResources": [
-        "moss_guanlan_lora"
-      ],
-      "workflowDependencies": {
+        ],
         "image-moss-sft-int8-8step": [
           "moss_image_sft_int8_convrot",
           "qwen3.5_9b_int8_convrot",

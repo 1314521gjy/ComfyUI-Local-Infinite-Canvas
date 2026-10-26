@@ -326,6 +326,7 @@ export function createResourceManager({ config, setup, registry, logger, hardwar
         const root = comfyRoot();
         const resources = (index?.resources || []).map((resource) => resourceStatus(resource, root));
         const byId = new Map(resources.map((resource) => [resource.id, resource]));
+        const rawPackById = new Map((index?.packs || []).map((item) => [item.id, item]));
         const packs = (index?.packs || []).map((pack) => {
             const items = (pack.resources || []).map((id) => byId.get(id)).filter(Boolean);
             const optionalIds = new Set(pack.optionalResources || []);
@@ -353,10 +354,29 @@ export function createResourceManager({ config, setup, registry, logger, hardwar
                     label: entry?.label || entry?.name || workflowId,
                     available: availability.available !== false,
                     problems: availability.problems || [],
+                    recommended: false,
                     resources: dependencyItems,
                     missing: missingItems.length,
                     missingSize: missingItems.reduce((sum, item) => sum + (item.size || 0), 0),
                     installIds: [...installIds].filter((id) => byId.get(id)?.status !== "present"),
+                };
+            });
+            const variants = (rawPackById.get(pack.id)?.variants || []).map((variant) => {
+                const optionalIds = new Set(pack.optionalResources || []);
+                const derived = [...new Set((variant.workflows || []).flatMap((workflowId) => (pack.workflowDependencies || {})[workflowId] || []))]
+                    .filter((id) => !optionalIds.has(id));
+                return {
+                    id: variant.id,
+                    label: variant.label || variant.id,
+                    tier: variant.tier || pack.tier || "standard",
+                    workflows: variant.workflows || [],
+                    requiredIds: variant.requiredResources?.length ? variant.requiredResources : derived,
+                    requirements: variant.requirements || null,
+                    eligible: true,
+                    recommended: false,
+                    preferred: false,
+                    offload: false,
+                    resident: false,
                 };
             });
             return {
@@ -371,6 +391,8 @@ export function createResourceManager({ config, setup, registry, logger, hardwar
                 planned: Boolean(pack.planned),
                 eligible: true,
                 recommended: false,
+                recommendedVariant: "",
+                variants,
                 preferred: false,
                 offload: false,
                 resident: false,
@@ -398,24 +420,59 @@ export function createResourceManager({ config, setup, registry, logger, hardwar
         if (hardwareAvailable) {
             const vramGb = hardware.vramTotalMb / 1024;
             const ramGb = hardware.ramTotalBytes / 1024 ** 3;
-            const groups = new Map();
-            for (const pack of packs) {
-                if (pack.planned || pack.id === "core") continue;
-                if (!pack.autoRecommend) continue;
-                const requirements = (index?.packs || []).find((item) => item.id === pack.id)?.requirements;
-                if (!requirements) continue;
+            const evaluate = (requirements, items) => {
                 const floor = Number(requirements.vramFloorGb || 0);
                 const weights = Number(requirements.weightsGb || 0);
                 const usable = Math.max(0, vramGb - floor);
                 const offloadGb = Math.max(0, weights - usable);
                 let ramNeed = Number(requirements.ramBaseGb || 8) + offloadGb * (1 + Number(requirements.safety || 0.15));
-                const bakeResource = (pack.resources || []).find((item) => item.type === "bake");
+                const bakeResource = (items || []).find((item) => item.type === "bake");
                 const bakeNeeded = Boolean(bakeResource && bakeResource.status !== "present");
                 if (requirements.installRamGb && bakeNeeded) ramNeed = Math.max(ramNeed, Number(requirements.installRamGb));
-                pack.eligible = vramGb >= floor && ramGb >= ramNeed;
-                pack.preferred = pack.eligible && vramGb >= Number(requirements.recommendVramGb || 0);
-                pack.offload = pack.eligible && weights > Math.max(0, usable - 2);
-                pack.resident = pack.eligible && !pack.offload && ramGb >= Number(requirements.ramBaseGb || 8);
+                const eligible = vramGb >= floor && ramGb >= ramNeed;
+                const offload = eligible && weights > Math.max(0, usable - 2);
+                return {
+                    eligible,
+                    preferred: eligible && vramGb >= Number(requirements.recommendVramGb || 0),
+                    offload,
+                    resident: eligible && !offload && ramGb >= Number(requirements.ramBaseGb || 8),
+                };
+            };
+            const groups = new Map();
+            for (const pack of packs) {
+                if (pack.planned || pack.id === "core") continue;
+                if (!pack.autoRecommend) continue;
+                const requirements = rawPackById.get(pack.id)?.requirements;
+                if (pack.variants.length) {
+                    // 同一模型家族的 BF16/INT8 合并为一张卡，推荐档位在变体之间选。
+                    let best = null;
+                    for (const variant of pack.variants) {
+                        const variantRequirements = variant.requirements || requirements;
+                        if (!variantRequirements) {
+                            variant.eligible = false;
+                            continue;
+                        }
+                        Object.assign(variant, evaluate(variantRequirements, pack.resources));
+                        if (variant.eligible && variant.preferred && (!best || (tierRank[variant.tier] || 0) > (tierRank[best.tier] || 0))) best = variant;
+                    }
+                    pack.eligible = pack.variants.some((variant) => variant.eligible);
+                    if (best) {
+                        best.recommended = true;
+                        pack.recommended = true;
+                        pack.recommendedVariant = best.id;
+                        pack.preferred = true;
+                        pack.offload = best.offload;
+                        pack.resident = best.resident;
+                    } else {
+                        const fallback = pack.variants.find((variant) => variant.eligible && variant.offload) || pack.variants.find((variant) => variant.eligible);
+                        pack.preferred = false;
+                        pack.offload = Boolean(fallback?.offload);
+                        pack.resident = Boolean(fallback?.resident);
+                    }
+                    continue;
+                }
+                if (!requirements) continue;
+                Object.assign(pack, evaluate(requirements, pack.resources));
                 if (!pack.eligible) continue;
                 const list = groups.get(pack.family) || [];
                 list.push({ pack, rank: tierRank[pack.tier] || 0, preferred: pack.preferred });
@@ -425,6 +482,22 @@ export function createResourceManager({ config, setup, registry, logger, hardwar
                 const preferred = list.filter((item) => item.preferred);
                 preferred.sort((a, b) => b.rank - a.rank);
                 if (preferred[0]) preferred[0].pack.recommended = true;
+            }
+            for (const pack of packs) {
+                if (!pack.recommendedVariant) continue;
+                const variant = pack.variants.find((item) => item.id === pack.recommendedVariant);
+                if (!variant) continue;
+                const requiredItems = variant.requiredIds.map((id) => byId.get(id)).filter(Boolean);
+                const requiredMissing = requiredItems.filter((item) => item.status !== "present");
+                pack.requiredItems = requiredItems;
+                pack.requiredIds = requiredItems.map((item) => item.id);
+                pack.total = requiredItems.length;
+                pack.present = requiredItems.length - requiredMissing.length;
+                pack.missing = requiredMissing.length;
+                pack.missingSize = requiredMissing.reduce((sum, item) => sum + (item.size || 0), 0);
+                for (const workflow of pack.workflowDependencies) {
+                    workflow.recommended = variant.workflows.includes(workflow.id);
+                }
             }
         }
 

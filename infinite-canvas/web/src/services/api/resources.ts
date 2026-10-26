@@ -28,10 +28,24 @@ export type ResourceItem = {
     missingRequires: string[];
 };
 
+export type ResourceVariant = {
+    id: string;
+    label: string;
+    tier: string;
+    workflows: string[];
+    requiredIds: string[];
+    eligible: boolean;
+    recommended: boolean;
+    preferred: boolean;
+    offload: boolean;
+    resident: boolean;
+};
+
 export type WorkflowDependency = {
     id: string;
     label: string;
     available: boolean;
+    recommended?: boolean;
     problems: Array<{ type?: string; message?: string }>;
     resources: ResourceItem[];
     missing: number;
@@ -49,6 +63,8 @@ export type ResourcePack = {
     optionalLabel?: string;
     eligible?: boolean;
     recommended?: boolean;
+    recommendedVariant?: string;
+    variants?: ResourceVariant[];
     offload?: boolean;
     resident?: boolean;
     planned: boolean;

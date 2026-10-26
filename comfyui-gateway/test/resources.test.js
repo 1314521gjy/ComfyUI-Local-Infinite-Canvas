@@ -194,6 +194,81 @@ test("8GB GPU recommends the int8 lite pack instead of bf16", async () => {
     }
 });
 
+test("a merged pack recommends bf16 on large cards and int8 on small cards", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-variant-test-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(path.join(comfy, "models"), { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    const requirements = (weightsGb, floorGb, recommendVramGb) => ({
+        vramFloorGb: floorGb,
+        weightsGb,
+        ramBaseGb: 8,
+        safety: 0.15,
+        recommendVramGb,
+    });
+    const index = {
+        schema: 1,
+        version: "variant-test",
+        packs: [{
+            id: "moss",
+            family: "moss",
+            tier: "balanced",
+            resources: ["bf16", "int8", "te", "vae", "lora", "balanced"],
+            optionalResources: ["balanced"],
+            requirements: requirements(21, 8, 20),
+            variants: [
+                { id: "bf16", tier: "balanced", workflows: ["w-bf16"], requirements: requirements(21, 8, 20) },
+                { id: "int8", tier: "lite", workflows: ["w-int8"], requirements: requirements(15.5, 6, 6) },
+            ],
+            workflowDependencies: {
+                "w-bf16": ["bf16", "te", "vae", "lora"],
+                "w-int8": ["int8", "te", "vae", "lora"],
+            },
+        }],
+        resources: [
+            { id: "bf16", type: "model", label: "BF16", target: "diffusion_models/bf16.safetensors", size: 10, sources: ["http://127.0.0.1:1/file"] },
+            { id: "int8", type: "model", label: "INT8", target: "diffusion_models/int8.safetensors", size: 10, sources: ["http://127.0.0.1:1/file"] },
+            { id: "te", type: "model", label: "TE", target: "text_encoders/te.safetensors", size: 10, sources: ["http://127.0.0.1:1/file"] },
+            { id: "vae", type: "model", label: "VAE", target: "vae/vae.safetensors", size: 10, sources: ["http://127.0.0.1:1/file"] },
+            { id: "lora", type: "model", label: "LoRA", target: "loras/lora.safetensors", size: 10, sources: ["http://127.0.0.1:1/file"] },
+            { id: "balanced", type: "bake", label: "Balanced", target: "diffusion_models/balanced.safetensors", size: 10, requires: ["bf16", "int8"] },
+        ],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+    const createManager = (vramTotalMb, ramGb) => createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: { loaderOptions: () => ({}), status: () => ({ comfyReachable: true }), scan: async () => ({}) },
+        logger: null,
+        hardware: { gpuName: `Test ${vramTotalMb}`, vramTotalMb, ramTotalBytes: ramGb * 1024 ** 3, ramFreeBytes: ramGb * 1024 ** 3, detectedAt: new Date().toISOString(), source: "test" },
+    });
+    try {
+        const large = createManager(32768, 64);
+        await large.init();
+        const largePack = large.status().packs[0];
+        assert.equal(largePack.recommended, true);
+        assert.equal(largePack.recommendedVariant, "bf16");
+        assert.deepEqual(largePack.requiredIds, ["bf16", "te", "vae", "lora"]);
+        assert.equal(largePack.workflowDependencies.find((item) => item.id === "w-bf16").recommended, true);
+        assert.equal(largePack.workflowDependencies.find((item) => item.id === "w-int8").recommended, false);
+
+        const small = createManager(8192, 64);
+        await small.init();
+        const smallStatus = small.status();
+        const smallPack = smallStatus.packs[0];
+        assert.equal(smallPack.recommended, true);
+        assert.equal(smallPack.recommendedVariant, "int8");
+        assert.deepEqual(smallPack.requiredIds, ["int8", "te", "vae", "lora"]);
+        assert.equal(smallPack.variants.find((item) => item.id === "int8").recommended, true);
+        assert.equal(smallPack.workflowDependencies.find((item) => item.id === "w-int8").recommended, true);
+        assert.equal(smallStatus.summary.recommendedResources, 4);
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});
+
 test("optional alternate model packs can stay eligible without being auto-recommended", async () => {
     const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-auto-recommend-test-"));
     const comfy = path.join(root, "ComfyUI");

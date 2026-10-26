@@ -569,6 +569,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                                                 <button type="button" className="min-w-0 flex-1 text-left" onClick={() => toggleWorkflow(workflow.id)} aria-expanded={workflowExpanded}>
                                                                     <div className="flex flex-wrap items-center gap-2">
                                                                         <span className="text-xs font-medium">{workflow.label}</span>
+                                                                        {workflow.recommended ? <Tag color="blue" className="m-0">{copy.recommended}</Tag> : null}
                                                                         {workflow.missingSize ? <span className="text-[10px] text-stone-400 dark:text-stone-500">{formatBytes(workflow.missingSize)}</span> : null}
                                                                         {workflowTag}
                                                                     </div>
