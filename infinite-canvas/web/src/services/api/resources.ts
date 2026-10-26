@@ -28,6 +28,17 @@ export type ResourceItem = {
     missingRequires: string[];
 };
 
+export type WorkflowDependency = {
+    id: string;
+    label: string;
+    available: boolean;
+    problems: Array<{ type?: string; message?: string }>;
+    resources: ResourceItem[];
+    missing: number;
+    missingSize: number;
+    installIds: string[];
+};
+
 export type ResourcePack = {
     id: string;
     label: string;
@@ -47,6 +58,7 @@ export type ResourcePack = {
     resources: ResourceItem[];
     requiredItems: ResourceItem[];
     optionalItems: ResourceItem[];
+    workflowDependencies?: WorkflowDependency[];
     total: number;
     present: number;
     missing: number;

@@ -288,3 +288,54 @@ test("optional pack resources are listed separately and do not block required re
         await fsp.rm(root, { recursive: true, force: true });
     }
 });
+
+test("workflow dependencies expand bake prerequisites and keep workflow labels", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-workflow-test-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(path.join(comfy, "models", "diffusion_models"), { recursive: true });
+    await fsp.mkdir(path.join(comfy, "custom_nodes"), { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    const model = (id, target, size = 10) => ({ id, type: "model", label: id, target, size, sources: ["http://127.0.0.1:1/file"] });
+    const index = {
+        schema: 1,
+        version: "workflow-test",
+        packs: [{
+            id: "test",
+            label: "Test",
+            resources: ["base", "sft", "bake", "plugin"],
+            optionalResources: ["base"],
+            workflowDependencies: { "test-workflow": ["bake", "plugin"] },
+            requirements: { vramFloorGb: 8, weightsGb: 10, ramBaseGb: 8, safety: 0.15, recommendVramGb: 8 },
+        }],
+        resources: [
+            model("base", "diffusion_models/base.safetensors"),
+            model("sft", "diffusion_models/sft.safetensors"),
+            { ...model("bake", "diffusion_models/bake.safetensors"), type: "bake", requires: ["base", "sft"] },
+            { id: "plugin", type: "node", label: "Plugin", target: "custom_nodes/TestNode", size: 5, sources: ["http://127.0.0.1:1/node.zip"] },
+        ],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: { loaderOptions: () => ({}), status: () => ({ comfyReachable: true }), scan: async () => ({}), workflowStatus: () => ({ available: false, problems: [{ type: "node", message: "missing plugin" }] }) },
+        registry: { resolve: (id) => ({ id, label: "Test workflow" }) },
+        logger: null,
+    });
+    try {
+        await manager.init();
+        const pack = manager.status().packs[0];
+        assert.equal(pack.workflowDependencies.length, 1);
+        const workflow = pack.workflowDependencies[0];
+        assert.equal(workflow.label, "Test workflow");
+        assert.equal(workflow.available, false);
+        assert.equal(workflow.missing, 2);
+        assert.deepEqual([...workflow.installIds].sort(), ["bake", "base", "plugin", "sft"]);
+        assert.equal(pack.optionalTotal, 1);
+        assert.equal(pack.total, 3);
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});

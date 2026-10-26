@@ -225,7 +225,7 @@ export async function createGatewayApp(overrides = {}) {
   if (!bridgeStatus.installed) logger.warn(`ComfyUI 工作流桥接未安装：${bridgeStatus.reason || "未知原因"}`);
   const sessions = createSessionTracker({ staleMs: config.sessionStaleSec * 1000 });
   const setup = createSetupManager({ config, registry, comfy, logger });
-  const resources = createResourceManager({ config, setup, logger });
+  const resources = createResourceManager({ config, setup, registry, logger });
   await resources.init();
   let lastOOM = null;
   const activeRequests = new Map();

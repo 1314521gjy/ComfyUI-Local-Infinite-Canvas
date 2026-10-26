@@ -2869,7 +2869,7 @@
       "name": "image-moss-sft-int8-8step",
       "label": "MOSS-Image 低显存 int8 8步",
       "type": "image",
-      "description": "MOSS-Image SFT int8 convrot + Qwen3.5 w4a8 + small VAE + 8步 LoRA；低显存变体，画质低于 bf16/Balanced。",
+      "description": "MOSS-Image SFT int8 convrot + Qwen3.5 INT8 文本编码器 + 全量 FLUX.2 VAE + 8步 LoRA；低显存变体，不提供 Balanced。",
       "file": "image-moss-sft-int8-8step.json",
       "bindings": {
         "prompt": {

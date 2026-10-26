@@ -19,6 +19,10 @@ export function useLocalGatewaySync() {
         let timer: number | undefined;
 
         const sync = async () => {
+            if (timer) {
+                window.clearTimeout(timer);
+                timer = undefined;
+            }
             try {
                 const controller = new AbortController();
                 const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -88,6 +92,25 @@ export function useLocalGatewaySync() {
                             });
                         }
                     }
+                } else {
+                    const state = useConfigStore.getState();
+                    const config = state.config;
+                    const channel = config.channels.find((item) => isLocalGatewayUrl(item.baseUrl)) || config.channels[0];
+                    if (channel && channel.models.length) {
+                        const channels = config.channels.map((item) => (item.id === channel.id ? { ...item, apiKey: item.apiKey || "local", models: [] } : item));
+                        useConfigStore.setState({
+                            config: {
+                                ...config,
+                                channels,
+                                models: modelOptionsFromChannels(channels),
+                                imageModel: "",
+                                videoModel: "",
+                                model: "",
+                                baseUrl: channel.baseUrl,
+                                apiKey: channel.apiKey || "local",
+                            },
+                        });
+                    }
                 }
             } catch {
                 // 网关还没起来时静默重试，画布保持可用。
@@ -96,8 +119,11 @@ export function useLocalGatewaySync() {
         };
 
         void sync();
+        const refresh = () => void sync();
+        window.addEventListener("local-gateway-refresh-models", refresh);
         return () => {
             stopped = true;
+            window.removeEventListener("local-gateway-refresh-models", refresh);
             if (timer) window.clearTimeout(timer);
         };
     }, []);

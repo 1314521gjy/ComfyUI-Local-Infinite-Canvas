@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "version": "2026.10.26-7",
+  "version": "2026.10.27-1",
   "channel": "stable",
-  "updatedAt": "2026-10-26T23:36:00+08:00",
+  "updatedAt": "2026-10-27T00:30:00+08:00",
   "packs": [
     {
       "id": "core",
@@ -15,21 +15,23 @@
     },
     {
       "id": "moss",
-      "label": "MOSS-Image 均衡融合",
-      "description": "MOSS Base+SFT 按 Balanced 预设融合所需底模、文本编码器、VAE、8步 LoRA 和本地烘焙模型。50步入口另需 Windows/Python 3.13 的 TE-Speed-MOSS 编译节点；8步入口不受影响。小显存请选低显存 int8 包。",
+      "label": "MOSS-Image BF16",
+      "description": "按工作流安装：SFT 8/50步为默认；Balanced 8/50步可选，需 Base bf16 + SFT bf16 本地烘焙。TE 统一 INT8；8步 LoRA 为 8步工作流必下，50步需要 TE-Speed 节点。",
       "resources": [
         "moss_image_base_bf16",
         "moss_image_sft_bf16",
         "qwen3.5_9b_int8_convrot",
         "flux2-vae",
         "moss_image_sft_8steps_lora",
-        "moss_balanced_s100"
+        "moss_balanced_s100",
+        "tespeed_moss",
+        "moss_image_color_depth_lora"
       ],
       "workflows": [
-        "image-moss-balanced-8step",
-        "image-moss-balanced-50step",
         "image-moss-sft-8step",
-        "image-moss-sft-50step"
+        "image-moss-sft-50step",
+        "image-moss-balanced-8step",
+        "image-moss-balanced-50step"
       ],
       "family": "moss",
       "tier": "balanced",
@@ -40,18 +42,50 @@
         "safety": 0.15,
         "installRamGb": 40,
         "recommendVramGb": 20
+      },
+      "optionalResources": [
+        "moss_image_base_bf16",
+        "moss_balanced_s100",
+        "moss_image_color_depth_lora"
+      ],
+      "workflowDependencies": {
+        "image-moss-sft-8step": [
+          "moss_image_sft_bf16",
+          "qwen3.5_9b_int8_convrot",
+          "flux2-vae",
+          "moss_image_sft_8steps_lora"
+        ],
+        "image-moss-sft-50step": [
+          "moss_image_sft_bf16",
+          "qwen3.5_9b_int8_convrot",
+          "flux2-vae",
+          "tespeed_moss"
+        ],
+        "image-moss-balanced-8step": [
+          "moss_balanced_s100",
+          "qwen3.5_9b_int8_convrot",
+          "flux2-vae",
+          "moss_image_sft_8steps_lora"
+        ],
+        "image-moss-balanced-50step": [
+          "moss_balanced_s100",
+          "qwen3.5_9b_int8_convrot",
+          "flux2-vae",
+          "tespeed_moss"
+        ]
       }
     },
     {
       "id": "moss-lite",
-      "label": "MOSS-Image 低显存 int8",
-      "description": "SFT int8 + w4a8 文本编码器 + small VAE + 8步 LoRA，使用低显存 8 步入口；不是 Balanced 融合，画质/细节低于 bf16 版。显存不够时会使用内存卸载，速度较慢。",
+      "label": "MOSS-Image INT8（低显存）",
+      "description": "SFT int8 + INT8 TE + 全量 VAE + 8步 LoRA；只提供 SFT 8步，不提供 Balanced。TE 不再使用 W4A8，VAE 不再使用 small。",
       "optional": true,
       "resources": [
         "moss_image_sft_int8_convrot",
-        "qwen3.5_9b_w4a8_gptq",
-        "flux2-vae_small",
-        "moss_image_sft_8steps_lora"
+        "qwen3.5_9b_int8_convrot",
+        "flux2-vae",
+        "moss_image_sft_8steps_lora",
+        "moss_image_color_depth_lora"
       ],
       "workflows": [
         "image-moss-sft-int8-8step"
@@ -60,10 +94,21 @@
       "tier": "lite",
       "requirements": {
         "vramFloorGb": 6,
-        "weightsGb": 14.5,
+        "weightsGb": 15.5,
         "ramBaseGb": 8,
         "safety": 0.15,
         "recommendVramGb": 6
+      },
+      "optionalResources": [
+        "moss_image_color_depth_lora"
+      ],
+      "workflowDependencies": {
+        "image-moss-sft-int8-8step": [
+          "moss_image_sft_int8_convrot",
+          "qwen3.5_9b_int8_convrot",
+          "flux2-vae",
+          "moss_image_sft_8steps_lora"
+        ]
       }
     },
     {
@@ -326,32 +371,6 @@
       ]
     },
     {
-      "id": "qwen3.5_9b_w4a8_gptq",
-      "type": "model",
-      "label": "Qwen3.5-9B w4a8 GPTQ（低显存）",
-      "target": "text_encoders/qwen3.5_9b_w4a8_gptq.safetensors",
-      "size": 7343591088,
-      "sha256": "4cc6a1543ad2061806da46f35f90cadb4801dcba246c44782cf42ec0feb6407c",
-      "license": "Qwen",
-      "sources": [
-        "https://www.modelscope.cn/models/Comfy-Org/MOSS-Image/resolve/master/text_encoders/qwen3.5_9b_w4a8_gptq.safetensors",
-        "https://hf-mirror.com/Comfy-Org/MOSS-Image/resolve/main/text_encoders/qwen3.5_9b_w4a8_gptq.safetensors"
-      ]
-    },
-    {
-      "id": "flux2-vae_small",
-      "type": "model",
-      "label": "FLUX.2 VAE small（低显存）",
-      "target": "vae/flux2-vae_small.safetensors",
-      "size": 249521340,
-      "sha256": "d8d52ba036475f5fb07c8b435e176d3d97ebfa82f0d1a1c317f9cc1e25bd013b",
-      "license": "FLUX.2",
-      "sources": [
-        "https://www.modelscope.cn/models/Comfy-Org/MOSS-Image/resolve/master/vae/flux2-vae_small.safetensors",
-        "https://hf-mirror.com/Comfy-Org/MOSS-Image/resolve/main/vae/flux2-vae_small.safetensors"
-      ]
-    },
-    {
       "id": "z_image_turbo_bf16",
       "type": "model",
       "label": "Z-Image Turbo bf16",
@@ -499,6 +518,41 @@
       "sources": [
         "https://www.modelscope.cn/models/Comfy-Org/Krea-2/resolve/master/loras/krea2_retroanime.safetensors",
         "https://aifasthub.com/Comfy-Org/Krea-2/resolve/main/loras/krea2_retroanime.safetensors"
+      ]
+    },
+    {
+      "id": "tespeed_moss",
+      "type": "node",
+      "label": "TE-Speed MOSS 50步加速节点",
+      "target": "custom_nodes/TE-Speed-MOSS",
+      "size": 245760,
+      "sha256": "1d833d6765973d1916a4447fded50c4ed4d6c67b827e5e2f9972485229258c53",
+      "license": "上游仓库未声明 LICENSE",
+      "note": "Windows x64 / CPython 3.12（本机实测可加载；上游 README 写 3.13，分发前按目标环境核对）；安装后需重启 ComfyUI；仅 50 步工作流需要。上游未声明 LICENSE，私有包内分发前需确认授权。",
+      "provides": [
+        "TESpeedMoss"
+      ],
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/TE-Speed-MOSS.zip",
+          "label": "内置"
+        },
+        "https://github.com/tl2012tl/TE-Speed-MOSS/archive/refs/heads/main.zip"
+      ]
+    },
+    {
+      "id": "moss_image_color_depth_lora",
+      "type": "model",
+      "label": "MOSS-Image 颜色/景深控制 LoRA",
+      "target": "loras/Moss_image/moss_image_color_depth_control.safetensors",
+      "size": 313063368,
+      "sha256": "e5c0c3efd05e4269207a39de6005798f14c90c6687c89c54eaffe4b76c43a763",
+      "license": "MOSS-Image",
+      "note": "选下内容；官方颜色/景深控制 LoRA，可在 LoRA 卡片中挂载。",
+      "sources": [
+        "https://www.modelscope.cn/models/Comfy-Org/MOSS-Image/resolve/master/loras/moss_image_color_depth_control.safetensors",
+        "https://aifasthub.com/Comfy-Org/MOSS-Image/resolve/main/loras/moss_image_color_depth_control.safetensors"
       ]
     }
   ]

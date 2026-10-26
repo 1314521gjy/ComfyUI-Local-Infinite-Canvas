@@ -37,6 +37,13 @@ const copyByLocale = {
         hideAll: "收起其他版本",
         requiredSection: "必下内容",
         optionalSection: "选下内容",
+        workflowSection: "工作流",
+        workflowHint: "按工作流安装；资源齐备后才会出现在模型选择",
+        installWorkflow: "安装此工作流",
+        workflowReady: "可用",
+        workflowRestart: "待重启",
+        plugin: "插件",
+        bakeRequires: "本地烘焙，依赖",
         optionalHint: "LoRA、低显存底模等，按需安装",
         optionalEmpty: "此包没有选下内容",
         optionalMissingLabel: "选下缺",
@@ -85,6 +92,13 @@ const copyByLocale = {
         hideAll: "Hide other versions",
         requiredSection: "Required",
         optionalSection: "Optional",
+        workflowSection: "Workflows",
+        workflowHint: "Install by workflow; only complete workflows appear in the model picker",
+        installWorkflow: "Install workflow",
+        workflowReady: "Ready",
+        workflowRestart: "Restart needed",
+        plugin: "Plugin",
+        bakeRequires: "Local bake requires",
         optionalHint: "LoRAs, low-VRAM checkpoints, and other extras",
         optionalEmpty: "No optional items in this pack",
         optionalMissingLabel: "Optional missing",
@@ -176,6 +190,30 @@ function ResourceCard({
     );
 }
 
+function WorkflowResourceRow({ item, copy, requires = [] }: { item: ResourceItem; copy: Copy; requires?: ResourceItem[] }) {
+    return (
+        <div className="flex items-start gap-2 rounded-md px-2 py-1.5">
+            <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-stone-300 dark:bg-stone-600" />
+            <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="text-[11px] font-medium text-stone-700 dark:text-stone-200">{item.label}</span>
+                    {item.type === "node" ? <Tag className="m-0">{copy.plugin}</Tag> : null}
+                    {item.type === "bake" ? <Tag className="m-0">{copy.localBake}</Tag> : null}
+                    {statusTag(item, copy)}
+                </div>
+                <div className="mt-0.5 truncate text-[10px] text-stone-400 dark:text-stone-500">{item.target}</div>
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-stone-400 dark:text-stone-500">
+                    <span>{copy.sources} {item.sources.length}</span>
+                    <span>{formatBytes(item.size)}</span>
+                </div>
+                {item.type === "bake" && requires.length ? (
+                    <div className="mt-0.5 text-[10px] text-amber-600 dark:text-amber-400">{copy.bakeRequires}: {requires.map((entry) => entry.label).join(" + ")}</div>
+                ) : null}
+            </div>
+        </div>
+    );
+}
+
 export function ResourceCenterPanel({ compact = false, footer }: { compact?: boolean; footer?: React.ReactNode }) {
     const { message } = App.useApp();
     const { i18n } = useTranslation();
@@ -249,6 +287,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                     if (next.status === "done") message.success(copy.done);
                     else if (next.status === "error") message.error(next.message || copy.failed);
                     await load(true);
+                    window.dispatchEvent(new Event("local-gateway-refresh-models"));
                 }
             } catch (pollError) {
                 stopPolling();
@@ -296,6 +335,8 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
         if (!status) return [];
         return status.packs.filter((pack) => !pack.planned).flatMap((pack) => pack.requiredItems.filter((item) => item.status !== "present").map((item) => item.id));
     }, [status]);
+
+    const resourceById = useMemo(() => new Map((status?.resources || []).map((item) => [item.id, item])), [status]);
 
     const togglePack = (id: string, checked: boolean) => {
         setSelectedPacks((current) => {
@@ -398,7 +439,18 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                 ) : null}
                 {visiblePacks.map((pack) => {
                     const expanded = expandedPacks.has(pack.id);
-                    const selectedOptionalInPack = pack.optionalItems.filter((item) => selectedOptional.has(item.id) && item.status !== "present");
+                    const workflowDependencies = pack.workflowDependencies || [];
+                    const workflowResourceIds = new Set<string>();
+                    for (const workflow of workflowDependencies) {
+                        for (const item of workflow.resources) {
+                            workflowResourceIds.add(item.id);
+                            for (const requiredId of item.requires || []) workflowResourceIds.add(requiredId);
+                        }
+                    }
+                    const extraOptionalItems = pack.optionalItems.filter((item) => !workflowResourceIds.has(item.id));
+                    const extraOptionalMissing = extraOptionalItems.filter((item) => item.status !== "present");
+                    const extraOptionalSize = extraOptionalMissing.reduce((sum, item) => sum + (item.size || 0), 0);
+                    const selectedOptionalInPack = extraOptionalItems.filter((item) => selectedOptional.has(item.id) && item.status !== "present");
                     const packInstallIds = [
                         ...pack.requiredItems.filter((item) => item.status !== "present").map((item) => item.id),
                         ...selectedOptionalInPack.map((item) => item.id),
@@ -419,7 +471,8 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                         {pack.optional && !pack.recommended ? <Tag>{copy.optional}</Tag> : null}
                                         {pack.eligible === false ? <Tag color="red">{copy.incompatible}</Tag> : null}
                                         {packState(pack, copy)}
-                                        {pack.optionalTotal ? <Tag>{copy.optionalSection} {pack.optionalTotal}</Tag> : null}
+                                        {workflowDependencies.length ? <Tag>{copy.workflowSection} {workflowDependencies.length}</Tag> : null}
+                                        {extraOptionalItems.length ? <Tag>{copy.optionalSection} {extraOptionalItems.length}</Tag> : null}
                                         {pack.missingSize ? <span className="text-[11px] text-stone-500 dark:text-stone-400">{copy.size} {formatBytes(pack.missingSize)}</span> : null}
                                     </div>
                                     <div className={`mt-0.5 text-[11px] leading-5 text-stone-500 dark:text-stone-400 ${compact ? "line-clamp-1" : "line-clamp-2"}`}>{pack.description}</div>
@@ -430,47 +483,125 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                             </div>
                             {expanded ? (
                                 <div className="border-t border-stone-100 px-3 pb-3 pt-2 dark:border-stone-800/70">
-                                    <div className="mb-1.5 flex items-center justify-between text-[11px]">
-                                        <span className="font-medium text-stone-600 dark:text-stone-300">{copy.requiredSection}</span>
-                                        <span className="text-stone-400 dark:text-stone-500">{pack.present}/{pack.total}{pack.missingSize ? ` · ${copy.size} ${formatBytes(pack.missingSize)}` : ""}</span>
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        {pack.requiredItems.length ? (
-                                            pack.requiredItems.map((item) => <ResourceCard key={item.id} item={item} copy={copy} compact={compact} />)
-                                        ) : (
-                                            <div className="text-[11px] text-stone-400 dark:text-stone-500">{copy.noResources}</div>
-                                        )}
-                                    </div>
-                                    <div className="mt-3 mb-1.5 flex items-center justify-between text-[11px]">
-                                        <span className="font-medium text-stone-600 dark:text-stone-300">{copy.optionalSection}</span>
-                                        <span className="text-stone-400 dark:text-stone-500">
-                                            {pack.optionalTotal ? `${copy.optionalMissingLabel} ${pack.optionalMissing}${pack.optionalSize ? ` · ${formatBytes(pack.optionalSize)}` : ""}` : copy.optionalHint}
-                                        </span>
-                                    </div>
-                                    {pack.optionalItems.length ? (
-                                        <div className="space-y-1.5">
-                                            {pack.optionalItems.map((item) => (
-                                                <ResourceCard
-                                                    key={item.id}
-                                                    item={item}
-                                                    copy={copy}
-                                                    compact={compact}
-                                                    optional
-                                                    selected={selectedOptional.has(item.id)}
-                                                    onToggle={(checked) => toggleOptional(item.id, checked)}
-                                                />
-                                            ))}
-                                        </div>
+                                    {workflowDependencies.length ? (
+                                        <>
+                                            <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px]">
+                                                <span className="font-medium text-stone-600 dark:text-stone-300">{copy.workflowSection}</span>
+                                                <span className="text-stone-400 dark:text-stone-500">{copy.workflowHint}</span>
+                                            </div>
+                                            <div className="space-y-2">
+                                                {workflowDependencies.map((workflow) => {
+                                                    const workflowTag = workflow.missing
+                                                        ? <Tag color="orange">{copy.missing} {workflow.missing}</Tag>
+                                                        : workflow.available
+                                                            ? <Tag color="green">{copy.workflowReady}</Tag>
+                                                            : <Tag color="gold">{copy.workflowRestart}</Tag>;
+                                                    const problemText = workflow.problems.map((problem) => problem.message).filter(Boolean).join("；");
+                                                    return (
+                                                        <div key={workflow.id} className="rounded-lg border border-stone-200 p-2 dark:border-stone-800">
+                                                            <div className="flex items-start justify-between gap-2">
+                                                                <div className="min-w-0">
+                                                                    <div className="text-xs font-medium">{workflow.label}</div>
+                                                                    <div className="truncate text-[10px] text-stone-400 dark:text-stone-500">{workflow.id}</div>
+                                                                </div>
+                                                                <div className="flex shrink-0 items-center gap-1">
+                                                                    {workflow.missingSize ? <span className="text-[10px] text-stone-400 dark:text-stone-500">{formatBytes(workflow.missingSize)}</span> : null}
+                                                                    {workflowTag}
+                                                                </div>
+                                                            </div>
+                                                            <div className="mt-1.5 divide-y divide-stone-100 rounded-md bg-stone-50/60 dark:divide-stone-800/70 dark:bg-white/[.02]">
+                                                                {workflow.resources.map((item) => (
+                                                                    <WorkflowResourceRow
+                                                                        key={item.id}
+                                                                        item={item}
+                                                                        copy={copy}
+                                                                        requires={(item.requires || []).map((id) => resourceById.get(id)).filter((entry): entry is ResourceItem => Boolean(entry))}
+                                                                    />
+                                                                ))}
+                                                            </div>
+                                                            {!workflow.available && problemText ? (
+                                                                <div className="mt-1 text-[10px] leading-4 text-amber-600 dark:text-amber-400">{problemText}</div>
+                                                            ) : null}
+                                                            {workflow.installIds.length ? (
+                                                                <div className="mt-2 flex justify-end">
+                                                                    <Button size="small" icon={<Download className="size-3.5" />} onClick={() => void startInstall({ ids: workflow.installIds })} disabled={Boolean(job && job.status === "running")}>
+                                                                        {copy.installWorkflow}
+                                                                    </Button>
+                                                                </div>
+                                                            ) : null}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                            <div className="mt-3 mb-1.5 flex items-center justify-between gap-2 text-[11px]">
+                                                <span className="font-medium text-stone-600 dark:text-stone-300">{copy.optionalSection}</span>
+                                                <span className="text-stone-400 dark:text-stone-500">
+                                                    {extraOptionalItems.length ? `${copy.optionalMissingLabel} ${extraOptionalMissing.length}${extraOptionalSize ? ` · ${formatBytes(extraOptionalSize)}` : ""}` : copy.optionalHint}
+                                                </span>
+                                            </div>
+                                            {extraOptionalItems.length ? (
+                                                <div className="space-y-1.5">
+                                                    {extraOptionalItems.map((item) => (
+                                                        <ResourceCard
+                                                            key={item.id}
+                                                            item={item}
+                                                            copy={copy}
+                                                            compact={compact}
+                                                            optional
+                                                            selected={selectedOptional.has(item.id)}
+                                                            onToggle={(checked) => toggleOptional(item.id, checked)}
+                                                        />
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="text-[11px] text-stone-400 dark:text-stone-500">{copy.optionalEmpty}</div>
+                                            )}
+                                        </>
                                     ) : (
-                                        <div className="text-[11px] text-stone-400 dark:text-stone-500">{copy.optionalEmpty}</div>
+                                        <>
+                                            <div className="mb-1.5 flex items-center justify-between text-[11px]">
+                                                <span className="font-medium text-stone-600 dark:text-stone-300">{copy.requiredSection}</span>
+                                                <span className="text-stone-400 dark:text-stone-500">{pack.present}/{pack.total}{pack.missingSize ? ` · ${copy.size} ${formatBytes(pack.missingSize)}` : ""}</span>
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                {pack.requiredItems.length ? (
+                                                    pack.requiredItems.map((item) => <ResourceCard key={item.id} item={item} copy={copy} compact={compact} />)
+                                                ) : (
+                                                    <div className="text-[11px] text-stone-400 dark:text-stone-500">{copy.noResources}</div>
+                                                )}
+                                            </div>
+                                            <div className="mt-3 mb-1.5 flex items-center justify-between text-[11px]">
+                                                <span className="font-medium text-stone-600 dark:text-stone-300">{copy.optionalSection}</span>
+                                                <span className="text-stone-400 dark:text-stone-500">
+                                                    {pack.optionalTotal ? `${copy.optionalMissingLabel} ${pack.optionalMissing}${pack.optionalSize ? ` · ${formatBytes(pack.optionalSize)}` : ""}` : copy.optionalHint}
+                                                </span>
+                                            </div>
+                                            {pack.optionalItems.length ? (
+                                                <div className="space-y-1.5">
+                                                    {pack.optionalItems.map((item) => (
+                                                        <ResourceCard
+                                                            key={item.id}
+                                                            item={item}
+                                                            copy={copy}
+                                                            compact={compact}
+                                                            optional
+                                                            selected={selectedOptional.has(item.id)}
+                                                            onToggle={(checked) => toggleOptional(item.id, checked)}
+                                                        />
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="text-[11px] text-stone-400 dark:text-stone-500">{copy.optionalEmpty}</div>
+                                            )}
+                                            {!pack.planned && packInstallIds.length ? (
+                                                <div className="mt-2 flex justify-end">
+                                                    <Button size="small" icon={<Download className="size-3.5" />} onClick={() => void startInstall({ ids: packInstallIds })} disabled={Boolean(job && job.status === "running")}>
+                                                        {copy.installPack}
+                                                    </Button>
+                                                </div>
+                                            ) : null}
+                                        </>
                                     )}
-                                    {!pack.planned && packInstallIds.length ? (
-                                        <div className="mt-2 flex justify-end">
-                                            <Button size="small" icon={<Download className="size-3.5" />} onClick={() => void startInstall({ ids: packInstallIds })} disabled={Boolean(job && job.status === "running")}>
-                                                {copy.installPack}
-                                            </Button>
-                                        </div>
-                                    ) : null}
                                 </div>
                             ) : null}
                         </div>

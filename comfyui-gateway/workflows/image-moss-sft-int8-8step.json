@@ -12,7 +12,7 @@
   "2": {
     "class_type": "CLIPLoader",
     "inputs": {
-      "clip_name": "qwen3.5_9b_w4a8_gptq.safetensors",
+      "clip_name": "qwen3.5_9b_int8_convrot.safetensors",
       "type": "moss_image",
       "device": "default"
     },
@@ -23,7 +23,7 @@
   "3": {
     "class_type": "VAELoader",
     "inputs": {
-      "vae_name": "flux2-vae_small.safetensors"
+      "vae_name": "flux2-vae.safetensors"
     },
     "_meta": {
       "title": "FLUX.2 VAE"

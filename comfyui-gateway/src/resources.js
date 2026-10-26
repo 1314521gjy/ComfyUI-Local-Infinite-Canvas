@@ -149,11 +149,17 @@ function validateIndex(index) {
         for (const id of pack.resources || []) {
             if (!ids.has(id)) throw new Error(`功能包 ${pack.id} 引用了不存在的资源 ${id}`);
         }
+        for (const [workflowId, workflowIds] of Object.entries(pack.workflowDependencies || {})) {
+            if (!Array.isArray(workflowIds)) throw new Error(`功能包 ${pack.id} 的工作流 ${workflowId} 依赖格式不正确`);
+            for (const id of workflowIds) {
+                if (!ids.has(id)) throw new Error(`工作流 ${workflowId} 引用了不存在的资源 ${id}`);
+            }
+        }
     }
     return index;
 }
 
-export function createResourceManager({ config, setup, logger, hardware: hardwareOverride = null } = {}) {
+export function createResourceManager({ config, setup, registry, logger, hardware: hardwareOverride = null } = {}) {
     const indexPath = path.join(config.rootDir, "resources", "index.json");
     const lockPath = path.join(config.dataDir, "resource-lock.json");
     const jobs = new Map();
@@ -327,6 +333,32 @@ export function createResourceManager({ config, setup, logger, hardware: hardwar
             const optionalItems = items.filter((item) => optionalIds.has(item.id));
             const requiredMissing = requiredItems.filter((item) => item.status !== "present");
             const optionalMissing = optionalItems.filter((item) => item.status !== "present");
+            const workflowDependencies = Object.entries(pack.workflowDependencies || {}).map(([workflowId, dependencyIds]) => {
+                const dependencyItems = dependencyIds.map((id) => byId.get(id)).filter(Boolean);
+                const missingItems = dependencyItems.filter((item) => item.status !== "present");
+                const installIds = new Set();
+                for (const item of missingItems) {
+                    installIds.add(item.id);
+                    if (item.type === "bake") {
+                        for (const requiredId of item.requires || []) {
+                            const required = byId.get(requiredId);
+                            if (required && required.status !== "present") installIds.add(requiredId);
+                        }
+                    }
+                }
+                const availability = setup?.workflowStatus?.(workflowId) || { available: true, problems: [] };
+                const entry = registry?.resolve?.(workflowId);
+                return {
+                    id: workflowId,
+                    label: entry?.label || entry?.name || workflowId,
+                    available: availability.available !== false,
+                    problems: availability.problems || [],
+                    resources: dependencyItems,
+                    missing: missingItems.length,
+                    missingSize: missingItems.reduce((sum, item) => sum + (item.size || 0), 0),
+                    installIds: [...installIds].filter((id) => byId.get(id)?.status !== "present"),
+                };
+            });
             return {
                 id: pack.id,
                 label: pack.label || pack.id,
@@ -348,6 +380,7 @@ export function createResourceManager({ config, setup, logger, hardware: hardwar
                 resources: items,
                 requiredItems,
                 optionalItems,
+                workflowDependencies,
                 total: requiredItems.length,
                 present: requiredItems.length - requiredMissing.length,
                 missing: pack.planned ? 0 : requiredMissing.length,
