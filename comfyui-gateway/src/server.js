@@ -114,12 +114,12 @@ function orderedPromptImages(files = []) {
   take("image");
   take("image1");
   take("images");
-  for (let index = 2; index <= 8; index += 1) take(`image${index}`);
+  for (let index = 2; index <= 15; index += 1) take(`image${index}`);
   for (const file of files) {
-    if (ordered.length >= 8) break;
+    if (ordered.length >= 15) break;
     if (file?.buffer && /image|frame/i.test(file.fieldname || "") && !ordered.includes(file)) ordered.push(file);
   }
-  return ordered.slice(0, 8);
+  return ordered.slice(0, 15);
 }
 
 function orderedVideoRefFiles(files = []) {

@@ -44,9 +44,21 @@ const WIDGET_ORDER = {
   KSamplerAdvanced: ["add_noise", "noise_seed", "control_after_generate", "steps", "cfg", "sampler_name", "scheduler", "start_at_step", "end_at_step", "return_with_leftover_noise"],
   LoadImage: ["image", "upload"],
   SaveVideo: ["filename_prefix", "format", "format.codec", "codec"],
+  VHS_VideoCombine: ["frame_rate", "loop_count", "filename_prefix", "format", "pingpong", "save_output"],
   MiniMaxH3ImageToVideo: ["prompt", "width", "height", "length"],
   MiniMaxH3ReferenceToVideo: ["prompt", "width", "height", "length", "ref_image_size"],
 };
+
+// The UI keeps display labels such as "Ref2VA — 参考生音视频" while the API
+// validates against short combo values. Map a label back to its option when
+// one option is a prefix of the saved label.
+function normalizeComboValue(spec, value) {
+  if (typeof value !== "string" || !spec) return value;
+  const options = Array.isArray(spec.opts?.options) ? spec.opts.options : [];
+  if (!options.length || options.includes(value)) return value;
+  const text = value.trim();
+  return options.find((option) => typeof option === "string" && (option === text || text.startsWith(option) || option.startsWith(text))) ?? value;
+}
 
 function normalizeType(value) {
   if (Array.isArray(value)) return "COMBO";
@@ -55,7 +67,8 @@ function normalizeType(value) {
 }
 
 function isWidgetType(type) {
-  return BASIC_WIDGET_TYPES.has(normalizeType(type));
+  const normalized = normalizeType(type);
+  return BASIC_WIDGET_TYPES.has(normalized) || /COMBO/i.test(normalized);
 }
 
 function inputSpecs(objectInfo, classType) {
@@ -185,21 +198,21 @@ export function convertUiWorkflow(ui, objectInfo = {}) {
         if (value === undefined || name in inputs) continue;
         if (!specByName.has(name) && !uiInputs.has(name)) continue;
         if (!isWidgetType(specByName.get(name)?.type || uiInputs.get(name)?.type)) continue;
-        inputs[name] = value;
+        inputs[name] = normalizeComboValue(specByName.get(name), value);
       }
     } else {
       fallbackOrder.forEach((name, index) => {
         if (!name || name === "control_after_generate" || name === "upload" || name in inputs) return;
         const spec = specByName.get(name);
         if (!spec || !isWidgetType(spec.type)) return;
-        if (index < values.length) inputs[name] = values[index];
+        if (index < values.length) inputs[name] = normalizeComboValue(spec, values[index]);
       });
     }
 
     // Some custom nodes keep prompt/width/height only in widget values, not in node.inputs.
     for (const spec of specs) {
       if (spec.name in inputs || !isWidgetType(spec.type)) continue;
-      if (named && spec.name in named) inputs[spec.name] = named[spec.name];
+      if (named && spec.name in named) inputs[spec.name] = normalizeComboValue(spec, named[spec.name]);
     }
 
     workflow[nodeId] = {

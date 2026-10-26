@@ -22,6 +22,36 @@ const objectInfo = {
       },
     },
   },
+  VHS_VideoCombine: {
+    input: {
+      required: {
+        images: ["IMAGE", {}],
+        frame_rate: ["FLOAT", {}],
+        loop_count: ["INT", {}],
+        filename_prefix: ["STRING", {}],
+        format: [["video/h264-mp4"], {}],
+        pingpong: ["BOOLEAN", {}],
+        save_output: ["BOOLEAN", {}],
+      },
+    },
+  },
+  TestCombo: {
+    input: {
+      required: {
+        task_type: ["COMBO", { options: ["auto", "Ref2VA", "I2VA"] }],
+        value: ["STRING", {}],
+      },
+    },
+  },
+  SaveVideo: {
+    input: {
+      required: {
+        video: ["VIDEO", {}],
+        filename_prefix: ["STRING", {}],
+        format: ["COMFY_DYNAMICCOMBO_V3", { options: [{ key: "auto" }] }],
+      },
+    },
+  },
 };
 
 function uiNode(id, type, inputs, widgetsValuesNamed, mode = 0) {
@@ -52,6 +82,48 @@ test("UI workflow conversion keeps widgets, links and resolves bypass", () => {
   assert.equal(result.workflow["1"].inputs.image, "input.png");
   assert.deepEqual(result.workflow["3"].inputs.images, ["1", 0]);
   assert.equal(result.workflow["3"].inputs.filename_prefix, "out");
+});
+
+test("UI conversion maps VHS widgets and normalizes display labels", () => {
+  const ui = {
+    nodes: [
+      {
+        id: 1,
+        type: "VHS_VideoCombine",
+        mode: 0,
+        inputs: [{ name: "images", type: "IMAGE", link: null }],
+        widgets_values: [24, 0, "video/out", "video/h264-mp4", false, true],
+      },
+      {
+        id: 2,
+        type: "TestCombo",
+        mode: 0,
+        inputs: [
+          { name: "task_type", type: "COMBO", link: null, widget: { name: "task_type" } },
+          { name: "value", type: "STRING", link: null, widget: { name: "value" } },
+        ],
+        widgets_values_named: { task_type: "Ref2VA — 参考生音视频", value: "x" },
+      },
+      {
+        id: 3,
+        type: "SaveVideo",
+        mode: 0,
+        inputs: [{ name: "video", type: "VIDEO", link: null }],
+        widgets_values: ["video/out", "auto"],
+      },
+    ],
+    links: [],
+  };
+  const result = convertUiWorkflow(ui, objectInfo);
+  assert.equal(result.workflow["1"].inputs.frame_rate, 24);
+  assert.equal(result.workflow["1"].inputs.loop_count, 0);
+  assert.equal(result.workflow["1"].inputs.filename_prefix, "video/out");
+  assert.equal(result.workflow["1"].inputs.format, "video/h264-mp4");
+  assert.equal(result.workflow["1"].inputs.pingpong, false);
+  assert.equal(result.workflow["1"].inputs.save_output, true);
+  assert.equal(result.workflow["2"].inputs.task_type, "Ref2VA");
+  assert.equal(result.workflow["3"].inputs.filename_prefix, "video/out");
+  assert.equal(result.workflow["3"].inputs.format, "auto");
 });
 
 test("binding detection finds prompt, size, batch, seed, image and output type", () => {
