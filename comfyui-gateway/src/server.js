@@ -717,7 +717,7 @@ export async function createGatewayApp(overrides = {}) {
       params: parseParams(body.params),
       presets: entry.presets,
     });
-    if (entry.id.startsWith("image-moss-sft-")) applyMossLayoutPrompt(context);
+    if (entry.id.startsWith("image-moss-")) applyMossLayoutPrompt(context);
     const abort = abortOnDisconnect(req, res, registerActiveRequest);
     let result;
     try {
@@ -850,7 +850,7 @@ export async function createGatewayApp(overrides = {}) {
       params: parseParams(body.params),
       presets: entry.presets,
     });
-    if (entry.id.startsWith("image-moss-sft-")) applyMossLayoutPrompt(context);
+    if (entry.id.startsWith("image-moss-")) applyMossLayoutPrompt(context);
     const abort = abortOnDisconnect(req, res, registerActiveRequest);
     let result;
     try {
