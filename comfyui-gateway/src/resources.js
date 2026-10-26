@@ -159,7 +159,7 @@ function validateIndex(index) {
     return index;
 }
 
-export function createResourceManager({ config, setup, registry, logger, hardware: hardwareOverride = null } = {}) {
+export function createResourceManager({ config, setup, registry, logger, workflowVisibility = null, hardware: hardwareOverride = null } = {}) {
     const indexPath = path.join(config.rootDir, "resources", "index.json");
     const lockPath = path.join(config.dataDir, "resource-lock.json");
     const jobs = new Map();
@@ -353,6 +353,7 @@ export function createResourceManager({ config, setup, registry, logger, hardwar
                     id: workflowId,
                     label: entry?.label || entry?.name || workflowId,
                     available: availability.available !== false,
+                    enabled: !workflowVisibility?.isHidden?.(workflowId),
                     problems: availability.problems || [],
                     recommended: false,
                     resources: dependencyItems,

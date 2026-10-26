@@ -26,6 +26,7 @@ import { createSkinUnlockStore } from "./skin-unlocks.js";
 import { readSystemStats } from "./system-stats.js";
 import { createTaskStore } from "./tasks.js";
 import { applyUpdate, checkForUpdate } from "./update.js";
+import { createWorkflowVisibilityStore } from "./workflow-visibility.js";
 import { extFromMime, jsonError, nowIso, parseSize, randomId, safeFileName, sleep } from "./util.js";
 
 class HttpError extends Error {
@@ -220,12 +221,14 @@ export async function createGatewayApp(overrides = {}) {
   await freeWorkflows.load();
   const skinUnlocks = createSkinUnlockStore({ dataDir: config.dataDir, logger });
   await skinUnlocks.load();
+  const workflowVisibility = createWorkflowVisibilityStore({ dataDir: config.dataDir, logger });
+  await workflowVisibility.load();
   const comfyBridge = createComfyBridge({ config, logger });
   const bridgeStatus = await comfyBridge.ensure();
   if (!bridgeStatus.installed) logger.warn(`ComfyUI 工作流桥接未安装：${bridgeStatus.reason || "未知原因"}`);
   const sessions = createSessionTracker({ staleMs: config.sessionStaleSec * 1000 });
   const setup = createSetupManager({ config, registry, comfy, logger });
-  const resources = createResourceManager({ config, setup, registry, logger });
+  const resources = createResourceManager({ config, setup, registry, logger, workflowVisibility });
   await resources.init();
   let lastOOM = null;
   const activeRequests = new Map();
@@ -456,7 +459,7 @@ export async function createGatewayApp(overrides = {}) {
     await registry.reloadIfChanged();
     const data = registry
       .listModels((setup.loaderOptions?.() || {}))
-      .filter((model) => setup.isAvailable(model.baseId) && !model.entry.hidden && model.entry.category !== "upscale")
+      .filter((model) => setup.isAvailable(model.baseId) && !model.entry.hidden && model.entry.category !== "upscale" && !workflowVisibility.isHidden(model.entry.id))
       .map((model) => ({
         id: model.modelId,
         object: "model",
@@ -483,8 +486,22 @@ export async function createGatewayApp(overrides = {}) {
   app.get("/api/workflows", async (_req, res) => {
     await registry.reloadIfChanged();
     res.json({
-      workflows: registry.list().map((entry) => ({ ...entry, availability: setup.workflowStatus(entry.id) })),
+      workflows: registry.list().map((entry) => ({
+        ...entry,
+        enabled: entry.hidden !== true && !workflowVisibility.isHidden(entry.id),
+        availability: setup.workflowStatus(entry.id),
+      })),
     });
+  });
+
+  app.post("/api/workflows/:id/visibility", async (req, res) => {
+    const entry = registry.resolve(req.params.id);
+    if (!entry) throw new HttpError("工作流不存在", { status: 404, code: "workflow_not_found" });
+    if (entry.hidden) throw new HttpError("该工作流由内置规则隐藏，不能修改", { status: 400, code: "workflow_internal" });
+    const enabled = req.body?.enabled !== false;
+    await workflowVisibility.setHidden(entry.id, !enabled);
+    logger.info(`workflow visibility ${entry.id} -> ${enabled ? "enabled" : "hidden"}`);
+    res.json({ ok: true, id: entry.id, enabled });
   });
 
   app.get("/api/workflows/:id", (req, res) => {

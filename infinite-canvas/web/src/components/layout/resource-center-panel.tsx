@@ -1,4 +1,4 @@
-import { App, Button, Checkbox, Progress, Tag } from "antd";
+import { App, Button, Checkbox, Progress, Tag, Tooltip } from "antd";
 import { AlertTriangle, CheckCircle2, ChevronDown, Download, HardDriveDownload, RefreshCw, Server, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -10,6 +10,7 @@ import {
     formatBytes,
     installResources,
     refreshResourceStatus,
+    setWorkflowVisibility,
     type ResourceItem,
     type ResourceJob,
     type ResourcePack,
@@ -38,10 +39,13 @@ const copyByLocale = {
         requiredSection: "必下内容",
         optionalSection: "选下内容",
         workflowSection: "工作流",
-        workflowHint: "按工作流安装；资源齐备后才会出现在模型选择",
+        workflowHint: "按工作流安装；资源齐备且已启用后才会出现在模型选择",
         installWorkflow: "安装此工作流",
         workflowReady: "可用",
         workflowRestart: "待重启",
+        workflowEnabled: "启用",
+        workflowDisabled: "已屏蔽",
+        visibilityHint: "勾选后才会出现在模型选择；不删除已下载资源",
         plugin: "插件",
         bakeRequires: "本地烘焙，依赖",
         optionalHint: "LoRA、低显存底模等，按需安装",
@@ -93,10 +97,13 @@ const copyByLocale = {
         requiredSection: "Required",
         optionalSection: "Optional",
         workflowSection: "Workflows",
-        workflowHint: "Install by workflow; only complete workflows appear in the model picker",
+        workflowHint: "Install by workflow; only complete and enabled workflows appear in the model picker",
         installWorkflow: "Install workflow",
         workflowReady: "Ready",
         workflowRestart: "Restart needed",
+        workflowEnabled: "Enabled",
+        workflowDisabled: "Hidden",
+        visibilityHint: "Only checked workflows appear in the model picker; downloaded resources are kept",
         plugin: "Plugin",
         bakeRequires: "Local bake requires",
         optionalHint: "LoRAs, low-VRAM checkpoints, and other extras",
@@ -399,6 +406,22 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
         });
     };
 
+    const toggleWorkflowEnabled = async (id: string, enabled: boolean) => {
+        try {
+            await setWorkflowVisibility(id, enabled);
+            setStatus((current) => current ? {
+                ...current,
+                packs: current.packs.map((pack) => ({
+                    ...pack,
+                    workflowDependencies: pack.workflowDependencies?.map((workflow) => (workflow.id === id ? { ...workflow, enabled } : workflow)),
+                })),
+            } : current);
+            window.dispatchEvent(new Event("local-gateway-refresh-models"));
+        } catch (toggleError) {
+            message.error(toggleError instanceof Error ? toggleError.message : String(toggleError));
+        }
+    };
+
     const toggleExpanded = (id: string) => {
         setExpandedPacks((current) => {
             const next = new Set(current);
@@ -555,7 +578,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                                 <span className="text-stone-400 dark:text-stone-500">{copy.workflowHint}</span>
                                             </div>
                                             <div className="space-y-2">
-                                                {workflowDependencies.map((workflow) => {
+                                                {workflowDependencies.map((workflow, index) => {
                                                     const workflowExpanded = expandedWorkflows.has(workflow.id);
                                                     const workflowTag = workflow.missing
                                                         ? <Tag color="orange">{copy.missing} {workflow.missing}</Tag>
@@ -564,18 +587,44 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                                             : <Tag color="gold">{copy.workflowRestart}</Tag>;
                                                     const problemText = workflow.problems.map((problem) => problem.message).filter(Boolean).join("；");
                                                     return (
-                                                        <div key={workflow.id} className="rounded-lg border border-stone-200 dark:border-stone-800">
+                                                        <div
+                                                            key={workflow.id}
+                                                            className={`rounded-lg border transition-colors ${
+                                                                workflow.enabled === false
+                                                                    ? "border-stone-200 bg-stone-50/40 dark:border-stone-800 dark:bg-white/[.01]"
+                                                                    : "workflow-active border-emerald-300/70 bg-emerald-50/30 dark:border-emerald-800/60 dark:bg-emerald-950/15"
+                                                            }`}
+                                                            style={{ animationDelay: `${index * 0.28}s` }}
+                                                        >
                                                             <div className="flex items-start gap-2 p-2">
                                                                 <button type="button" className="min-w-0 flex-1 text-left" onClick={() => toggleWorkflow(workflow.id)} aria-expanded={workflowExpanded}>
                                                                     <div className="flex flex-wrap items-center gap-2">
-                                                                        <span className="text-xs font-medium">{workflow.label}</span>
+                                                                        <span className={`text-xs font-medium ${workflow.enabled === false ? "text-stone-400 dark:text-stone-500" : "text-stone-800 dark:text-stone-100"}`}>{workflow.label}</span>
                                                                         {workflow.recommended ? <Tag color="blue" className="m-0">{copy.recommended}</Tag> : null}
                                                                         {workflow.missingSize ? <span className="text-[10px] text-stone-400 dark:text-stone-500">{formatBytes(workflow.missingSize)}</span> : null}
                                                                         {workflowTag}
                                                                     </div>
-                                                                    <div className="truncate text-[10px] text-stone-400 dark:text-stone-500">{workflow.id}</div>
+                                                                    <div className={`truncate text-[10px] ${workflow.enabled === false ? "text-stone-400 dark:text-stone-500" : "text-emerald-700/70 dark:text-emerald-300/60"}`}>{workflow.id}</div>
                                                                 </button>
-                                                                <button type="button" className="mt-0.5 rounded-md p-1 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-600 dark:text-stone-500 dark:hover:bg-white/5 dark:hover:text-stone-300" onClick={() => toggleWorkflow(workflow.id)} aria-label={workflowExpanded ? copy.collapse : copy.expand}>
+                                                                <Tooltip title={copy.visibilityHint}>
+                                                                    <span
+                                                                        className="mt-1 flex shrink-0 cursor-pointer select-none items-center gap-1.5"
+                                                                        onClick={(event) => {
+                                                                            event.stopPropagation();
+                                                                            void toggleWorkflowEnabled(workflow.id, workflow.enabled === false);
+                                                                        }}
+                                                                    >
+                                                                        <Checkbox
+                                                                            checked={workflow.enabled !== false}
+                                                                            onClick={(event) => event.stopPropagation()}
+                                                                            onChange={(event) => void toggleWorkflowEnabled(workflow.id, event.target.checked)}
+                                                                        />
+                                                                        <span className={`min-w-8 text-[10px] ${workflow.enabled === false ? "text-stone-400 dark:text-stone-500" : "text-emerald-600 dark:text-emerald-400"}`}>
+                                                                            {workflow.enabled === false ? copy.workflowDisabled : copy.workflowEnabled}
+                                                                        </span>
+                                                                    </span>
+                                                                </Tooltip>
+                                                                <button type="button" className="mt-1 rounded-lg p-1 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-600 dark:text-stone-500 dark:hover:bg-white/5 dark:hover:text-stone-300" onClick={() => toggleWorkflow(workflow.id)} aria-label={workflowExpanded ? copy.collapse : copy.expand}>
                                                                     <ChevronDown className={`size-4 transition-transform ${workflowExpanded ? "rotate-180" : ""}`} />
                                                                 </button>
                                                             </div>

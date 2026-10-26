@@ -242,6 +242,7 @@ test("a merged pack recommends bf16 on large cards and int8 on small cards", asy
         config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
         setup: { loaderOptions: () => ({}), status: () => ({ comfyReachable: true }), scan: async () => ({}) },
         logger: null,
+        workflowVisibility: { isHidden: (id) => id === "w-bf16" },
         hardware: { gpuName: `Test ${vramTotalMb}`, vramTotalMb, ramTotalBytes: ramGb * 1024 ** 3, ramFreeBytes: ramGb * 1024 ** 3, detectedAt: new Date().toISOString(), source: "test" },
     });
     try {
@@ -253,6 +254,8 @@ test("a merged pack recommends bf16 on large cards and int8 on small cards", asy
         assert.deepEqual(largePack.requiredIds, ["bf16", "te", "vae", "lora"]);
         assert.equal(largePack.workflowDependencies.find((item) => item.id === "w-bf16").recommended, true);
         assert.equal(largePack.workflowDependencies.find((item) => item.id === "w-int8").recommended, false);
+        assert.equal(largePack.workflowDependencies.find((item) => item.id === "w-bf16").enabled, false);
+        assert.equal(largePack.workflowDependencies.find((item) => item.id === "w-int8").enabled, true);
 
         const small = createManager(8192, 64);
         await small.init();

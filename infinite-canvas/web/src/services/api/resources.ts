@@ -45,6 +45,7 @@ export type WorkflowDependency = {
     id: string;
     label: string;
     available: boolean;
+    enabled?: boolean;
     recommended?: boolean;
     problems: Array<{ type?: string; message?: string }>;
     resources: ResourceItem[];
@@ -178,6 +179,16 @@ export async function fetchResourceJob(id: string): Promise<ResourceJob> {
     const data = await readJson(response);
     if (!response.ok || data.ok === false) throw new Error(errorMessage(data, `读取安装进度失败（HTTP ${response.status}）`));
     return data.job as ResourceJob;
+}
+
+export async function setWorkflowVisibility(id: string, enabled: boolean): Promise<void> {
+    const response = await fetch(`${gatewayRoot}/api/workflows/${encodeURIComponent(id)}/visibility`, {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+    });
+    const data = await readJson(response);
+    if (!response.ok || data.ok === false) throw new Error(errorMessage(data, `切换工作流状态失败（HTTP ${response.status}）`));
 }
 
 export async function cancelResourceJob(id: string): Promise<ResourceJob> {
