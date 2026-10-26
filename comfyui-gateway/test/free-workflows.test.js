@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import fsp from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 
-import { applyFreeInputs } from "../src/free-workflows.js";
+import { applyFreeInputs, createFreeWorkflowStore } from "../src/free-workflows.js";
 import { convertUiWorkflow, detectFreeBindings } from "../src/ui-workflow.js";
 
 const objectInfo = {
@@ -179,4 +182,37 @@ test("resolution selector aspect ratio is detected and patched", () => {
   assert.equal(patched[1].inputs.aspect_ratio, "9:16 (Portrait Widescreen)");
   const unchanged = applyFreeInputs(workflow, bindings, { ratio: "auto" });
   assert.equal(unchanged[1].inputs.aspect_ratio, "16:9 (Widescreen)");
+});
+
+test("free workflow store deletes entries and persists", async () => {
+  const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "free-workflows-"));
+  try {
+    const entry = {
+      id: "fc-delete",
+      name: "Delete me",
+      sourceRel: "test.json",
+      sourceFormat: "api",
+      workflow: { 1: { class_type: "Test", inputs: {} } },
+      bindings: { outputType: "image", prompt: null, images: [], sizes: [], ratios: [], batches: [], seeds: [] },
+      warnings: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await fsp.writeFile(path.join(dataDir, "free-workflows.json"), JSON.stringify({ version: 1, workflows: [entry] }));
+
+    const first = createFreeWorkflowStore({ dataDir, comfy: {} });
+    await first.load();
+    assert.equal(first.get("fc-delete")?.name, "Delete me");
+    assert.equal((await first.rename("fc-delete", "  Renamed   Card  "))?.name, "Renamed Card");
+    await assert.rejects(() => first.rename("fc-delete", "   "), /名称不能为空/);
+    assert.equal((await first.remove("fc-delete"))?.id, "fc-delete");
+    assert.equal(first.get("fc-delete"), null);
+    assert.equal(await first.remove("missing"), null);
+
+    const second = createFreeWorkflowStore({ dataDir, comfy: {} });
+    await second.load();
+    assert.equal(second.get("fc-delete"), null);
+  } finally {
+    await fsp.rm(dataDir, { recursive: true, force: true });
+  }
 });

@@ -121,6 +121,26 @@ export async function archiveFreeWorkflow(config: AiConfig, id: string, archived
     return response.data.workflow;
 }
 
+export async function deleteFreeWorkflow(config: AiConfig, id: string): Promise<void> {
+    const root = gatewayRoot(config);
+    try {
+        await axios.delete(`${root}/api/free-workflows/${encodeURIComponent(id)}`, { timeout: 30000 });
+    } catch (error) {
+        throw new Error(readError(error, "删除自由卡片失败"));
+    }
+}
+
+export async function renameFreeWorkflow(config: AiConfig, id: string, name: string): Promise<FreeWorkflowSummary> {
+    const root = gatewayRoot(config);
+    try {
+        const response = await axios.patch<{ workflow?: FreeWorkflowSummary }>(`${root}/api/free-workflows/${encodeURIComponent(id)}`, { name }, { timeout: 30000 });
+        if (!response.data?.workflow) throw new Error("重命名自由卡片失败");
+        return response.data.workflow;
+    } catch (error) {
+        throw new Error(readError(error, "重命名自由卡片失败"));
+    }
+}
+
 export async function freeWorkflowComfyUrl(config: AiConfig, id: string): Promise<{ url: string; name: string; sourceRel: string; sourceFormat: "ui" | "api"; bridge: boolean; bridgeReason?: string }> {
     const root = gatewayRoot(config);
     const response = await axios.get<{ url?: string; name?: string; sourceRel?: string; sourceFormat?: "ui" | "api"; bridge?: boolean; bridgeReason?: string }>(`${root}/api/free-workflows/${encodeURIComponent(id)}/open`, { timeout: 15000 });

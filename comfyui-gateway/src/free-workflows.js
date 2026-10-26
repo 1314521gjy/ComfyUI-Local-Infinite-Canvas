@@ -281,6 +281,39 @@ export function createFreeWorkflowStore({ dataDir, comfyWorkflowsDir = "", comfy
     return entries.get(id) || null;
   }
 
+  async function remove(id) {
+    const key = String(id || "").trim();
+    const entry = entries.get(key);
+    if (!entry) return null;
+    entries.delete(key);
+    sourceCache.delete(key);
+    await persist();
+    return entry;
+  }
+
+  async function rename(id, name) {
+    const entry = entries.get(String(id || "").trim());
+    if (!entry) {
+      const error = new Error("自由卡片不存在");
+      error.status = 404;
+      error.code = "free_workflow_not_found";
+      throw error;
+    }
+    const next = String(name || "").replace(/\s+/g, " ").trim().slice(0, 80);
+    if (!next) {
+      const error = new Error("名称不能为空");
+      error.status = 400;
+      error.code = "invalid_free_workflow_name";
+      throw error;
+    }
+    if (entry.name !== next) {
+      entry.name = next;
+      entry.updatedAt = nowIso();
+      await persist();
+    }
+    return entry;
+  }
+
   async function publicEntry(entry) {
     if (!entry) return null;
     const source = await sourceState(entry);
@@ -312,5 +345,5 @@ export function createFreeWorkflowStore({ dataDir, comfyWorkflowsDir = "", comfy
     return result;
   }
 
-  return { load, listSources, importSource, sync, setArchived, get, publicEntry, list, applyFreeInputs, readRawWorkflow, sourceState };
+  return { load, listSources, importSource, sync, setArchived, get, remove, rename, publicEntry, list, applyFreeInputs, readRawWorkflow, sourceState };
 }

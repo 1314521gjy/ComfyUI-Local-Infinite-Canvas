@@ -1,7 +1,7 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from "react";
 import { App, Empty, Input, Popconfirm, Select, Spin, Tag } from "antd";
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Check, ChevronRight, Download, Eye, FileText, Image as ImageIcon, LayoutGrid, ListChecks, Music2, Plus, RefreshCw, Rows3, Search, Settings2, Sparkles, Square, Trash2, Type, Video } from "lucide-react";
+import { BookOpen, Check, ChevronRight, Download, Eye, FileText, Image as ImageIcon, LayoutGrid, ListChecks, Music2, Pencil, Plus, RefreshCw, Rows3, Search, Settings2, Sparkles, Square, Trash2, Type, Video } from "lucide-react";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 
@@ -16,7 +16,7 @@ import { uploadMediaFile } from "@/services/file-storage";
 import { previewUrlFor, subscribeImagePreviews, getImagePreviewRevision, uploadImage } from "@/services/image-storage";
 import { useAssetStore, type Asset, type AssetKind } from "@/stores/use-asset-store";
 import { useEffectiveConfig } from "@/stores/use-config-store";
-import { fetchFreeWorkflows, type FreeWorkflowSummary } from "@/services/api/free-workflow";
+import { fetchFreeWorkflows, deleteFreeWorkflow, renameFreeWorkflow, type FreeWorkflowSummary } from "@/services/api/free-workflow";
 import { usePromptSourceStore } from "@/stores/use-prompt-source-store";
 import { CANVAS_SIDE_PANEL_MAX_WIDTH, CANVAS_SIDE_PANEL_MIN_WIDTH, CANVAS_SIDE_PANEL_MOTION_MS, useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -755,10 +755,16 @@ function PromptRow({ item, theme, onInsert, onView }: { item: Prompt; theme: Can
 
 function CanvasFreeCardsTab({ theme, onAdd }: { theme: CanvasTheme; onAdd?: (workflow: FreeWorkflowSummary) => void }) {
     const { t } = useTranslation();
+    const { message } = App.useApp();
     const config = useEffectiveConfig();
     const [items, setItems] = useState<FreeWorkflowSummary[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
+    const [deletingId, setDeletingId] = useState("");
+    const [editingId, setEditingId] = useState("");
+    const [nameDraft, setNameDraft] = useState("");
+    const [renamingId, setRenamingId] = useState("");
+    const renameInFlight = useRef(new Set<string>());
 
     const load = async () => {
         setLoading(true);
@@ -769,6 +775,55 @@ function CanvasFreeCardsTab({ theme, onAdd }: { theme: CanvasTheme; onAdd?: (wor
             setError(reason instanceof Error ? reason.message : t("canvas.sidePanel.freeCardsLoadFailed"));
         } finally {
             setLoading(false);
+        }
+    };
+
+    const startRename = (item: FreeWorkflowSummary) => {
+        setEditingId(item.id);
+        setNameDraft(item.name);
+    };
+
+    const cancelRename = () => {
+        setEditingId("");
+        setNameDraft("");
+    };
+
+    const commitRename = async (item: FreeWorkflowSummary) => {
+        const name = nameDraft.replace(/\s+/g, " ").trim();
+        if (!name) {
+            cancelRename();
+            return;
+        }
+        if (name === item.name) {
+            cancelRename();
+            return;
+        }
+        if (renameInFlight.current.has(item.id)) return;
+        renameInFlight.current.add(item.id);
+        setRenamingId(item.id);
+        try {
+            const updated = await renameFreeWorkflow(config, item.id, name);
+            setItems((current) => current.map((entry) => (entry.id === item.id ? { ...entry, name: updated.name } : entry)));
+            message.success(t("canvas.sidePanel.freeCardRenamed", { name: updated.name }));
+            cancelRename();
+        } catch (reason) {
+            message.error(reason instanceof Error ? reason.message : t("canvas.sidePanel.freeCardRenameFailed"));
+        } finally {
+            renameInFlight.current.delete(item.id);
+            setRenamingId("");
+        }
+    };
+
+    const remove = async (item: FreeWorkflowSummary) => {
+        setDeletingId(item.id);
+        try {
+            await deleteFreeWorkflow(config, item.id);
+            setItems((current) => current.filter((entry) => entry.id !== item.id));
+            message.success(t("canvas.sidePanel.freeCardDeleted", { name: item.name }));
+        } catch (reason) {
+            message.error(reason instanceof Error ? reason.message : t("canvas.sidePanel.freeCardDeleteFailed"));
+        } finally {
+            setDeletingId("");
         }
     };
 
@@ -800,32 +855,99 @@ function CanvasFreeCardsTab({ theme, onAdd }: { theme: CanvasTheme; onAdd?: (wor
                     <div className="grid h-32 place-items-center px-4 text-center text-xs opacity-60">{error}</div>
                 ) : items.length ? (
                     <div className="space-y-1">
-                        {items.map((item) => (
-                            <div key={item.id} className="group flex items-center gap-2.5 rounded-lg px-2 py-2 transition hover:bg-black/5 dark:hover:bg-white/5">
-                                <span className="grid size-9 shrink-0 place-items-center rounded-lg" style={{ background: theme.node.panel }}>
-                                    <Sparkles className="size-4 opacity-60" />
-                                </span>
-                                <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onAdd?.(item)} disabled={!onAdd}>
-                                    <div className="flex min-w-0 items-center gap-1.5">
-                                        <span className="truncate text-sm font-medium">{item.name}</span>
-                                        {item.sourceChanged ? <span className="size-1.5 shrink-0 rounded-full bg-amber-500" title={t("canvas.freeCard.sourceChanged")} /> : null}
-                                    </div>
-                                    <div className="mt-0.5 truncate text-[11px] opacity-50">
-                                        {item.outputType === "video" ? t("canvas.freeCard.videoWorkflow") : item.outputType === "image" ? t("canvas.freeCard.imageWorkflow") : t("canvas.freeCard.otherWorkflow")} · {item.sourceRel}
-                                    </div>
-                                </button>
-                                <button
-                                    type="button"
-                                    className="grid size-7 shrink-0 place-items-center rounded-md opacity-60 transition hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10"
-                                    style={{ color: theme.toolbar.activeText }}
-                                    title={t("canvas.sidePanel.addFreeCard")}
-                                    aria-label={t("canvas.sidePanel.addFreeCard")}
-                                    onClick={() => onAdd?.(item)}
-                                >
-                                    <Plus className="size-3.5" />
-                                </button>
-                            </div>
-                        ))}
+                        {items.map((item) => {
+                            const editing = editingId === item.id;
+                            return (
+                                <div key={item.id} className="group flex items-center gap-2.5 rounded-lg px-2 py-2 transition hover:bg-black/5 dark:hover:bg-white/5">
+                                    <span className="grid size-9 shrink-0 place-items-center rounded-lg" style={{ background: theme.node.panel }}>
+                                        <Sparkles className="size-4 opacity-60" />
+                                    </span>
+                                    {editing ? (
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-center gap-1">
+                                                <Input
+                                                    autoFocus
+                                                    size="small"
+                                                    value={nameDraft}
+                                                    maxLength={80}
+                                                    disabled={renamingId === item.id}
+                                                    className="h-7 min-w-0 flex-1 text-sm"
+                                                    onChange={(event) => setNameDraft(event.target.value)}
+                                                    onPressEnter={() => void commitRename(item)}
+                                                    onKeyDown={(event) => {
+                                                        if (event.key === "Escape") cancelRename();
+                                                    }}
+                                                />
+                                                <button
+                                                    type="button"
+                                                    className="grid size-6 shrink-0 place-items-center rounded-md opacity-70 transition hover:bg-black/10 hover:opacity-100 disabled:opacity-30 dark:hover:bg-white/10"
+                                                    title={t("canvas.sidePanel.saveFreeCardName")}
+                                                    aria-label={t("canvas.sidePanel.saveFreeCardName")}
+                                                    disabled={!nameDraft.trim() || renamingId === item.id}
+                                                    onClick={() => void commitRename(item)}
+                                                >
+                                                    <Check className="size-3.5" />
+                                                </button>
+                                            </div>
+                                            <div className="mt-0.5 truncate text-[11px] opacity-50">
+                                                {item.outputType === "video" ? t("canvas.freeCard.videoWorkflow") : item.outputType === "image" ? t("canvas.freeCard.imageWorkflow") : t("canvas.freeCard.otherWorkflow")} · {item.sourceRel}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onAdd?.(item)} disabled={!onAdd}>
+                                            <div className="flex min-w-0 items-center gap-1.5">
+                                                <span className="truncate text-sm font-medium">{item.name}</span>
+                                                {item.sourceChanged ? <span className="size-1.5 shrink-0 rounded-full bg-amber-500" title={t("canvas.freeCard.sourceChanged")} /> : null}
+                                            </div>
+                                            <div className="mt-0.5 truncate text-[11px] opacity-50">
+                                                {item.outputType === "video" ? t("canvas.freeCard.videoWorkflow") : item.outputType === "image" ? t("canvas.freeCard.imageWorkflow") : t("canvas.freeCard.otherWorkflow")} · {item.sourceRel}
+                                            </div>
+                                        </button>
+                                    )}
+                                    {!editing ? (
+                                        <>
+                                            <button
+                                                type="button"
+                                                className="grid size-7 shrink-0 place-items-center rounded-md opacity-35 transition hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10"
+                                                title={t("canvas.sidePanel.renameFreeCard")}
+                                                aria-label={t("canvas.sidePanel.renameFreeCard")}
+                                                onClick={() => startRename(item)}
+                                            >
+                                                <Pencil className="size-3.5" />
+                                            </button>
+                                            <Popconfirm
+                                                title={t("canvas.sidePanel.deleteFreeCardTitle", { name: item.name })}
+                                                description={t("canvas.sidePanel.deleteFreeCardDescription")}
+                                                okText={t("common.delete")}
+                                                cancelText={t("common.cancel")}
+                                                okButtonProps={{ danger: true, loading: deletingId === item.id }}
+                                                onConfirm={() => void remove(item)}
+                                            >
+                                                <button
+                                                    type="button"
+                                                    className="grid size-7 shrink-0 place-items-center rounded-md opacity-35 transition hover:bg-red-500/10 hover:text-red-500 hover:opacity-100 dark:hover:bg-red-500/15"
+                                                    title={t("canvas.sidePanel.deleteFreeCard")}
+                                                    aria-label={t("canvas.sidePanel.deleteFreeCard")}
+                                                    disabled={deletingId === item.id}
+                                                >
+                                                    <Trash2 className="size-3.5" />
+                                                </button>
+                                            </Popconfirm>
+                                            <button
+                                                type="button"
+                                                className="grid size-7 shrink-0 place-items-center rounded-md opacity-60 transition hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10"
+                                                style={{ color: theme.toolbar.activeText }}
+                                                title={t("canvas.sidePanel.addFreeCard")}
+                                                aria-label={t("canvas.sidePanel.addFreeCard")}
+                                                onClick={() => onAdd?.(item)}
+                                            >
+                                                <Plus className="size-3.5" />
+                                            </button>
+                                        </>
+                                    ) : null}
+                                </div>
+                            );
+                        })}
                     </div>
                 ) : (
                     <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={<span className="text-xs opacity-55">{t("canvas.sidePanel.freeCardsEmpty")}</span>}>

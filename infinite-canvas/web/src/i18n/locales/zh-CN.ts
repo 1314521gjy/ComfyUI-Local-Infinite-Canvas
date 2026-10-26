@@ -310,6 +310,8 @@ export default {
             searchPrompts: "搜索提示词", noPrompts: "暂无提示词", promptCopied: "已复制提示词", copyFailed: "复制失败", loadFailedRetry: "加载失败，点击重试", noMatchingPrompts: "无匹配提示词", sourceEmpty: "该来源暂无提示词", viewDetails: "查看详情",
             filter: { image: "图片", video: "视频", text: "文本", audio: "音频", config: "配置", freeCard: "自由卡片", group: "分组" },
             freeCardsEmpty: "还没有归档的自由卡片", freeCardsHint: "在自由卡片里点「归档」后会出现在这里", addFreeCard: "添加到画布", freeCardsRefresh: "刷新自由卡片", freeCardsLoadFailed: "读取自由卡片失败",
+            deleteFreeCard: "删除自由卡片", deleteFreeCardTitle: "删除「{{name}}」？", deleteFreeCardDescription: "只删除自由卡片库条目，不会删除 ComfyUI 源工作流或画布上的卡片。", freeCardDeleted: "已删除「{{name}}」", freeCardDeleteFailed: "删除自由卡片失败",
+            renameFreeCard: "重命名自由卡片", saveFreeCardName: "保存名称", freeCardRenamed: "已重命名为「{{name}}」", freeCardRenameFailed: "重命名自由卡片失败",
         },
         assetPicker: { title: "选择资产", insert: "插入", search: "搜索资产", empty: "没有资产" },
         imageTools: { copyPrompt: "复制提示词", copyPromptTitle: "复制生成该图片的提示词", reversePrompt: "反推提示词", reversePromptTitle: "创建反推提示词的文本和配置节点", replace: "替换图片", locked: "锁比例", free: "自由比例", lockTitle: "切换为等比缩放", freeTitle: "切换为自由比例", mask: "局部编辑", maskTitle: "添加蒙版遮罩后局部修改", crop: "裁剪", cropTitle: "裁剪并生成新节点", split: "切图", splitTitle: "按行列切分图片", upscale: "放大", upscaleTitle: "放大图片分辨率", superResolve: "超分", superResolveTitle: "AI 超分", angle: "多角度", angleTitle: "生成角度", view: "查看大图", viewTitle: "查看图片详情", more: "更多", configure: "配置快捷工具", customize: "自定义工具栏", showLabels: "显示按钮文字", description: "选择你想在图片节点编辑栏中使用的快捷工具。", preview: "节点预览", imageNode: "图片节点", quickTools: "快捷工具" },

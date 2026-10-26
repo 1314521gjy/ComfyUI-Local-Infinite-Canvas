@@ -541,8 +541,18 @@ export async function createGatewayApp(overrides = {}) {
   });
 
   app.patch("/api/free-workflows/:id", async (req, res) => {
-    const entry = await freeWorkflows.setArchived(req.params.id, Boolean(req.body?.archived), req.body?.preset);
+    const body = req.body || {};
+    const entry =
+      body.name !== undefined
+        ? await freeWorkflows.rename(req.params.id, body.name)
+        : await freeWorkflows.setArchived(req.params.id, Boolean(body.archived), body.preset);
     res.json({ workflow: await freeWorkflows.publicEntry(entry) });
+  });
+
+  app.delete("/api/free-workflows/:id", async (req, res) => {
+    const entry = await freeWorkflows.remove(req.params.id);
+    if (!entry) throw new HttpError("自由卡片不存在", { status: 404, code: "free_workflow_not_found" });
+    res.json({ ok: true, id: entry.id });
   });
 
   app.post("/v1/free-workflows/:id/images", upload.any(), async (req, res) => {
