@@ -32,7 +32,11 @@ export type ResourcePack = {
     id: string;
     label: string;
     description: string;
-    minVramGb: number;
+    family?: string;
+    tier?: string;
+    optional?: boolean;
+    eligible?: boolean;
+    recommended?: boolean;
     planned: boolean;
     workflows: string[];
     resourceIds: string[];
@@ -53,9 +57,22 @@ export type ResourceStatus = {
     comfyRoot?: string;
     comfyPython?: string;
     comfyReachable?: boolean;
+    hardware?: { gpuName?: string; vramTotalMb?: number; ramTotalBytes?: number; ramFreeBytes?: number; detectedAt?: string; source?: string } | null;
+    recommendationAvailable?: boolean;
     packs: ResourcePack[];
     resources: ResourceItem[];
-    summary: { packs: number; resources: number; present: number; missing: number; missingSize: number };
+    summary: {
+        packs: number;
+        resources: number;
+        present: number;
+        missing: number;
+        missingSize: number;
+        recommendedPacks?: number;
+        recommendedResources?: number;
+        recommendedPresent?: number;
+        recommendedMissing?: number;
+        recommendedMissingSize?: number;
+    };
     lock?: { installed?: Record<string, unknown>; updatedAt?: string };
 };
 

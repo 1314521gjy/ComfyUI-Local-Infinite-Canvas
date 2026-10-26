@@ -3,7 +3,7 @@ import os from "node:os";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
@@ -121,8 +121,17 @@ function safeUrl(value) {
 function normalizeSources(resource) {
     return (Array.isArray(resource.sources) ? resource.sources : [])
         .map((source) => (typeof source === "string" ? { url: source } : source))
-        .map((source) => ({ ...source, url: safeUrl(source?.url) }))
-        .filter((source) => source.url);
+        .map((source) => ({ ...source, url: source?.url ? safeUrl(source.url) : "" }))
+        .filter((source) => source.url || (source.kind === "bundled" && source.path));
+}
+
+function execFileText(file, args) {
+    return new Promise((resolve, reject) => {
+        execFile(file, args, { timeout: 4000, windowsHide: true, maxBuffer: 1024 * 1024 }, (error, stdout) => {
+            if (error) reject(error);
+            else resolve(String(stdout || ""));
+        });
+    });
 }
 
 function validateIndex(index) {
@@ -149,6 +158,7 @@ export function createResourceManager({ config, setup, logger } = {}) {
     const lockPath = path.join(config.dataDir, "resource-lock.json");
     const jobs = new Map();
     let index = null;
+    let hardware = null;
     let indexSource = "local";
     let indexError = "";
     let lock = { version: 1, installed: {} };
@@ -209,6 +219,45 @@ export function createResourceManager({ config, setup, logger } = {}) {
         }
         loadedAt = nowIso();
         return index;
+    }
+
+    async function probeHardware() {
+        const ramTotalBytes = os.totalmem();
+        const ramFreeBytes = os.freemem();
+        const args = ["--query-gpu=name,memory.total", "--format=csv,noheader,nounits"];
+        const commands = [
+            ["nvidia-smi", args],
+            [path.join(process.env.SystemRoot || "C:\\Windows", "System32", "nvidia-smi.exe"), args],
+        ];
+        for (const [file, commandArgs] of commands) {
+            try {
+                const output = await execFileText(file, commandArgs);
+                const line = output.trim().split(/\r?\n/)[0];
+                if (!line) continue;
+                const comma = line.lastIndexOf(",");
+                if (comma < 0) continue;
+                const gpuName = line.slice(0, comma).trim();
+                const vramTotalMb = Number(line.slice(comma + 1).trim());
+                if (!gpuName || !Number.isFinite(vramTotalMb) || vramTotalMb <= 0) continue;
+                return { gpuName, vramTotalMb: Math.round(vramTotalMb), ramTotalBytes, ramFreeBytes, detectedAt: nowIso(), source: "nvidia-smi" };
+            } catch {
+                // 试下一个 nvidia-smi 路径。
+            }
+        }
+        return { gpuName: "", vramTotalMb: 0, ramTotalBytes, ramFreeBytes, detectedAt: nowIso(), source: "none" };
+    }
+
+    async function copyBundledSource(source, destination, jobItem, signal) {
+        const root = path.resolve(config.rootDir);
+        const file = path.resolve(root, String(source.path || "").replace(/^[/\\]+/, ""));
+        if (!file.startsWith(`${root}${path.sep}`)) throw new Error("非法内置资源路径");
+        if (!isFile(file)) throw new Error("内置资源不存在");
+        if (signal?.aborted) throw new Error("已取消");
+        const size = fs.statSync(file).size;
+        await fsp.copyFile(file, destination);
+        jobItem.bytes = size;
+        updateJob(jobItem.job);
+        return size;
     }
 
     function registeredModel(modelDir, file) {
@@ -278,8 +327,12 @@ export function createResourceManager({ config, setup, logger } = {}) {
                 id: pack.id,
                 label: pack.label || pack.id,
                 description: pack.description || "",
-                minVramGb: Number(pack.minVramGb) || 0,
+                family: pack.family || pack.id,
+                tier: pack.tier || "standard",
+                optional: Boolean(pack.optional),
                 planned: Boolean(pack.planned),
+                eligible: true,
+                recommended: false,
                 workflows: pack.workflows || [],
                 resourceIds: pack.resources || [],
                 resources: items,
@@ -289,6 +342,36 @@ export function createResourceManager({ config, setup, logger } = {}) {
                 missingSize: missing.reduce((sum, item) => sum + (item.size || 0), 0),
             };
         });
+
+        const hardwareAvailable = Boolean(hardware?.gpuName && hardware.vramTotalMb > 0);
+        const tierRank = { quality: 4, balanced: 3, standard: 2, lite: 1, core: 0 };
+        const groups = new Map();
+        if (hardwareAvailable) {
+            const vramGb = hardware.vramTotalMb / 1024;
+            const ramGb = hardware.ramTotalBytes / 1024 ** 3;
+            for (const pack of packs) {
+                if (pack.planned || pack.id === "core") continue;
+                const requirements = (index?.packs || []).find((item) => item.id === pack.id)?.requirements;
+                if (!requirements) continue;
+                pack.eligible = vramGb >= Number(requirements.minVramGb || 0) && ramGb >= Number(requirements.minRamGb || 0);
+                const comfortable = vramGb >= Number(requirements.recommendedVramGb || requirements.minVramGb || 0) && ramGb >= Number(requirements.recommendedRamGb || requirements.minRamGb || 0);
+                if (!pack.eligible) continue;
+                const list = groups.get(pack.family) || [];
+                list.push({ pack, comfortable, rank: tierRank[pack.tier] || 0 });
+                groups.set(pack.family, list);
+            }
+            for (const list of groups.values()) {
+                const comfortable = list.filter((item) => item.comfortable);
+                const pool = comfortable.length ? comfortable : list;
+                pool.sort((a, b) => b.rank - a.rank);
+                if (pool[0]) pool[0].pack.recommended = true;
+            }
+        }
+
+        const recommendedPacks = packs.filter((pack) => pack.recommended);
+        const recommendedIds = new Set(recommendedPacks.flatMap((pack) => pack.resourceIds));
+        const recommendedResources = resources.filter((resource) => recommendedIds.has(resource.id));
+        const recommendedMissing = recommendedResources.filter((resource) => resource.status !== "present");
         const missingResources = resources.filter((resource) => resource.status !== "present");
         return {
             ok: true,
@@ -300,6 +383,8 @@ export function createResourceManager({ config, setup, logger } = {}) {
             comfyRoot: root,
             comfyPython: comfyPython(root),
             comfyReachable: Boolean(setup?.status?.().comfyReachable),
+            hardware: hardware || null,
+            recommendationAvailable: hardwareAvailable && recommendedPacks.length > 0,
             packs,
             resources,
             summary: {
@@ -308,6 +393,11 @@ export function createResourceManager({ config, setup, logger } = {}) {
                 present: resources.length - missingResources.length,
                 missing: missingResources.length,
                 missingSize: missingResources.reduce((sum, item) => sum + (item.size || 0), 0),
+                recommendedPacks: recommendedPacks.length,
+                recommendedResources: recommendedResources.length,
+                recommendedPresent: recommendedResources.length - recommendedMissing.length,
+                recommendedMissing: recommendedMissing.length,
+                recommendedMissingSize: recommendedMissing.reduce((sum, item) => sum + (item.size || 0), 0),
             },
             lock: { installed: lock.installed || {}, updatedAt: lock.updatedAt || "" },
         };
@@ -476,12 +566,16 @@ export function createResourceManager({ config, setup, logger } = {}) {
             let deletePart = false;
             try {
                 jobItem.status = "downloading";
-                jobItem.source = source.label || new URL(source.url).hostname;
+                jobItem.source = source.label || (source.url ? new URL(source.url).hostname : "内置");
                 jobItem.bytes = 0;
-                await downloadSource(source.url, part, jobItem, signal, (bytes) => {
-                    jobItem.bytes = bytes;
-                    updateJob(jobItem.job);
-                });
+                if (source.kind === "bundled" || source.path) {
+                    await copyBundledSource(source, part, jobItem, signal);
+                } else {
+                    await downloadSource(source.url, part, jobItem, signal, (bytes) => {
+                        jobItem.bytes = bytes;
+                        updateJob(jobItem.job);
+                    });
+                }
                 jobItem.status = "verifying";
                 const actualSize = (await fsp.stat(part)).size;
                 if (resource.size && actualSize !== resource.size) {
@@ -577,12 +671,16 @@ export function createResourceManager({ config, setup, logger } = {}) {
             try {
                 await fsp.rm(archive, { force: true });
                 jobItem.status = "downloading";
-                jobItem.source = source.label || new URL(source.url).hostname;
+                jobItem.source = source.label || (source.url ? new URL(source.url).hostname : "内置");
                 jobItem.bytes = 0;
-                await downloadSource(source.url, archive, jobItem, signal, (bytes) => {
-                    jobItem.bytes = bytes;
-                    updateJob(jobItem.job);
-                });
+                if (source.kind === "bundled" || source.path) {
+                    await copyBundledSource(source, archive, jobItem, signal);
+                } else {
+                    await downloadSource(source.url, archive, jobItem, signal, (bytes) => {
+                        jobItem.bytes = bytes;
+                        updateJob(jobItem.job);
+                    });
+                }
                 jobItem.status = "verifying";
                 if (resource.size) {
                     const size = (await fsp.stat(archive)).size;
@@ -807,6 +905,7 @@ export function createResourceManager({ config, setup, logger } = {}) {
     }
 
     async function refresh() {
+        hardware = await probeHardware();
         await loadIndex();
         try {
             await setup?.scan?.();
@@ -817,6 +916,7 @@ export function createResourceManager({ config, setup, logger } = {}) {
     }
 
     async function init() {
+        hardware = await probeHardware();
         await loadLock();
         await loadIndex();
         return status();

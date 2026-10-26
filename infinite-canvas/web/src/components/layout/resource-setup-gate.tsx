@@ -22,7 +22,7 @@ export function ResourceSetupGate() {
                 const next = await fetchResourceStatus();
                 if (cancelled) return;
                 setStatus(next);
-                if (next.summary.missing > 0 && window.localStorage.getItem(SKIP_KEY) !== "1") setOpen(true);
+                if ((next.summary.recommendedMissing || 0) > 0 && next.recommendationAvailable && window.localStorage.getItem(SKIP_KEY) !== "1") setOpen(true);
             } catch {
                 // Gateway/ComfyUI 未就绪时不打扰用户，资源中心仍可手动打开。
             } finally {
@@ -50,7 +50,7 @@ export function ResourceSetupGate() {
                     <div>
                         <div className="text-base font-semibold">{zh ? "准备资源" : "Prepare resources"}</div>
                         <div className="mt-0.5 text-xs font-normal text-stone-500 dark:text-stone-400">
-                            {zh ? "你的 ComfyUI 已连接；只下载缺少的模型/组件，已有同名文件会直接复用。" : "ComfyUI is connected. Only missing files are downloaded; existing files are reused."}
+                            {zh ? "你的 ComfyUI 已连接；已按当前显卡标出推荐版本，只下载缺少的模型/组件，已有同名文件会直接复用。" : "ComfyUI is connected. The recommended version is marked for this GPU; only missing files are downloaded."}
                         </div>
                     </div>
                 </div>

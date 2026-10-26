@@ -30,6 +30,14 @@ const copyByLocale = {
         indexVersion: "资源索引",
         present: "已具备",
         missing: "缺少",
+        recommended: "推荐",
+        optional: "可选",
+        showAll: "显示其他版本",
+        hideAll: "收起其他版本",
+        hardwareDetected: "已识别",
+        noHardware: "未识别到显卡，已显示全部版本，未做推荐。",
+        noCompatible: "当前显卡暂无可推荐的版本，可展开查看全部。",
+        incompatible: "不适用",
         blocked: "待前置资源",
         planned: "后续包",
         ready: "已齐全",
@@ -62,6 +70,14 @@ const copyByLocale = {
         indexVersion: "Index",
         present: "Ready",
         missing: "Missing",
+        recommended: "Recommended",
+        optional: "Optional",
+        showAll: "Show other versions",
+        hideAll: "Hide other versions",
+        hardwareDetected: "Detected",
+        noHardware: "No GPU detected; showing all versions without recommendations.",
+        noCompatible: "No recommended version for this GPU; expand to see all.",
+        incompatible: "Not suitable",
         blocked: "Waiting",
         planned: "Planned",
         ready: "Ready",
@@ -106,6 +122,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
     const [error, setError] = useState("");
     const [job, setJob] = useState<ResourceJob | null>(null);
     const [selectedPacks, setSelectedPacks] = useState<Set<string>>(new Set());
+    const [showAll, setShowAll] = useState(false);
     const pollRef = useRef<number | null>(null);
     const selectedInitialized = useRef(false);
 
@@ -119,7 +136,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
     const applyStatus = useCallback((next: ResourceStatus) => {
         setStatus(next);
         if (!selectedInitialized.current) {
-            const initial = next.packs.filter((pack) => !pack.planned && pack.missing > 0).map((pack) => pack.id);
+            const initial = next.packs.filter((pack) => pack.recommended && pack.missing > 0).map((pack) => pack.id);
             setSelectedPacks(new Set(initial));
             selectedInitialized.current = true;
         }
@@ -181,7 +198,16 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
     };
 
     const missingIds = useMemo(() => status?.resources.filter((item) => item.status !== "present").map((item) => item.id) || [], [status]);
-    const missingPacks = useMemo(() => status?.packs.filter((pack) => !pack.planned && pack.missing > 0) || [], [status]);
+    const recommendationAvailable = Boolean(status?.recommendationAvailable);
+    const hardwareName = status?.hardware?.gpuName || "";
+    const recommendedPresent = recommendationAvailable ? status?.summary.recommendedPresent || 0 : status?.summary.present || 0;
+    const recommendedTotal = recommendationAvailable ? status?.summary.recommendedResources || 0 : status?.summary.resources || 0;
+    const recommendedMissing = recommendationAvailable ? status?.summary.recommendedMissing || 0 : status?.summary.missing || 0;
+    const recommendedMissingSize = recommendationAvailable ? status?.summary.recommendedMissingSize || 0 : status?.summary.missingSize || 0;
+    const visiblePacks = showAll || !recommendationAvailable
+        ? status?.packs || []
+        : (status?.packs || []).filter((pack) => pack.recommended || pack.id === "core" || pack.planned);
+    const hiddenPackCount = (status?.packs || []).length - visiblePacks.length;
     const selectedMissingPacks = useMemo(() => {
         if (!status) return [];
         return status.packs.filter((pack) => selectedPacks.has(pack.id) && !pack.planned && pack.missing > 0).map((pack) => pack.id);
@@ -213,9 +239,10 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-stone-500 dark:text-stone-400">
                             <span className="inline-flex items-center gap-1"><Server className="size-3" />{copy.comfyRoot}: {status?.comfyRoot || "—"}</span>
                             <span>{copy.indexVersion}: {status?.indexVersion || "—"}</span>
-                            <span>{copy.present}: {status?.summary.present || 0}/{status?.summary.resources || 0}</span>
-                            <span>{copy.missing}: {status?.summary.missing || 0}</span>
-                            {status?.summary.missingSize ? <span>{copy.size}: {formatBytes(status.summary.missingSize)}</span> : null}
+                            <span>{copy.present}: {recommendedPresent}/{recommendedTotal}</span>
+                            <span>{copy.missing}: {recommendedMissing}</span>
+                            {recommendedMissingSize ? <span>{copy.size}: {formatBytes(recommendedMissingSize)}</span> : null}
+                            <span>{hardwareName ? `${copy.hardwareDetected}: ${hardwareName}` : copy.noHardware}</span>
                         </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
@@ -229,6 +256,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                 </div>
                 {status?.comfyRoot && !status.comfyReachable ? <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400"><AlertTriangle className="size-3.5" />{copy.notReachable}</div> : null}
                 {status?.indexError ? <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400"><AlertTriangle className="size-3.5" />{copy.indexError}</div> : null}
+                {hardwareName && !recommendationAvailable ? <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400"><AlertTriangle className="size-3.5" />{copy.noCompatible}</div> : null}
             </div>
 
             {error ? <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300"><XCircle className="size-3.5 shrink-0" />{error}</div> : null}
@@ -259,7 +287,14 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
             ) : null}
 
             <div className="space-y-2">
-                {(status?.packs || []).map((pack) => (
+                {hiddenPackCount > 0 ? (
+                    <div className="flex justify-end">
+                        <button type="button" className="text-[11px] text-stone-500 underline-offset-2 hover:underline dark:text-stone-400" onClick={() => setShowAll((value) => !value)}>
+                            {showAll ? copy.hideAll : copy.showAll}
+                        </button>
+                    </div>
+                ) : null}
+                {visiblePacks.map((pack) => (
                     <div key={pack.id} className="rounded-xl border border-stone-200 p-3 dark:border-stone-800">
                         <div className="flex items-start gap-2">
                             {!pack.planned && pack.total > 0 ? (
@@ -270,9 +305,11 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                             <div className="min-w-0 flex-1">
                                 <div className="flex flex-wrap items-center gap-2">
                                     <span className="text-sm font-medium">{pack.label}</span>
+                                    {pack.recommended ? <Tag color="blue">{copy.recommended}</Tag> : null}
+                                    {pack.optional && !pack.recommended ? <Tag>{copy.optional}</Tag> : null}
+                                    {pack.eligible === false ? <Tag color="red">{copy.incompatible}</Tag> : null}
                                     {packState(pack, copy)}
                                     {pack.missingSize ? <span className="text-[11px] text-stone-500 dark:text-stone-400">{copy.size} {formatBytes(pack.missingSize)}</span> : null}
-                                    {pack.minVramGb ? <span className="text-[11px] text-stone-400 dark:text-stone-500">≥ {pack.minVramGb}GB VRAM</span> : null}
                                 </div>
                                 <div className="mt-0.5 text-[11px] leading-5 text-stone-500 dark:text-stone-400">{pack.description}</div>
                                 {!pack.total ? <div className="mt-1 text-[11px] text-stone-400 dark:text-stone-500">{copy.noResources}</div> : null}

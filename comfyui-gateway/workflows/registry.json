@@ -2861,6 +2861,157 @@
       "source": {
         "kind": "json"
       }
+    },
+    {
+      "id": "image-moss-sft-int8-8step",
+      "name": "image-moss-sft-int8-8step",
+      "label": "MOSS-Image 低显存 int8 8步",
+      "type": "image",
+      "description": "MOSS-Image SFT int8 convrot + Qwen3.5 w4a8 + small VAE + 8步 LoRA；低显存变体，画质低于 bf16/Balanced。",
+      "file": "image-moss-sft-int8-8step.json",
+      "bindings": {
+        "prompt": {
+          "node": "4",
+          "input": "text"
+        },
+        "negative": {
+          "node": "5",
+          "input": "text",
+          "default": "worst quality, bad anatomy, watermark, jpeg artifact"
+        },
+        "width": {
+          "node": "7",
+          "input": "width",
+          "from": "size.width",
+          "transform": "snap16",
+          "default": 1024
+        },
+        "height": {
+          "node": "7",
+          "input": "height",
+          "from": "size.height",
+          "transform": "snap16",
+          "default": 1024
+        },
+        "batch": {
+          "node": "7",
+          "input": "batch_size",
+          "from": "count",
+          "default": 1
+        },
+        "seed": {
+          "node": "8",
+          "input": "seed",
+          "from": "params.seed",
+          "transform": "int",
+          "random": true
+        },
+        "steps": {
+          "node": "8",
+          "input": "steps",
+          "from": "params.steps",
+          "transform": "int",
+          "default": 8
+        },
+        "cfg": {
+          "node": "8",
+          "input": "cfg",
+          "from": "params.cfg",
+          "default": 1
+        },
+        "sampler": {
+          "node": "8",
+          "input": "sampler_name",
+          "from": "params.sampler",
+          "default": "euler"
+        },
+        "scheduler": {
+          "node": "8",
+          "input": "scheduler",
+          "from": "params.scheduler",
+          "default": "simple"
+        },
+        "lora_strength": {
+          "node": "6",
+          "input": "strength_model",
+          "from": "params.lora_strength",
+          "default": 1
+        }
+      },
+      "defaults": {},
+      "presets": {},
+      "parameters": [
+        {
+          "key": "seed",
+          "label": "种子",
+          "type": "number",
+          "min": 1,
+          "max": 2147483647,
+          "step": 1,
+          "description": "留空则每次随机"
+        },
+        {
+          "key": "steps",
+          "label": "步数",
+          "type": "number",
+          "min": 1,
+          "max": 60,
+          "step": 1,
+          "default": 8
+        },
+        {
+          "key": "cfg",
+          "label": "CFG",
+          "type": "number",
+          "min": 1,
+          "max": 10,
+          "step": 0.1,
+          "default": 1
+        },
+        {
+          "key": "sampler",
+          "label": "采样器",
+          "type": "select",
+          "default": "euler",
+          "options": [
+            "euler",
+            "euler_cfg_pp",
+            "dpmpp_2m",
+            "dpmpp_2m_sde",
+            "res_multistep"
+          ]
+        },
+        {
+          "key": "scheduler",
+          "label": "调度器",
+          "type": "select",
+          "default": "simple",
+          "options": [
+            "simple",
+            "normal",
+            "beta",
+            "karras",
+            "exponential"
+          ]
+        },
+        {
+          "key": "lora_strength",
+          "label": "8步 LoRA 强度",
+          "type": "number",
+          "min": 0,
+          "max": 2,
+          "step": 0.05,
+          "default": 1
+        }
+      ],
+      "lora": {
+        "filter": "Moss_image|MOSS|moss",
+        "source": "6"
+      },
+      "importedAt": "2026-10-26T14:43:20.377Z",
+      "source": {
+        "kind": "json"
+      }
     }
   ]
 }

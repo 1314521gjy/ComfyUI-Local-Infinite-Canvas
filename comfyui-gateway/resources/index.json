@@ -1,27 +1,28 @@
 {
   "schema": 1,
-  "version": "2026.10.26-1",
+  "version": "2026.10.26-3",
   "channel": "stable",
-  "updatedAt": "2026-10-26T21:40:00+08:00",
+  "updatedAt": "2026-10-26T23:00:00+08:00",
   "packs": [
     {
       "id": "core",
       "label": "画布与基础工作流",
       "description": "画布、网关、启动器和基础工作流已随安装器内置，无需下载。",
-      "minVramGb": 0,
       "resources": [],
-      "workflows": []
+      "workflows": [],
+      "family": "core",
+      "tier": "core"
     },
     {
       "id": "moss",
       "label": "MOSS-Image 均衡融合",
-      "description": "MOSS Base+SFT 按 Balanced 预设融合所需底模、文本编码器、VAE 和本地烘焙模型。50步入口另需 Windows/Python 3.13 的 TE-Speed-MOSS 编译节点（当前不自动安装）；8步入口不受影响。",
-      "minVramGb": 16,
+      "description": "MOSS Base+SFT 按 Balanced 预设融合所需底模、文本编码器、VAE、8步 LoRA 和本地烘焙模型。50步入口另需 Windows/Python 3.13 的 TE-Speed-MOSS 编译节点；8步入口不受影响。小显存请选低显存 int8 包。",
       "resources": [
         "moss_image_base_bf16",
         "moss_image_sft_bf16",
         "qwen3.5_9b_int8_convrot",
         "flux2-vae",
+        "moss_image_sft_8steps_lora",
         "moss_balanced_s100"
       ],
       "workflows": [
@@ -29,13 +30,43 @@
         "image-moss-balanced-50step",
         "image-moss-sft-8step",
         "image-moss-sft-50step"
-      ]
+      ],
+      "family": "moss",
+      "tier": "balanced",
+      "requirements": {
+        "minVramGb": 20,
+        "minRamGb": 48,
+        "recommendedVramGb": 24,
+        "recommendedRamGb": 48
+      }
+    },
+    {
+      "id": "moss-lite",
+      "label": "MOSS-Image 低显存 int8",
+      "description": "SFT int8 + w4a8 文本编码器 + small VAE + 8步 LoRA，使用低显存 8 步入口；不是 Balanced 融合，画质/细节低于 bf16 版。",
+      "optional": true,
+      "resources": [
+        "moss_image_sft_int8_convrot",
+        "qwen3.5_9b_w4a8_gptq",
+        "flux2-vae_small",
+        "moss_image_sft_8steps_lora"
+      ],
+      "workflows": [
+        "image-moss-sft-int8-8step"
+      ],
+      "family": "moss",
+      "tier": "lite",
+      "requirements": {
+        "minVramGb": 12,
+        "minRamGb": 24,
+        "recommendedVramGb": 16,
+        "recommendedRamGb": 32
+      }
     },
     {
       "id": "angle",
       "label": "Qwen 2.1 多角度",
       "description": "Qwen Image 2.1 Turbo、Qwen3VL-8B 文本编码器和 VAE；已存在同名文件会直接复用。",
-      "minVramGb": 16,
       "resources": [
         "qwen_image_2.1_turbo_int8_convrot",
         "qwen3vl_8b_int8_convrot",
@@ -45,16 +76,31 @@
       "workflows": [
         "image-qwen21-angle",
         "image-qwen21"
-      ]
+      ],
+      "family": "angle",
+      "tier": "standard",
+      "requirements": {
+        "minVramGb": 16,
+        "minRamGb": 32,
+        "recommendedVramGb": 24,
+        "recommendedRamGb": 32
+      }
     },
     {
       "id": "h3",
       "label": "H3 视频（后续包）",
       "description": "H3/VDN/TRT/Triton 依赖较重，作为后续编译包提供。",
       "planned": true,
-      "minVramGb": 32,
       "resources": [],
-      "workflows": []
+      "workflows": [],
+      "family": "h3",
+      "tier": "quality",
+      "requirements": {
+        "minVramGb": 24,
+        "minRamGb": 64,
+        "recommendedVramGb": 32,
+        "recommendedRamGb": 96
+      }
     }
   ],
   "resources": [
@@ -67,8 +113,8 @@
       "sha256": "cacd158728a1fb9e57c408a922b54752ec71fceb566b3821269927964e62b41f",
       "license": "MOSS-Image",
       "sources": [
-        "https://hf-mirror.com/Comfy-Org/MOSS-Image/resolve/main/diffusion_models/moss_image_base_bf16.safetensors",
-        "https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/diffusion_models/moss_image_base_bf16.safetensors"
+        "https://www.modelscope.cn/models/Comfy-Org/MOSS-Image/resolve/master/diffusion_models/moss_image_base_bf16.safetensors",
+        "https://hf-mirror.com/Comfy-Org/MOSS-Image/resolve/main/diffusion_models/moss_image_base_bf16.safetensors"
       ]
     },
     {
@@ -80,8 +126,8 @@
       "sha256": "f96738d8116d78b7316b57c663d8c98591ddafab7488f48e3099b7655e34ab6f",
       "license": "MOSS-Image",
       "sources": [
-        "https://hf-mirror.com/Comfy-Org/MOSS-Image/resolve/main/diffusion_models/moss_image_sft_bf16.safetensors",
-        "https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/diffusion_models/moss_image_sft_bf16.safetensors"
+        "https://www.modelscope.cn/models/Comfy-Org/MOSS-Image/resolve/master/diffusion_models/moss_image_sft_bf16.safetensors",
+        "https://hf-mirror.com/Comfy-Org/MOSS-Image/resolve/main/diffusion_models/moss_image_sft_bf16.safetensors"
       ]
     },
     {
@@ -93,8 +139,8 @@
       "sha256": "32e3787472f708fa5f83624acbf5ef23f7fc89c439e05065ea57cfe5a97f025a",
       "license": "Qwen",
       "sources": [
-        "https://hf-mirror.com/Comfy-Org/MOSS-Image/resolve/main/text_encoders/qwen3.5_9b_int8_convrot.safetensors",
-        "https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/text_encoders/qwen3.5_9b_int8_convrot.safetensors"
+        "https://www.modelscope.cn/models/Comfy-Org/MOSS-Image/resolve/master/text_encoders/qwen3.5_9b_int8_convrot.safetensors",
+        "https://hf-mirror.com/Comfy-Org/MOSS-Image/resolve/main/text_encoders/qwen3.5_9b_int8_convrot.safetensors"
       ]
     },
     {
@@ -106,8 +152,8 @@
       "sha256": "868fe7b343cc8f3a19dbcfcafbc3d5f888802be3f89bd81b65b3621a066ce8f3",
       "license": "FLUX.2",
       "sources": [
-        "https://hf-mirror.com/Comfy-Org/MOSS-Image/resolve/main/vae/flux2-vae.safetensors",
-        "https://huggingface.co/Comfy-Org/MOSS-Image/resolve/main/vae/flux2-vae.safetensors"
+        "https://www.modelscope.cn/models/Comfy-Org/MOSS-Image/resolve/master/vae/flux2-vae.safetensors",
+        "https://hf-mirror.com/Comfy-Org/MOSS-Image/resolve/main/vae/flux2-vae.safetensors"
       ]
     },
     {
@@ -136,7 +182,7 @@
       "license": "Qwen-Image",
       "sources": [
         "https://hf-mirror.com/NidAll/Turbo-INT8-ConvRot-for-Qwen-Image-2.1/resolve/main/qwen-image-2.1-turbo-int8-convrot.safetensors",
-        "https://huggingface.co/NidAll/Turbo-INT8-ConvRot-for-Qwen-Image-2.1/resolve/main/qwen-image-2.1-turbo-int8-convrot.safetensors"
+        "https://aifasthub.com/NidAll/Turbo-INT8-ConvRot-for-Qwen-Image-2.1/resolve/main/qwen-image-2.1-turbo-int8-convrot.safetensors"
       ]
     },
     {
@@ -150,7 +196,7 @@
       "note": "本地可能是不同量化版本；同名文件存在时直接复用，不校验大小。",
       "sources": [
         "https://hf-mirror.com/Stick9190/qwen3vl_8b_int8_convrot/resolve/main/qwen3vl_8b_int8_convrot.safetensors",
-        "https://huggingface.co/Stick9190/qwen3vl_8b_int8_convrot/resolve/main/qwen3vl_8b_int8_convrot.safetensors"
+        "https://aifasthub.com/Stick9190/qwen3vl_8b_int8_convrot/resolve/main/qwen3vl_8b_int8_convrot.safetensors"
       ]
     },
     {
@@ -162,8 +208,8 @@
       "sha256": "bb21f7473051e1ac368515dd3f2e15cd44d7a11748ee8823e1ddca3e4876b7c9",
       "license": "Qwen-Image",
       "sources": [
-        "https://hf-mirror.com/Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors",
-        "https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors"
+        "https://www.modelscope.cn/models/Comfy-Org/Qwen-Image-2.1/resolve/master/vae/qwen_image_2.1_vae_bf16.safetensors",
+        "https://hf-mirror.com/Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors"
       ]
     },
     {
@@ -178,8 +224,64 @@
         "QwenMultiangleCameraNode"
       ],
       "sources": [
-        "https://github.com/jtydhr88/ComfyUI-qwenmultiangle/archive/refs/heads/main.zip",
-        "https://codeload.github.com/jtydhr88/ComfyUI-qwenmultiangle/zip/refs/heads/main"
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/ComfyUI-qwenmultiangle.zip",
+          "label": "内置"
+        },
+        "https://www.modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/comfyui-gateway/resources/nodes/ComfyUI-qwenmultiangle.zip"
+      ]
+    },
+    {
+      "id": "moss_image_sft_8steps_lora",
+      "type": "model",
+      "label": "MOSS-Image SFT 8步 LoRA",
+      "target": "loras/Moss_image/MOSS-Image-SFT-8-steps.safetensors",
+      "size": 1189176800,
+      "sha256": "4abb14e39c1a59018907581e609f43616ec6810126144ec2b1d2e6f8969628fe",
+      "license": "MOSS-Image",
+      "sources": [
+        "https://hf-mirror.com/lodestones/MOSS-Image-SFT-8-steps-dmd/resolve/main/lora.safetensors",
+        "https://aifasthub.com/lodestones/MOSS-Image-SFT-8-steps-dmd/resolve/main/lora.safetensors"
+      ]
+    },
+    {
+      "id": "moss_image_sft_int8_convrot",
+      "type": "model",
+      "label": "MOSS-Image SFT int8 convrot（低显存）",
+      "target": "diffusion_models/moss_image_sft_int8_convrot.safetensors",
+      "size": 5413698958,
+      "sha256": "b4d1475bc7eeffd7b809e82ea13a1fba1fb85c4e18365af3813722faa5c0fe4f",
+      "license": "MOSS-Image",
+      "sources": [
+        "https://www.modelscope.cn/models/Comfy-Org/MOSS-Image/resolve/master/diffusion_models/moss_image_sft_int8_convrot.safetensors",
+        "https://hf-mirror.com/Comfy-Org/MOSS-Image/resolve/main/diffusion_models/moss_image_sft_int8_convrot.safetensors"
+      ]
+    },
+    {
+      "id": "qwen3.5_9b_w4a8_gptq",
+      "type": "model",
+      "label": "Qwen3.5-9B w4a8 GPTQ（低显存）",
+      "target": "text_encoders/qwen3.5_9b_w4a8_gptq.safetensors",
+      "size": 7343591088,
+      "sha256": "4cc6a1543ad2061806da46f35f90cadb4801dcba246c44782cf42ec0feb6407c",
+      "license": "Qwen",
+      "sources": [
+        "https://www.modelscope.cn/models/Comfy-Org/MOSS-Image/resolve/master/text_encoders/qwen3.5_9b_w4a8_gptq.safetensors",
+        "https://hf-mirror.com/Comfy-Org/MOSS-Image/resolve/main/text_encoders/qwen3.5_9b_w4a8_gptq.safetensors"
+      ]
+    },
+    {
+      "id": "flux2-vae_small",
+      "type": "model",
+      "label": "FLUX.2 VAE small（低显存）",
+      "target": "vae/flux2-vae_small.safetensors",
+      "size": 249521340,
+      "sha256": "d8d52ba036475f5fb07c8b435e176d3d97ebfa82f0d1a1c317f9cc1e25bd013b",
+      "license": "FLUX.2",
+      "sources": [
+        "https://www.modelscope.cn/models/Comfy-Org/MOSS-Image/resolve/master/vae/flux2-vae_small.safetensors",
+        "https://hf-mirror.com/Comfy-Org/MOSS-Image/resolve/main/vae/flux2-vae_small.safetensors"
       ]
     }
   ]
