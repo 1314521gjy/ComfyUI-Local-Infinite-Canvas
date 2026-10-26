@@ -46,6 +46,7 @@ export type ResourcePack = {
     family?: string;
     tier?: string;
     optional?: boolean;
+    optionalLabel?: string;
     eligible?: boolean;
     recommended?: boolean;
     offload?: boolean;

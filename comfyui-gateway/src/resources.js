@@ -366,6 +366,7 @@ export function createResourceManager({ config, setup, registry, logger, hardwar
                 family: pack.family || pack.id,
                 tier: pack.tier || "standard",
                 optional: Boolean(pack.optional),
+                optionalLabel: pack.optionalLabel || "",
                 autoRecommend: pack.autoRecommend !== false,
                 planned: Boolean(pack.planned),
                 eligible: true,

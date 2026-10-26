@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "version": "2026.10.27-2",
+  "version": "2026.10.27-3",
   "channel": "stable",
-  "updatedAt": "2026-10-27T01:00:00+08:00",
+  "updatedAt": "2026-10-27T01:35:00+08:00",
   "packs": [
     {
       "id": "core",
@@ -25,7 +25,7 @@
         "moss_image_sft_8steps_lora",
         "moss_balanced_s100",
         "tespeed_moss",
-        "moss_image_color_depth_lora"
+        "moss_guanlan_lora"
       ],
       "workflows": [
         "image-moss-sft-8step",
@@ -46,7 +46,7 @@
       "optionalResources": [
         "moss_image_base_bf16",
         "moss_balanced_s100",
-        "moss_image_color_depth_lora"
+        "moss_guanlan_lora"
       ],
       "workflowDependencies": {
         "image-moss-sft-8step": [
@@ -73,7 +73,8 @@
           "flux2-vae",
           "tespeed_moss"
         ]
-      }
+      },
+      "optionalLabel": "LoRA"
     },
     {
       "id": "moss-lite",
@@ -85,8 +86,8 @@
         "qwen3.5_9b_int8_convrot",
         "flux2-vae",
         "moss_image_sft_8steps_lora",
-        "moss_image_color_depth_lora",
-        "tespeed_moss"
+        "tespeed_moss",
+        "moss_guanlan_lora"
       ],
       "workflows": [
         "image-moss-sft-int8-8step",
@@ -102,7 +103,7 @@
         "recommendVramGb": 6
       },
       "optionalResources": [
-        "moss_image_color_depth_lora"
+        "moss_guanlan_lora"
       ],
       "workflowDependencies": {
         "image-moss-sft-int8-8step": [
@@ -117,7 +118,8 @@
           "flux2-vae",
           "tespeed_moss"
         ]
-      }
+      },
+      "optionalLabel": "LoRA"
     },
     {
       "id": "angle",
@@ -550,17 +552,16 @@
       ]
     },
     {
-      "id": "moss_image_color_depth_lora",
+      "id": "moss_guanlan_lora",
       "type": "model",
-      "label": "MOSS-Image 颜色/景深控制 LoRA",
-      "target": "loras/Moss_image/moss_image_color_depth_control.safetensors",
-      "size": 313063368,
-      "sha256": "e5c0c3efd05e4269207a39de6005798f14c90c6687c89c54eaffe4b76c43a763",
-      "license": "MOSS-Image",
-      "note": "选下内容；官方颜色/景深控制 LoRA，可在 LoRA 卡片中挂载。",
+      "label": "MOSS-Image 观澜 LoRA",
+      "target": "loras/Moss_image/KOOK-MOSS-SFT-观澜.safetensors",
+      "size": 145157232,
+      "sha256": "52e41bc8ab3964b11104332bc7fc742571e5fd1eaf7bc046285a5b37c56d3020",
+      "license": "未知（社区 LoRA）",
+      "note": "可选；本地已装。下载源为私有魔搭资源集，公开分发前需公开资源集或换公开源。",
       "sources": [
-        "https://www.modelscope.cn/models/Comfy-Org/MOSS-Image/resolve/master/loras/moss_image_color_depth_control.safetensors",
-        "https://aifasthub.com/Comfy-Org/MOSS-Image/resolve/main/loras/moss_image_color_depth_control.safetensors"
+        "https://www.modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/comfyui-gateway/resources/loras/KOOK-MOSS-SFT-%E8%A7%82%E6%BE%9C.safetensors"
       ]
     }
   ]
