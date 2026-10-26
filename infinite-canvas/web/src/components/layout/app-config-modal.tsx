@@ -1,6 +1,6 @@
 import { App, Button, Form, Input, Modal, Progress, Radio, Select, Switch, Tabs } from "antd";
 import type { TFunction } from "i18next";
-import { Cloud, Download, Lock, Pencil, Plus, RefreshCw, Trash2, Upload, Wifi } from "lucide-react";
+import { Cloud, ChevronDown, Download, Lock, Pencil, Plus, RefreshCw, Trash2, Upload, Wifi } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -70,6 +70,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const [skinPassword, setSkinPassword] = useState("");
     const [skinPasswordError, setSkinPasswordError] = useState("");
     const [verifyingSkinPassword, setVerifyingSkinPassword] = useState(false);
+    const [fishOptionsOpen, setFishOptionsOpen] = useState(false);
     const config = useConfigStore((state) => state.config);
     const appTheme = useThemeStore((state) => state.theme);
     const cardSkin = useThemeStore((state) => state.cardSkin) || "warm";
@@ -96,10 +97,16 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
 
     const selectCardSkin = (skinId: CardSkinId) => {
         if (isCardSkinLocked(skinId) && !unlockedCardSkins.includes(skinId)) {
+            setFishOptionsOpen(true);
             setPasswordSkinId(skinId);
             setSkinPassword("");
             setSkinPasswordError("");
             return;
+        }
+        if (skinId === "fish") {
+            setFishOptionsOpen(cardSkin === "fish" ? !fishOptionsOpen : true);
+        } else {
+            setFishOptionsOpen(false);
         }
         setCardSkin(skinId);
     };
@@ -122,6 +129,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                 return;
             }
             unlockCardSkin(passwordSkinId);
+            if (passwordSkinId === "fish") setFishOptionsOpen(true);
             void persistSkinUnlock(passwordSkinId).catch(() => undefined);
             message.success(t("config.preferences.cardSkinUnlocked", { name: t(`config.preferences.cardSkins.${passwordSkinId}.label`) }));
             setPasswordSkinId(null);
@@ -132,6 +140,10 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
             setVerifyingSkinPassword(false);
         }
     };
+
+    useEffect(() => {
+        if (cardSkin === "fish" && unlockedCardSkins.includes("fish")) setFishOptionsOpen(true);
+    }, [cardSkin, unlockedCardSkins]);
 
     const finishConfig = () => {
         const ready = config.channels.some((channel) => channel.baseUrl.trim() && channel.apiKey.trim() && channel.models.length);
@@ -374,6 +386,9 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                                         <span className="flex items-center gap-1.5 text-sm font-medium">
                                                             <span className="truncate">{t(`config.preferences.cardSkins.${id}.label`)}</span>
                                                             {locked ? <span className="shrink-0 rounded-full border border-current px-1.5 py-0.5 text-[9px] font-medium opacity-70">{t("config.preferences.cardSkinLocked")}</span> : null}
+                                                            {id === "fish" && !locked ? (
+                                                                <ChevronDown className={`ml-auto size-3.5 shrink-0 opacity-45 transition-transform ${selected && fishOptionsOpen ? "rotate-180" : ""}`} />
+                                                            ) : null}
                                                         </span>
                                                         <span className="mt-0.5 block truncate text-[11px] opacity-60">{locked ? t("config.preferences.cardSkinLockedHint") : t(`config.preferences.cardSkins.${id}.description`)}</span>
                                                     </span>
@@ -381,9 +396,17 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                             );
                                         })}
                                     </div>
-                                </Form.Item>
-                                <Form.Item label={t("config.preferences.fishWhip")} extra={t("config.preferences.fishWhipDescription")} className="mb-4">
-                                    <Switch checked={fishWhipEnabled} onChange={setFishWhipEnabled} />
+                                    {cardSkin === "fish" && unlockedCardSkins.includes("fish") && fishOptionsOpen ? (
+                                        <div className="mt-3 rounded-lg border border-stone-200 bg-stone-50/80 px-3 py-3 dark:border-stone-800 dark:bg-white/5">
+                                            <div className="flex items-start justify-between gap-4">
+                                                <div className="min-w-0">
+                                                    <div className="text-sm font-medium">{t("config.preferences.fishWhip")}</div>
+                                                    <div className="mt-1 text-[11px] leading-5 opacity-60">{t("config.preferences.fishWhipDescription")}</div>
+                                                </div>
+                                                <Switch checked={fishWhipEnabled} onChange={setFishWhipEnabled} />
+                                            </div>
+                                        </div>
+                                    ) : null}
                                 </Form.Item>
                                 <Form.Item label={t("config.preferences.progressRingSkin")} extra={t("config.preferences.progressRingSkinDescription")} className="mb-4">
                                     <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
