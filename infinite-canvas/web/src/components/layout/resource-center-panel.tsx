@@ -32,6 +32,7 @@ const copyByLocale = {
         missing: "缺少",
         recommended: "推荐",
         optional: "可选",
+        offload: "内存卸载",
         showAll: "显示其他版本",
         hideAll: "收起其他版本",
         hardwareDetected: "已识别",
@@ -72,6 +73,7 @@ const copyByLocale = {
         missing: "Missing",
         recommended: "Recommended",
         optional: "Optional",
+        offload: "Memory offload",
         showAll: "Show other versions",
         hideAll: "Hide other versions",
         hardwareDetected: "Detected",
@@ -306,6 +308,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                 <div className="flex flex-wrap items-center gap-2">
                                     <span className="text-sm font-medium">{pack.label}</span>
                                     {pack.recommended ? <Tag color="blue">{copy.recommended}</Tag> : null}
+                                    {pack.offload ? <Tag color="gold">{copy.offload}</Tag> : null}
                                     {pack.optional && !pack.recommended ? <Tag>{copy.optional}</Tag> : null}
                                     {pack.eligible === false ? <Tag color="red">{copy.incompatible}</Tag> : null}
                                     {packState(pack, copy)}

@@ -153,12 +153,12 @@ function validateIndex(index) {
     return index;
 }
 
-export function createResourceManager({ config, setup, logger } = {}) {
+export function createResourceManager({ config, setup, logger, hardware: hardwareOverride = null } = {}) {
     const indexPath = path.join(config.rootDir, "resources", "index.json");
     const lockPath = path.join(config.dataDir, "resource-lock.json");
     const jobs = new Map();
     let index = null;
-    let hardware = null;
+    let hardware = hardwareOverride;
     let indexSource = "local";
     let indexError = "";
     let lock = { version: 1, installed: {} };
@@ -333,6 +333,9 @@ export function createResourceManager({ config, setup, logger } = {}) {
                 planned: Boolean(pack.planned),
                 eligible: true,
                 recommended: false,
+                preferred: false,
+                offload: false,
+                resident: false,
                 workflows: pack.workflows || [],
                 resourceIds: pack.resources || [],
                 resources: items,
@@ -345,26 +348,35 @@ export function createResourceManager({ config, setup, logger } = {}) {
 
         const hardwareAvailable = Boolean(hardware?.gpuName && hardware.vramTotalMb > 0);
         const tierRank = { quality: 4, balanced: 3, standard: 2, lite: 1, core: 0 };
-        const groups = new Map();
         if (hardwareAvailable) {
             const vramGb = hardware.vramTotalMb / 1024;
             const ramGb = hardware.ramTotalBytes / 1024 ** 3;
+            const groups = new Map();
             for (const pack of packs) {
                 if (pack.planned || pack.id === "core") continue;
                 const requirements = (index?.packs || []).find((item) => item.id === pack.id)?.requirements;
                 if (!requirements) continue;
-                pack.eligible = vramGb >= Number(requirements.minVramGb || 0) && ramGb >= Number(requirements.minRamGb || 0);
-                const comfortable = vramGb >= Number(requirements.recommendedVramGb || requirements.minVramGb || 0) && ramGb >= Number(requirements.recommendedRamGb || requirements.minRamGb || 0);
+                const floor = Number(requirements.vramFloorGb || 0);
+                const weights = Number(requirements.weightsGb || 0);
+                const usable = Math.max(0, vramGb - floor);
+                const offloadGb = Math.max(0, weights - usable);
+                let ramNeed = Number(requirements.ramBaseGb || 8) + offloadGb * (1 + Number(requirements.safety || 0.15));
+                const bakeResource = (pack.resources || []).find((item) => item.type === "bake");
+                const bakeNeeded = Boolean(bakeResource && bakeResource.status !== "present");
+                if (requirements.installRamGb && bakeNeeded) ramNeed = Math.max(ramNeed, Number(requirements.installRamGb));
+                pack.eligible = vramGb >= floor && ramGb >= ramNeed;
+                pack.preferred = pack.eligible && vramGb >= Number(requirements.recommendVramGb || 0);
+                pack.offload = pack.eligible && weights > Math.max(0, usable - 2);
+                pack.resident = pack.eligible && !pack.offload && ramGb >= Number(requirements.ramBaseGb || 8);
                 if (!pack.eligible) continue;
                 const list = groups.get(pack.family) || [];
-                list.push({ pack, comfortable, rank: tierRank[pack.tier] || 0 });
+                list.push({ pack, rank: tierRank[pack.tier] || 0, preferred: pack.preferred });
                 groups.set(pack.family, list);
             }
             for (const list of groups.values()) {
-                const comfortable = list.filter((item) => item.comfortable);
-                const pool = comfortable.length ? comfortable : list;
-                pool.sort((a, b) => b.rank - a.rank);
-                if (pool[0]) pool[0].pack.recommended = true;
+                const preferred = list.filter((item) => item.preferred);
+                preferred.sort((a, b) => b.rank - a.rank);
+                if (preferred[0]) preferred[0].pack.recommended = true;
             }
         }
 
@@ -905,7 +917,7 @@ export function createResourceManager({ config, setup, logger } = {}) {
     }
 
     async function refresh() {
-        hardware = await probeHardware();
+        if (!hardwareOverride) hardware = await probeHardware();
         await loadIndex();
         try {
             await setup?.scan?.();
@@ -916,7 +928,7 @@ export function createResourceManager({ config, setup, logger } = {}) {
     }
 
     async function init() {
-        hardware = await probeHardware();
+        if (!hardwareOverride) hardware = await probeHardware();
         await loadLock();
         await loadIndex();
         return status();

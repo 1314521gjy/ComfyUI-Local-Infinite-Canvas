@@ -147,3 +147,49 @@ test("resources can install a custom node zip", async () => {
         await fsp.rm(root, { recursive: true, force: true });
     }
 });
+
+test("8GB GPU recommends the int8 lite pack instead of bf16", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-recommend-test-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(path.join(comfy, "models"), { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    const requirements = (weightsGb, floorGb, recommendVramGb) => ({
+        vramFloorGb: floorGb,
+        weightsGb,
+        ramBaseGb: 8,
+        safety: 0.15,
+        recommendVramGb,
+    });
+    const index = {
+        schema: 1,
+        version: "recommend-test",
+        packs: [
+            { id: "moss", family: "moss", tier: "balanced", resources: [], requirements: requirements(21, 8, 20) },
+            { id: "moss-lite", family: "moss", tier: "lite", resources: [], requirements: requirements(14.5, 6, 6) },
+        ],
+        resources: [],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: { loaderOptions: () => ({}), status: () => ({ comfyReachable: true }), scan: async () => ({}) },
+        logger: null,
+        hardware: { gpuName: "Test 8GB", vramTotalMb: 8192, ramTotalBytes: 64 * 1024 ** 3, ramFreeBytes: 64 * 1024 ** 3, detectedAt: new Date().toISOString(), source: "test" },
+    });
+    try {
+        await manager.init();
+        const status = manager.status();
+        const bf16 = status.packs.find((pack) => pack.id === "moss");
+        const lite = status.packs.find((pack) => pack.id === "moss-lite");
+        assert.equal(bf16.eligible, true);
+        assert.equal(bf16.recommended, false);
+        assert.equal(lite.recommended, true);
+        assert.equal(lite.offload, true);
+        assert.equal(status.recommendationAvailable, true);
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});

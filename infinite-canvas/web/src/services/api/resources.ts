@@ -37,6 +37,8 @@ export type ResourcePack = {
     optional?: boolean;
     eligible?: boolean;
     recommended?: boolean;
+    offload?: boolean;
+    resident?: boolean;
     planned: boolean;
     workflows: string[];
     resourceIds: string[];

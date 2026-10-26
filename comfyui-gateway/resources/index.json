@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "version": "2026.10.26-3",
+  "version": "2026.10.26-5",
   "channel": "stable",
-  "updatedAt": "2026-10-26T23:00:00+08:00",
+  "updatedAt": "2026-10-26T23:10:00+08:00",
   "packs": [
     {
       "id": "core",
@@ -34,16 +34,18 @@
       "family": "moss",
       "tier": "balanced",
       "requirements": {
-        "minVramGb": 20,
-        "minRamGb": 48,
-        "recommendedVramGb": 24,
-        "recommendedRamGb": 48
+        "vramFloorGb": 8,
+        "weightsGb": 21,
+        "ramBaseGb": 8,
+        "safety": 0.15,
+        "installRamGb": 40,
+        "recommendVramGb": 20
       }
     },
     {
       "id": "moss-lite",
       "label": "MOSS-Image 低显存 int8",
-      "description": "SFT int8 + w4a8 文本编码器 + small VAE + 8步 LoRA，使用低显存 8 步入口；不是 Balanced 融合，画质/细节低于 bf16 版。",
+      "description": "SFT int8 + w4a8 文本编码器 + small VAE + 8步 LoRA，使用低显存 8 步入口；不是 Balanced 融合，画质/细节低于 bf16 版。显存不够时会使用内存卸载，速度较慢。",
       "optional": true,
       "resources": [
         "moss_image_sft_int8_convrot",
@@ -57,10 +59,11 @@
       "family": "moss",
       "tier": "lite",
       "requirements": {
-        "minVramGb": 12,
-        "minRamGb": 24,
-        "recommendedVramGb": 16,
-        "recommendedRamGb": 32
+        "vramFloorGb": 6,
+        "weightsGb": 14.5,
+        "ramBaseGb": 8,
+        "safety": 0.15,
+        "recommendVramGb": 6
       }
     },
     {
@@ -80,10 +83,11 @@
       "family": "angle",
       "tier": "standard",
       "requirements": {
-        "minVramGb": 16,
-        "minRamGb": 32,
-        "recommendedVramGb": 24,
-        "recommendedRamGb": 32
+        "vramFloorGb": 8,
+        "weightsGb": 19,
+        "ramBaseGb": 8,
+        "safety": 0.15,
+        "recommendVramGb": 12
       }
     },
     {
@@ -96,10 +100,11 @@
       "family": "h3",
       "tier": "quality",
       "requirements": {
-        "minVramGb": 24,
-        "minRamGb": 64,
-        "recommendedVramGb": 32,
-        "recommendedRamGb": 96
+        "vramFloorGb": 12,
+        "weightsGb": 50,
+        "ramBaseGb": 12,
+        "safety": 0.15,
+        "recommendVramGb": 24
       }
     }
   ],

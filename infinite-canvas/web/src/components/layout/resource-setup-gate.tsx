@@ -50,7 +50,7 @@ export function ResourceSetupGate() {
                     <div>
                         <div className="text-base font-semibold">{zh ? "准备资源" : "Prepare resources"}</div>
                         <div className="mt-0.5 text-xs font-normal text-stone-500 dark:text-stone-400">
-                            {zh ? "你的 ComfyUI 已连接；已按当前显卡标出推荐版本，只下载缺少的模型/组件，已有同名文件会直接复用。" : "ComfyUI is connected. The recommended version is marked for this GPU; only missing files are downloaded."}
+                            {zh ? "你的 ComfyUI 已连接；已按当前显卡和内存标出推荐版本，只下载缺少的模型/组件，已有同名文件会直接复用。" : "ComfyUI is connected. The recommended version is marked for this GPU; only missing files are downloaded."}
                         </div>
                     </div>
                 </div>
