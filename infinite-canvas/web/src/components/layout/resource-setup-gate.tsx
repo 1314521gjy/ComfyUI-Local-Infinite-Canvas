@@ -24,7 +24,7 @@ export function ResourceSetupGate() {
                 setStatus(next);
                 if ((next.summary.recommendedMissing || 0) > 0 && next.recommendationAvailable && window.localStorage.getItem(SKIP_KEY) !== "1") setOpen(true);
             } catch {
-                // Gateway/ComfyUI 未就绪时不打扰用户，资源中心仍可手动打开。
+                // Gateway/ComfyUI 未就绪时不打扰用户，添加工作流仍可手动打开。
             } finally {
                 if (!cancelled) setChecked(true);
             }
@@ -68,7 +68,7 @@ export function ResourceSetupGate() {
                 footer={
                     <div className="flex flex-wrap items-center justify-between gap-2 border-t border-stone-200 pt-3 dark:border-stone-800">
                         <span className="text-[11px] text-stone-400 dark:text-stone-500">
-                            {zh ? "跳过后可在 设置 → 资源中心 随时补装。" : "You can install later from Settings → Resources."}
+                            {zh ? "跳过后可在 设置 → 添加工作流 随时补装。" : "You can install later from Settings → Add workflows."}
                         </span>
                         <Button icon={<X className="size-4" />} onClick={skip}>
                             {zh ? "跳过，先进入画布" : "Skip for now"}

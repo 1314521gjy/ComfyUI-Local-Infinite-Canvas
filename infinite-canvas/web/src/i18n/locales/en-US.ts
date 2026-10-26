@@ -431,7 +431,7 @@ export default {
             preferences: "Preferences",
             promptSources: "Prompt sources",
             localStorage: "Local storage",
-            resources: "Resources",
+            resources: "Add workflows",
         },
         cloudApi: {
             title: "Cloud API (prompt optimization)",

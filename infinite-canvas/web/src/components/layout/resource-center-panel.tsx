@@ -18,7 +18,7 @@ import {
 
 const copyByLocale = {
     zh: {
-        title: "资源中心",
+        title: "添加工作流",
         subtitle: "只下载缺失的资源；已有同名模型会直接复用，不会重复下载。",
         refresh: "重新扫描",
         installSelected: "安装选中",
@@ -73,7 +73,7 @@ const copyByLocale = {
         collapse: "收起",
     },
     en: {
-        title: "Resource Center",
+        title: "Add workflows",
         subtitle: "Only missing files are downloaded. Existing models with the same name are reused.",
         refresh: "Rescan",
         installSelected: "Install selected",
