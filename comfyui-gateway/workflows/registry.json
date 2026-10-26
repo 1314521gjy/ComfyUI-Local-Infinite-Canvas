@@ -2304,7 +2304,7 @@
       "name": "video-h3-character-swap",
       "type": "video",
       "file": "h3-character-swap-vdn.json",
-      "description": "MiniMax-H3 Ref2VA + Character Swap 1.5 LoRA on the local VDN 8-step backend. Source video + character image + prompt; SAM 3.1 mask refinement follows separately.",
+      "description": "MiniMax-H3 Ref2VA + Character Swap 1.5 LoRA on the local VDN 8-step backend. Source video length drives output duration; character image + prompt required. SAM 3.1 mask refinement follows separately.",
       "lora": {
         "filter": "H3|minimax_h3|TaoMate-H3",
         "source": "5"
@@ -2331,14 +2331,6 @@
           "from": "size.height",
           "transform": "snap32",
           "default": 768
-        },
-        "length": {
-          "node": "76",
-          "input": "length",
-          "from": "seconds",
-          "transform": "secondsToFrames17",
-          "fps": 24,
-          "default": 124
         },
         "seed": {
           "node": "78",
@@ -2397,7 +2389,7 @@
           "from": "image",
           "array": true,
           "inputPrefix": "ref_images.ref_image_",
-          "min": 0,
+          "min": 1,
           "max": 6
         },
         "videos": {
@@ -2406,10 +2398,11 @@
           "from": "video",
           "array": true,
           "inputPrefix": "ref_videos.ref_video_",
-          "audioPrefix": "ref_video_audios.ref_video_audio_",
-          "min": 0,
+          "min": 1,
           "max": 1,
-          "loadType": "video"
+          "loadType": "video",
+          "sourceLengthInput": "length",
+          "loader": "native"
         },
         "audios": {
           "node": "76",

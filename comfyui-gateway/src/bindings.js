@@ -160,12 +160,31 @@ export function applyBindings(workflow, entry, context, { logger } = {}) {
       }
       selected.forEach((uploaded, index) => {
         const loadNodeId = nextGatewayLoadId(next);
+        if (isVideo && binding.loader === "native") {
+          next[loadNodeId] = {
+            class_type: "LoadVideo",
+            inputs: { file: imageValue(uploaded) },
+            _meta: { title: `Gateway Video ${index + 1}` },
+          };
+          const componentsId = nextGatewayLoadId(next);
+          next[componentsId] = {
+            class_type: "GetVideoComponents",
+            inputs: { video: [loadNodeId, 0] },
+            _meta: { title: `Gateway Video Frames ${index + 1}` },
+          };
+          node.inputs[`${prefix}${indexBase + index}`] = [componentsId, 0];
+          if (binding.sourceLengthInput) {
+            const frames = Math.round(Number(context.sourceVideoFrames));
+            if (Number.isFinite(frames) && frames > 0) node.inputs[binding.sourceLengthInput] = frames;
+          }
+          return;
+        }
         if (isVideo) {
           next[loadNodeId] = {
             class_type: "VHS_LoadVideo",
             inputs: {
               video: imageValue(uploaded),
-              force_rate: 0,
+              force_rate: Number(binding.forceRate ?? 0),
               custom_width: 0,
               custom_height: 0,
               frame_load_cap: 0,
@@ -191,6 +210,10 @@ export function applyBindings(workflow, entry, context, { logger } = {}) {
         node.inputs[`${prefix}${indexBase + index}`] = [loadNodeId, 0];
         if (isVideo && binding.audioPrefix) {
           node.inputs[`${binding.audioPrefix}${indexBase + index}`] = [loadNodeId, 2];
+        }
+        if (isVideo && binding.sourceLengthInput) {
+          const sourceLengthOutput = Number.isInteger(binding.sourceLengthOutput) ? binding.sourceLengthOutput : 1;
+          node.inputs[binding.sourceLengthInput] = [loadNodeId, sourceLengthOutput];
         }
       });
       continue;

@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 import express from "express";
@@ -32,6 +34,30 @@ class HttpError extends Error {
     this.status = status;
     this.code = code;
     this.details = details;
+  }
+}
+
+function probeVideoFrames(file) {
+  if (!file?.buffer?.length) return 0;
+  const rawExt = extFromMime(file.mimetype) || ".mp4";
+  const ext = String(rawExt).startsWith(".") ? rawExt : `.${rawExt}`;
+  const temp = path.join(os.tmpdir(), `comfy-probe-${randomId()}${ext}`);
+  try {
+    fs.writeFileSync(temp, file.buffer);
+    const raw = execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=avg_frame_rate", "-show_entries", "format=duration", "-of", "json", temp], { encoding: "utf8", timeout: 20000 });
+    const data = JSON.parse(raw);
+    const rate = String(data.streams?.[0]?.avg_frame_rate || "0/1").split("/").map(Number);
+    const fps = rate[1] ? rate[0] / rate[1] : rate[0];
+    const duration = Number(data.format?.duration || 0);
+    if (!Number.isFinite(fps) || fps <= 0 || !Number.isFinite(duration) || duration <= 0) return 0;
+    return Math.max(1, Math.round(fps * duration));
+  } catch {
+    return 0;
+  } finally {
+    try {
+      fs.unlinkSync(temp);
+    } catch {
+    }
   }
 }
 
@@ -1075,6 +1101,7 @@ export async function createGatewayApp(overrides = {}) {
         watermark: body.watermark,
       },
     });
+    if (videoFiles.length) context.sourceVideoFrames = probeVideoFrames(videoFiles[0]);
     const task = tasks.create({
       model: entry.name,
       request: {

@@ -76,6 +76,10 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     const isNoVdnModel = rawWorkflowId !== workflowId;
     const isH3T2V = mode === "video" && workflowId === "video-h3-t2v";
     const isH3Reference = workflowId === "video-h3-ref2va" || workflowId === "video-h3-character-swap";
+    const isCharacterSwap = workflowId === "video-h3-character-swap";
+    const sourceVideoReference = mentionReferences.find((reference) => reference.kind === "video");
+    const sourceVideoNode = sourceVideoReference ? nodes.find((item) => item.id === sourceVideoReference.nodeId) : undefined;
+    const sourceVideoDurationSeconds = sourceVideoNode?.metadata?.durationMs && sourceVideoNode.metadata.durationMs > 0 ? sourceVideoNode.metadata.durationMs / 1000 : undefined;
     const isH3 = mode === "video" && (workflowId === "video-h3-t2v" || workflowId === "video-h3-frames" || isH3Reference);
     const isImage = mode === "image";
     const optimizeStatus = node.metadata?.promptOptimizeStatus;
@@ -220,7 +224,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                     : frameMode === "both" && selectedRefs.length >= 2
                       ? "首尾帧视频(FL2VA)"
                       : "首帧图生视频(I2VA)";
-        return { selectedRefs, referenceNote, taskType, duration: Number(config.videoSeconds) || 5 };
+        return { selectedRefs, referenceNote, taskType, duration: isCharacterSwap ? sourceVideoDurationSeconds ?? (Number(config.videoSeconds) || 5) : Number(config.videoSeconds) || 5 };
     };
 
     const openOptimizeOptions = () => {
@@ -446,6 +450,8 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                                 frameMode={frameMode}
                                 onFrameModeChange={(value) => onConfigChange(node.id, { frameMode: value })}
                                 onModeChange={changeVideoMode}
+                                durationLocked={isCharacterSwap}
+                                sourceDurationSeconds={sourceVideoDurationSeconds}
                             />
                         </>
                     ) : mode === "audio" ? (

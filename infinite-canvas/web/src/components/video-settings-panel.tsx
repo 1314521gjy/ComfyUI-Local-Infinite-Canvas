@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect } from "react";
 import { Slider } from "antd";
+import { Lock } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
@@ -32,6 +33,8 @@ type VideoSettingsPanelProps = {
     frameMode?: "first" | "last" | "both";
     onFrameModeChange?: (value: "first" | "last" | "both") => void;
     onModeChange?: (value: "text" | "frames" | "reference") => void;
+    durationLocked?: boolean;
+    sourceDurationSeconds?: number;
 };
 
 const h3FrameModeOptions = [
@@ -40,7 +43,7 @@ const h3FrameModeOptions = [
     { value: "both" as const, labelKey: "bothFrames" },
 ];
 
-export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", frameMode = "both", onFrameModeChange, onModeChange }: VideoSettingsPanelProps) {
+export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", frameMode = "both", onFrameModeChange, onModeChange, durationLocked = false, sourceDurationSeconds }: VideoSettingsPanelProps) {
     const { t } = useTranslation();
     const seconds = Number(clampVideoSeconds(config.videoSeconds || "6"));
     const videoMode = normalizeVideoModeValue(config.videoMode);
@@ -112,11 +115,18 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                     </div>
                 </SettingGroup>
                 <SettingGroup title={t("settingsPanels.video.seconds")} color={theme.node.muted}>
-                    <div className="flex items-center gap-3" onMouseDown={(event) => event.stopPropagation()}>
-                        <Slider className="min-w-0 flex-1" min={VIDEO_SECONDS_MIN} max={VIDEO_SECONDS_MAX} step={1} value={seconds} onChange={(value) => onConfigChange("videoSeconds", String(Array.isArray(value) ? value[0] : value))} />
-                        <SecondsInput value={seconds} theme={theme} onCommit={(value) => onConfigChange("videoSeconds", String(value))} />
-                        <span className="shrink-0 text-sm" style={{ color: theme.node.muted }}>s</span>
-                    </div>
+                    {durationLocked ? (
+                        <div className="flex h-8 items-center gap-1.5 text-xs" style={{ color: theme.node.muted }}>
+                            <Lock className="size-3.5" />
+                            <span>{t("settingsPanels.video.followSource")}{sourceDurationSeconds != null ? ` · ${sourceDurationSeconds.toFixed(1)}s` : ""}</span>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-3" onMouseDown={(event) => event.stopPropagation()}>
+                            <Slider className="min-w-0 flex-1" min={VIDEO_SECONDS_MIN} max={VIDEO_SECONDS_MAX} step={1} value={seconds} onChange={(value) => onConfigChange("videoSeconds", String(Array.isArray(value) ? value[0] : value))} />
+                            <SecondsInput value={seconds} theme={theme} onCommit={(value) => onConfigChange("videoSeconds", String(value))} />
+                            <span className="shrink-0 text-sm" style={{ color: theme.node.muted }}>s</span>
+                        </div>
+                    )}
                 </SettingGroup>
                 <SeedSetting fixed={config.seedFixed === "true"} seed={config.seed || ""} theme={theme} onChange={onConfigChange} />
                 <SettingGroup title={t("settingsPanels.video.interpolation")} color={theme.node.muted}>

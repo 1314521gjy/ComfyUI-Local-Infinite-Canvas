@@ -157,9 +157,9 @@ function readNodeGenerationResource(node: CanvasNodeData): NodeGenerationResourc
     const audio = readReferenceAudio(node);
     if (audio) return [{ nodeId: node.id, type: "audio", title: node.title, audio }];
     const resource = getNodeDefinition(node.type)?.resource?.(node);
-    if (resource?.kind === "image" && resource.url) return [{ nodeId: node.id, type: "image", title: node.title, image: { id: node.id, name: `${node.title || node.id}.png`, type: node.metadata?.mimeType || "image/png", dataUrl: resource.url, storageKey: node.metadata?.storageKey } }];
-    if (resource?.kind === "video" && resource.url) return [{ nodeId: node.id, type: "video", title: node.title, video: { id: node.id, name: `${node.title || node.id}.mp4`, type: node.metadata?.mimeType || "video/mp4", url: resource.url, storageKey: node.metadata?.storageKey } }];
-    if (resource?.kind === "audio" && resource.url) return [{ nodeId: node.id, type: "audio", title: node.title, audio: { id: node.id, name: `${node.title || node.id}.mp3`, type: node.metadata?.mimeType || "audio/mpeg", url: resource.url, storageKey: node.metadata?.storageKey } }];
+    if (resource?.kind === "image" && resource.url) return [{ nodeId: node.id, type: "image", title: node.title, image: { id: node.id, name: mediaFileName(node.title, node.id, "png"), type: node.metadata?.mimeType || "image/png", dataUrl: resource.url, storageKey: node.metadata?.storageKey } }];
+    if (resource?.kind === "video" && resource.url) return [{ nodeId: node.id, type: "video", title: node.title, video: { id: node.id, name: mediaFileName(node.title, node.id, "mp4"), type: node.metadata?.mimeType || "video/mp4", url: resource.url, storageKey: node.metadata?.storageKey } }];
+    if (resource?.kind === "audio" && resource.url) return [{ nodeId: node.id, type: "audio", title: node.title, audio: { id: node.id, name: mediaFileName(node.title, node.id, "mp3"), type: node.metadata?.mimeType || "audio/mpeg", url: resource.url, storageKey: node.metadata?.storageKey } }];
     if (resource?.kind === "lora" && resource.loras?.length) return [{ nodeId: node.id, type: "lora", title: node.title, loras: resource.loras }];
     if (resource?.kind === "text" && resource.text) return [{ nodeId: node.id, type: "text", title: node.title, text: resource.text }];
     const text = readNodeTextInput(node);
@@ -201,11 +201,18 @@ function generationLabel(type: NodeGenerationResourceInput["type"], index: numbe
     return i18n.t("canvas.composer.resources.text", { index: index + 1 });
 }
 
+const MEDIA_EXTENSION_RE = /\.(png|jpe?g|webp|gif|bmp|mp4|webm|mov|mkv|avi|mp3|wav|ogg|m4a|flac)$/i;
+
+function mediaFileName(title: string | undefined, id: string, extension: string) {
+    const name = (title || id).trim();
+    return MEDIA_EXTENSION_RE.test(name) ? name : `${name}.${extension}`;
+}
+
 function readReferenceImage(node: CanvasNodeData): ReferenceImage | null {
     if (node.type !== CanvasNodeType.Image || !node.metadata?.content) return null;
     return {
         id: node.id,
-        name: `${node.title || node.id}.png`,
+        name: mediaFileName(node.title, node.id, "png"),
         type: node.metadata.mimeType || "image/png",
         dataUrl: node.metadata.content,
         storageKey: node.metadata.storageKey,
@@ -216,7 +223,7 @@ function readReferenceVideo(node: CanvasNodeData): ReferenceVideo | null {
     if (node.type !== CanvasNodeType.Video || !node.metadata?.content) return null;
     return {
         id: node.id,
-        name: `${node.title || node.id}.mp4`,
+        name: mediaFileName(node.title, node.id, "mp4"),
         type: node.metadata.mimeType || "video/mp4",
         url: node.metadata.content,
         storageKey: node.metadata.storageKey,
@@ -231,7 +238,7 @@ function readReferenceAudio(node: CanvasNodeData): ReferenceAudio | null {
     if (node.type !== CanvasNodeType.Audio || !node.metadata?.content) return null;
     return {
         id: node.id,
-        name: `${node.title || node.id}.mp3`,
+        name: mediaFileName(node.title, node.id, "mp3"),
         type: node.metadata.mimeType || "audio/mpeg",
         url: node.metadata.content,
         storageKey: node.metadata.storageKey,

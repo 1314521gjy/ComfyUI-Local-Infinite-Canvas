@@ -3,6 +3,8 @@ import { Button, Modal, Segmented, Slider } from "antd";
 import { RotateCcw, WandSparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { CameraOrbitPreview } from "./camera-orbit-preview";
+
 export type CanvasImageAngleParams = {
     horizontalAngle: number;
     pitchAngle: number;
@@ -28,23 +30,21 @@ export function CanvasNodeAngleDialog({ dataUrl, open, onClose, onConfirm }: { d
     const update = <Key extends keyof CanvasImageAngleParams>(key: Key, value: CanvasImageAngleParams[Key]) => setParams((current) => ({ ...current, [key]: value }));
 
     return (
-        <Modal title={null} open={open && Boolean(dataUrl)} onCancel={onClose} footer={null} width={860} centered destroyOnHidden>
+        <Modal title={null} open={open && Boolean(dataUrl)} onCancel={onClose} footer={null} width={1000} centered destroyOnHidden>
             <div className="space-y-5">
                 <div>
                     <h2 className="text-xl font-semibold">{t("canvas.editors.angleTitle")}</h2>
                     <p className="mt-1 text-sm opacity-60">{t("canvas.editors.angleDescription")}</p>
                 </div>
-                <div className="grid gap-6 md:grid-cols-[minmax(260px,1fr)_360px]">
-                    <div className="flex min-h-[300px] flex-col justify-between rounded-xl border p-4">
-                        <div className="grid flex-1 place-items-center">
-                            <div className="relative">
-                                <img src={dataUrl} alt="" className="size-48 rounded-2xl object-cover shadow-2xl" draggable={false} style={{ transform: previewTransform(params) }} />
-                                <div className="absolute -bottom-6 left-1/2 h-10 w-24 -translate-x-1/2 rounded-full border bg-black/20 backdrop-blur" />
-                            </div>
+                <div className="grid gap-6 md:grid-cols-[minmax(380px,1fr)_360px]">
+                    <div className="flex min-h-[380px] flex-col overflow-hidden rounded-xl border">
+                        <CameraOrbitPreview dataUrl={dataUrl} params={params} onChange={setParams} />
+                        <div className="flex shrink-0 items-center justify-between gap-2 border-t border-black/10 px-3 py-2 dark:border-white/10">
+                            <Button size="small" className="w-fit" icon={<RotateCcw className="size-4" />} onClick={() => setParams(defaultParams)}>
+                                {t("canvas.editors.reset")}
+                            </Button>
+                            <span className="text-[11px] opacity-50">{t("canvas.editors.orbitHint")}</span>
                         </div>
-                        <Button className="w-fit" icon={<RotateCcw className="size-4" />} onClick={() => setParams(defaultParams)}>
-                            {t("canvas.editors.reset")}
-                        </Button>
                     </div>
                     <div className="space-y-6 py-2">
                         <AngleSlider label={t("canvas.editors.horizontal")} value={params.horizontalAngle} min={0} max={360} step={1} suffix="deg" onChange={(value) => update("horizontalAngle", value)} />
@@ -85,9 +85,4 @@ function AngleSlider({ label, value, min, max, step, suffix = "", onChange }: { 
             </span>
         </div>
     );
-}
-
-function previewTransform(params: CanvasImageAngleParams) {
-    const scale = 1.08 - params.cameraDistance * 0.035 + (params.wideAngle ? -0.08 : 0);
-    return `perspective(520px) rotateY(${params.horizontalAngle * -1}deg) rotateX(${params.pitchAngle}deg) scale(${Math.max(0.72, Math.min(1.08, scale))})`;
 }
