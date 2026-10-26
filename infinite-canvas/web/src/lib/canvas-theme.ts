@@ -71,8 +71,8 @@ type CardSkinNodeOverride = Partial<Record<keyof (typeof canvasThemes)["light"][
 const cardSkinNodeOverrides: Record<CardSkinId, { light: CardSkinNodeOverride; dark: CardSkinNodeOverride }> = {
     warm: { light: {}, dark: {} },
     cream: {
-        light: { label: "#6b5b47", fill: "#f8f0e2", panel: "#fffaf0", stroke: "#ddcfb9", placeholder: "#a89985", text: "#3a3025", muted: "#7a6a56", faint: "#a89985", activeStroke: "#3a3025" },
-        dark: { label: "#6b5b47", fill: "#f6eddc", panel: "#fffaf0", stroke: "#d9cbb4", placeholder: "#a89985", text: "#3a3025", muted: "#7a6a56", faint: "#a89985", activeStroke: "#3a3025" },
+        light: { label: "#1c1c1c", fill: "#f8f0e2", panel: "#fffaf0", stroke: "#ddcfb9", placeholder: "#7f7f7f", text: "#0f0f0f", muted: "#4a4a4a", faint: "#8a8a8a", activeStroke: "#0f0f0f" },
+        dark: { label: "#1c1c1c", fill: "#f6eddc", panel: "#fffaf0", stroke: "#d9cbb4", placeholder: "#7f7f7f", text: "#0f0f0f", muted: "#4a4a4a", faint: "#8a8a8a", activeStroke: "#0f0f0f" },
     },
     mist: {
         light: { label: "#475569", fill: "#e4ebf3", panel: "#f7fafc", stroke: "#c5d2df", placeholder: "#94a3b8", text: "#1e293b", muted: "#64748b", faint: "#94a3b8" },
@@ -92,8 +92,8 @@ type CardSkinToolbarOverride = Partial<Record<keyof (typeof canvasThemes)["light
 
 const cardSkinToolbarOverrides: Partial<Record<CardSkinId, { light: CardSkinToolbarOverride; dark: CardSkinToolbarOverride }>> = {
     cream: {
-        light: { panel: "rgba(255,250,240,.97)", border: "#ddcfb9", item: "#6b5b47", itemHover: "#f3e8d7", activeBg: "#eddfc7", activeText: "#3a3025" },
-        dark: { panel: "rgba(255,250,240,.97)", border: "#d9cbb4", item: "#6b5b47", itemHover: "#f3e8d7", activeBg: "#eddfc7", activeText: "#3a3025" },
+        light: { panel: "rgba(255,250,240,.97)", border: "#ddcfb9", item: "#2b2b2b", itemHover: "#f3e8d7", activeBg: "#eddfc7", activeText: "#0f0f0f" },
+        dark: { panel: "rgba(255,250,240,.97)", border: "#d9cbb4", item: "#2b2b2b", itemHover: "#f3e8d7", activeBg: "#eddfc7", activeText: "#0f0f0f" },
     },
 };
 

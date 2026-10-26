@@ -132,6 +132,8 @@ export const CanvasNode = React.memo(function CanvasNode({
     const colorTheme = useThemeStore((state) => state.theme);
     const cardSkin = useThemeStore((state) => state.cardSkin);
     const fishSkin = cardSkin === "fish";
+    const fishArtSize = Math.round(Math.max(15, Math.min(58, Math.min(data.height * 0.24, data.width * 0.15))));
+    const fishArtStroke = Math.max(1, Math.round(fishArtSize * 0.045));
     const cardBackground = getCardBackground(colorTheme, cardSkin);
     const titleTheme = canvasThemes[colorTheme].node;
     const { t } = useTranslation();
@@ -404,10 +406,47 @@ export const CanvasNode = React.memo(function CanvasNode({
             >
                 {fishSkin && !isGroup && !hasImageContent && !hasVideoContent && !transparentBg ? (
                     <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]" aria-hidden="true">
-                        <div className="absolute -left-8 -top-10 h-32 w-32 rounded-full" style={{ background: "radial-gradient(circle, rgba(80,190,255,.26), transparent 68%)" }} />
-                        <img src="/skins/blue-whale-girl.png" alt="" draggable={false} className="absolute bottom-2 right-2 h-12 w-12 opacity-80 drop-shadow-[0_4px_10px_rgba(0,0,0,.35)]" />
-                        <span className="absolute bottom-7 right-[4.5rem] h-1.5 w-1.5 rounded-full bg-cyan-100/30" />
-                        <span className="absolute bottom-12 right-16 h-1 w-1 rounded-full bg-cyan-100/25" />
+                        <div className="absolute left-0 top-0 h-[62%] w-[58%]" style={{ background: "radial-gradient(circle at 0% 0%, rgba(3,15,26,.62), transparent 72%)" }} />
+                        <div className="absolute bottom-[-24%] right-[-14%] h-[86%] w-[58%] rounded-full" style={{ background: "radial-gradient(circle, rgba(74,186,255,.30), transparent 66%)" }} />
+                        <img
+                            src="/skins/blue-whale-girl.png"
+                            alt=""
+                            draggable={false}
+                            className="absolute select-none opacity-95 drop-shadow-[0_10px_22px_rgba(0,8,20,.55)]"
+                            style={{ height: "78%", width: "auto", maxWidth: "58%", right: "-2%", bottom: "-5%", objectFit: "contain", objectPosition: "bottom right" }}
+                        />
+                        <div className="absolute flex items-baseline whitespace-nowrap" style={{ left: "6%", top: "50%", transform: "translateY(-50%) rotate(-9deg)", fontSize: fishArtSize }}>
+                            <span
+                                style={{
+                                    fontFamily: '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif',
+                                    fontWeight: 900,
+                                    fontStyle: "italic",
+                                    lineHeight: 0.9,
+                                    letterSpacing: "0.02em",
+                                    color: "#eafaff",
+                                    WebkitTextStroke: `${fishArtStroke}px #08263d`,
+                                    textShadow: "0 0 18px rgba(90,200,255,.75), 0 4px 0 rgba(5,20,34,.4)",
+                                }}
+                            >
+                                牛<span style={{ color: "#9be9ff" }}>啤</span>
+                            </span>
+                            <span
+                                style={{
+                                    marginLeft: "0.08em",
+                                    fontSize: "0.66em",
+                                    fontWeight: 900,
+                                    fontStyle: "italic",
+                                    color: "#8fe4ff",
+                                    textShadow: "0 0 12px rgba(110,215,255,.85), 0 2px 0 rgba(5,20,34,.45)",
+                                    transform: "translateY(-0.12em)",
+                                }}
+                            >
+                                ！！
+                            </span>
+                        </div>
+                        <span className="absolute right-[42%] top-[24%] size-1.5 rounded-full bg-cyan-100/25" />
+                        <span className="absolute right-[35%] top-[38%] size-1 rounded-full bg-cyan-100/20" />
+                        <span className="absolute right-[47%] top-[12%] size-1 rounded-full bg-cyan-100/15" />
                     </div>
                 ) : null}
                 <div
@@ -511,6 +550,23 @@ const nodeContentRenderers = {
 function FreeCardNodeContent({ node, theme }: NodeContentRendererProps) {
     const { t } = useTranslation();
     const info = node.metadata?.freeCard;
+    const fishSkin = useThemeStore((state) => state.cardSkin) === "fish";
+    const kind = info ? (info.outputType === "video" ? t("canvas.freeCard.videoWorkflow") : info.outputType === "image" ? t("canvas.freeCard.imageWorkflow") : t("canvas.freeCard.otherWorkflow")) : t("canvas.freeCard.emptyHint");
+    if (fishSkin) {
+        return (
+            <div className="flex h-full w-full flex-col items-start justify-start gap-1 px-4 pt-4 text-left">
+                <div className="flex items-center gap-1.5">
+                    <Sparkles className="size-3.5" style={{ color: theme.node.muted }} />
+                    <span className="text-[11px] font-medium" style={{ color: theme.node.muted }}>
+                        {kind}
+                    </span>
+                </div>
+                <div className="max-w-[72%] truncate text-sm font-semibold drop-shadow-[0_2px_6px_rgba(0,8,18,.8)]" style={{ color: theme.node.text }}>
+                    {info?.name || t("canvas.freeCard.emptyTitle")}
+                </div>
+            </div>
+        );
+    }
     return (
         <div className="flex h-full w-full flex-col items-center justify-center gap-3 px-6 text-center">
             <div className="grid size-12 place-items-center rounded-2xl" style={{ background: theme.toolbar.activeBg, color: theme.node.text }}>
@@ -520,7 +576,7 @@ function FreeCardNodeContent({ node, theme }: NodeContentRendererProps) {
                 {info?.name || t("canvas.freeCard.emptyTitle")}
             </div>
             <div className="text-xs" style={{ color: theme.node.muted }}>
-                {info ? (info.outputType === "video" ? t("canvas.freeCard.videoWorkflow") : info.outputType === "image" ? t("canvas.freeCard.imageWorkflow") : t("canvas.freeCard.otherWorkflow")) : t("canvas.freeCard.emptyHint")}
+                {kind}
             </div>
         </div>
     );
