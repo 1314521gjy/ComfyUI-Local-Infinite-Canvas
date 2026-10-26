@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { ChevronRight, Copy, Download, Group, Image as ImageIcon, Music2, Puzzle, RefreshCw, Sparkles, Star, Trash2, Video } from "lucide-react";
 
 import { canvasThemes, getCardBackground } from "@/lib/canvas-theme";
-import { useCanvasTheme } from "@/lib/canvas/use-canvas-theme";
+import { useCanvasTheme, useEffectiveCardSkin } from "@/lib/canvas/use-canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { formatBytes } from "@/lib/image-utils";
 import { pickImageSource } from "@/lib/image-thumbnail";
@@ -130,7 +130,7 @@ export const CanvasNode = React.memo(function CanvasNode({
 }: CanvasNodeProps) {
     const theme = useCanvasTheme();
     const colorTheme = useThemeStore((state) => state.theme);
-    const cardSkin = useThemeStore((state) => state.cardSkin);
+    const cardSkin = useEffectiveCardSkin();
     const fishSkin = cardSkin === "fish";
     const fishArtSize = Math.round(Math.max(15, Math.min(58, Math.min(data.height * 0.24, data.width * 0.15))));
     const fishArtStroke = Math.max(1, Math.round(fishArtSize * 0.045));
@@ -551,7 +551,7 @@ const nodeContentRenderers = {
 function FreeCardNodeContent({ node, theme }: NodeContentRendererProps) {
     const { t } = useTranslation();
     const info = node.metadata?.freeCard;
-    const fishSkin = useThemeStore((state) => state.cardSkin) === "fish";
+    const fishSkin = useEffectiveCardSkin() === "fish";
     const kind = info ? (info.outputType === "video" ? t("canvas.freeCard.videoWorkflow") : info.outputType === "image" ? t("canvas.freeCard.imageWorkflow") : t("canvas.freeCard.otherWorkflow")) : t("canvas.freeCard.emptyHint");
     if (fishSkin) {
         return (

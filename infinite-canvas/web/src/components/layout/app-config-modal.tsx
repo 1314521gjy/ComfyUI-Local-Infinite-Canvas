@@ -1,6 +1,6 @@
 import { App, Button, Form, Input, Modal, Progress, Radio, Select, Switch, Tabs } from "antd";
 import type { TFunction } from "i18next";
-import { Cloud, Download, Pencil, Plus, RefreshCw, Trash2, Upload, Wifi } from "lucide-react";
+import { Cloud, Download, Lock, Pencil, Plus, RefreshCw, Trash2, Upload, Wifi } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -19,7 +19,8 @@ import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webd
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
 import { computeMediaSize, inferMediaRatio, inferMediaScale, mediaScaleOptions, parseVideoResolution } from "@/lib/media-size";
 import { progressRingSkins } from "@/lib/canvas/progress-ring-skins";
-import { cardSkinIds, getCanvasTheme } from "@/lib/canvas-theme";
+import { cardSkinIds, getCanvasTheme, type CardSkinId } from "@/lib/canvas-theme";
+import { isCardSkinLocked, verifySkinPassword } from "@/lib/canvas/skin-unlocks";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { createModelChannel, modelOptionsFromChannels, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 
@@ -64,10 +65,16 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const [syncingWebdav, setSyncingWebdav] = useState(false);
     const [webdavSyncStatus, setWebdavSyncStatus] = useState("");
     const [webdavDomainProgress, setWebdavDomainProgress] = useState(createWebdavDomainProgress);
+    const [passwordSkinId, setPasswordSkinId] = useState<CardSkinId | null>(null);
+    const [skinPassword, setSkinPassword] = useState("");
+    const [skinPasswordError, setSkinPasswordError] = useState("");
+    const [verifyingSkinPassword, setVerifyingSkinPassword] = useState(false);
     const config = useConfigStore((state) => state.config);
     const appTheme = useThemeStore((state) => state.theme);
     const cardSkin = useThemeStore((state) => state.cardSkin) || "warm";
+    const unlockedCardSkins = useThemeStore((state) => state.unlockedCardSkins);
     const setCardSkin = useThemeStore((state) => state.setCardSkin);
+    const unlockCardSkin = useThemeStore((state) => state.unlockCardSkin);
     const webdav = useConfigStore((state) => state.webdav);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const updateWebdavConfig = useConfigStore((state) => state.updateWebdavConfig);
@@ -82,6 +89,44 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
 
     const saveConfig = (nextConfig: AiConfig) => {
         (Object.keys(nextConfig) as Array<keyof AiConfig>).forEach((key) => updateConfig(key, nextConfig[key]));
+    };
+
+    const selectCardSkin = (skinId: CardSkinId) => {
+        if (isCardSkinLocked(skinId) && !unlockedCardSkins.includes(skinId)) {
+            setPasswordSkinId(skinId);
+            setSkinPassword("");
+            setSkinPasswordError("");
+            return;
+        }
+        setCardSkin(skinId);
+    };
+
+    const closeSkinPasswordModal = () => {
+        if (verifyingSkinPassword) return;
+        setPasswordSkinId(null);
+        setSkinPassword("");
+        setSkinPasswordError("");
+    };
+
+    const unlockSelectedSkin = async () => {
+        if (!passwordSkinId || verifyingSkinPassword) return;
+        setVerifyingSkinPassword(true);
+        setSkinPasswordError("");
+        try {
+            const valid = await verifySkinPassword(passwordSkinId, skinPassword);
+            if (!valid) {
+                setSkinPasswordError(t("config.preferences.cardSkinPasswordWrong"));
+                return;
+            }
+            unlockCardSkin(passwordSkinId);
+            message.success(t("config.preferences.cardSkinUnlocked", { name: t(`config.preferences.cardSkins.${passwordSkinId}.label`) }));
+            setPasswordSkinId(null);
+            setSkinPassword("");
+        } catch {
+            setSkinPasswordError(t("config.preferences.cardSkinPasswordUnavailable"));
+        } finally {
+            setVerifyingSkinPassword(false);
+        }
     };
 
     const finishConfig = () => {
@@ -295,16 +340,18 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                 <Form.Item label={t("config.preferences.cardSkin")} extra={t("config.preferences.cardSkinDescription")} className="mb-4">
                                     <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                                         {cardSkinIds.map((id) => {
-                                            const selected = cardSkin === id;
+                                            const locked = isCardSkinLocked(id) && !unlockedCardSkins.includes(id);
+                                            const selected = cardSkin === id && !locked;
                                             const palette = getCanvasTheme(appTheme, id).node;
                                             return (
                                                 <button
                                                     key={id}
                                                     type="button"
-                                                    onClick={() => setCardSkin(id)}
+                                                    title={locked ? t("config.preferences.cardSkinLockedHint") : undefined}
+                                                    onClick={() => selectCardSkin(id)}
                                                     className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition ${selected ? "border-stone-900 bg-stone-100 dark:border-stone-100 dark:bg-white/10" : "border-stone-200 hover:bg-stone-50 dark:border-stone-800 dark:hover:bg-white/5"}`}
                                                 >
-                                                    <span className="grid h-10 w-16 shrink-0 place-items-center overflow-hidden rounded-md border" style={{ background: palette.fill, borderColor: palette.stroke }}>
+                                                    <span className="relative grid h-10 w-16 shrink-0 place-items-center overflow-hidden rounded-md border" style={{ background: palette.fill, borderColor: palette.stroke }}>
                                                         {id === "fish" ? (
                                                             <img src="/skins/blue-whale-girl.png" alt="" draggable={false} className="size-10 object-contain" />
                                                         ) : (
@@ -313,10 +360,18 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                                                 <span className="block h-1 w-5 rounded-full" style={{ background: palette.muted, opacity: 0.65 }} />
                                                             </span>
                                                         )}
+                                                        {locked ? (
+                                                            <span className="absolute inset-0 grid place-items-center bg-stone-950/45 text-white">
+                                                                <Lock className="size-4" />
+                                                            </span>
+                                                        ) : null}
                                                     </span>
                                                     <span className="min-w-0">
-                                                        <span className="block text-sm font-medium">{t(`config.preferences.cardSkins.${id}.label`)}</span>
-                                                        <span className="mt-0.5 block truncate text-[11px] opacity-60">{t(`config.preferences.cardSkins.${id}.description`)}</span>
+                                                        <span className="flex items-center gap-1.5 text-sm font-medium">
+                                                            <span className="truncate">{t(`config.preferences.cardSkins.${id}.label`)}</span>
+                                                            {locked ? <span className="shrink-0 rounded-full border border-current px-1.5 py-0.5 text-[9px] font-medium opacity-70">{t("config.preferences.cardSkinLocked")}</span> : null}
+                                                        </span>
+                                                        <span className="mt-0.5 block truncate text-[11px] opacity-60">{locked ? t("config.preferences.cardSkinLockedHint") : t(`config.preferences.cardSkins.${id}.description`)}</span>
                                                     </span>
                                                 </button>
                                             );
@@ -450,6 +505,36 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                 </div>
             ) : null}
             <ChannelEditorDrawer open={Boolean(editingChannel)} channel={editingChannel} onSave={saveChannel} onClose={() => setEditingChannelId("")} />
+            <Modal
+                open={Boolean(passwordSkinId)}
+                centered
+                width={420}
+                maskClosable={false}
+                title={passwordSkinId ? t("config.preferences.cardSkinUnlockTitle", { name: t(`config.preferences.cardSkins.${passwordSkinId}.label`) }) : ""}
+                okText={t("config.preferences.cardSkinUnlockAction")}
+                cancelText={t("common.cancel")}
+                confirmLoading={verifyingSkinPassword}
+                okButtonProps={{ disabled: !skinPassword.trim() || verifyingSkinPassword }}
+                cancelButtonProps={{ disabled: verifyingSkinPassword }}
+                onOk={() => void unlockSelectedSkin()}
+                onCancel={closeSkinPasswordModal}
+            >
+                <p className="mb-3 text-sm text-stone-500">{t("config.preferences.cardSkinUnlockHint")}</p>
+                <Input.Password
+                    autoFocus
+                    value={skinPassword}
+                    status={skinPasswordError ? "error" : undefined}
+                    placeholder={t("config.preferences.cardSkinPasswordPlaceholder")}
+                    onChange={(event) => {
+                        setSkinPassword(event.target.value);
+                        if (skinPasswordError) setSkinPasswordError("");
+                    }}
+                    onPressEnter={() => {
+                        if (skinPassword.trim() && !verifyingSkinPassword) void unlockSelectedSkin();
+                    }}
+                />
+                {skinPasswordError ? <p className="mt-2 text-xs text-red-500">{skinPasswordError}</p> : null}
+            </Modal>
         </>
     );
 }
