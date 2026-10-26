@@ -125,6 +125,10 @@ non_diegetic_music: ...
 
 要求：画面与声音描述使用英文；保留用户的主体与意图；不要编造品牌或画面文字；镜头时间线与总时长一致。`;
 
+const CLOUD_IMAGE_SYSTEM_PROMPT = `你是 AI 生图提示词专家。请把用户输入改写为一条可直接使用的生图/图生图提示词，只输出最终提示词本身，不要输出任何思考过程、分析、解释、Markdown 代码块、标题或前后缀。
+
+要求：主体明确，构图、镜头、光线、材质与风格具体；保留用户的主体和意图，不要编造品牌或画面文字；图生图时说明需要保留与需要改变的部分；输出语言与“输出语言”字段一致。`;
+
 function cloudContent(data) {
   const content = data?.choices?.[0]?.message?.content;
   if (typeof content === "string") return content;
@@ -134,7 +138,7 @@ function cloudContent(data) {
   return "";
 }
 
-async function cloudOptimize({ prompt, mode, duration, referenceNote, uploadedImages = [], cloud = {}, signal }) {
+async function cloudChat({ system, userText, cloud = {}, signal, temperature = 0.6, maxTokens = 4096 }) {
   const baseUrl = String(cloud.baseUrl || "").trim();
   const apiKey = String(cloud.apiKey || "").trim();
   const model = String(cloud.model || "").trim();
@@ -142,13 +146,6 @@ async function cloudOptimize({ prompt, mode, duration, referenceNote, uploadedIm
     throw new PromptOptimizeError("云端 API 未配置：请先在设置中填写 Base URL、API Key 和模型", { status: 400, code: "cloud_not_configured" });
   }
   const endpoint = cloudChatUrl(baseUrl);
-  const userText = [
-    `任务类型：${mode}`,
-    `视频时长：${duration} 秒`,
-    referenceNote ? `参考素材说明：${referenceNote}` : "",
-    uploadedImages.length ? `参考图片：${uploadedImages.length} 张（云端模式仅使用文字说明）` : "",
-    `用户原始提示词：\n${prompt}`,
-  ].filter(Boolean).join("\n");
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("云端 API 超时")), 120000);
   const onAbort = () => controller.abort(signal?.reason);
@@ -164,11 +161,11 @@ async function cloudOptimize({ prompt, mode, duration, referenceNote, uploadedIm
       body: JSON.stringify({
         model,
         messages: [
-          { role: "system", content: CLOUD_SYSTEM_PROMPT },
+          { role: "system", content: system },
           { role: "user", content: userText },
         ],
-        temperature: 0.6,
-        max_tokens: 4096,
+        temperature,
+        max_tokens: maxTokens,
       }),
       signal: controller.signal,
     });
@@ -183,10 +180,7 @@ async function cloudOptimize({ prompt, mode, duration, referenceNote, uploadedIm
       const message = data?.error?.message || data?.message || text || `HTTP ${response.status}`;
       throw new PromptOptimizeError(`云端 API 失败：${truncate(String(message), 800)}`, { status: 502, code: "cloud_api_failed", details: data });
     }
-    const raw = cloudContent(data);
-    const result = sanitizeH3Prompt(raw);
-    if (!result) throw new PromptOptimizeError("云端 API 没有返回提示词", { status: 502, code: "no_prompt_output", details: data });
-    return { prompt: result, mode, duration, provider: "cloud", model, elapsedMs: Date.now() - started };
+    return { content: cloudContent(data), model, elapsedMs: Date.now() - started };
   } catch (error) {
     if (error instanceof PromptOptimizeError) throw error;
     if (error?.name === "AbortError") {
@@ -197,6 +191,33 @@ async function cloudOptimize({ prompt, mode, duration, referenceNote, uploadedIm
     clearTimeout(timer);
     if (signal) signal.removeEventListener("abort", onAbort);
   }
+}
+
+async function cloudOptimize({ prompt, mode, duration, referenceNote, uploadedImages = [], cloud = {}, signal }) {
+  const userText = [
+    `任务类型：${mode}`,
+    `视频时长：${duration} 秒`,
+    referenceNote ? `参考素材说明：${referenceNote}` : "",
+    uploadedImages.length ? `参考图片：${uploadedImages.length} 张（云端模式仅使用文字说明）` : "",
+    `用户原始提示词：\n${prompt}`,
+  ].filter(Boolean).join("\n");
+  const { content, model, elapsedMs } = await cloudChat({ system: CLOUD_SYSTEM_PROMPT, userText, cloud, signal });
+  const result = sanitizeH3Prompt(content);
+  if (!result) throw new PromptOptimizeError("云端 API 没有返回提示词", { status: 502, code: "no_prompt_output" });
+  return { prompt: result, mode, duration, provider: "cloud", model, elapsedMs };
+}
+
+async function cloudOptimizeImage({ prompt, mode, language, imageCount = 0, cloud = {}, signal }) {
+  const userText = [
+    `任务模式：${mode}`,
+    `输出语言：${String(language || "zh").toLowerCase() === "en" ? "英文" : "中文"}`,
+    imageCount ? `参考图片：${imageCount} 张（云端模式仅使用文字说明）` : "",
+    `用户原始提示词：\n${prompt}`,
+  ].filter(Boolean).join("\n");
+  const { content, model, elapsedMs } = await cloudChat({ system: CLOUD_IMAGE_SYSTEM_PROMPT, userText, cloud, signal });
+  const result = sanitizeImagePrompt(content);
+  if (!result) throw new PromptOptimizeError("云端 API 没有返回提示词", { status: 502, code: "no_prompt_output" });
+  return { prompt: result, mode, provider: "cloud", model, elapsedMs };
 }
 
 export function createPromptOptimizer({ config, comfy, logger }) {
@@ -321,14 +342,19 @@ export function createPromptOptimizer({ config, comfy, logger }) {
     }
   }
 
-  async function optimizeImage({ prompt, mode, language, uploadedImages = [], signal }) {
+  async function optimizeImage({ prompt, mode, language, uploadedImages = [], imageCount = 0, signal, engine = "local", cloud = {} }) {
     const text = String(prompt || "").trim();
     if (!text) throw new PromptOptimizeError("缺少提示词", { status: 400, code: "missing_prompt" });
     if (text.length > 8000) throw new PromptOptimizeError("提示词过长", { status: 400, code: "prompt_too_long" });
     const images = uploadedImages.slice(0, 8);
-    const taskMode = String(mode || "").toLowerCase() === "image" ? "图生图" : images.length ? "图生图" : "文生图";
-    if (taskMode === "图生图" && !images.length) {
+    const useCloud = String(engine || "local").toLowerCase() === "cloud";
+    const referenceCount = images.length || Math.max(0, Number(imageCount) || 0);
+    const taskMode = String(mode || "").toLowerCase() === "image" ? "图生图" : referenceCount ? "图生图" : "文生图";
+    if (!useCloud && taskMode === "图生图" && !images.length) {
       throw new PromptOptimizeError("图生图提示词优化需要至少 1 张参考图", { status: 400, code: "missing_reference_image" });
+    }
+    if (useCloud) {
+      return cloudOptimizeImage({ prompt: text, mode: taskMode, language, imageCount: referenceCount, cloud, signal });
     }
 
     const workflow = imageWorkflowTemplate();
@@ -395,7 +421,7 @@ export function createPromptOptimizer({ config, comfy, logger }) {
         });
       }
       logger?.info?.(`image prompt optimize ${taskMode} images=${images.length} ${promptId} ${Date.now() - started}ms`);
-      return { prompt: result, mode: taskMode, promptId, elapsedMs: Date.now() - started };
+      return { prompt: result, mode: taskMode, promptId, elapsedMs: Date.now() - started, provider: "local" };
     } finally {
       running = false;
       signal?.removeEventListener("abort", onAbort);

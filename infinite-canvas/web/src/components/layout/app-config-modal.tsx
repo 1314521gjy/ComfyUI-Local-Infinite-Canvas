@@ -23,7 +23,7 @@ import { cardSkinIds, getCanvasTheme, type CardSkinId } from "@/lib/canvas-theme
 import { isCardSkinLocked, verifySkinPassword } from "@/lib/canvas/skin-unlocks";
 import { persistSkinUnlock } from "@/services/api/skin-unlocks";
 import { useThemeStore } from "@/stores/use-theme-store";
-import { createModelChannel, modelOptionsFromChannels, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import { createModelChannel, modelOptionsFromChannels, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel, type PromptCloudApi } from "@/stores/use-config-store";
 
 type ModelGroup = {
     capability: ModelCapability;
@@ -57,11 +57,14 @@ function createWebdavDomainProgress(): Record<AppSyncDomainKey, WebdavDomainProg
 }
 
 export function AppConfigPanel({ showDoneButton = false, initialTab = "channels" }: { showDoneButton?: boolean; initialTab?: ConfigTabKey }) {
-    const { message } = App.useApp();
+    const { message, modal } = App.useApp();
     const { i18n, t } = useTranslation();
     const configInputRef = useRef<HTMLInputElement>(null);
     const [activeTab, setActiveTab] = useState<ConfigTabKey>(initialTab);
     const [editingChannelId, setEditingChannelId] = useState("");
+    const [cloudApiEditorOpen, setCloudApiEditorOpen] = useState(false);
+    const [editingCloudApiId, setEditingCloudApiId] = useState("");
+    const [cloudApiForm] = Form.useForm<{ name: string; baseUrl: string; apiKey: string; model: string }>();
     const [testingWebdav, setTestingWebdav] = useState(false);
     const [syncingWebdav, setSyncingWebdav] = useState(false);
     const [webdavSyncStatus, setWebdavSyncStatus] = useState("");
@@ -83,12 +86,18 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const setFishWhipSide = useThemeStore((state) => state.setFishWhipSide);
     const webdav = useConfigStore((state) => state.webdav);
     const updateConfig = useConfigStore((state) => state.updateConfig);
+    const addPromptCloudApi = useConfigStore((state) => state.addPromptCloudApi);
+    const updatePromptCloudApi = useConfigStore((state) => state.updatePromptCloudApi);
+    const removePromptCloudApi = useConfigStore((state) => state.removePromptCloudApi);
+    const selectPromptCloudApi = useConfigStore((state) => state.selectPromptCloudApi);
     const updateWebdavConfig = useConfigStore((state) => state.updateWebdavConfig);
     const shouldPromptContinue = useConfigStore((state) => state.shouldPromptContinue);
     const setConfigDialogOpen = useConfigStore((state) => state.setConfigDialogOpen);
     const clearPromptContinue = useConfigStore((state) => state.clearPromptContinue);
     const webdavReady = Boolean(webdav.url.trim());
     const editingChannel = config.channels.find((channel) => channel.id === editingChannelId) || null;
+    const cloudApis = config.promptCloudApis || [];
+    const activeCloudApiId = config.promptCloudApiId || "";
     const locale = i18n.resolvedLanguage as AppLocale;
     const imageResolutionOptions = mediaScaleOptions.map((value) => ({ value, label: value === "auto" ? t("settingsPanels.common.auto") : value.toUpperCase() }));
     useEffect(() => setActiveTab(initialTab), [initialTab]);
@@ -184,6 +193,35 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
 
     const saveChannel = (channel: ModelChannel) => {
         updateChannels(config.channels.map((item) => (item.id === channel.id ? channel : item)));
+    };
+
+    const openCloudApiEditor = (api?: PromptCloudApi) => {
+        setEditingCloudApiId(api?.id || "");
+        cloudApiForm.setFieldsValue(api ? { name: api.name, baseUrl: api.baseUrl, apiKey: api.apiKey, model: api.model } : { name: "", baseUrl: "", apiKey: "", model: "" });
+        setCloudApiEditorOpen(true);
+    };
+
+    const saveCloudApi = async () => {
+        try {
+            const values = await cloudApiForm.validateFields();
+            if (editingCloudApiId) updatePromptCloudApi(editingCloudApiId, values);
+            else addPromptCloudApi(values);
+            setCloudApiEditorOpen(false);
+            message.success(t("config.cloudApi.saved"));
+        } catch {
+            // Form validation errors are displayed inline.
+        }
+    };
+
+    const deleteCloudApi = (api: PromptCloudApi) => {
+        modal.confirm({
+            title: t("config.cloudApi.deleteTitle", { name: api.name || t("config.cloudApi.unnamed") }),
+            content: t("config.cloudApi.deleteDescription"),
+            okText: t("common.delete"),
+            okButtonProps: { danger: true },
+            cancelText: t("common.cancel"),
+            onOk: () => removePromptCloudApi(api.id),
+        });
     };
 
     const testWebdav = async () => {
@@ -296,22 +334,59 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                         key: "cloud-api",
                         label: t("config.tabs.cloudApi"),
                         children: (
-                            <Form layout="vertical" requiredMark={false}>
-                                <div className="mb-2 text-sm font-semibold">{t("config.cloudApi.title")}</div>
-                                <div className="mb-4 text-xs text-stone-500">{t("config.cloudApi.description")}</div>
-                                <div className="grid gap-4 md:grid-cols-2">
-                                    <Form.Item label={t("config.cloudApi.baseUrl")} className="mb-4">
-                                        <Input value={config.promptCloudBaseUrl || ""} onChange={(event) => updateConfig("promptCloudBaseUrl", event.target.value)} placeholder="https://api.openai.com/v1" />
-                                    </Form.Item>
-                                    <Form.Item label={t("config.cloudApi.model")} className="mb-4">
-                                        <Input value={config.promptCloudModel || ""} onChange={(event) => updateConfig("promptCloudModel", event.target.value)} placeholder="gpt-4o-mini" />
-                                    </Form.Item>
+                            <div>
+                                <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                        <div className="text-sm font-semibold">{t("config.cloudApi.title")}</div>
+                                        <div className="mt-1 text-xs text-stone-500">{t("config.cloudApi.description")}</div>
+                                    </div>
+                                    <Button type="primary" icon={<Plus className="size-4" />} onClick={() => openCloudApiEditor()}>
+                                        {t("config.cloudApi.add")}
+                                    </Button>
                                 </div>
-                                <Form.Item label={t("config.cloudApi.apiKey")} className="mb-4">
-                                    <Input.Password value={config.promptCloudApiKey || ""} onChange={(event) => updateConfig("promptCloudApiKey", event.target.value)} placeholder="sk-..." autoComplete="off" />
-                                </Form.Item>
-                                <div className="text-xs text-stone-500">{t("config.cloudApi.hint")}</div>
-                            </Form>
+                                {cloudApis.length ? (
+                                    <div className="space-y-2">
+                                        {cloudApis.map((api) => {
+                                            const active = api.id === activeCloudApiId;
+                                            return (
+                                                <div
+                                                    key={api.id}
+                                                    className={`flex items-center justify-between gap-3 rounded-lg border px-4 py-3 ${
+                                                        active ? "border-stone-400 dark:border-stone-500" : "border-stone-200 dark:border-stone-800"
+                                                    }`}
+                                                >
+                                                    <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
+                                                        <Radio checked={active} onChange={() => selectPromptCloudApi(api.id)} aria-label={t("config.cloudApi.use")} />
+                                                        <div className="min-w-0">
+                                                            <div className="flex min-w-0 items-center gap-2">
+                                                                <span className="truncate text-sm font-semibold">{api.name || t("config.cloudApi.unnamed")}</span>
+                                                                {active ? (
+                                                                    <span className="shrink-0 rounded-full bg-stone-100 px-2 py-0.5 text-[10px] text-stone-600 dark:bg-stone-800 dark:text-stone-300">
+                                                                        {t("config.cloudApi.active")}
+                                                                    </span>
+                                                                ) : null}
+                                                            </div>
+                                                            <div className="mt-1 truncate text-xs text-stone-500">
+                                                                {api.baseUrl || t("config.channels.missingUrl")} · {api.model || "—"}
+                                                            </div>
+                                                            <div className="mt-0.5 text-xs text-stone-500">{api.apiKey ? t("config.cloudApi.keySaved") : t("config.cloudApi.keyMissing")}</div>
+                                                        </div>
+                                                    </label>
+                                                    <div className="flex shrink-0 gap-2">
+                                                        <Button size="small" icon={<Pencil className="size-3.5" />} onClick={() => openCloudApiEditor(api)}>
+                                                            {t("common.edit")}
+                                                        </Button>
+                                                        <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={() => deleteCloudApi(api)} aria-label={t("common.delete")} />
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <div className="rounded-lg border border-dashed border-stone-300 px-4 py-6 text-center text-xs text-stone-500 dark:border-stone-700">{t("config.cloudApi.empty")}</div>
+                                )}
+                                <div className="mt-3 text-xs text-stone-500">{t("config.cloudApi.hint")}</div>
+                            </div>
                         ),
                     },
                     {
@@ -598,6 +673,32 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                     }}
                 />
                 {skinPasswordError ? <p className="mt-2 text-xs text-red-500">{skinPasswordError}</p> : null}
+            </Modal>
+            <Modal
+                open={cloudApiEditorOpen}
+                centered
+                width={520}
+                title={editingCloudApiId ? t("config.cloudApi.editTitle") : t("config.cloudApi.addTitle")}
+                okText={t("common.save")}
+                cancelText={t("common.cancel")}
+                onOk={() => void saveCloudApi()}
+                onCancel={() => setCloudApiEditorOpen(false)}
+            >
+                <Form form={cloudApiForm} layout="vertical" requiredMark={false}>
+                    <Form.Item label={t("config.cloudApi.name")} name="name" rules={[{ required: true, whitespace: true, message: t("config.cloudApi.nameRequired") }]}>
+                        <Input placeholder={t("config.cloudApi.namePlaceholder")} />
+                    </Form.Item>
+                    <Form.Item label={t("config.cloudApi.baseUrl")} name="baseUrl" rules={[{ required: true, whitespace: true, message: t("config.cloudApi.baseUrlRequired") }]}>
+                        <Input placeholder="https://api.deepseek.com/v1" />
+                    </Form.Item>
+                    <Form.Item label={t("config.cloudApi.model")} name="model" rules={[{ required: true, whitespace: true, message: t("config.cloudApi.modelRequired") }]}>
+                        <Input placeholder="deepseek-chat" />
+                    </Form.Item>
+                    <Form.Item label={t("config.cloudApi.apiKey")} name="apiKey" rules={[{ required: true, whitespace: true, message: t("config.cloudApi.keyRequired") }]}>
+                        <Input.Password placeholder="sk-..." autoComplete="off" />
+                    </Form.Item>
+                </Form>
+                <div className="text-xs text-stone-500">{t("config.cloudApi.hint")}</div>
             </Modal>
         </>
     );

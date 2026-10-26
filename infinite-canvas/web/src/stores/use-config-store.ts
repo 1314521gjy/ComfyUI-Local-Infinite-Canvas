@@ -32,6 +32,14 @@ export type ModelChannel = {
     models: ChannelModel[];
 };
 
+export type PromptCloudApi = {
+    id: string;
+    name: string;
+    baseUrl: string;
+    apiKey: string;
+    model: string;
+};
+
 export type AiConfig = {
     channelMode: "remote" | "local";
     baseUrl: string;
@@ -58,6 +66,8 @@ export type AiConfig = {
     promptCloudBaseUrl?: string;
     promptCloudApiKey?: string;
     promptCloudModel?: string;
+    promptCloudApis?: PromptCloudApi[];
+    promptCloudApiId?: string;
     frameMode?: "first" | "last" | "both";
     imageMode?: string;
     outpaint?: { left: number; top: number; right: number; bottom: number; width: number; height: number };
@@ -141,6 +151,8 @@ const cloudDefaultConfig: AiConfig = {
     promptCloudBaseUrl: "",
     promptCloudApiKey: "",
     promptCloudModel: "",
+    promptCloudApis: [],
+    promptCloudApiId: "",
     systemPrompt: "",
     reasoningEffort: "auto",
     models: ["default::gpt-image-2", "default::grok-imagine-video", "default::gpt-5.5", "default::gpt-4o-mini-tts"],
@@ -200,6 +212,10 @@ type ConfigStore = {
     configTab: ConfigTabKey;
     shouldPromptContinue: boolean;
     updateConfig: <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
+    addPromptCloudApi: (input: Omit<PromptCloudApi, "id">) => string;
+    updatePromptCloudApi: (id: string, patch: Partial<Omit<PromptCloudApi, "id">>) => void;
+    removePromptCloudApi: (id: string) => void;
+    selectPromptCloudApi: (id: string) => void;
     importChannelCredentials: (input: { baseUrl?: string | null; apiKey?: string | null }) => ChannelCredentialsImportResult;
     updateWebdavConfig: <K extends keyof WebdavSyncConfig>(key: K, value: WebdavSyncConfig[K]) => void;
     isAiConfigReady: (config: AiConfig, model: string) => boolean;
@@ -319,6 +335,66 @@ function isAiConfigReady(config: AiConfig, model: string) {
     return Boolean(match && match.channel.baseUrl.trim() && match.channel.apiKey.trim());
 }
 
+export function suggestPromptCloudApiName(baseUrl: string, model: string) {
+    const value = `${baseUrl || ""} ${model || ""}`.toLowerCase();
+    if (value.includes("deepseek")) return "DeepSeek";
+    if (value.includes("siliconflow")) return "SiliconFlow";
+    if (value.includes("dashscope") || value.includes("aliyun")) return "DashScope";
+    if (value.includes("moonshot")) return "Moonshot";
+    if (value.includes("openai")) return "OpenAI";
+    return "云端 API";
+}
+
+export function normalizePromptCloudApis(value: unknown): PromptCloudApi[] {
+    if (!Array.isArray(value)) return [];
+    const seen = new Set<string>();
+    const apis: PromptCloudApi[] = [];
+    for (const item of value) {
+        if (!item || typeof item !== "object") continue;
+        const raw = item as Partial<PromptCloudApi>;
+        const baseUrl = String(raw.baseUrl || "").trim();
+        const apiKey = String(raw.apiKey || "").trim();
+        const model = String(raw.model || "").trim();
+        const explicitName = String(raw.name || "").trim();
+        if (!baseUrl && !apiKey && !model && !explicitName) continue;
+        let id = String(raw.id || "").trim() || nanoid();
+        if (seen.has(id)) id = nanoid();
+        seen.add(id);
+        apis.push({ id, name: explicitName || suggestPromptCloudApiName(baseUrl, model), baseUrl, apiKey, model });
+    }
+    return apis;
+}
+
+function promptCloudMirror(apis: PromptCloudApi[], activeId: string) {
+    const active = apis.find((api) => api.id === activeId) || null;
+    return {
+        promptCloudApis: apis,
+        promptCloudApiId: active?.id || "",
+        promptCloudBaseUrl: active?.baseUrl || "",
+        promptCloudApiKey: active?.apiKey || "",
+        promptCloudModel: active?.model || "",
+    };
+}
+
+export function normalizePromptCloudConfig(config: AiConfig): AiConfig {
+    const apis = normalizePromptCloudApis(config.promptCloudApis);
+    if (!apis.length) {
+        const baseUrl = String(config.promptCloudBaseUrl || "").trim();
+        const apiKey = String(config.promptCloudApiKey || "").trim();
+        const model = String(config.promptCloudModel || "").trim();
+        if (baseUrl || apiKey || model) {
+            apis.push({ id: nanoid(), name: suggestPromptCloudApiName(baseUrl, model), baseUrl, apiKey, model });
+        }
+    }
+    const activeId = apis.some((api) => api.id === config.promptCloudApiId) ? String(config.promptCloudApiId) : apis[0]?.id || "";
+    return { ...config, ...promptCloudMirror(apis, activeId) };
+}
+
+export function activePromptCloudApi(config: AiConfig): PromptCloudApi | null {
+    const apis = config.promptCloudApis || [];
+    return apis.find((api) => api.id === config.promptCloudApiId) || apis[0] || null;
+}
+
 export const useConfigStore = create<ConfigStore>()(
     persist(
         (set, get) => ({
@@ -334,6 +410,50 @@ export const useConfigStore = create<ConfigStore>()(
                         [key]: value,
                     },
                 })),
+            addPromptCloudApi: (input) => {
+                const api: PromptCloudApi = {
+                    id: nanoid(),
+                    name: String(input.name || "").trim() || suggestPromptCloudApiName(input.baseUrl, input.model),
+                    baseUrl: String(input.baseUrl || "").trim(),
+                    apiKey: String(input.apiKey || "").trim(),
+                    model: String(input.model || "").trim(),
+                };
+                set((state) => {
+                    const apis = [...(state.config.promptCloudApis || []), api];
+                    const keepActive = Boolean(state.config.promptCloudApiId && apis.some((item) => item.id === state.config.promptCloudApiId));
+                    return { config: { ...state.config, ...promptCloudMirror(apis, keepActive ? String(state.config.promptCloudApiId) : api.id) } };
+                });
+                return api.id;
+            },
+            updatePromptCloudApi: (id, patch) =>
+                set((state) => {
+                    const apis = (state.config.promptCloudApis || []).map((api) =>
+                        api.id === id
+                            ? {
+                                  ...api,
+                                  ...patch,
+                                  name: String((patch.name ?? api.name) || "").trim() || api.name,
+                                  baseUrl: String((patch.baseUrl ?? api.baseUrl) || "").trim(),
+                                  apiKey: String((patch.apiKey ?? api.apiKey) || "").trim(),
+                                  model: String((patch.model ?? api.model) || "").trim(),
+                              }
+                            : api,
+                    );
+                    const activeId = apis.some((api) => api.id === state.config.promptCloudApiId) ? String(state.config.promptCloudApiId) : apis[0]?.id || "";
+                    return { config: { ...state.config, ...promptCloudMirror(apis, activeId) } };
+                }),
+            removePromptCloudApi: (id) =>
+                set((state) => {
+                    const apis = (state.config.promptCloudApis || []).filter((api) => api.id !== id);
+                    const activeId = apis.some((api) => api.id === state.config.promptCloudApiId) ? String(state.config.promptCloudApiId) : apis[0]?.id || "";
+                    return { config: { ...state.config, ...promptCloudMirror(apis, activeId) } };
+                }),
+            selectPromptCloudApi: (id) =>
+                set((state) => {
+                    const apis = state.config.promptCloudApis || [];
+                    if (!apis.some((api) => api.id === id)) return {};
+                    return { config: { ...state.config, ...promptCloudMirror(apis, id) } };
+                }),
             importChannelCredentials: (input) => {
                 const currentConfig = get().config;
                 const result = upsertChannelCredentials(currentConfig, input);
@@ -395,6 +515,7 @@ export const useConfigStore = create<ConfigStore>()(
                 const pickModel = (current: string, options: string[]) => (options.includes(current) ? current : options[0] || "");
                 const imageModel = LOCAL_ONLY ? pickModel(config.imageModel || config.model, imageOptions) : normalizeModelOptionValue(config.imageModel || config.model, channels);
                 const videoModel = LOCAL_ONLY ? pickModel(config.videoModel, videoOptions) : normalizeModelOptionValue(config.videoModel, channels);
+                const normalizedCloud = normalizePromptCloudConfig(config);
                 return {
                     ...current,
                     webdav: { ...defaultWebdavSyncConfig, ...persistedWebdav },
@@ -422,9 +543,11 @@ export const useConfigStore = create<ConfigStore>()(
                         videoInterpolation: config.videoInterpolation === "2x" || config.videoInterpolation === "3x" ? config.videoInterpolation : "off",
                         videoSelfLiftMode: config.videoSelfLiftMode === "quality" ? "quality" : "fast",
                         promptApiEngine: config.promptApiEngine === "cloud" ? "cloud" : "local",
-                        promptCloudBaseUrl: config.promptCloudBaseUrl || "",
-                        promptCloudApiKey: config.promptCloudApiKey || "",
-                        promptCloudModel: config.promptCloudModel || "",
+                        promptCloudApis: normalizedCloud.promptCloudApis,
+                        promptCloudApiId: normalizedCloud.promptCloudApiId,
+                        promptCloudBaseUrl: normalizedCloud.promptCloudBaseUrl,
+                        promptCloudApiKey: normalizedCloud.promptCloudApiKey,
+                        promptCloudModel: normalizedCloud.promptCloudModel,
                         canvasImageCount: config.canvasImageCount || "3",
                         proxyEnabled: LOCAL_ONLY ? false : Boolean(config.proxyEnabled),
                         proxyUrl: config.proxyUrl || DEFAULT_LOCAL_PROXY_URL,

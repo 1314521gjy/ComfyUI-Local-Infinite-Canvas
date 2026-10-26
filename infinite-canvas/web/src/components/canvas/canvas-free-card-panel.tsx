@@ -4,8 +4,9 @@ import { Archive, ExternalLink, RefreshCw, Settings2, Sparkles, Square, ArrowUp 
 import { useTranslation } from "react-i18next";
 
 import { CanvasNodeReferenceBar } from "@/components/canvas/canvas-node-reference-bar";
+import { PromptOptimizeOptions } from "@/components/canvas/prompt-optimize-options";
 import { ImageSettingsPanel, ImageSettingsTheme, OptionPill } from "@/components/image-settings-panel";
-import { useEffectiveConfig } from "@/stores/use-config-store";
+import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 
 import { useCanvasTheme } from "@/lib/canvas/use-canvas-theme";
 import { getGroupResourceNodes } from "@/lib/canvas/canvas-resource-references";
@@ -80,6 +81,8 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
     const { message } = App.useApp();
     const theme = useCanvasTheme();
     const config = useEffectiveConfig();
+    const updateConfig = useConfigStore((state) => state.updateConfig);
+    const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const info = node.metadata?.freeCard;
     const [sources, setSources] = useState<FreeWorkflowSource[]>([]);
     const [sourcesLoading, setSourcesLoading] = useState(false);
@@ -91,6 +94,9 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
     const [archiving, setArchiving] = useState(false);
     const [optimizing, setOptimizing] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
+    const [optimizeOptionsOpen, setOptimizeOptionsOpen] = useState(false);
+    const optimizeEngine = config.promptApiEngine === "cloud" ? "cloud" : "local";
+    const optimizeCloudReady = Boolean((config.promptCloudBaseUrl || "").trim() && (config.promptCloudApiKey || "").trim() && (config.promptCloudModel || "").trim());
 
     useEffect(() => {
         setPrompt(node.metadata?.prompt || "");
@@ -278,9 +284,25 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
             message.warning(t("canvas.freeCard.needPrompt"));
             return;
         }
+        setOptimizeOptionsOpen(false);
+        const useCloud = optimizeEngine === "cloud";
         setOptimizing(true);
         try {
-            const result = await requestImagePromptOptimize(config, { prompt: text, mode: "image", language: "zh", images: imageReferences });
+            const result = await requestImagePromptOptimize(config, {
+                prompt: text,
+                mode: "image",
+                language: "zh",
+                images: useCloud ? [] : imageReferences,
+                imageCount: imageReferences.length,
+                engine: optimizeEngine,
+                cloud: useCloud
+                    ? {
+                          baseUrl: (config.promptCloudBaseUrl || "").trim(),
+                          apiKey: (config.promptCloudApiKey || "").trim(),
+                          model: (config.promptCloudModel || "").trim(),
+                      }
+                    : undefined,
+            });
             setPrompt(result.prompt);
             onChange({ prompt: result.prompt, composerContent: result.prompt });
         } catch (error) {
@@ -414,7 +436,7 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
                                     <span className="text-xs font-medium" style={{ color: theme.node.muted }}>
                                         {t("canvas.freeCard.prompt")}
                                     </span>
-                                    <Button size="small" type="text" icon={<Sparkles className="size-3.5" />} loading={optimizing} onClick={() => void optimizePrompt()}>
+                                    <Button size="small" type="text" icon={<Sparkles className="size-3.5" />} loading={optimizing} onClick={() => setOptimizeOptionsOpen((open) => !open)}>
                                         {optimizing ? t("canvas.freeCard.optimizing") : t("canvas.freeCard.optimize")}
                                     </Button>
                                 </div>
@@ -426,6 +448,20 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
                                     onChange={(event) => setPrompt(event.target.value)}
                                     onBlur={commitPrompt}
                                 />
+                                {optimizeOptionsOpen ? (
+                                    <PromptOptimizeOptions
+                                        className="mt-2"
+                                        title={t("canvas.promptPanel.optimizeImageTitle")}
+                                        engine={optimizeEngine}
+                                        cloudReady={optimizeCloudReady}
+                                        cloudModel={config.promptCloudModel}
+                                        disabled={optimizing}
+                                        onEngineChange={(engine) => updateConfig("promptApiEngine", engine)}
+                                        onOpenSettings={() => openConfigDialog(true, "cloud-api")}
+                                        onStart={() => void optimizePrompt()}
+                                        onClose={() => setOptimizeOptionsOpen(false)}
+                                    />
+                                ) : null}
                             </div>
                         ) : null}
 

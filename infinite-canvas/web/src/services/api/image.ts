@@ -948,7 +948,7 @@ export type ImagePromptOptimizeResult = { prompt: string; mode: string };
 
 export async function requestImagePromptOptimize(
     config: AiConfig,
-    params: { prompt: string; mode?: "text" | "image"; language?: "zh" | "en"; images?: ReferenceImage[] },
+    params: { prompt: string; mode?: "text" | "image"; language?: "zh" | "en"; images?: ReferenceImage[]; imageCount?: number; engine?: "local" | "cloud"; cloud?: { baseUrl?: string; apiKey?: string; model?: string } },
     options?: RequestOptions,
 ): Promise<ImagePromptOptimizeResult> {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.imageModel);
@@ -958,9 +958,16 @@ export async function requestImagePromptOptimize(
     formData.set("prompt", params.prompt);
     if (params.mode) formData.set("mode", params.mode);
     if (params.language) formData.set("language", params.language);
+    if (params.engine) formData.set("engine", params.engine);
+    if (params.cloud?.baseUrl) formData.set("cloudBaseUrl", params.cloud.baseUrl);
+    if (params.cloud?.apiKey) formData.set("cloudApiKey", params.cloud.apiKey);
+    if (params.cloud?.model) formData.set("cloudModel", params.cloud.model);
     const images = params.images || [];
-    const files = await Promise.all(images.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
-    files.forEach((file, index) => formData.append(index === 0 ? "image" : `image${index + 1}`, file));
+    formData.set("imageCount", String(params.imageCount ?? images.length));
+    if (params.engine !== "cloud") {
+        const files = await Promise.all(images.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
+        files.forEach((file, index) => formData.append(index === 0 ? "image" : `image${index + 1}`, file));
+    }
     try {
         const response = await axios.post<ImagePromptOptimizeResult>(`${root}/v1/prompts/optimize-image`, formData, {
             headers: aiHeaders(requestConfig),

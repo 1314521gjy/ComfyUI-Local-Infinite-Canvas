@@ -18,6 +18,7 @@ import { resolveCanvasReferenceImages } from "@/lib/canvas/canvas-resource-refer
 import { requestImageCaption, requestImagePromptOptimize, requestPromptOptimize, type ImageCaptionEngine, type PromptOptimizeMode } from "@/services/api/image";
 import { videoModelForWorkflow, videoModelModePatch, baseVideoWorkflowId } from "@/lib/canvas/video-model-mode";
 import { CanvasNodeReferenceBar } from "./canvas-node-reference-bar";
+import { PromptOptimizeOptions } from "./prompt-optimize-options";
 import { abortCaptionJob, hasCaptionJob, registerCaptionJob, releaseCaptionJob } from "@/lib/canvas/caption-jobs";
 import { abortPromptOptimizeJob, hasPromptOptimizeJob, registerPromptOptimizeJob, releasePromptOptimizeJob } from "@/lib/canvas/prompt-optimize-jobs";
 
@@ -267,17 +268,28 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
         const text = draft.trim();
         if (!text || optimizeRunning) return;
         commitPrompt(draft);
+        setOptimizeOptionsOpen(false);
         const selectedRefs = imageReferences.slice(0, 8);
+        const useCloud = optimizeEngine === "cloud";
         const controller = new AbortController();
         registerPromptOptimizeJob(node.id, controller);
         onConfigChange(node.id, { promptOptimizeStatus: "running", promptOptimizeKind: "image", promptOptimizePrompt: undefined, promptOptimizeError: undefined });
         try {
-            const images = selectedRefs.length ? await resolveCanvasReferenceImages(selectedRefs, nodes) : [];
+            const images = !useCloud && selectedRefs.length ? await resolveCanvasReferenceImages(selectedRefs, nodes) : [];
             const result = await requestImagePromptOptimize(config, {
                 prompt: text,
-                mode: images.length ? "image" : "text",
+                mode: selectedRefs.length ? "image" : "text",
                 language: "zh",
                 images,
+                imageCount: selectedRefs.length,
+                engine: optimizeEngine,
+                cloud: useCloud
+                    ? {
+                          baseUrl: (config.promptCloudBaseUrl || "").trim(),
+                          apiKey: (config.promptCloudApiKey || "").trim(),
+                          model: (config.promptCloudModel || "").trim(),
+                      }
+                    : undefined,
             }, { signal: controller.signal });
             onConfigChange(node.id, { promptOptimizeStatus: "done", promptOptimizePrompt: result.prompt });
         } catch (error) {
@@ -398,7 +410,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                                 style={{ color: theme.node.text }}
                                 icon={optimizeRunning ? <LoaderCircle className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
                                 disabled={!canOptimizeImage}
-                                onClick={() => void optimizeImagePrompt()}
+                                onClick={() => (optimizeOptionsOpen ? setOptimizeOptionsOpen(false) : openOptimizeOptions())}
                                 aria-label={t("canvas.promptPanel.optimizeImage")}
                             >
                                 {optimizeRunning ? t("canvas.promptPanel.optimizing") : t("canvas.promptPanel.optimizeImage")}
@@ -498,38 +510,18 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                     </span>
                 </Button>
             </div>
-            {isH3 && optimizeOptionsOpen ? (
-                <div className="mt-2 space-y-2 rounded-xl border p-2" style={{ borderColor: theme.toolbar.border, background: theme.toolbar.panel }} onPointerDown={(event) => event.stopPropagation()}>
-                    <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-medium">{t("canvas.promptPanel.optimizeOptions")}</span>
-                        <Button type="text" size="small" className="!h-6 !w-6 !min-w-6 !rounded-full !p-0" icon={<X className="size-3.5" />} onClick={() => setOptimizeOptionsOpen(false)} aria-label={t("canvas.promptPanel.optimizeClose")} />
-                    </div>
-                    <div>
-                        <div className="mb-1 text-[11px] opacity-70">{t("canvas.promptPanel.optimizeEngine")}</div>
-                        <div className="grid grid-cols-2 gap-2">
-                            <Button size="small" type={optimizeEngine === "local" ? "primary" : "default"} onClick={() => updateConfig("promptApiEngine", "local")}>
-                                {t("canvas.promptPanel.optimizeEngineLocal")}
-                            </Button>
-                            <Button size="small" type={optimizeEngine === "cloud" ? "primary" : "default"} onClick={() => updateConfig("promptApiEngine", "cloud")}>
-                                {t("canvas.promptPanel.optimizeEngineCloud")}
-                            </Button>
-                        </div>
-                        {optimizeEngine === "cloud" ? (
-                            <div className="mt-2 flex items-center justify-between gap-2 text-[11px] opacity-70">
-                                <span className="min-w-0 truncate">{optimizeCloudReady ? t("canvas.promptPanel.optimizeCloudReady", { model: config.promptCloudModel || "" }) : t("canvas.promptPanel.optimizeCloudMissing")}</span>
-                                {!optimizeCloudReady ? (
-                                    <Button size="small" className="shrink-0" onClick={() => openConfigDialog(true, "cloud-api")}>
-                                        {t("canvas.promptPanel.optimizeOpenSettings")}
-                                    </Button>
-                                ) : null}
-                            </div>
-                        ) : null}
-                    </div>
-                    <div className="flex justify-end gap-2">
-                        <Button size="small" onClick={() => setOptimizeOptionsOpen(false)}>{t("canvas.promptPanel.optimizeClose")}</Button>
-                        <Button size="small" type="primary" disabled={optimizeEngine === "cloud" && !optimizeCloudReady} onClick={() => void optimizePrompt()}>{t("canvas.promptPanel.optimizeStart")}</Button>
-                    </div>
-                </div>
+            {(isH3 || isImage) && optimizeOptionsOpen ? (
+                <PromptOptimizeOptions
+                    className="mt-2"
+                    title={isImage ? t("canvas.promptPanel.optimizeImageTitle") : undefined}
+                    engine={optimizeEngine}
+                    cloudReady={optimizeCloudReady}
+                    cloudModel={config.promptCloudModel}
+                    onEngineChange={(engine) => updateConfig("promptApiEngine", engine)}
+                    onOpenSettings={() => openConfigDialog(true, "cloud-api")}
+                    onStart={() => (isH3 ? void optimizePrompt() : void optimizeImagePrompt())}
+                    onClose={() => setOptimizeOptionsOpen(false)}
+                />
             ) : null}
             {(() => {
                 const previewRunning = mode === "text" ? captionRunning : optimizeRunning;
