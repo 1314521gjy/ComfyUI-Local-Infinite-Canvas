@@ -2231,6 +2231,275 @@
       "source": {
         "kind": "json"
       }
+    },
+    {
+      "id": "image-qwen21-angle",
+      "name": "image-qwen21-angle",
+      "label": "Qwen Image 2.1 多角度",
+      "type": "image",
+      "description": "Qwen-Image 2.1 Turbo + Qwen Multiangle Camera. Local angle regeneration with 0-360 horizontal, -30-60 vertical and zoom.",
+      "file": "image-qwen21-angle.json",
+      "hidden": true,
+      "bindings": {
+        "prompt": {
+          "node": "21",
+          "input": "prompt",
+          "default": "保持主体、颜色、材质和画面风格一致，只改变相机视角与构图。"
+        },
+        "horizontal": {
+          "node": "20",
+          "input": "horizontal_angle",
+          "from": "params.horizontalAngle",
+          "transform": "int",
+          "default": 0
+        },
+        "vertical": {
+          "node": "20",
+          "input": "vertical_angle",
+          "from": "params.pitchAngle",
+          "transform": "int",
+          "default": 0
+        },
+        "zoom": {
+          "node": "20",
+          "input": "zoom",
+          "from": "params.cameraDistance",
+          "transform": "invert10",
+          "default": 5
+        },
+        "seed": {
+          "node": "7",
+          "input": "noise_seed",
+          "from": "params.seed",
+          "transform": "int",
+          "random": true
+        },
+        "cfg": {
+          "node": "6",
+          "input": "cfg",
+          "from": "params.cfg",
+          "default": 1
+        },
+        "resolution": {
+          "node": "5",
+          "input": "resolution",
+          "from": "params.resolution",
+          "transform": "int",
+          "default": 1024
+        },
+        "refs": {
+          "node": "5",
+          "input": "images",
+          "from": "image",
+          "array": true,
+          "inputPrefix": "images.image_",
+          "indexBase": 1,
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "id": "video-h3-character-swap",
+      "name": "video-h3-character-swap",
+      "type": "video",
+      "file": "h3-character-swap-vdn.json",
+      "description": "MiniMax-H3 Ref2VA + Character Swap 1.5 LoRA on the local VDN 8-step backend. Source video + character image + prompt; SAM 3.1 mask refinement follows separately.",
+      "lora": {
+        "filter": "H3|minimax_h3|TaoMate-H3",
+        "source": "5"
+      },
+      "defaults": {
+        "76.strict_prompt_tags": false
+      },
+      "bindings": {
+        "prompt": {
+          "node": "76",
+          "input": "prompt",
+          "default": "subject_definitions:\n\n<Subject 1> is the adult female replacement character established by <Picture 1>. She has long dark hair, a recognizable feminine face, a fitted dark patterned cropped top with decorative details, loose light-blue denim jeans, and colorful casual footwear. Preserve her facial identity, hairstyle, clothing design, denim silhouette, and body proportions throughout the video. The bright green background of the character reference sheet must not appear in the target video.\n\n<Subject 2> is the original foreground person on the left side of <Video 1>, with short light-brown layered hair, wearing a beige suit jacket, white shirt, and dark red tie. His facial appearance, original clothing, expressions, and foreground position must remain unchanged.\n\n<Video 1> is the source video for direct editing. It depicts a continuous handheld shot on a Japanese residential street, with <Subject 2> close to the camera on the left and a black-haired female dancer in a dark school-style uniform performing in the background on the right.\n\nsummary:\n\n[video editing + reference generation] The target video is an edited version of <Video 1>. Replace only the original female dancer on the right side with <Subject 1> from <Picture 1>. Transfer her full character identity, hairstyle, outfit, and appearance onto the original dancer while preserving the exact choreography, movement timing, body positions, and spatial trajectory. Keep <Subject 2>, the street, the camera framing, and all environmental details unchanged.\n\nretention_analysis:\n\n<Subject 1> (appears in [Shot 1]): fully_preserved - preserve the recognizable face, long dark hair, fitted dark patterned top, loose light-blue jeans, footwear, and characteristic appearance from <Picture 1>.\n\n<Subject 2> (appears in [Shot 1]): fully_preserved - retain the original foreground person's face, light-brown hairstyle, beige suit, white shirt, red tie, expression changes, and camera-relative position.\n\n<Video 1>: partially_preserved - preserve the entire original street scene, continuous shot, camera movement, source choreography, character positions, lighting, and environment. Modify only the visual identity and clothing of the right-side dancer.\n\ndetailed_description:\n\nThe target video is a realistic outdoor street-dance recording, retaining the natural daylight, ordinary Japanese residential surroundings, handheld camera perspective, and original two-person composition from <Video 1>. The replacement dancer must remain consistently integrated into the original footage.\n\n[Shot 1] Preserve the original continuous camera shot without introducing additional cuts.\n\nThe foreground person on the left, <Subject 2>, remains completely unchanged. He faces the camera at close range, maintains his original calm facial expression, performs his subtle head movements, and gradually smiles according to the precise timing of <Video 1>.\n\nHis beige suit jacket, red tie, white shirt, light-brown hairstyle, facial features, and body position remain visually consistent.\n\nOn the right side of the frame, replace only the original black-haired woman wearing a black school uniform with <Subject 1>, whose visual identity and outfit are established by <Picture 1>.\n\nThe replacement character begins at the original dancer's background position. Her dark patterned cropped top, loose blue denim jeans, long dark hair, and casual footwear remain visually consistent while her body moves.\n\nShe reproduces the original dancer's performance: rhythmic arm swings, alternating footsteps, coordinated shoulder movements, playful side steps, short turns, hand gestures, and shifts in body weight.\n\nEvery movement follows the original choreography and timing of <Video 1>. Her hands, elbows, hips, knees, and feet move in a physically coherent sequence.\n\nThe loose denim fabric responds naturally to her dance movements. Her hair sways realistically when she turns or steps.\n\nMaintain the dancer's original distance from the camera, relative height, on-screen position, and movement trajectory. She must not suddenly become the foreground subject or exchange positions with <Subject 2>.\n\nThe original foreground person must never acquire the replacement dancer's hairstyle, facial identity, outfit, or body movements.\n\nKeep the road markings, houses, utility poles, parked cars, crosswalk, shadows, daylight, and background perspective unchanged.\n\nDo not introduce new dancers, duplicate bodies, create extra limbs, modify the original choreography, show the green reference-sheet background, or add unrelated cinematic effects.\n\nThe sequence ends with the same spatial arrangement, original dance rhythm, and camera movement as the corresponding end of the selected source clip.\n\noverall_soundscape:\n\nPreserve the original outdoor ambience and the rhythmic movement sounds of the dance performance. Footsteps and subtle fabric movement follow the source choreography. Do not introduce new dialogue or unnecessary sound effects.\n\nnon_diegetic_music:\n\nNo newly composed soundtrack. Preserve the original dance rhythm and musical timing where the source audio is available. Exact preservation of the original music requires retaining or remuxing the original audio signal in the workflow."
+        },
+        "width": {
+          "node": "76",
+          "input": "width",
+          "from": "size.width",
+          "transform": "snap32",
+          "default": 1344
+        },
+        "height": {
+          "node": "76",
+          "input": "height",
+          "from": "size.height",
+          "transform": "snap32",
+          "default": 768
+        },
+        "length": {
+          "node": "76",
+          "input": "length",
+          "from": "seconds",
+          "transform": "secondsToFrames17",
+          "fps": 24,
+          "default": 124
+        },
+        "seed": {
+          "node": "78",
+          "input": "seed",
+          "from": "params.seed",
+          "transform": "int",
+          "random": true
+        },
+        "steps": {
+          "node": "74",
+          "input": "steps",
+          "from": "params.steps",
+          "transform": "int",
+          "default": 8
+        },
+        "cfg": {
+          "node": "78",
+          "input": "cfg",
+          "from": "params.cfg",
+          "default": 1
+        },
+        "transition_step": {
+          "node": "78",
+          "input": "transition_step",
+          "from": "params.transition_step",
+          "transform": "int",
+          "default": 6
+        },
+        "lowres_scale": {
+          "node": "78",
+          "input": "lowres_scale",
+          "from": "params.lowres_scale",
+          "default": 0.6
+        },
+        "rho": {
+          "node": "78",
+          "input": "rho",
+          "from": "params.rho",
+          "default": 0
+        },
+        "w_min": {
+          "node": "78",
+          "input": "w_min",
+          "from": "params.w_min",
+          "default": 0.3
+        },
+        "w_max": {
+          "node": "78",
+          "input": "w_max",
+          "from": "params.w_max",
+          "default": 1
+        },
+        "refs": {
+          "node": "76",
+          "input": "ref_images",
+          "from": "image",
+          "array": true,
+          "inputPrefix": "ref_images.ref_image_",
+          "min": 0,
+          "max": 6
+        },
+        "videos": {
+          "node": "76",
+          "input": "ref_videos",
+          "from": "video",
+          "array": true,
+          "inputPrefix": "ref_videos.ref_video_",
+          "audioPrefix": "ref_video_audios.ref_video_audio_",
+          "min": 0,
+          "max": 1,
+          "loadType": "video"
+        },
+        "audios": {
+          "node": "76",
+          "input": "ref_audios",
+          "from": "audio",
+          "array": true,
+          "inputPrefix": "ref_audios.ref_audio_",
+          "min": 0,
+          "max": 2,
+          "loadType": "audio"
+        }
+      },
+      "parameters": [
+        {
+          "key": "seed",
+          "label": "种子",
+          "type": "number",
+          "min": 1,
+          "max": 2147483647,
+          "step": 1,
+          "description": "留空则每次随机"
+        },
+        {
+          "key": "steps",
+          "label": "步数",
+          "type": "number",
+          "min": 1,
+          "max": 30,
+          "step": 1,
+          "default": 8
+        },
+        {
+          "key": "cfg",
+          "label": "CFG",
+          "type": "number",
+          "min": 1,
+          "max": 10,
+          "step": 0.1,
+          "default": 1
+        },
+        {
+          "key": "transition_step",
+          "label": "SelfLift 切换步",
+          "type": "number",
+          "min": 1,
+          "max": 7,
+          "step": 1,
+          "default": 6,
+          "description": "8 步时最大 7"
+        },
+        {
+          "key": "lowres_scale",
+          "label": "SelfLift 低清比例",
+          "type": "number",
+          "min": 0.25,
+          "max": 1,
+          "step": 0.05,
+          "default": 0.6
+        },
+        {
+          "key": "rho",
+          "label": "SelfLift 锚点校正",
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "step": 0.05,
+          "default": 0
+        },
+        {
+          "key": "w_min",
+          "label": "SelfLift w_min",
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "step": 0.05,
+          "default": 0.3
+        },
+        {
+          "key": "w_max",
+          "label": "SelfLift w_max",
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "step": 0.05,
+          "default": 1
+        }
+      ],
+      "label": "H3 角色替换（Character Swap 1.5）",
+      "minMedia": 1,
+      "hidden": false
     }
   ]
 }

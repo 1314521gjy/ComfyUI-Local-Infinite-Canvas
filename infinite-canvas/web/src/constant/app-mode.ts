@@ -14,6 +14,7 @@ export const LOCAL_GATEWAY_MODELS = [
     { name: "video-h3-t2v", capability: "video" as const },
     { name: "video-h3-frames", capability: "video" as const },
     { name: "video-h3-ref2va", capability: "video" as const },
+    { name: "video-h3-character-swap", capability: "video" as const },
     { name: "video-h3-t2v-novdn", capability: "video" as const },
     { name: "video-h3-frames-novdn", capability: "video" as const },
     { name: "video-h3-ref2va-novdn", capability: "video" as const },

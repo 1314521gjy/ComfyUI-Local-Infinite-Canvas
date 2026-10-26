@@ -345,6 +345,10 @@ export function suggestPromptCloudApiName(baseUrl: string, model: string) {
     return "云端 API";
 }
 
+function normalizePromptCloudModel(baseUrl: string, model: string) {
+    return /deepseek/i.test(baseUrl) && model === "deepseek-chat" ? "deepseek-flash" : model;
+}
+
 export function normalizePromptCloudApis(value: unknown): PromptCloudApi[] {
     if (!Array.isArray(value)) return [];
     const seen = new Set<string>();
@@ -354,7 +358,7 @@ export function normalizePromptCloudApis(value: unknown): PromptCloudApi[] {
         const raw = item as Partial<PromptCloudApi>;
         const baseUrl = String(raw.baseUrl || "").trim();
         const apiKey = String(raw.apiKey || "").trim();
-        const model = String(raw.model || "").trim();
+        const model = normalizePromptCloudModel(baseUrl, String(raw.model || "").trim());
         const explicitName = String(raw.name || "").trim();
         if (!baseUrl && !apiKey && !model && !explicitName) continue;
         let id = String(raw.id || "").trim() || nanoid();
@@ -381,7 +385,7 @@ export function normalizePromptCloudConfig(config: AiConfig): AiConfig {
     if (!apis.length) {
         const baseUrl = String(config.promptCloudBaseUrl || "").trim();
         const apiKey = String(config.promptCloudApiKey || "").trim();
-        const model = String(config.promptCloudModel || "").trim();
+        const model = normalizePromptCloudModel(baseUrl, String(config.promptCloudModel || "").trim());
         if (baseUrl || apiKey || model) {
             apis.push({ id: nanoid(), name: suggestPromptCloudApiName(baseUrl, model), baseUrl, apiKey, model });
         }

@@ -26,6 +26,7 @@ export function videoModelForWorkflow(config: AiConfig, workflowId: string, opti
 export function videoModelModePatch(config: AiConfig, model: string): Partial<NonNullable<CanvasNodeData["metadata"]>> {
     const workflowId = baseVideoWorkflowId(videoWorkflowId(config, model));
     if (workflowId === "video-h3-ref2va") return { model, videoMode: "reference" };
+    if (workflowId === "video-h3-character-swap") return { model, videoMode: "reference" };
     if (workflowId === "video-h3-frames") return { model, videoMode: "frames" };
     if (workflowId === "video-h3-t2v") return { model, videoMode: "text" };
     return { model };

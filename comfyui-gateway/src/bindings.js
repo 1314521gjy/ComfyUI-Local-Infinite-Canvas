@@ -69,6 +69,8 @@ function applyTransform(value, binding) {
       return Math.round(Number(value));
     case "int":
       return Math.trunc(Number(value));
+    case "invert10":
+      return 10 - Number(value);
     case "boolean":
       return Boolean(value);
     default:

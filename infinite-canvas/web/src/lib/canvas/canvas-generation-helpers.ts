@@ -204,7 +204,9 @@ export function isAudioFile(file: File) {
 }
 
 export function buildAngleLabel(params: CanvasImageAngleParams) {
-    const horizontal = params.horizontalAngle === 0 ? i18n.t("canvas.generation.front") : params.horizontalAngle > 0 ? i18n.t("canvas.generation.rotateRight", { angle: params.horizontalAngle }) : i18n.t("canvas.generation.rotateLeft", { angle: Math.abs(params.horizontalAngle) });
+    const raw = ((params.horizontalAngle % 360) + 360) % 360;
+    const signed = raw > 180 ? raw - 360 : raw;
+    const horizontal = signed === 0 ? i18n.t("canvas.generation.front") : signed > 0 ? i18n.t("canvas.generation.rotateRight", { angle: Math.round(signed) }) : i18n.t("canvas.generation.rotateLeft", { angle: Math.abs(Math.round(signed)) });
     const pitch = params.pitchAngle === 0 ? i18n.t("canvas.generation.level") : params.pitchAngle > 0 ? i18n.t("canvas.generation.topDown", { angle: params.pitchAngle }) : i18n.t("canvas.generation.lowAngle", { angle: Math.abs(params.pitchAngle) });
     return i18n.t("canvas.generation.angleLabel", { horizontal, pitch, distance: params.cameraDistance.toFixed(1), lens: i18n.t(params.wideAngle ? "canvas.editors.wide" : "canvas.editors.standard") });
 }

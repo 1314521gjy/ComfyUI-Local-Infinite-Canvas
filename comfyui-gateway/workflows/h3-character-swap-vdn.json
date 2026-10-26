@@ -1,0 +1,315 @@
+{
+  "2": {
+    "inputs": {
+      "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "H3 audio VAE",
+      "cnr_id": "comfy-core"
+    }
+  },
+  "3": {
+    "inputs": {
+      "clip_name": "qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
+      "type": "minimax",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "H3 CLIP",
+      "cnr_id": "comfy-core"
+    }
+  },
+  "4": {
+    "inputs": {
+      "unet_name": "Minimax-h3_Singularity_ref2va_Pruned_v1.3_int8.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "H3 FL2VA",
+      "cnr_id": "comfy-core"
+    }
+  },
+  "27": {
+    "class_type": "MiniMaxChunkFeedForward",
+    "inputs": {
+      "model": [
+        "71",
+        0
+      ],
+      "chunks": 2,
+      "seq_threshold": 4096
+    }
+  },
+  "32": {
+    "class_type": "ApplyVDNH3Advanced",
+    "inputs": {
+      "model": [
+        "110",
+        0
+      ],
+      "vdn_checkpoint": "stage-dmd-step-250",
+      "apply_turbo_adapter": true,
+      "stage_b_strength": 1,
+      "turbo_strength": 1,
+      "lora_mode": "merge",
+      "branch_weights": "auto",
+      "retain_buffers": "auto",
+      "verbose": false,
+      "attention_backend": "grouped",
+      "window_radius": 1,
+      "window_chunk": 5,
+      "anchor_frames": "both",
+      "text_state": true,
+      "linear_branch": true,
+      "fast_kernels": false
+    }
+  },
+  "71": {
+    "class_type": "MiniMaxH3MemoryEfficientSageAttentionPatch",
+    "inputs": {
+      "model": [
+        "32",
+        0
+      ]
+    }
+  },
+  "72": {
+    "inputs": {
+      "decoder": "minimax_h3_vae_decoder.engine",
+      "encoder": "minimax_h3_vae_encoder.engine"
+    },
+    "class_type": "MiniMaxH3TRTVAELoader",
+    "_meta": {
+      "title": "⑧ 视频VAE·TRT（勿动）",
+      "cnr_id": "comfyui-h3vae_trt",
+      "ver": "0.1.0"
+    }
+  },
+  "74": {
+    "class_type": "BasicScheduler",
+    "inputs": {
+      "model": [
+        "111",
+        0
+      ],
+      "scheduler": "simple",
+      "steps": 8,
+      "denoise": 1
+    }
+  },
+  "75": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "①d 采样算法 euler",
+      "cnr_id": "comfy-core",
+      "ver": "0.33.0"
+    }
+  },
+  "76": {
+    "inputs": {
+      "prompt": "h3 drama test prompt",
+      "width": 1344,
+      "height": 768,
+      "length": 124,
+      "task_type": "Ref2VA",
+      "audio_mode": "native",
+      "audio_denoise_strength": 1,
+      "add_source_as_reference": false,
+      "prompt_primary_audio_ordinal": 0,
+      "strict_prompt_tags": true,
+      "ref_image_size": "match",
+      "reference_video_policy": "official_2_to_15s",
+      "allow_above_reference_area": false,
+      "clip": [
+        "3",
+        0
+      ],
+      "video_vae": [
+        "72",
+        0
+      ],
+      "audio_vae": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "MiniMaxH3AudioConditioningT8",
+    "_meta": {
+      "title": "①a 条件（尺寸=1344×768 可改）",
+      "cnr_id": "minimax-h3-audio-T8"
+    }
+  },
+  "77": {
+    "inputs": {
+      "conditioning": [
+        "76",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "①e 负向条件",
+      "cnr_id": "comfy-core",
+      "ver": "0.34.0"
+    }
+  },
+  "78": {
+    "inputs": {
+      "seed": 666,
+      "cfg": 1,
+      "transition_step": 6,
+      "lowres_scale": 0.6,
+      "rho": 0,
+      "w_min": 0.3,
+      "w_max": 1,
+      "upscaler_model": "minimax_h3_latent_upscaler_3d_fp16.safetensors",
+      "model": [
+        "111",
+        0
+      ],
+      "positive": [
+        "76",
+        0
+      ],
+      "negative": [
+        "77",
+        0
+      ],
+      "vae": [
+        "72",
+        0
+      ],
+      "latent_image": [
+        "76",
+        1
+      ],
+      "sampler": [
+        "75",
+        0
+      ],
+      "sigmas": [
+        "112",
+        0
+      ],
+      "upscaler_unload": true,
+      "highres_tiling": false
+    },
+    "class_type": "SelfLiftH3Sampler",
+    "_meta": {
+      "title": "① 单采 SelfLift（日常版参数）"
+    }
+  },
+  "79": {
+    "inputs": {
+      "av_latent": [
+        "78",
+        0
+      ],
+      "video_vae": [
+        "72",
+        0
+      ],
+      "audio_vae": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "MiniMaxH3AVDecodeT8",
+    "_meta": {
+      "title": "①f AV 解码",
+      "cnr_id": "minimax-h3-audio-T8"
+    }
+  },
+  "80": {
+    "inputs": {
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "MiniMaxH3/learned_latent_twopass_i2va_upstream_parity_v2_exp",
+      "format": "video/h265-mp4",
+      "pix_fmt": "yuv420p10le",
+      "crf": 22,
+      "save_metadata": true,
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "79",
+        0
+      ],
+      "audio": [
+        "79",
+        1
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "★ 输出·单采版",
+      "cnr_id": "comfy-core"
+    }
+  },
+  "110": {
+    "inputs": {
+      "processing_control_value": 0.08,
+      "processing_percent_1": 0.1,
+      "processing_percent_2": 0.9,
+      "mcs": 2,
+      "device": "auto",
+      "mode": "standard",
+      "model": [
+        "120",
+        0
+      ]
+    },
+    "class_type": "TESpeedMiniMaxH3",
+    "_meta": {
+      "title": "TE-Speed-MiniMaxH3"
+    }
+  },
+  "111": {
+    "class_type": "ModelPreviewOverrideKJ",
+    "inputs": {
+      "model": [
+        "27",
+        0
+      ],
+      "max_resolution": 1024,
+      "jpeg_quality": 80,
+      "suppress_default_preview": true,
+      "preview_frames": 8,
+      "preview_fps": 12,
+      "tiny_vae": "taeh3.safetensors"
+    }
+  },
+  "112": {
+    "class_type": "H3SigmaRefiner",
+    "inputs": {
+      "sigmas": [
+        "74",
+        0
+      ],
+      "extra_steps": 1,
+      "start_at_sigma": 0.7,
+      "end_at_sigma": 0,
+      "spacing": "cosine"
+    }
+  },
+  "120": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "model": [
+        "4",
+        0
+      ],
+      "lora_name": "h3_character_swap_v1.5.safetensors",
+      "strength_model": 1
+    },
+    "_meta": {
+      "title": "Character Swap 1.5"
+    }
+  }
+}

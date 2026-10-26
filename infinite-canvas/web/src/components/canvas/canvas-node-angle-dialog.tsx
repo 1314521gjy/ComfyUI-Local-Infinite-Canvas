@@ -47,8 +47,8 @@ export function CanvasNodeAngleDialog({ dataUrl, open, onClose, onConfirm }: { d
                         </Button>
                     </div>
                     <div className="space-y-6 py-2">
-                        <AngleSlider label={t("canvas.editors.horizontal")} value={params.horizontalAngle} min={-60} max={60} step={1} suffix="deg" onChange={(value) => update("horizontalAngle", value)} />
-                        <AngleSlider label={t("canvas.editors.pitch")} value={params.pitchAngle} min={-45} max={45} step={1} suffix="deg" onChange={(value) => update("pitchAngle", value)} />
+                        <AngleSlider label={t("canvas.editors.horizontal")} value={params.horizontalAngle} min={0} max={360} step={1} suffix="deg" onChange={(value) => update("horizontalAngle", value)} />
+                        <AngleSlider label={t("canvas.editors.pitch")} value={params.pitchAngle} min={-30} max={60} step={1} suffix="deg" onChange={(value) => update("pitchAngle", value)} />
                         <AngleSlider label={t("canvas.editors.distance")} value={params.cameraDistance} min={1} max={10} step={0.1} onChange={(value) => update("cameraDistance", value)} />
                         <div className="grid grid-cols-[88px_1fr_72px] items-center gap-4">
                             <span className="font-medium opacity-75">{t("canvas.editors.lens")}</span>
@@ -89,5 +89,5 @@ function AngleSlider({ label, value, min, max, step, suffix = "", onChange }: { 
 
 function previewTransform(params: CanvasImageAngleParams) {
     const scale = 1.08 - params.cameraDistance * 0.035 + (params.wideAngle ? -0.08 : 0);
-    return `perspective(520px) rotateY(${params.horizontalAngle * -0.45}deg) rotateX(${params.pitchAngle * 0.35}deg) scale(${Math.max(0.72, Math.min(1.08, scale))})`;
+    return `perspective(520px) rotateY(${params.horizontalAngle * -1}deg) rotateX(${params.pitchAngle}deg) scale(${Math.max(0.72, Math.min(1.08, scale))})`;
 }

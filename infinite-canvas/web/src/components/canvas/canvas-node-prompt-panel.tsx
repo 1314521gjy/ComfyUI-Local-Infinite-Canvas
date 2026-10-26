@@ -75,7 +75,8 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     const workflowId = baseVideoWorkflowId(rawWorkflowId);
     const isNoVdnModel = rawWorkflowId !== workflowId;
     const isH3T2V = mode === "video" && workflowId === "video-h3-t2v";
-    const isH3 = mode === "video" && (workflowId === "video-h3-t2v" || workflowId === "video-h3-frames" || workflowId === "video-h3-ref2va");
+    const isH3Reference = workflowId === "video-h3-ref2va" || workflowId === "video-h3-character-swap";
+    const isH3 = mode === "video" && (workflowId === "video-h3-t2v" || workflowId === "video-h3-frames" || isH3Reference);
     const isImage = mode === "image";
     const optimizeStatus = node.metadata?.promptOptimizeStatus;
     const optimizeRunning = optimizeStatus === "running";
@@ -198,7 +199,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
 
     const optimizeDefaults = () => {
         const selectedRefs =
-            workflowId === "video-h3-ref2va"
+            workflowId === "video-h3-ref2va" || workflowId === "video-h3-character-swap"
                 ? imageReferences.slice(0, 6)
                 : workflowId === "video-h3-t2v"
                   ? []
@@ -206,11 +207,11 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
         const videoCount = Math.min(1, mentionReferences.filter((reference) => reference.kind === "video").length);
         const audioCount = Math.min(2, mentionReferences.filter((reference) => reference.kind === "audio").length);
         const referenceNote =
-            workflowId === "video-h3-ref2va"
+            isH3Reference
                 ? [`参考图片 ${selectedRefs.length} 张`, videoCount ? `参考视频 ${videoCount} 段` : "", audioCount ? `参考音频 ${audioCount} 段` : ""].filter(Boolean).join("；")
                 : "";
         const taskType: PromptOptimizeMode =
-            workflowId === "video-h3-ref2va"
+            isH3Reference
                 ? "全参考模式(Reference to Video)"
                 : workflowId === "video-h3-t2v"
                   ? "文生视频(T2VA)"

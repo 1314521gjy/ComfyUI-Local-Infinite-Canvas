@@ -324,7 +324,7 @@ export default {
         reverseComposer: "参考图片：@[node:{{imageId}}]\n任务说明：@[node:{{textId}}]",
         editors: {
             reset: "重置", zoomOut: "缩小", zoomIn: "放大", loading: "读取中", unknown: "未知", cancel: "取消",
-            angleTitle: "AI 多角度", angleDescription: "左侧只预览方向，结果会基于原图重新生成", horizontal: "左右角度", pitch: "俯仰角度", distance: "镜头距离", lens: "广角镜头", standard: "标准", wide: "广角", aiGenerate: "AI 生成",
+            angleTitle: "AI 多角度", angleDescription: "左侧预览机位方向；结果由本地 Qwen Image 2.1 多角度工作流重新生成", horizontal: "水平角度", pitch: "俯仰角度", distance: "镜头距离", lens: "广角镜头", standard: "标准", wide: "广角", aiGenerate: "AI 生成",
             upscaleTitle: "图片放大", source: "源图", targetPixels: "目标像素", maxReached: "图片已达到 4K，无需放大", targetReached: "图片已达到当前目标像素，无需放大", algorithm: "放大算法", outputSize: "输出尺寸", upscale: "生成放大图", high: "高清插值", highDescription: "适合照片和细节图", bilinear: "双线性", bilinearDescription: "平滑、速度快", nearest: "最近邻", nearestDescription: "适合像素风格",
             cropTitle: "裁剪图片", adjustCrop: "调整裁剪框", cropHint: "滚轮缩放 · 中键或空格+左键拖动画面", cropSize: "裁剪尺寸 {{size}}", ratio: "比例 {{ratio}}", original: "原图 {{width}} x {{height}}", confirmCrop: "确认裁剪", free: "自由", fixed: "固定", originalMode: "原图",
             maskTitle: "局部遮罩编辑", maskHint: "滚轮缩放 · 中键或空格+左键拖动画面 · Alt+左/右键横拖调笔刷 · Ctrl/Cmd+Z 撤回 · Ctrl/Cmd+Shift+Z 重做", brush: "画笔", erase: "擦除", undoMaskTitle: "撤回局部涂抹 (Ctrl/Cmd+Z)", undoMask: "撤回局部涂抹", redoMaskTitle: "重做局部涂抹 (Ctrl/Cmd+Shift+Z)", redoMask: "重做局部涂抹", brushSize: "笔刷大小", editInstructions: "修改要求", maskPlaceholder: "例如：把选中区域改成金属材质，保持原图光影", maskPromptRequired: "请输入修改要求", maskRequired: "请先涂抹局部区域", maskExport: "导出到画布", maskGenerate: "立刻生成",

@@ -45,7 +45,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
     const seconds = Number(clampVideoSeconds(config.videoSeconds || "6"));
     const videoMode = normalizeVideoModeValue(config.videoMode);
     const workflowId = baseVideoWorkflowId(videoWorkflowId(config, config.model));
-    const isH3Reference = workflowId === "video-h3-ref2va";
+    const isH3Reference = workflowId === "video-h3-ref2va" || workflowId === "video-h3-character-swap";
     const isH3Frames = workflowId === "video-h3-frames";
     const isH3Text = workflowId === "video-h3-t2v";
     const isH3 = isH3Reference || isH3Frames || isH3Text;

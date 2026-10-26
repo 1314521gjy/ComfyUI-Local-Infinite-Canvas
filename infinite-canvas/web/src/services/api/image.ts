@@ -1,6 +1,7 @@
 import axios from "axios";
 
 import i18n from "@/i18n";
+import { LOCAL_GATEWAY_BASE_URL } from "@/constant/app-mode";
 import { buildApiUrl, channelModelOf, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
 import { normalizePluginImages, runModelPlugin } from "./model-plugin";
 import { nanoid } from "nanoid";
@@ -908,6 +909,50 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
 }
 
 export type PromptOptimizeMode = "全参考模式(Reference to Video)" | "文生视频(T2VA)" | "首帧图生视频(I2VA)" | "首尾帧视频(FL2VA)" | "尾帧图生视频(L2VA)";
+
+export type ImageAngleParams = {
+    horizontalAngle: number;
+    pitchAngle: number;
+    cameraDistance: number;
+    wideAngle: boolean;
+};
+
+export async function requestImageAngle(
+    config: AiConfig,
+    prompt: string,
+    params: ImageAngleParams,
+    references: ReferenceImage[],
+    options?: RequestOptions,
+): Promise<Array<{ id: string; dataUrl: string }>> {
+    const baseConfig = resolveModelRequestConfig(config, config.imageModel || config.model);
+    const requestConfig = { ...baseConfig, baseUrl: LOCAL_GATEWAY_BASE_URL, apiKey: "local", apiFormat: "openai" as const, model: "image-qwen21-angle" };
+    const formData = new FormData();
+    formData.set("model", "image-qwen21-angle");
+    formData.set("prompt", prompt);
+    formData.set("n", "1");
+    formData.set("response_format", "b64_json");
+    formData.set("output_format", IMAGE_OUTPUT_FORMAT);
+    formData.set("params", JSON.stringify(params));
+    const files = await Promise.all(references.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
+    files.forEach((file) => formData.append(files.length > 1 ? "image[]" : "image", file));
+
+    const requestId = `img_${nanoid()}`;
+    const detachCancel = attachLocalCancel(requestConfig, requestId, options?.signal);
+    const detachProgress = attachLocalProgress(requestConfig, requestId, options?.signal);
+    try {
+        const response = await axios.post<ImageApiResponse>(aiApiUrl(requestConfig, "/images/edits"), formData, {
+            headers: { ...aiHeaders(requestConfig), ...(detachCancel ? { "X-Request-Id": requestId } : {}) },
+            signal: options?.signal,
+            timeout: IMAGE_REQUEST_TIMEOUT_MS,
+        });
+        return await parseImagePayload(response.data);
+    } catch (error) {
+        throw new Error(readAxiosError(error, apiText("requestFailed")));
+    } finally {
+        detachCancel?.();
+        detachProgress?.();
+    }
+}
 
 export type PromptOptimizeResult = { prompt: string; mode: string; duration: number };
 
