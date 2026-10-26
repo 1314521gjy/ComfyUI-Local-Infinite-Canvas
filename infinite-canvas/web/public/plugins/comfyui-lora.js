@@ -174,7 +174,6 @@ export default function (runtime) {
                 type: NODE_TYPE,
                 title: "LoRA",
                 icon: h("span", { style: { fontSize: 11, fontWeight: 700 } }, "LoRA"),
-                description: "只负责 LoRA 名称与强度，作为上游资源注入生成节点。",
                 defaultSize: { width: 260, height: 120 },
                 defaultMetadata: { params: { loras: [] } },
                 showInCreateMenu: true,

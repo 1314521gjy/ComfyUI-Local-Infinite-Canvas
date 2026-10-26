@@ -343,10 +343,10 @@ export default function (runtime) {
                 type: NODE_TYPE,
                 title: "ComfyUI 参数",
                 icon: h("span", { style: { fontSize: 14, fontWeight: 700 } }, "参"),
-                description: "选择本地工作流，按 schema 编辑参数并生成图片或视频。",
+                // 与自由卡片重复的 raw schema 编辑器；保留运行时以兼容已有节点，但不进入新建菜单。
+                showInCreateMenu: false,
                 defaultSize: { width: 340, height: 260 },
                 defaultMetadata: { model: "", prompt: "" },
-                showInCreateMenu: true,
                 autoOpenPanel: true,
                 Content,
                 Panel,
