@@ -611,3 +611,10 @@
     border-radius: 0.6rem;
     font-size: 0.75rem;
 }
+
+[data-card-skin="cream"] .ant-btn:disabled,
+[data-card-skin="cream"] .ant-btn.ant-btn-disabled {
+    color: #7a7a7a !important;
+    background: rgba(120, 96, 60, 0.06) !important;
+    border-color: #ddcfb9 !important;
+}
