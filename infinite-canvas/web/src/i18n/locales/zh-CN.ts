@@ -220,6 +220,7 @@ export default {
         defaultTitle: "无限画布 {{count}}",
         library: "画布库",
         title: "无限画布",
+        fishWhip: { bubble: "别吃白饭快干活！" },
         imported: "已导入 {{count}} 个画布",
         importFailed: "导入失败，请选择有效的画布压缩包",
         opening: "正在打开画布...",

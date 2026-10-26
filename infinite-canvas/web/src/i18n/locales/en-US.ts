@@ -220,6 +220,7 @@ export default {
         defaultTitle: "Infinite Canvas {{count}}",
         library: "Canvas library",
         title: "Infinite Canvas",
+        fishWhip: { bubble: "Stop freeloading and get to work!" },
         imported: "Imported {{count}} canvases",
         importFailed: "Import failed. Select a valid canvas package.",
         opening: "Opening canvas...",

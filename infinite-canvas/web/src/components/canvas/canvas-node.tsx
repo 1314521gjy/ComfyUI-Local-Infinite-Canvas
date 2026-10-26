@@ -147,6 +147,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     const hasVideoContent = data.type === CanvasNodeType.Video && Boolean(data.metadata?.content);
     const hasAudioContent = data.type === CanvasNodeType.Audio && Boolean(data.metadata?.content);
     const isGroup = data.type === CanvasNodeType.Group;
+    const isGenerating = !isGroup && !referenceSelectionState && (data.metadata?.status === "loading" || Boolean(data.metadata?.stepProgress && data.metadata.stepProgress.total > 0 && !data.metadata.stepProgress.complete));
     const batchCount = data.type === CanvasNodeType.Image ? data.metadata?.images?.length || 0 : data.type === CanvasNodeType.Text ? data.metadata?.texts?.length || 0 : 0;
     const isBatchRoot = batchCount > 1;
     // Nodes with the interaction/move toggle ignore content pointer events in move mode and allow interaction in interactive mode.
@@ -505,6 +506,23 @@ export const CanvasNode = React.memo(function CanvasNode({
                 {!referenceSelectionState ? <ResizeHandle corner="bottom-left" onMouseDown={handleResizeMouseDown} /> : null}
                 {!referenceSelectionState ? <ResizeHandle corner="bottom-right" onMouseDown={handleResizeMouseDown} /> : null}
             </div>
+
+            {fishSkin && isGenerating ? (
+                <div className="pointer-events-none absolute z-[66] select-none" style={{ left: -10, bottom: "calc(100% + 6px)", width: 120, height: 128 }} aria-hidden="true" data-fish-whip>
+                    <div
+                        className="whale-whip-bubble absolute bottom-[112px] right-0 w-max max-w-[170px] rounded-2xl border px-2.5 py-1.5 text-[11px] font-semibold leading-none shadow-lg"
+                        style={{ background: "rgba(7,21,33,.94)", borderColor: "rgba(120,210,255,.35)", color: "#eaf7ff" }}
+                    >
+                        {t("canvas.fishWhip.bubble")}
+                        <span className="absolute -bottom-1 right-4 size-2 rotate-45 border-b border-r" style={{ background: "rgba(7,21,33,.94)", borderColor: "rgba(120,210,255,.35)" }} />
+                    </div>
+                    <img src="/skins/whale-whip.png" alt="" draggable={false} className="whale-whip-mascot absolute bottom-0 right-0 h-[112px] w-auto select-none drop-shadow-[0_8px_16px_rgba(0,8,20,.55)]" />
+                    <svg className="whale-whip-lash absolute right-[-20px] top-[58px] h-6 w-11 overflow-visible" viewBox="0 0 44 24" fill="none">
+                        <path d="M2 18 C14 2 30 3 42 16" stroke="#9be9ff" strokeWidth="2.2" strokeLinecap="round" />
+                    </svg>
+                    <span className="whale-whip-spark absolute right-[-24px] top-[46px] text-base text-amber-300">✦</span>
+                </div>
+            ) : null}
 
             {!referenceSelectionState && !isGroup ? <ConnectionHandleDot side="left" visible={hovered || isSelected || isConnecting} onMouseDown={(event) => onConnectStart(event, data.id, "target")} /> : null}
             {!referenceSelectionState && (definition?.hasSourceHandle ?? true) && data.type !== CanvasNodeType.Config ? <ConnectionHandleDot side="right" visible={hovered || isSelected || isConnecting} onMouseDown={(event) => onConnectStart(event, data.id, "source")} /> : null}
