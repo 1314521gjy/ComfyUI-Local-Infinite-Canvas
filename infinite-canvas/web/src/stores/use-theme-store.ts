@@ -5,17 +5,20 @@ import type { CardSkinId } from "@/lib/canvas-theme";
 import { isCardSkinLocked } from "@/lib/canvas/skin-unlocks";
 
 export type ThemeName = "light" | "dark";
+export type FishWhipSide = "left" | "right";
 
 type ThemeStore = {
     theme: ThemeName;
     cardSkin: CardSkinId;
     unlockedCardSkins: CardSkinId[];
     fishWhipEnabled: boolean;
+    fishWhipSide: FishWhipSide;
     setTheme: (theme: ThemeName) => void;
     setCardSkin: (cardSkin: CardSkinId) => void;
     unlockCardSkin: (skinId: CardSkinId) => void;
     mergeUnlockedCardSkins: (skinIds: CardSkinId[]) => void;
     setFishWhipEnabled: (enabled: boolean) => void;
+    setFishWhipSide: (side: FishWhipSide) => void;
 };
 
 export const useThemeStore = create<ThemeStore>()(
@@ -25,6 +28,7 @@ export const useThemeStore = create<ThemeStore>()(
             cardSkin: "warm",
             unlockedCardSkins: [],
             fishWhipEnabled: true,
+            fishWhipSide: "right",
             setTheme: (theme) => set({ theme }),
             setCardSkin: (cardSkin) =>
                 set((state) => {
@@ -42,6 +46,7 @@ export const useThemeStore = create<ThemeStore>()(
                     return next.length === state.unlockedCardSkins.length ? state : { unlockedCardSkins: next };
                 }),
             setFishWhipEnabled: (enabled) => set({ fishWhipEnabled: enabled }),
+            setFishWhipSide: (side) => set({ fishWhipSide: side }),
         }),
         { name: "infinite-canvas:theme_store" },
     ),

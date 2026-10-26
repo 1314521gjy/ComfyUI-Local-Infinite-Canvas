@@ -574,7 +574,10 @@ export default {
             cardSkinPasswordWrong: "密码不正确，请检查后重试。",
             cardSkinPasswordUnavailable: "当前环境无法验证密码，请使用本机浏览器打开。",
             fishWhip: "生成中抽鞭子动效",
-            fishWhipDescription: "蓝色大肥鱼皮肤下，卡片生成时在右侧显示鲸鱼娘抽鞭子小动图；关闭后只保留进度光效。",
+            fishWhipDescription: "蓝色大肥鱼皮肤下，卡片生成时在卡片一侧显示鲸鱼娘抽鞭子小动图；关闭后只保留进度光效。",
+            fishWhipSide: "显示位置",
+            fishWhipMoveLeft: "显示在左侧",
+            fishWhipMoveRight: "显示在右侧",
             progressRingSkin: "进度光带皮肤",
             progressRingSkinDescription: "图片和视频生成时卡片周围的充能光效，只影响外观。",
             progressRingSkins: {

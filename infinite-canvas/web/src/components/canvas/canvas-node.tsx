@@ -131,6 +131,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     const theme = useCanvasTheme();
     const colorTheme = useThemeStore((state) => state.theme);
     const fishWhipEnabled = useThemeStore((state) => state.fishWhipEnabled);
+    const fishWhipSide = useThemeStore((state) => state.fishWhipSide);
     const cardSkin = useEffectiveCardSkin();
     const fishSkin = cardSkin === "fish";
     const fishArtSize = Math.round(Math.max(15, Math.min(58, Math.min(data.height * 0.24, data.width * 0.15))));
@@ -509,15 +510,26 @@ export const CanvasNode = React.memo(function CanvasNode({
             </div>
 
             {fishSkin && isGenerating && fishWhipEnabled ? (
-                <div className="pointer-events-none absolute z-[66] select-none" style={{ right: -120, bottom: 0, width: 140, height: 210 }} aria-hidden="true" data-fish-whip>
+                <div
+                    className="pointer-events-none absolute z-[66] select-none"
+                    style={fishWhipSide === "left" ? { left: -120, bottom: 0, width: 140, height: 210 } : { right: -120, bottom: 0, width: 140, height: 210 }}
+                    aria-hidden="true"
+                    data-fish-whip
+                >
                     <div
-                        className="whale-whip-bubble absolute bottom-[200px] right-0 w-max max-w-[190px] rounded-2xl border px-2.5 py-1.5 text-[12px] font-semibold leading-none shadow-lg"
+                        className={`whale-whip-bubble absolute bottom-[200px] ${fishWhipSide === "left" ? "left-0" : "right-0"} w-max max-w-[190px] rounded-2xl border px-2.5 py-1.5 text-[12px] font-semibold leading-none shadow-lg`}
                         style={{ background: "rgba(7,21,33,.94)", borderColor: "rgba(120,210,255,.35)", color: "#eaf7ff" }}
                     >
                         {t("canvas.fishWhip.bubble")}
                         <span className="absolute -bottom-1 right-4 size-2 rotate-45 border-b border-r" style={{ background: "rgba(7,21,33,.94)", borderColor: "rgba(120,210,255,.35)" }} />
                     </div>
-                    <img src="/skins/whale-whip.webp" alt="" draggable={false} className="whale-whip-mascot absolute bottom-0 right-0 h-[200px] w-auto select-none drop-shadow-[0_8px_16px_rgba(0,8,20,.55)]" />
+                    <img
+                        src="/skins/whale-whip.webp"
+                        alt=""
+                        draggable={false}
+                        data-side={fishWhipSide}
+                        className={`whale-whip-mascot absolute bottom-0 ${fishWhipSide === "left" ? "left-0" : "right-0"} h-[200px] w-auto select-none drop-shadow-[0_8px_16px_rgba(0,8,20,.55)]`}
+                    />
                 </div>
             ) : null}
 

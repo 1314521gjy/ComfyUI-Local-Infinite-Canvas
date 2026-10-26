@@ -624,14 +624,26 @@
     6% { transform: translateY(-2px) scale(1.03); }
 }
 
-@keyframes whale-whip-float {
+@keyframes whale-whip-float-right {
     0%, 100% { transform: scaleX(-1) translateY(0); }
     50% { transform: scaleX(-1) translateY(-3px); }
 }
 
+@keyframes whale-whip-float-left {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+}
+
 .whale-whip-mascot {
-    animation: whale-whip-float 2.4s ease-in-out infinite;
     will-change: transform;
+}
+
+.whale-whip-mascot[data-side="right"] {
+    animation: whale-whip-float-right 2.4s ease-in-out infinite;
+}
+
+.whale-whip-mascot[data-side="left"] {
+    animation: whale-whip-float-left 2.4s ease-in-out infinite;
 }
 
 .whale-whip-bubble {

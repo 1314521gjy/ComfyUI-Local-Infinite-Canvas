@@ -1,6 +1,6 @@
 import { App, Button, Form, Input, Modal, Progress, Radio, Select, Switch, Tabs } from "antd";
 import type { TFunction } from "i18next";
-import { Cloud, ChevronDown, Download, Lock, Pencil, Plus, RefreshCw, Trash2, Upload, Wifi } from "lucide-react";
+import { ArrowLeft, ArrowRight, Cloud, ChevronDown, Download, Lock, Pencil, Plus, RefreshCw, Trash2, Upload, Wifi } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -79,6 +79,8 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const unlockCardSkin = useThemeStore((state) => state.unlockCardSkin);
     const fishWhipEnabled = useThemeStore((state) => state.fishWhipEnabled);
     const setFishWhipEnabled = useThemeStore((state) => state.setFishWhipEnabled);
+    const fishWhipSide = useThemeStore((state) => state.fishWhipSide);
+    const setFishWhipSide = useThemeStore((state) => state.setFishWhipSide);
     const webdav = useConfigStore((state) => state.webdav);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const updateWebdavConfig = useConfigStore((state) => state.updateWebdavConfig);
@@ -404,6 +406,16 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                                     <div className="mt-1 text-[11px] leading-5 opacity-60">{t("config.preferences.fishWhipDescription")}</div>
                                                 </div>
                                                 <Switch checked={fishWhipEnabled} onChange={setFishWhipEnabled} />
+                                            </div>
+                                            <div className="mt-3 flex items-center justify-between gap-3 border-t border-stone-200/70 pt-3 dark:border-stone-800/70">
+                                                <div className="text-xs opacity-60">{t("config.preferences.fishWhipSide")}</div>
+                                                <Button
+                                                    size="small"
+                                                    icon={fishWhipSide === "right" ? <ArrowLeft className="size-3.5" /> : <ArrowRight className="size-3.5" />}
+                                                    onClick={() => setFishWhipSide(fishWhipSide === "right" ? "left" : "right")}
+                                                >
+                                                    {fishWhipSide === "right" ? t("config.preferences.fishWhipMoveLeft") : t("config.preferences.fishWhipMoveRight")}
+                                                </Button>
                                             </div>
                                         </div>
                                     ) : null}
