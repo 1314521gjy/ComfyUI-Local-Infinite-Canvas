@@ -50,7 +50,7 @@ export function freeCardInfoFromSummary(summary: FreeWorkflowSummary): CanvasFre
         name: summary.name,
         sourceRel: summary.sourceRel,
         sourceFormat: summary.sourceFormat,
-        outputType: summary.outputType || "image",
+        outputType: summary.outputType === "video" ? "video" : summary.outputType === "image" ? "image" : "other",
         prompt: summary.prompt,
         imageInputs: summary.imageInputs,
         size: summary.size,
@@ -130,6 +130,14 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
             canceled = true;
         };
     }, [config, info?.id]);
+
+    // Existing cards were created before null output types were distinguished
+    // from images; reconcile them with the gateway summary after load.
+    useEffect(() => {
+        if (!summary || !info) return;
+        const normalized = summary.outputType === "video" ? "video" : summary.outputType === "image" ? "image" : "other";
+        if (info.outputType !== normalized) onChange({ freeCard: { ...info, outputType: normalized } });
+    }, [summary, info, onChange]);
 
     const imageConnectedNodes = useMemo(() => connectedNodes.filter((item) => item.type === CanvasNodeType.Image || item.type === CanvasNodeType.Group), [connectedNodes]);
     const imageReferences = useMemo(() => {
@@ -291,6 +299,10 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
             message.warning(t("canvas.freeCard.selectFirst"));
             return;
         }
+        if (info.outputType === "other") {
+            message.warning(t("canvas.freeCard.otherWorkflowHint"));
+            return;
+        }
         if (info.prompt && !prompt.trim()) {
             message.warning(t("canvas.freeCard.needPrompt"));
             return;
@@ -377,7 +389,7 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
                 {info ? (
                     <>
                         <div className="flex flex-wrap items-center gap-2 text-[11px]" style={{ color: theme.node.muted }}>
-                            <span>{info.outputType === "video" ? t("canvas.freeCard.videoWorkflow") : t("canvas.freeCard.imageWorkflow")}</span>
+                            <span>{info.outputType === "video" ? t("canvas.freeCard.videoWorkflow") : info.outputType === "image" ? t("canvas.freeCard.imageWorkflow") : t("canvas.freeCard.otherWorkflow")}</span>
                             <span>·</span>
                             <span>{info.sourceFormat.toUpperCase()}</span>
                             {info.archived ? <span>· {t("canvas.freeCard.archived")}</span> : null}
@@ -485,7 +497,7 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
                                     {t("canvas.freeCard.stop")}
                                 </Button>
                             ) : (
-                                <Button type="primary" icon={<ArrowUp className="size-3.5" />} onClick={generate}>
+                                <Button type="primary" icon={<ArrowUp className="size-3.5" />} disabled={info.outputType === "other"} title={info.outputType === "other" ? t("canvas.freeCard.otherWorkflowHint") : undefined} onClick={generate}>
                                     {t("canvas.freeCard.generate")}
                                 </Button>
                             )}

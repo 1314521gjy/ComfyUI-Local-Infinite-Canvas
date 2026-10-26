@@ -811,7 +811,7 @@ function CanvasFreeCardsTab({ theme, onAdd }: { theme: CanvasTheme; onAdd?: (wor
                                         {item.sourceChanged ? <span className="size-1.5 shrink-0 rounded-full bg-amber-500" title={t("canvas.freeCard.sourceChanged")} /> : null}
                                     </div>
                                     <div className="mt-0.5 truncate text-[11px] opacity-50">
-                                        {item.outputType === "video" ? t("canvas.freeCard.videoWorkflow") : t("canvas.freeCard.imageWorkflow")} · {item.sourceRel}
+                                        {item.outputType === "video" ? t("canvas.freeCard.videoWorkflow") : item.outputType === "image" ? t("canvas.freeCard.imageWorkflow") : t("canvas.freeCard.otherWorkflow")} · {item.sourceRel}
                                     </div>
                                 </button>
                                 <button

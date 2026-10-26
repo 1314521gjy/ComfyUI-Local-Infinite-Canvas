@@ -133,6 +133,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     const cardSkin = useThemeStore((state) => state.cardSkin);
     const fishSkin = cardSkin === "fish";
     const cardBackground = getCardBackground(colorTheme, cardSkin);
+    const titleTheme = canvasThemes[colorTheme].node;
     const { t } = useTranslation();
     const [hovered, setHovered] = useState(false);
     const definition = getNodeDefinition(data.type);
@@ -339,7 +340,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                             value={titleDraft}
                             maxLength={64}
                             className="h-6 max-w-full border-0 border-b border-dashed bg-transparent px-0 text-left text-xs font-medium outline-none"
-                            style={{ borderColor: theme.node.muted, color: theme.node.text }}
+                            style={{ borderColor: titleTheme.muted, color: titleTheme.text }}
                             onChange={(event) => setTitleDraft(event.target.value)}
                             onBlur={finishTitleEditing}
                             onKeyDown={(event) => {
@@ -354,7 +355,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                         <button
                             type="button"
                             className="block max-w-full truncate border-b border-dashed border-transparent px-0 py-0.5 text-left text-xs font-medium opacity-75 transition hover:border-current hover:opacity-100"
-                            style={{ color: theme.node.text }}
+                            style={{ color: titleTheme.text }}
                             title={t("canvas.node.renameHint")}
                             onDoubleClick={(event) => {
                                 event.stopPropagation();
@@ -404,7 +405,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                 {fishSkin && !isGroup && !hasImageContent && !hasVideoContent && !transparentBg ? (
                     <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]" aria-hidden="true">
                         <div className="absolute -left-8 -top-10 h-32 w-32 rounded-full" style={{ background: "radial-gradient(circle, rgba(80,190,255,.26), transparent 68%)" }} />
-                        <img src="/skins/blue-fat-fish.png" alt="" draggable={false} className="absolute bottom-2 right-2 h-12 w-12 opacity-80 drop-shadow-[0_4px_10px_rgba(0,0,0,.35)]" />
+                        <img src="/skins/blue-whale-girl.png" alt="" draggable={false} className="absolute bottom-2 right-2 h-12 w-12 opacity-80 drop-shadow-[0_4px_10px_rgba(0,0,0,.35)]" />
                         <span className="absolute bottom-7 right-[4.5rem] h-1.5 w-1.5 rounded-full bg-cyan-100/30" />
                         <span className="absolute bottom-12 right-16 h-1 w-1 rounded-full bg-cyan-100/25" />
                     </div>
@@ -519,7 +520,7 @@ function FreeCardNodeContent({ node, theme }: NodeContentRendererProps) {
                 {info?.name || t("canvas.freeCard.emptyTitle")}
             </div>
             <div className="text-xs" style={{ color: theme.node.muted }}>
-                {info ? (info.outputType === "video" ? t("canvas.freeCard.videoWorkflow") : t("canvas.freeCard.imageWorkflow")) : t("canvas.freeCard.emptyHint")}
+                {info ? (info.outputType === "video" ? t("canvas.freeCard.videoWorkflow") : info.outputType === "image" ? t("canvas.freeCard.imageWorkflow") : t("canvas.freeCard.otherWorkflow")) : t("canvas.freeCard.emptyHint")}
             </div>
         </div>
     );

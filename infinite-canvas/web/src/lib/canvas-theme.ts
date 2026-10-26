@@ -62,14 +62,18 @@ export const canvasThemes = {
 
 export type CanvasTheme = (typeof canvasThemes)[CanvasColorTheme];
 
-export type CardSkinId = "warm" | "mist" | "forest" | "fish";
+export type CardSkinId = "warm" | "cream" | "mist" | "forest" | "fish";
 
-export const cardSkinIds: CardSkinId[] = ["warm", "mist", "forest", "fish"];
+export const cardSkinIds: CardSkinId[] = ["warm", "cream", "mist", "forest", "fish"];
 
 type CardSkinNodeOverride = Partial<Record<keyof (typeof canvasThemes)["light"]["node"], string>>;
 
 const cardSkinNodeOverrides: Record<CardSkinId, { light: CardSkinNodeOverride; dark: CardSkinNodeOverride }> = {
     warm: { light: {}, dark: {} },
+    cream: {
+        light: { label: "#6b5b47", fill: "#f8f0e2", panel: "#fffaf0", stroke: "#ddcfb9", placeholder: "#a89985", text: "#3a3025", muted: "#7a6a56", faint: "#a89985", activeStroke: "#3a3025" },
+        dark: { label: "#6b5b47", fill: "#f6eddc", panel: "#fffaf0", stroke: "#d9cbb4", placeholder: "#a89985", text: "#3a3025", muted: "#7a6a56", faint: "#a89985", activeStroke: "#3a3025" },
+    },
     mist: {
         light: { label: "#475569", fill: "#e4ebf3", panel: "#f7fafc", stroke: "#c5d2df", placeholder: "#94a3b8", text: "#1e293b", muted: "#64748b", faint: "#94a3b8" },
         dark: { label: "#cbd5e1", fill: "#1e293b", panel: "#16202e", stroke: "#334155", placeholder: "#94a3b8", text: "#f1f5f9", muted: "#94a3b8", faint: "#64748b" },
@@ -84,6 +88,15 @@ const cardSkinNodeOverrides: Record<CardSkinId, { light: CardSkinNodeOverride; d
     },
 };
 
+type CardSkinToolbarOverride = Partial<Record<keyof (typeof canvasThemes)["light"]["toolbar"], string>>;
+
+const cardSkinToolbarOverrides: Partial<Record<CardSkinId, { light: CardSkinToolbarOverride; dark: CardSkinToolbarOverride }>> = {
+    cream: {
+        light: { panel: "rgba(255,250,240,.97)", border: "#ddcfb9", item: "#6b5b47", itemHover: "#f3e8d7", activeBg: "#eddfc7", activeText: "#3a3025" },
+        dark: { panel: "rgba(255,250,240,.97)", border: "#d9cbb4", item: "#6b5b47", itemHover: "#f3e8d7", activeBg: "#eddfc7", activeText: "#3a3025" },
+    },
+};
+
 const themeCache = new Map<string, CanvasTheme>();
 
 export function getCanvasTheme(theme: CanvasColorTheme, cardSkin: CardSkinId = "warm"): CanvasTheme {
@@ -92,7 +105,12 @@ export function getCanvasTheme(theme: CanvasColorTheme, cardSkin: CardSkinId = "
     if (cached) return cached;
     const base = canvasThemes[theme];
     const override = cardSkinNodeOverrides[cardSkin]?.[theme] || {};
-    const result = (Object.keys(override).length ? { ...base, node: { ...base.node, ...override } } : base) as CanvasTheme;
+    const toolbarOverride = cardSkinToolbarOverrides[cardSkin]?.[theme] || {};
+    const result = ({
+        ...base,
+        ...(Object.keys(override).length ? { node: { ...base.node, ...override } } : {}),
+        ...(Object.keys(toolbarOverride).length ? { toolbar: { ...base.toolbar, ...toolbarOverride } } : {}),
+    }) as CanvasTheme;
     themeCache.set(key, result);
     return result;
 }

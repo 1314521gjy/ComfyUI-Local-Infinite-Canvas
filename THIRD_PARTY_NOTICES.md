@@ -23,7 +23,7 @@
 
 ## 主题素材
 
-- **蓝色大肥鱼卡片皮肤贴纸** — 基于开源梗图合集 [DeepSeek-chan meme pack](https://github.com/the-beating-light-of-the-nail/deepseek-chan-meme-pack) 的 #087 预览图改编：抠除背景并合成为圆形贴纸，用于本地画布主题。原图版权归原作者/社区所有；如权利人不希望使用，可删除 `infinite-canvas/web/public/skins/blue-fat-fish.png` 并移除该主题。
+- **蓝色大肥鱼卡片皮肤贴纸（鲸鱼娘）** — 基于开源梗图合集 [DeepSeek-chan meme pack](https://github.com/the-beating-light-of-the-nail/deepseek-chan-meme-pack) 的 #010 预览图改编：裁切、抠除背景并合成为透明贴纸，用于本地画布主题。原图版权归原作者/社区所有；如权利人不希望使用，可删除 `infinite-canvas/web/public/skins/blue-whale-girl.png` 并移除该主题。
 
 ## 商标
 

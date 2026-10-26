@@ -31,7 +31,7 @@ export type CanvasFreeCardInfo = {
     name: string;
     sourceRel: string;
     sourceFormat: "ui" | "api";
-    outputType: "image" | "video";
+    outputType: "image" | "video" | "other";
     prompt: boolean;
     imageInputs: number;
     size?: { width: number; height: number } | null;

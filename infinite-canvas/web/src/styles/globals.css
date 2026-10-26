@@ -297,7 +297,11 @@
         box-shadow: none !important;
     }
 
-    .canvas-compact-control.canvas-control-select.ant-select {
+    .canvas-config-mode .ant-segmented-item:not(.ant-segmented-item-selected) .ant-segmented-item-label {
+    color: var(--canvas-node-text, inherit);
+}
+
+.canvas-compact-control.canvas-control-select.ant-select {
         height: 100%;
     }
 

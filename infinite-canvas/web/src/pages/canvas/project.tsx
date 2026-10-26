@@ -6,7 +6,7 @@ import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 
 import { requestEdit, requestGeneration, requestImageQuestion, requestUpscale } from "@/services/api/image";
-import { createFreeWorkflowVideoTask, requestFreeWorkflowImage, type FreeWorkflowSummary } from "@/services/api/free-workflow";
+import { createFreeWorkflowVideoTask, fetchFreeWorkflows, requestFreeWorkflowImage, type FreeWorkflowSummary } from "@/services/api/free-workflow";
 import { bindStepProgress, unbindStepProgress } from "@/services/api/step-progress";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { createVideoGenerationTask, createVideoUpscaleTask, isVideoTaskFailed, storeGeneratedVideo, waitForVideoGenerationTask, type VideoPreview } from "@/services/api/video";
@@ -257,6 +257,32 @@ function InfiniteCanvasPage() {
     const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
     const [assetPickerOpen, setAssetPickerOpen] = useState(false);
     const [projectLoaded, setProjectLoaded] = useState(false);
+
+    useEffect(() => {
+        if (!projectLoaded || !nodesRef.current.some((node) => node.metadata?.freeCard)) return;
+        let canceled = false;
+        void fetchFreeWorkflows(effectiveConfig)
+            .then((items) => {
+                if (canceled) return;
+                const outputTypes = new Map<string, "image" | "video" | "other">(items.map((item) => [item.id, item.outputType === "video" ? "video" : item.outputType === "image" ? "image" : "other"]));
+                setNodes((prev) => {
+                    let changed = false;
+                    const next = prev.map((node) => {
+                        const card = node.metadata?.freeCard;
+                        if (!card) return node;
+                        const outputType = outputTypes.get(card.id);
+                        if (!outputType || outputType === card.outputType) return node;
+                        changed = true;
+                        return { ...node, metadata: { ...node.metadata, freeCard: { ...card, outputType } } };
+                    });
+                    return changed ? next : prev;
+                });
+            })
+            .catch(() => {});
+        return () => {
+            canceled = true;
+        };
+    }, [effectiveConfig, projectLoaded]);
     const [toolbarNodeId, setToolbarNodeId] = useState<string | null>(null);
     const [nodeImageSettingsOpen, setNodeImageSettingsOpen] = useState(false);
     const [dialogNodeId, setDialogNodeId] = useState<string | null>(null);
@@ -3390,6 +3416,10 @@ function InfiniteCanvasPage() {
             const sourceNode = nodesRef.current.find((item) => item.id === nodeId);
             const info = sourceNode?.metadata?.freeCard;
             if (!sourceNode || !info) return;
+            if (info.outputType === "other") {
+                message.warning(t("canvas.freeCard.otherWorkflowHint"));
+                return;
+            }
             const effectivePrompt = prompt.trim();
             if (info.prompt && !effectivePrompt) {
                 message.warning(t("canvas.freeCard.needPrompt"));
