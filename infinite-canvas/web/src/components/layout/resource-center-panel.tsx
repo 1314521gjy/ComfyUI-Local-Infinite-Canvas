@@ -23,7 +23,7 @@ const copyByLocale = {
         refresh: "重新扫描",
         installSelected: "安装选中",
         installPack: "安装此包",
-        cancel: "取消安装",
+        cancel: "终止安装",
         skip: "跳过",
         none: "未找到资源索引",
         comfyRoot: "ComfyUI",
@@ -78,7 +78,7 @@ const copyByLocale = {
         refresh: "Rescan",
         installSelected: "Install selected",
         installPack: "Install pack",
-        cancel: "Cancel",
+        cancel: "Stop install",
         skip: "Skip",
         none: "No resource index found",
         comfyRoot: "ComfyUI",
@@ -142,6 +142,11 @@ function packState(pack: ResourcePack, copy: Copy) {
     if (!pack.total) return <Tag color="green">{copy.ready}</Tag>;
     if (!pack.missing) return <Tag color="green">{copy.ready}</Tag>;
     return <Tag color="orange">{copy.missing} {pack.missing}</Tag>;
+}
+
+function formatSpeed(bytesPerSecond: number) {
+    const value = Math.max(0, Number(bytesPerSecond) || 0);
+    return value > 0 ? `${formatBytes(value)}/s` : "";
 }
 
 function ResourceCard({
@@ -226,9 +231,14 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
     const [selectedPacks, setSelectedPacks] = useState<Set<string>>(new Set());
     const [selectedOptional, setSelectedOptional] = useState<Set<string>>(new Set());
     const [expandedPacks, setExpandedPacks] = useState<Set<string>>(new Set());
+    const [expandedWorkflows, setExpandedWorkflows] = useState<Set<string>>(new Set());
+    const [speeds, setSpeeds] = useState<Record<string, number>>({});
+    const [stopping, setStopping] = useState(false);
     const [showAll, setShowAll] = useState(false);
     const pollRef = useRef<number | null>(null);
     const selectedInitialized = useRef(false);
+    const speedSamples = useRef<Map<string, { bytes: number; time: number; speed: number }>>(new Map());
+    const jobPanelRef = useRef<HTMLDivElement | null>(null);
 
     const stopPolling = useCallback(() => {
         if (pollRef.current !== null) {
@@ -278,12 +288,35 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
     const watchJob = useCallback((initial: ResourceJob) => {
         stopPolling();
         setJob(initial);
+        speedSamples.current.clear();
+        setSpeeds({});
+        window.requestAnimationFrame(() => jobPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
         const tick = async () => {
             try {
                 const next = await fetchResourceJob(initial.id);
+                const now = Date.now();
+                const nextSpeeds: Record<string, number> = {};
+                for (const item of next.items) {
+                    if (item.status !== "downloading") {
+                        speedSamples.current.delete(item.id);
+                        continue;
+                    }
+                    const previous = speedSamples.current.get(item.id);
+                    if (previous && now > previous.time && item.bytes >= previous.bytes) {
+                        const sample = (item.bytes - previous.bytes) / ((now - previous.time) / 1000);
+                        const speed = previous.speed > 0 ? previous.speed * 0.5 + sample * 0.5 : sample;
+                        nextSpeeds[item.id] = speed;
+                        speedSamples.current.set(item.id, { bytes: item.bytes, time: now, speed });
+                    } else {
+                        speedSamples.current.set(item.id, { bytes: item.bytes, time: now, speed: 0 });
+                    }
+                }
+                setSpeeds(nextSpeeds);
                 setJob(next);
                 if (["done", "error", "canceled"].includes(next.status)) {
                     stopPolling();
+                    speedSamples.current.clear();
+                    setSpeeds({});
                     if (next.status === "done") message.success(copy.done);
                     else if (next.status === "error") message.error(next.message || copy.failed);
                     await load(true);
@@ -308,6 +341,19 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
             watchJob(next);
         } catch (installError) {
             message.error(installError instanceof Error ? installError.message : String(installError));
+        }
+    };
+
+    const stopInstall = async () => {
+        if (!job || job.status !== "running" || stopping) return;
+        setStopping(true);
+        try {
+            const next = await cancelResourceJob(job.id);
+            setJob(next);
+        } catch (stopError) {
+            message.error(stopError instanceof Error ? stopError.message : String(stopError));
+        } finally {
+            setStopping(false);
         }
     };
 
@@ -337,6 +383,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
     }, [status]);
 
     const resourceById = useMemo(() => new Map((status?.resources || []).map((item) => [item.id, item])), [status]);
+    const totalSpeed = Object.values(speeds).reduce((sum, speed) => sum + speed, 0);
 
     const togglePack = (id: string, checked: boolean) => {
         setSelectedPacks((current) => {
@@ -358,6 +405,15 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
 
     const toggleExpanded = (id: string) => {
         setExpandedPacks((current) => {
+            const next = new Set(current);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    };
+
+    const toggleWorkflow = (id: string) => {
+        setExpandedWorkflows((current) => {
             const next = new Set(current);
             if (next.has(id)) next.delete(id);
             else next.add(id);
@@ -405,10 +461,18 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
             {error ? <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300"><XCircle className="size-3.5 shrink-0" />{error}</div> : null}
 
             {job ? (
-                <div className="rounded-xl border border-stone-200 p-3 dark:border-stone-800">
+                <div ref={jobPanelRef} aria-live="polite" className="sticky top-0 z-30 rounded-xl border border-stone-200 bg-white/95 p-3 shadow-sm backdrop-blur dark:border-stone-800 dark:bg-stone-950/95">
                     <div className="mb-2 flex items-center justify-between gap-2 text-xs">
-                        <span className="font-medium">{copy.downloadProgress}</span>
-                        <span className="text-stone-500 dark:text-stone-400">{job.message || job.status}</span>
+                        <div className="flex min-w-0 items-center gap-2">
+                            <span className="shrink-0 font-medium">{copy.downloadProgress}</span>
+                            {job.status === "running" && totalSpeed > 0 ? <span className="shrink-0 text-[11px] text-stone-400 dark:text-stone-500">{formatSpeed(totalSpeed)}</span> : null}
+                        </div>
+                        <div className="flex min-w-0 items-center gap-2">
+                            <span className="min-w-0 truncate text-stone-500 dark:text-stone-400">{job.message || job.status}</span>
+                            {job.status === "running" ? (
+                                <Button size="small" danger loading={stopping} onClick={() => void stopInstall()}>{copy.cancel}</Button>
+                            ) : null}
+                        </div>
                     </div>
                     <Progress percent={job.progress} size="small" status={job.status === "error" ? "exception" : job.status === "done" ? "success" : "active"} />
                     <div className="mt-2 max-h-32 space-y-1 overflow-y-auto text-[11px]">
@@ -416,16 +480,13 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                             <div key={item.id} className="flex items-center justify-between gap-2">
                                 <span className="min-w-0 truncate text-stone-600 dark:text-stone-300">{item.label}</span>
                                 <span className={item.status === "error" ? "shrink-0 text-red-500" : "shrink-0 text-stone-400 dark:text-stone-500"}>
-                                    {item.status === "downloading" ? `${formatBytes(item.bytes)} / ${formatBytes(item.size)}` : item.status === "baking" ? copy.localBake : item.status}
+                                    {item.status === "downloading"
+                                        ? `${formatBytes(item.bytes)} / ${formatBytes(item.size)}${speeds[item.id] ? ` · ${formatSpeed(speeds[item.id])}` : ""}`
+                                        : item.status === "baking" ? copy.localBake : item.status}
                                 </span>
                             </div>
                         ))}
                     </div>
-                    {job.status === "running" ? (
-                        <div className="mt-2 flex justify-end">
-                            <Button size="small" onClick={() => { void cancelResourceJob(job.id).then(setJob).catch(() => undefined); }}>{copy.cancel}</Button>
-                        </div>
-                    ) : null}
                 </div>
             ) : null}
 
@@ -491,6 +552,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                             </div>
                                             <div className="space-y-2">
                                                 {workflowDependencies.map((workflow) => {
+                                                    const workflowExpanded = expandedWorkflows.has(workflow.id);
                                                     const workflowTag = workflow.missing
                                                         ? <Tag color="orange">{copy.missing} {workflow.missing}</Tag>
                                                         : workflow.available
@@ -498,35 +560,42 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                                             : <Tag color="gold">{copy.workflowRestart}</Tag>;
                                                     const problemText = workflow.problems.map((problem) => problem.message).filter(Boolean).join("；");
                                                     return (
-                                                        <div key={workflow.id} className="rounded-lg border border-stone-200 p-2 dark:border-stone-800">
-                                                            <div className="flex items-start justify-between gap-2">
-                                                                <div className="min-w-0">
-                                                                    <div className="text-xs font-medium">{workflow.label}</div>
+                                                        <div key={workflow.id} className="rounded-lg border border-stone-200 dark:border-stone-800">
+                                                            <div className="flex items-start gap-2 p-2">
+                                                                <button type="button" className="min-w-0 flex-1 text-left" onClick={() => toggleWorkflow(workflow.id)} aria-expanded={workflowExpanded}>
+                                                                    <div className="flex flex-wrap items-center gap-2">
+                                                                        <span className="text-xs font-medium">{workflow.label}</span>
+                                                                        {workflow.missingSize ? <span className="text-[10px] text-stone-400 dark:text-stone-500">{formatBytes(workflow.missingSize)}</span> : null}
+                                                                        {workflowTag}
+                                                                    </div>
                                                                     <div className="truncate text-[10px] text-stone-400 dark:text-stone-500">{workflow.id}</div>
-                                                                </div>
-                                                                <div className="flex shrink-0 items-center gap-1">
-                                                                    {workflow.missingSize ? <span className="text-[10px] text-stone-400 dark:text-stone-500">{formatBytes(workflow.missingSize)}</span> : null}
-                                                                    {workflowTag}
-                                                                </div>
+                                                                </button>
+                                                                <button type="button" className="mt-0.5 rounded-md p-1 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-600 dark:text-stone-500 dark:hover:bg-white/5 dark:hover:text-stone-300" onClick={() => toggleWorkflow(workflow.id)} aria-label={workflowExpanded ? copy.collapse : copy.expand}>
+                                                                    <ChevronDown className={`size-4 transition-transform ${workflowExpanded ? "rotate-180" : ""}`} />
+                                                                </button>
                                                             </div>
-                                                            <div className="mt-1.5 divide-y divide-stone-100 rounded-md bg-stone-50/60 dark:divide-stone-800/70 dark:bg-white/[.02]">
-                                                                {workflow.resources.map((item) => (
-                                                                    <WorkflowResourceRow
-                                                                        key={item.id}
-                                                                        item={item}
-                                                                        copy={copy}
-                                                                        requires={(item.requires || []).map((id) => resourceById.get(id)).filter((entry): entry is ResourceItem => Boolean(entry))}
-                                                                    />
-                                                                ))}
-                                                            </div>
-                                                            {!workflow.available && problemText ? (
-                                                                <div className="mt-1 text-[10px] leading-4 text-amber-600 dark:text-amber-400">{problemText}</div>
-                                                            ) : null}
-                                                            {workflow.installIds.length ? (
-                                                                <div className="mt-2 flex justify-end">
-                                                                    <Button size="small" icon={<Download className="size-3.5" />} onClick={() => void startInstall({ ids: workflow.installIds })} disabled={Boolean(job && job.status === "running")}>
-                                                                        {copy.installWorkflow}
-                                                                    </Button>
+                                                            {workflowExpanded ? (
+                                                                <div className="border-t border-stone-100 px-2 pb-2 pt-1 dark:border-stone-800/70">
+                                                                    <div className="divide-y divide-stone-100 rounded-md bg-stone-50/60 dark:divide-stone-800/70 dark:bg-white/[.02]">
+                                                                        {workflow.resources.map((item) => (
+                                                                            <WorkflowResourceRow
+                                                                                key={item.id}
+                                                                                item={item}
+                                                                                copy={copy}
+                                                                                requires={(item.requires || []).map((id) => resourceById.get(id)).filter((entry): entry is ResourceItem => Boolean(entry))}
+                                                                            />
+                                                                        ))}
+                                                                    </div>
+                                                                    {!workflow.available && problemText ? (
+                                                                        <div className="mt-1 text-[10px] leading-4 text-amber-600 dark:text-amber-400">{problemText}</div>
+                                                                    ) : null}
+                                                                    {workflow.installIds.length ? (
+                                                                        <div className="mt-2 flex justify-end">
+                                                                            <Button size="small" icon={<Download className="size-3.5" />} onClick={() => void startInstall({ ids: workflow.installIds })} disabled={Boolean(job && job.status === "running")}>
+                                                                                {copy.installWorkflow}
+                                                                            </Button>
+                                                                        </div>
+                                                                    ) : null}
                                                                 </div>
                                                             ) : null}
                                                         </div>

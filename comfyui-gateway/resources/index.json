@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "version": "2026.10.27-1",
+  "version": "2026.10.27-2",
   "channel": "stable",
-  "updatedAt": "2026-10-27T00:30:00+08:00",
+  "updatedAt": "2026-10-27T01:00:00+08:00",
   "packs": [
     {
       "id": "core",
@@ -78,17 +78,19 @@
     {
       "id": "moss-lite",
       "label": "MOSS-Image INT8（低显存）",
-      "description": "SFT int8 + INT8 TE + 全量 VAE + 8步 LoRA；只提供 SFT 8步，不提供 Balanced。TE 不再使用 W4A8，VAE 不再使用 small。",
+      "description": "SFT int8 + INT8 TE + 全量 VAE；提供 SFT 8步和 50步（50步需 TE-Speed 节点），不提供 Balanced。8步 LoRA 只服务 8步入口；不再使用 W4A8 或 VAE small。",
       "optional": true,
       "resources": [
         "moss_image_sft_int8_convrot",
         "qwen3.5_9b_int8_convrot",
         "flux2-vae",
         "moss_image_sft_8steps_lora",
-        "moss_image_color_depth_lora"
+        "moss_image_color_depth_lora",
+        "tespeed_moss"
       ],
       "workflows": [
-        "image-moss-sft-int8-8step"
+        "image-moss-sft-int8-8step",
+        "image-moss-sft-int8-50step"
       ],
       "family": "moss",
       "tier": "lite",
@@ -108,6 +110,12 @@
           "qwen3.5_9b_int8_convrot",
           "flux2-vae",
           "moss_image_sft_8steps_lora"
+        ],
+        "image-moss-sft-int8-50step": [
+          "moss_image_sft_int8_convrot",
+          "qwen3.5_9b_int8_convrot",
+          "flux2-vae",
+          "tespeed_moss"
         ]
       }
     },
