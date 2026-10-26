@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "version": "2026.10.26-5",
+  "version": "2026.10.26-6",
   "channel": "stable",
-  "updatedAt": "2026-10-26T23:10:00+08:00",
+  "updatedAt": "2026-10-26T23:20:00+08:00",
   "packs": [
     {
       "id": "core",
@@ -88,6 +88,54 @@
         "ramBaseGb": 8,
         "safety": 0.15,
         "recommendVramGb": 12
+      }
+    },
+    {
+      "id": "zimage",
+      "label": "Z-Image Turbo",
+      "description": "Z-Image Turbo bf16 底模、Qwen3-4B 文本编码器和 ae VAE；4–8 步蒸馏，资源齐全后可在「Z-Image Turbo」入口直接出图。已有同名模型会复用。",
+      "optional": true,
+      "autoRecommend": false,
+      "resources": [
+        "z_image_turbo_bf16",
+        "qwen_3_4b",
+        "ae"
+      ],
+      "workflows": [
+        "image-z-image-turbo"
+      ],
+      "family": "zimage",
+      "tier": "standard",
+      "requirements": {
+        "vramFloorGb": 8,
+        "weightsGb": 20.7,
+        "ramBaseGb": 8,
+        "safety": 0.15,
+        "recommendVramGb": 16
+      }
+    },
+    {
+      "id": "krea2",
+      "label": "Krea2 Turbo",
+      "description": "Krea 2 Turbo FP8 底模、Qwen3-VL 4B 文本编码器和 Qwen Image VAE；8 步蒸馏，支持社区 Krea2 LoRA。Aesthetics 社区融合模型不随包分发。",
+      "optional": true,
+      "autoRecommend": false,
+      "resources": [
+        "krea2_turbo_fp8_scaled",
+        "qwen3vl_4b_fp8_scaled",
+        "qwen_image_vae"
+      ],
+      "workflows": [
+        "image-krea2-turbo"
+      ],
+      "family": "krea2",
+      "tier": "standard",
+      "requirements": {
+        "vramFloorGb": 8,
+        "weightsGb": 18.6,
+        "ramBaseGb": 8,
+        "safety": 0.15,
+        "recommendVramGb": 16
       }
     },
     {
@@ -287,6 +335,86 @@
       "sources": [
         "https://www.modelscope.cn/models/Comfy-Org/MOSS-Image/resolve/master/vae/flux2-vae_small.safetensors",
         "https://hf-mirror.com/Comfy-Org/MOSS-Image/resolve/main/vae/flux2-vae_small.safetensors"
+      ]
+    },
+    {
+      "id": "z_image_turbo_bf16",
+      "type": "model",
+      "label": "Z-Image Turbo bf16",
+      "target": "diffusion_models/z_image_turbo_bf16.safetensors",
+      "size": 12309866400,
+      "sha256": "2407613050b809ffdff18a4ac99af83ea6b95443ecebdf80e064a79c825574a6",
+      "license": "Apache-2.0",
+      "note": "与 z-image-turbo_fp8_scaled_e4m3fn_KJ 二选一；低显存可换 int8 版本。",
+      "sources": [
+        "https://www.modelscope.cn/models/Comfy-Org/z_image_turbo/resolve/master/split_files/diffusion_models/z_image_turbo_bf16.safetensors",
+        "https://aifasthub.com/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors"
+      ]
+    },
+    {
+      "id": "qwen_3_4b",
+      "type": "model",
+      "label": "Qwen3-4B 文本编码器",
+      "target": "text_encoders/qwen_3_4b.safetensors",
+      "size": 8044982048,
+      "sha256": "6c671498573ac2f7a5501502ccce8d2b08ea6ca2f661c458e708f36b36edfc5a",
+      "license": "Apache-2.0",
+      "sources": [
+        "https://www.modelscope.cn/models/Comfy-Org/z_image_turbo/resolve/master/split_files/text_encoders/qwen_3_4b.safetensors",
+        "https://aifasthub.com/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors"
+      ]
+    },
+    {
+      "id": "ae",
+      "type": "model",
+      "label": "Z-Image VAE (ae)",
+      "target": "vae/ae.safetensors",
+      "size": 335304388,
+      "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38",
+      "license": "Apache-2.0",
+      "sources": [
+        "https://www.modelscope.cn/models/Comfy-Org/z_image_turbo/resolve/master/split_files/vae/ae.safetensors",
+        "https://aifasthub.com/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors"
+      ]
+    },
+    {
+      "id": "krea2_turbo_fp8_scaled",
+      "type": "model",
+      "label": "Krea 2 Turbo FP8",
+      "target": "diffusion_models/krea2_turbo_fp8_scaled.safetensors",
+      "size": 13141730784,
+      "sha256": "eb4dd8c612cfd10f64f25b057e6e6bbcb5737c94a7372177e456dbf7579502f1",
+      "license": "Krea 2 Community License",
+      "note": "Turbo FP8；Aesthetics/社区 int8 融合模型不随包分发。",
+      "sources": [
+        "https://www.modelscope.cn/models/Comfy-Org/Krea-2/resolve/master/diffusion_models/krea2_turbo_fp8_scaled.safetensors",
+        "https://aifasthub.com/Comfy-Org/Krea-2/resolve/main/diffusion_models/krea2_turbo_fp8_scaled.safetensors"
+      ]
+    },
+    {
+      "id": "qwen3vl_4b_fp8_scaled",
+      "type": "model",
+      "label": "Qwen3-VL-4B FP8 文本编码器",
+      "target": "text_encoders/qwen3vl_4b_fp8_scaled.safetensors",
+      "size": 5242467968,
+      "sha256": "54bd5144df0bbc25dd6ccadfcb826b521445a1b06ae5a42570bdd2974ca87094",
+      "license": "Apache-2.0",
+      "sources": [
+        "https://www.modelscope.cn/models/Comfy-Org/Krea-2/resolve/master/text_encoders/qwen3vl_4b_fp8_scaled.safetensors",
+        "https://aifasthub.com/Comfy-Org/Krea-2/resolve/main/text_encoders/qwen3vl_4b_fp8_scaled.safetensors"
+      ]
+    },
+    {
+      "id": "qwen_image_vae",
+      "type": "model",
+      "label": "Qwen Image VAE",
+      "target": "vae/qwen_image_vae.safetensors",
+      "size": 253806246,
+      "sha256": "a70580f0213e67967ee9c95f05bb400e8fb08307e017a924bf3441223e023d1f",
+      "license": "Apache-2.0",
+      "sources": [
+        "https://www.modelscope.cn/models/Comfy-Org/Krea-2/resolve/master/vae/qwen_image_vae.safetensors",
+        "https://aifasthub.com/Comfy-Org/Krea-2/resolve/main/vae/qwen_image_vae.safetensors"
       ]
     }
   ]

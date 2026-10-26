@@ -208,7 +208,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
     const recommendedMissingSize = recommendationAvailable ? status?.summary.recommendedMissingSize || 0 : status?.summary.missingSize || 0;
     const visiblePacks = showAll || !recommendationAvailable
         ? status?.packs || []
-        : (status?.packs || []).filter((pack) => pack.recommended || pack.id === "core" || pack.planned);
+        : (status?.packs || []).filter((pack) => pack.recommended || pack.id === "core" || pack.planned || (pack.optional && pack.tier !== "lite"));
     const hiddenPackCount = (status?.packs || []).length - visiblePacks.length;
     const selectedMissingPacks = useMemo(() => {
         if (!status) return [];

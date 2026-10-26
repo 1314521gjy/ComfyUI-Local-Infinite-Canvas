@@ -193,3 +193,48 @@ test("8GB GPU recommends the int8 lite pack instead of bf16", async () => {
         await fsp.rm(root, { recursive: true, force: true });
     }
 });
+
+test("optional alternate model packs can stay eligible without being auto-recommended", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-auto-recommend-test-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(path.join(comfy, "models"), { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    const requirements = {
+        vramFloorGb: 8,
+        weightsGb: 18,
+        ramBaseGb: 8,
+        safety: 0.15,
+        recommendVramGb: 16,
+    };
+    const index = {
+        schema: 1,
+        version: "auto-recommend-test",
+        packs: [
+            { id: "primary", family: "image", tier: "balanced", resources: [], requirements },
+            { id: "alternate", family: "alternate", tier: "standard", optional: true, autoRecommend: false, resources: [], requirements },
+        ],
+        resources: [],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: { loaderOptions: () => ({}), status: () => ({ comfyReachable: true }), scan: async () => ({}) },
+        logger: null,
+        hardware: { gpuName: "Test 32GB", vramTotalMb: 32768, ramTotalBytes: 64 * 1024 ** 3, ramFreeBytes: 64 * 1024 ** 3, detectedAt: new Date().toISOString(), source: "test" },
+    });
+    try {
+        await manager.init();
+        const status = manager.status();
+        const primary = status.packs.find((pack) => pack.id === "primary");
+        const alternate = status.packs.find((pack) => pack.id === "alternate");
+        assert.equal(primary.recommended, true);
+        assert.equal(alternate.eligible, true);
+        assert.equal(alternate.recommended, false);
+        assert.equal(status.summary.recommendedPacks, 1);
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});

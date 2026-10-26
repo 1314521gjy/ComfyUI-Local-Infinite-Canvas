@@ -6,7 +6,7 @@
       "name": "image-z-image-turbo",
       "type": "image",
       "file": "z-image-turbo.json",
-      "description": "Z-Image Turbo txt2img, converted from the local UI workflow. No negative prompt (ConditioningZeroOut).",
+      "description": "Z-Image Turbo 文生图（4–8 步蒸馏）；默认 bf16 底模，Qwen3-4B 文本编码器 + ae VAE，无负面提示（ConditioningZeroOut）。",
       "lora": {
         "filter": "Z-Image|ZIT|Kook_Zimage"
       },
@@ -70,7 +70,7 @@
           "node": "1",
           "input": "unet_name",
           "from": "params.unet",
-          "default": "z-image-turbo_fp8_scaled_e4m3fn_KJ.safetensors"
+          "default": "z_image_turbo_bf16.safetensors"
         }
       },
       "parameters": [
@@ -139,6 +139,7 @@
         "aliases": {
           "Z-image-ZiT-moodyPornMix_zitV7-fp8.safetensors": "moody",
           "Z-image-ZiT-超越真实BEYOND REALITY-V30.safetensors": "beyond",
+          "z-image-turbo_fp8_scaled_e4m3fn_KJ.safetensors": "fp8",
           "z_image_turbo_bf16.safetensors": "bf16"
         }
       },
@@ -3011,6 +3012,155 @@
       "importedAt": "2026-10-26T14:43:20.377Z",
       "source": {
         "kind": "json"
+      }
+    },
+    {
+      "id": "image-krea2-turbo",
+      "name": "image-krea2-turbo",
+      "label": "Krea2 Turbo",
+      "type": "image",
+      "file": "image-krea2-turbo.json",
+      "description": "Krea 2 Turbo FP8 文生图，Qwen3-VL 4B 文本编码器 + Qwen Image VAE；8 步蒸馏，CFG 1。",
+      "lora": {
+        "filter": "Krea2|krea2|K2-"
+      },
+      "bindings": {
+        "prompt": {
+          "node": "4",
+          "input": "text"
+        },
+        "negative": {
+          "node": "5",
+          "input": "text",
+          "default": "low quality, blurry, deformed, watermark, text, mosaic, low resolution"
+        },
+        "width": {
+          "node": "6",
+          "input": "width",
+          "from": "size.width",
+          "transform": "snap16",
+          "default": 1024
+        },
+        "height": {
+          "node": "6",
+          "input": "height",
+          "from": "size.height",
+          "transform": "snap16",
+          "default": 1024
+        },
+        "batch": {
+          "node": "6",
+          "input": "batch_size",
+          "from": "count",
+          "default": 1
+        },
+        "seed": {
+          "node": "7",
+          "input": "seed",
+          "from": "params.seed",
+          "transform": "int",
+          "random": true
+        },
+        "steps": {
+          "node": "7",
+          "input": "steps",
+          "from": "quality.steps",
+          "default": 8
+        },
+        "cfg": {
+          "node": "7",
+          "input": "cfg",
+          "from": "quality.cfg",
+          "default": 1
+        },
+        "sampler": {
+          "node": "7",
+          "input": "sampler_name",
+          "from": "params.sampler",
+          "default": "euler"
+        },
+        "scheduler": {
+          "node": "7",
+          "input": "scheduler",
+          "from": "params.scheduler",
+          "default": "simple"
+        },
+        "unet": {
+          "node": "1",
+          "input": "unet_name",
+          "from": "params.unet",
+          "default": "krea2_turbo_fp8_scaled.safetensors"
+        }
+      },
+      "parameters": [
+        {
+          "key": "seed",
+          "label": "种子",
+          "type": "number",
+          "min": 1,
+          "max": 2147483647,
+          "step": 1,
+          "description": "留空则每次随机"
+        },
+        {
+          "key": "sampler",
+          "label": "采样器",
+          "type": "select",
+          "default": "euler",
+          "options": [
+            "euler",
+            "euler_ancestral",
+            "dpmpp_2m",
+            "dpmpp_2m_sde",
+            "res_multistep"
+          ]
+        },
+        {
+          "key": "scheduler",
+          "label": "调度器",
+          "type": "select",
+          "default": "simple",
+          "options": [
+            "simple",
+            "normal",
+            "beta",
+            "karras",
+            "exponential"
+          ]
+        }
+      ],
+      "presets": {
+        "quality": {
+          "low": {
+            "steps": 6
+          },
+          "medium": {
+            "steps": 8
+          },
+          "high": {
+            "steps": 10
+          },
+          "xhigh": {
+            "steps": 12
+          },
+          "max": {
+            "steps": 16
+          }
+        }
+      },
+      "baseModels": {
+        "param": "unet",
+        "classType": "UNETLoader",
+        "input": "unet_name",
+        "label": "底模",
+        "filter": "krea2",
+        "prefix": "k2t",
+        "aliases": {
+          "krea2_turbo_fp8_scaled.safetensors": "turbo",
+          "krea2_turbo_int8_convrot.safetensors": "int8",
+          "krea2_raw_fp8_scaled.safetensors": "raw",
+          "SinoXvision_Krea2_Aesthetics_fp8_scale.safetensors": "aesthetics"
+        }
       }
     }
   ]

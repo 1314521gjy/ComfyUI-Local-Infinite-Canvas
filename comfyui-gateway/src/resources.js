@@ -330,6 +330,7 @@ export function createResourceManager({ config, setup, logger, hardware: hardwar
                 family: pack.family || pack.id,
                 tier: pack.tier || "standard",
                 optional: Boolean(pack.optional),
+                autoRecommend: pack.autoRecommend !== false,
                 planned: Boolean(pack.planned),
                 eligible: true,
                 recommended: false,
@@ -354,6 +355,7 @@ export function createResourceManager({ config, setup, logger, hardware: hardwar
             const groups = new Map();
             for (const pack of packs) {
                 if (pack.planned || pack.id === "core") continue;
+                if (!pack.autoRecommend) continue;
                 const requirements = (index?.packs || []).find((item) => item.id === pack.id)?.requirements;
                 if (!requirements) continue;
                 const floor = Number(requirements.vramFloorGb || 0);

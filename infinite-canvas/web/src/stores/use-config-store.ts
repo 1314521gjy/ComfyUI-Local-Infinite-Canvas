@@ -498,6 +498,9 @@ export const useConfigStore = create<ConfigStore>()(
                     const localChannels = existingChannels.filter((channel) => isLocalGatewayUrl(channel.baseUrl));
                     const candidate = localChannels[0] || createModelChannel({ ...localDefaultChannel });
                     const keptModels = normalizeChannelModels((candidate.models || []).filter((model) => !/mock/i.test(model.name)));
+                    const fallbackModels = normalizeChannelModels(LOCAL_GATEWAY_MODELS.map((model) => ({ name: model.name, capability: model.capability })));
+                    const keptNames = new Set(keptModels.map((model) => model.name));
+                    const mergedModels = [...keptModels, ...fallbackModels.filter((model) => !keptNames.has(model.name))];
                     config.channels = [
                         {
                             ...candidate,
@@ -505,7 +508,7 @@ export const useConfigStore = create<ConfigStore>()(
                             baseUrl: candidate.baseUrl || LOCAL_GATEWAY_BASE_URL,
                             apiKey: candidate.apiKey || "local",
                             apiFormat: "openai",
-                            models: keptModels.length ? keptModels : normalizeChannelModels(LOCAL_GATEWAY_MODELS.map((model) => ({ name: model.name, capability: model.capability }))),
+                            models: mergedModels.length ? mergedModels : fallbackModels,
                         },
                     ];
                     config.baseUrl = config.channels[0].baseUrl;
