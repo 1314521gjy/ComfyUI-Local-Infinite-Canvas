@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Group, Ungroup } from "lucide-react";
+import { Group, Play, Ungroup } from "lucide-react";
 import { Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
@@ -16,16 +16,20 @@ export function CanvasSelectionToolbar({
     showToolbar,
     canGroup,
     canUngroup,
+    canSyncPlay,
     onGroup,
     onUngroup,
+    onSyncPlay,
 }: {
     nodes: CanvasNodeData[];
     viewport: ViewportTransform;
     showToolbar: boolean;
     canGroup: boolean;
     canUngroup: boolean;
+    canSyncPlay: boolean;
     onGroup: () => void;
     onUngroup: () => void;
+    onSyncPlay: () => void;
 }) {
     const { t } = useTranslation();
     const theme = useCanvasTheme();
@@ -36,7 +40,7 @@ export function CanvasSelectionToolbar({
     const top = viewport.y + bounds.top * viewport.k - SELECTION_PAD;
     const width = (bounds.right - bounds.left) * viewport.k + SELECTION_PAD * 2;
     const height = (bounds.bottom - bounds.top) * viewport.k + SELECTION_PAD * 2;
-    const showActions = showToolbar && (canGroup || canUngroup);
+    const showActions = showToolbar && (canGroup || canUngroup || canSyncPlay);
 
     return (
         <>
@@ -63,6 +67,7 @@ export function CanvasSelectionToolbar({
                     onMouseDown={(event) => event.stopPropagation()}
                     onPointerDown={(event) => event.stopPropagation()}
                 >
+                    {canSyncPlay ? <SelectionAction title={t("canvas.nodeToolbar.syncPlayTitle")} label={t("canvas.nodeToolbar.syncPlay")} icon={<Play className="size-4" />} onClick={onSyncPlay} /> : null}
                     {canGroup ? <SelectionAction title={t("canvas.nodeToolbar.groupTitle")} label={t("canvas.nodeToolbar.group")} icon={<Group className="size-4" />} onClick={onGroup} /> : null}
                     {canUngroup ? <SelectionAction title={t("canvas.nodeToolbar.ungroupTitle")} label={t("canvas.nodeToolbar.ungroup")} icon={<Ungroup className="size-4" />} onClick={onUngroup} /> : null}
                 </div>

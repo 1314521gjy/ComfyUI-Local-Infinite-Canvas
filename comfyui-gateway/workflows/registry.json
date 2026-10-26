@@ -148,8 +148,8 @@
       "id": "video-h3-ref2va",
       "name": "video-h3-ref2va",
       "type": "video",
-      "file": "h3-ref2va-drama.json",
-      "description": "MiniMax-H3 multi-reference (文戏均衡 single-pass). Supports 1–6 images, 0–2 audio clips and 0–1 video (at least one media). 8-step LightX2V Turbo LoRA, TESpeed + SelfLift 6/8; the movie-quality LoRA is excluded.",
+      "file": "h3-ref2va-drama-vdn.json",
+      "description": "MiniMax-H3 multi-reference on the VDN 8-step backend (Singularity + VDN stage-dmd-step-250; turbo adapter + TESpeed + Sage + SelfLift + SigmaRefiner, 9 NFE). Supports 1–6 images, 0–2 audio clips and 0–1 video (at least one media). Requires models/vdn/stage-dmd-step-250.",
       "lora": {
         "filter": "H3|minimax_h3|TaoMate-H3",
         "source": "5"
@@ -341,15 +341,15 @@
           "default": 1
         }
       ],
-      "label": "H3 多参（文戏均衡·8步）",
+      "label": "H3 多参（VDN）",
       "minMedia": 1
     },
     {
       "id": "video-h3-t2v",
       "name": "video-h3-t2v",
       "type": "video",
-      "file": "h3-ref2va-drama.json",
-      "description": "MiniMax-H3 text-to-video on the 文戏均衡 backend (Singularity hybrid, T2VA; 8-step LightX2V + TESpeed + SelfLift). No image/audio/video input.",
+      "file": "h3-ref2va-drama-vdn.json",
+      "description": "MiniMax-H3 text-to-video on the VDN 8-step backend (Singularity + VDN stage-dmd-step-250; turbo adapter + TESpeed + Sage + SelfLift + SigmaRefiner, 9 NFE). No image/audio/video input. Requires models/vdn/stage-dmd-step-250.",
       "lora": {
         "filter": "H3|minimax_h3|TaoMate-H3",
         "source": "5"
@@ -516,14 +516,14 @@
           "default": 1
         }
       ],
-      "label": "H3 文生视频（文戏均衡）"
+      "label": "H3 文生视频（VDN）"
     },
     {
       "id": "video-h3-frames",
       "name": "video-h3-frames",
       "type": "video",
-      "file": "h3-ref2va-drama.json",
-      "description": "MiniMax-H3 first/last-frame video on the 文戏均衡 backend (8-step LightX2V + TESpeed + SelfLift). Requires 1–2 images: first, last, or both; task_type switches I2VA/L2VA/FL2VA.",
+      "file": "h3-ref2va-drama-vdn.json",
+      "description": "MiniMax-H3 first/last-frame video on the VDN 8-step backend (VDN stage-dmd-step-250 + TESpeed + Sage + SelfLift + SigmaRefiner, 9 NFE). Requires 1–2 images: first, last, or both; task_type switches I2VA/L2VA/FL2VA.",
       "lora": {
         "filter": "H3|minimax_h3|TaoMate-H3",
         "source": "5"
@@ -705,7 +705,570 @@
           "default": 1
         }
       ],
-      "label": "H3 首尾帧（1–2 图·文戏均衡）"
+      "label": "H3 首尾帧（VDN）"
+    },
+    {
+      "id": "video-h3-ref2va-novdn",
+      "name": "video-h3-ref2va-novdn",
+      "type": "video",
+      "file": "h3-ref2va-drama.json",
+      "description": "MiniMax-H3 multi-reference on the original canvas chain (LightX2V 8-step LoRA + SolAttn/Sage + TESpeed + SelfLift + SigmaRefiner, 9 NFE; no VDN). Supports 1–6 images, 0–2 audio clips and 0–1 video (at least one media).",
+      "lora": {
+        "filter": "H3|minimax_h3|TaoMate-H3",
+        "source": "5"
+      },
+      "defaults": {
+        "76.strict_prompt_tags": false
+      },
+      "bindings": {
+        "prompt": {
+          "node": "76",
+          "input": "prompt"
+        },
+        "width": {
+          "node": "76",
+          "input": "width",
+          "from": "size.width",
+          "transform": "snap32",
+          "default": 1344
+        },
+        "height": {
+          "node": "76",
+          "input": "height",
+          "from": "size.height",
+          "transform": "snap32",
+          "default": 768
+        },
+        "length": {
+          "node": "76",
+          "input": "length",
+          "from": "seconds",
+          "transform": "secondsToFrames17",
+          "fps": 24,
+          "default": 124
+        },
+        "seed": {
+          "node": "78",
+          "input": "seed",
+          "from": "params.seed",
+          "transform": "int",
+          "random": true
+        },
+        "steps": {
+          "node": "74",
+          "input": "steps",
+          "from": "params.steps",
+          "transform": "int",
+          "default": 8
+        },
+        "cfg": {
+          "node": "78",
+          "input": "cfg",
+          "from": "params.cfg",
+          "default": 1
+        },
+        "transition_step": {
+          "node": "78",
+          "input": "transition_step",
+          "from": "params.transition_step",
+          "transform": "int",
+          "default": 6
+        },
+        "lowres_scale": {
+          "node": "78",
+          "input": "lowres_scale",
+          "from": "params.lowres_scale",
+          "default": 0.6
+        },
+        "rho": {
+          "node": "78",
+          "input": "rho",
+          "from": "params.rho",
+          "default": 0
+        },
+        "w_min": {
+          "node": "78",
+          "input": "w_min",
+          "from": "params.w_min",
+          "default": 0.3
+        },
+        "w_max": {
+          "node": "78",
+          "input": "w_max",
+          "from": "params.w_max",
+          "default": 1
+        },
+        "refs": {
+          "node": "76",
+          "input": "ref_images",
+          "from": "image",
+          "array": true,
+          "inputPrefix": "ref_images.ref_image_",
+          "min": 0,
+          "max": 6
+        },
+        "videos": {
+          "node": "76",
+          "input": "ref_videos",
+          "from": "video",
+          "array": true,
+          "inputPrefix": "ref_videos.ref_video_",
+          "audioPrefix": "ref_video_audios.ref_video_audio_",
+          "min": 0,
+          "max": 1,
+          "loadType": "video"
+        },
+        "audios": {
+          "node": "76",
+          "input": "ref_audios",
+          "from": "audio",
+          "array": true,
+          "inputPrefix": "ref_audios.ref_audio_",
+          "min": 0,
+          "max": 2,
+          "loadType": "audio"
+        }
+      },
+      "parameters": [
+        {
+          "key": "seed",
+          "label": "种子",
+          "type": "number",
+          "min": 1,
+          "max": 2147483647,
+          "step": 1,
+          "description": "留空则每次随机"
+        },
+        {
+          "key": "steps",
+          "label": "步数",
+          "type": "number",
+          "min": 1,
+          "max": 30,
+          "step": 1,
+          "default": 8
+        },
+        {
+          "key": "cfg",
+          "label": "CFG",
+          "type": "number",
+          "min": 1,
+          "max": 10,
+          "step": 0.1,
+          "default": 1
+        },
+        {
+          "key": "transition_step",
+          "label": "SelfLift 切换步",
+          "type": "number",
+          "min": 1,
+          "max": 7,
+          "step": 1,
+          "default": 6,
+          "description": "8 步时最大 7"
+        },
+        {
+          "key": "lowres_scale",
+          "label": "SelfLift 低清比例",
+          "type": "number",
+          "min": 0.25,
+          "max": 1,
+          "step": 0.05,
+          "default": 0.6
+        },
+        {
+          "key": "rho",
+          "label": "SelfLift 锚点校正",
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "step": 0.05,
+          "default": 0
+        },
+        {
+          "key": "w_min",
+          "label": "SelfLift w_min",
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "step": 0.05,
+          "default": 0.3
+        },
+        {
+          "key": "w_max",
+          "label": "SelfLift w_max",
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "step": 0.05,
+          "default": 1
+        }
+      ],
+      "label": "H3 多参（无VDN）",
+      "minMedia": 1
+    },
+    {
+      "id": "video-h3-t2v-novdn",
+      "name": "video-h3-t2v-novdn",
+      "type": "video",
+      "file": "h3-ref2va-drama.json",
+      "description": "MiniMax-H3 text-to-video on the original canvas chain (LightX2V 8-step LoRA + SolAttn/Sage + TESpeed + SelfLift + SigmaRefiner, 9 NFE; no VDN). No image/audio/video input.",
+      "lora": {
+        "filter": "H3|minimax_h3|TaoMate-H3",
+        "source": "5"
+      },
+      "defaults": {
+        "76.strict_prompt_tags": false
+      },
+      "bindings": {
+        "prompt": {
+          "node": "76",
+          "input": "prompt"
+        },
+        "width": {
+          "node": "76",
+          "input": "width",
+          "from": "size.width",
+          "transform": "snap32",
+          "default": 1344
+        },
+        "height": {
+          "node": "76",
+          "input": "height",
+          "from": "size.height",
+          "transform": "snap32",
+          "default": 768
+        },
+        "length": {
+          "node": "76",
+          "input": "length",
+          "from": "seconds",
+          "transform": "secondsToFrames17",
+          "fps": 24,
+          "default": 124
+        },
+        "seed": {
+          "node": "78",
+          "input": "seed",
+          "from": "params.seed",
+          "transform": "int",
+          "random": true
+        },
+        "steps": {
+          "node": "74",
+          "input": "steps",
+          "from": "params.steps",
+          "transform": "int",
+          "default": 8
+        },
+        "cfg": {
+          "node": "78",
+          "input": "cfg",
+          "from": "params.cfg",
+          "default": 1
+        },
+        "transition_step": {
+          "node": "78",
+          "input": "transition_step",
+          "from": "params.transition_step",
+          "transform": "int",
+          "default": 6
+        },
+        "lowres_scale": {
+          "node": "78",
+          "input": "lowres_scale",
+          "from": "params.lowres_scale",
+          "default": 0.6
+        },
+        "rho": {
+          "node": "78",
+          "input": "rho",
+          "from": "params.rho",
+          "default": 0
+        },
+        "w_min": {
+          "node": "78",
+          "input": "w_min",
+          "from": "params.w_min",
+          "default": 0.3
+        },
+        "w_max": {
+          "node": "78",
+          "input": "w_max",
+          "from": "params.w_max",
+          "default": 1
+        },
+        "task_type": {
+          "node": "76",
+          "input": "task_type",
+          "default": "T2VA"
+        }
+      },
+      "parameters": [
+        {
+          "key": "seed",
+          "label": "种子",
+          "type": "number",
+          "min": 1,
+          "max": 2147483647,
+          "step": 1,
+          "description": "留空则每次随机"
+        },
+        {
+          "key": "steps",
+          "label": "步数",
+          "type": "number",
+          "min": 1,
+          "max": 30,
+          "step": 1,
+          "default": 8
+        },
+        {
+          "key": "cfg",
+          "label": "CFG",
+          "type": "number",
+          "min": 1,
+          "max": 10,
+          "step": 0.1,
+          "default": 1
+        },
+        {
+          "key": "transition_step",
+          "label": "SelfLift 切换步",
+          "type": "number",
+          "min": 1,
+          "max": 7,
+          "step": 1,
+          "default": 6,
+          "description": "8 步时最大 7"
+        },
+        {
+          "key": "lowres_scale",
+          "label": "SelfLift 低清比例",
+          "type": "number",
+          "min": 0.25,
+          "max": 1,
+          "step": 0.05,
+          "default": 0.6
+        },
+        {
+          "key": "rho",
+          "label": "SelfLift 锚点校正",
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "step": 0.05,
+          "default": 0
+        },
+        {
+          "key": "w_min",
+          "label": "SelfLift w_min",
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "step": 0.05,
+          "default": 0.3
+        },
+        {
+          "key": "w_max",
+          "label": "SelfLift w_max",
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "step": 0.05,
+          "default": 1
+        }
+      ],
+      "label": "H3 文生视频（无VDN）"
+    },
+    {
+      "id": "video-h3-frames-novdn",
+      "name": "video-h3-frames-novdn",
+      "type": "video",
+      "file": "h3-ref2va-drama.json",
+      "description": "MiniMax-H3 first/last-frame video on the original canvas chain (LightX2V 8-step LoRA + SolAttn/Sage + TESpeed + SelfLift + SigmaRefiner, 9 NFE; no VDN). Requires 1–2 images: first, last, or both; task_type switches I2VA/L2VA/FL2VA.",
+      "lora": {
+        "filter": "H3|minimax_h3|TaoMate-H3",
+        "source": "5"
+      },
+      "defaults": {
+        "76.strict_prompt_tags": false
+      },
+      "bindings": {
+        "prompt": {
+          "node": "76",
+          "input": "prompt"
+        },
+        "width": {
+          "node": "76",
+          "input": "width",
+          "from": "size.width",
+          "transform": "snap32",
+          "default": 1344
+        },
+        "height": {
+          "node": "76",
+          "input": "height",
+          "from": "size.height",
+          "transform": "snap32",
+          "default": 768
+        },
+        "length": {
+          "node": "76",
+          "input": "length",
+          "from": "seconds",
+          "transform": "secondsToFrames17",
+          "fps": 24,
+          "default": 124
+        },
+        "seed": {
+          "node": "78",
+          "input": "seed",
+          "from": "params.seed",
+          "transform": "int",
+          "random": true
+        },
+        "steps": {
+          "node": "74",
+          "input": "steps",
+          "from": "params.steps",
+          "transform": "int",
+          "default": 8
+        },
+        "cfg": {
+          "node": "78",
+          "input": "cfg",
+          "from": "params.cfg",
+          "default": 1
+        },
+        "transition_step": {
+          "node": "78",
+          "input": "transition_step",
+          "from": "params.transition_step",
+          "transform": "int",
+          "default": 6
+        },
+        "lowres_scale": {
+          "node": "78",
+          "input": "lowres_scale",
+          "from": "params.lowres_scale",
+          "default": 0.6
+        },
+        "rho": {
+          "node": "78",
+          "input": "rho",
+          "from": "params.rho",
+          "default": 0
+        },
+        "w_min": {
+          "node": "78",
+          "input": "w_min",
+          "from": "params.w_min",
+          "default": 0.3
+        },
+        "w_max": {
+          "node": "78",
+          "input": "w_max",
+          "from": "params.w_max",
+          "default": 1
+        },
+        "task_type": {
+          "node": "76",
+          "input": "task_type",
+          "from": "params.frameMode",
+          "map": {
+            "first": "I2VA",
+            "last": "L2VA",
+            "both": "FL2VA"
+          },
+          "default": "FL2VA"
+        },
+        "frames": {
+          "node": "76",
+          "input": "first_frame",
+          "from": "image",
+          "frameMode": true,
+          "firstInput": "first_frame",
+          "lastInput": "last_frame",
+          "max": 2
+        }
+      },
+      "parameters": [
+        {
+          "key": "seed",
+          "label": "种子",
+          "type": "number",
+          "min": 1,
+          "max": 2147483647,
+          "step": 1,
+          "description": "留空则每次随机"
+        },
+        {
+          "key": "steps",
+          "label": "步数",
+          "type": "number",
+          "min": 1,
+          "max": 30,
+          "step": 1,
+          "default": 8
+        },
+        {
+          "key": "cfg",
+          "label": "CFG",
+          "type": "number",
+          "min": 1,
+          "max": 10,
+          "step": 0.1,
+          "default": 1
+        },
+        {
+          "key": "transition_step",
+          "label": "SelfLift 切换步",
+          "type": "number",
+          "min": 1,
+          "max": 7,
+          "step": 1,
+          "default": 6,
+          "description": "8 步时最大 7"
+        },
+        {
+          "key": "lowres_scale",
+          "label": "SelfLift 低清比例",
+          "type": "number",
+          "min": 0.25,
+          "max": 1,
+          "step": 0.05,
+          "default": 0.6
+        },
+        {
+          "key": "rho",
+          "label": "SelfLift 锚点校正",
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "step": 0.05,
+          "default": 0
+        },
+        {
+          "key": "w_min",
+          "label": "SelfLift w_min",
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "step": 0.05,
+          "default": 0.3
+        },
+        {
+          "key": "w_max",
+          "label": "SelfLift w_max",
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "step": 0.05,
+          "default": 1
+        }
+      ],
+      "label": "H3 首尾帧（无VDN）"
     },
     {
       "id": "video-esrgan_2x",
@@ -718,6 +1281,10 @@
       "defaults": {},
       "presets": {},
       "importedAt": "2026-10-24T11:41:05.053Z",
+      "source": {
+        "kind": "path",
+        "path": "E:\\ComfyUI\\ComfyUI\\user\\default\\workflows\\ESRGAN_2x放大.json"
+      },
       "label": "ESRGAN 2x 放大"
     },
     {
@@ -784,7 +1351,11 @@
           "default": 42
         }
       ],
-      "label": "SeedVR2 视频超分"
+      "label": "SeedVR2 视频超分",
+      "source": {
+        "kind": "path",
+        "path": "C:\\Users\\Administrator\\Documents\\Qoder\\2026-10-24\\07842353\\comfyui-gateway\\workflows\\video-seedvr2-upscale.json"
+      }
     },
     {
       "id": "image-krea2-aesthetics",

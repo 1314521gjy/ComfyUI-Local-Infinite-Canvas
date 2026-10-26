@@ -11,7 +11,7 @@ import { bindStepProgress, unbindStepProgress } from "@/services/api/step-progre
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { createVideoGenerationTask, createVideoUpscaleTask, isVideoTaskFailed, storeGeneratedVideo, waitForVideoGenerationTask, type VideoPreview } from "@/services/api/video";
 import { channelModelOf, defaultConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
-import { ensureImagePreview, uploadImage } from "@/services/image-storage";
+import { ensureImagePreview, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { nanoid } from "nanoid";
 import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
@@ -72,6 +72,7 @@ import {
     isAudioFile,
     isGenerationCanceled,
     resetInterruptedGeneration,
+    clearStaleNodeErrors,
     resolveMetadataReferences,
     sourceNodeReferenceImages,
 } from "@/lib/canvas/canvas-generation-helpers";
@@ -567,7 +568,7 @@ function InfiniteCanvasPage() {
         }
 
         const restore = async () => {
-            const restoredNodes = await hydrateCanvasImages(resetInterruptedGeneration(project.nodes));
+            const restoredNodes = await hydrateCanvasImages(clearStaleNodeErrors(resetInterruptedGeneration(project.nodes)));
             const restoredSessions = await hydrateAssistantImages(project.chatSessions || []);
             setNodes(restoredNodes);
             setConnections(project.connections);
@@ -868,6 +869,23 @@ function InfiniteCanvasPage() {
     const previewContent = previewImageId ? previewNode?.metadata?.images?.find((image) => image.id === previewImageId)?.content : previewNode?.metadata?.content;
     const hasMultipleSelectedNodes = selectedNodeIds.size > 1;
     const selectedNodes = useMemo(() => nodes.filter((node) => selectedNodeIds.has(node.id)), [nodes, selectedNodeIds]);
+    const selectedVideoNodes = selectedNodes.filter((node) => node.type === CanvasNodeType.Video && Boolean(node.metadata?.content));
+    const syncPlaySelectedVideos = () => {
+        const ids = new Set(selectedVideoNodes.map((node) => node.id));
+        const videos = Array.from(document.querySelectorAll<HTMLVideoElement>("video[data-canvas-video]")).filter((video) => ids.has(video.dataset.canvasVideo || ""));
+        if (!videos.length) return;
+        for (const video of videos) {
+            video.muted = true;
+            try {
+                video.currentTime = 0;
+            } catch {
+                // Ignore videos whose metadata is not ready yet.
+            }
+        }
+        requestAnimationFrame(() => {
+            for (const video of videos) void video.play().catch(() => undefined);
+        });
+    };
     const canGroupSelection = canGroupSelectedNodes(selectedNodeIds, nodes);
     const canUngroupSelection = canUngroupSelectedNodes(selectedNodeIds, nodes);
     const activeNodeId = hasMultipleSelectedNodes ? null : hoveredNodeId || (selectedNodeIds.size === 1 ? Array.from(selectedNodeIds)[0] : null);
@@ -2000,21 +2018,24 @@ function InfiniteCanvasPage() {
                 message.success(t("common.addedToAssets"));
                 return;
             }
-            if (!node.metadata?.content) return message.error(t("canvas.projectPage.noImageToSave"));
-            const dataUrl = node.metadata.storageKey ? "" : node.metadata.content;
+            const primaryImage = node.metadata?.images?.find((image) => image.id === node.metadata?.primaryImageId) || node.metadata?.images?.[0];
+            const imageContent = primaryImage?.content || node.metadata?.content || "";
+            const imageStorageKey = primaryImage?.storageKey || node.metadata?.storageKey;
+            if (!imageContent) return message.error(t("canvas.projectPage.noImageToSave"));
+            const dataUrl = imageStorageKey ? "" : imageContent;
             addAsset({
                 kind: "image",
                 title: node.metadata?.prompt?.slice(0, 24) || t("canvas.projectPage.canvasImage"),
-                coverUrl: node.metadata.content,
+                coverUrl: imageContent,
                 tags: [],
                 source: "Canvas",
                 data: {
                     dataUrl,
-                    storageKey: node.metadata.storageKey,
-                    width: node.metadata.naturalWidth || node.width,
-                    height: node.metadata.naturalHeight || node.height,
-                    bytes: node.metadata.bytes || getDataUrlByteSize(dataUrl),
-                    mimeType: node.metadata.mimeType || "image/png",
+                    storageKey: imageStorageKey,
+                    width: primaryImage?.naturalWidth || node.metadata?.naturalWidth || node.width,
+                    height: primaryImage?.naturalHeight || node.metadata?.naturalHeight || node.height,
+                    bytes: primaryImage?.bytes || node.metadata?.bytes || getDataUrlByteSize(dataUrl),
+                    mimeType: primaryImage?.mimeType || node.metadata?.mimeType || "image/png",
                 },
                 metadata: { source: "canvas", nodeId: node.id, prompt: node.metadata?.prompt },
             });
@@ -3338,7 +3359,11 @@ function InfiniteCanvasPage() {
 
     const insertAssistantImage = useCallback(
         async (image: CanvasAssistantImage) => {
-            const storedImage = image.storageKey ? { url: image.dataUrl, storageKey: image.storageKey, width: 1, height: 1, bytes: 0, mimeType: "image/png" } : await uploadImage(image.dataUrl);
+            const storedImage = image.storageKey ? { url: image.dataUrl || (await resolveImageUrl(image.storageKey)), storageKey: image.storageKey, width: 1, height: 1, bytes: 0, mimeType: "image/png" } : await uploadImage(image.dataUrl);
+            if (!storedImage.url) {
+                message.error(t("assets.downloadFailed"));
+                return;
+            }
             await ensureImagePreview(storedImage.storageKey);
             const meta = storedImage.width === 1 && storedImage.height === 1 ? await readImageMeta(storedImage.url) : storedImage;
             const config = fitNodeSize(meta.width, meta.height);
@@ -3359,7 +3384,7 @@ function InfiniteCanvasPage() {
             setSelectedConnectionId(null);
             setDialogNodeId(id);
         },
-        [screenToCanvas, size.height, size.width],
+        [message, screenToCanvas, size.height, size.width, t],
     );
 
     const insertAssistantText = useCallback(
@@ -3966,8 +3991,10 @@ function InfiniteCanvasPage() {
                         showToolbar={!isNodeDragging && !isNodeResizing}
                         canGroup={canGroupSelection}
                         canUngroup={canUngroupSelection}
+                        canSyncPlay={selectedVideoNodes.length >= 2}
                         onGroup={groupSelection}
                         onUngroup={ungroupSelection}
+                        onSyncPlay={syncPlaySelectedVideos}
                     />
                 ) : null}
 
@@ -3983,7 +4010,6 @@ function InfiniteCanvasPage() {
                     onAddVideo={() => createNode(CanvasNodeType.Video)}
                     onAddAudio={() => createNode(CanvasNodeType.Audio)}
                     onAddText={() => createNode(CanvasNodeType.Text)}
-                    onAddConfig={() => createNode(CanvasNodeType.Config)}
                     onAddFreeCard={() => createNode(CanvasNodeType.FreeCard)}
                     onAddGroup={() => createNode(CanvasNodeType.Group)}
                     onAddExtensionNode={(type) => createNode(type)}

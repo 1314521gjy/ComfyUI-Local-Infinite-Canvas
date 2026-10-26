@@ -55,6 +55,150 @@ function outputText(history) {
   return "";
 }
 
+const THINK_BLOCK_RE = /<(think|thinking|analysis|reasoning|scratchpad)(?:\s[^>]*)?>[\s\S]*?<\/\1>/gi;
+const META_LINE_RE = /^(?:[-*#>\s]*)?(?:\*\*)?(?:思考过程|思考|分析|推理|说明|解释|备注|注意|Thinking|Analysis|Reasoning|Explanation|Notes?)(?:\*\*)?\s*[:：]/i;
+
+function stripReasoning(text) {
+  let out = String(text || "");
+  out = out.replace(THINK_BLOCK_RE, "");
+  out = out.replace(/<\|[^|]{1,60}\|>/g, "");
+  out = out.replace(/^\s*```[a-zA-Z0-9_-]*\s*\n?/, "").replace(/\n?```\s*$/, "");
+  const kept = [];
+  for (const line of out.split(/\r?\n/)) {
+    if (META_LINE_RE.test(line.trim())) continue;
+    kept.push(line);
+  }
+  return kept.join("\n").trim();
+}
+
+function sanitizeH3Prompt(text) {
+  let out = stripReasoning(text);
+  const main = out.search(/integrated_multimodal_description\s*:/i);
+  if (main > 0) out = out.slice(main);
+  else if (main < 0) {
+    const alt = out.search(/overall_soundscape\s*:|non_diegetic_music\s*:/i);
+    if (alt > 0) out = out.slice(alt);
+  }
+  out = out.replace(/\n{2,}(?:思考过程|分析|推理|解释|备注|说明)\s*[:：][\s\S]*$/i, "");
+  out = out.replace(/^(最终提示词|输出结果|输出|结果|Prompt)\s*[:：]\s*/i, "");
+  return out.trim();
+}
+
+function sanitizeImagePrompt(text) {
+  let out = stripReasoning(text);
+  for (const marker of ["最终提示词：", "最终提示词:", "提示词：", "提示词:", "**Prompt:**", "Prompt:", "输出：", "输出:"]) {
+    const index = out.lastIndexOf(marker);
+    if (index >= 0) out = out.slice(index + marker.length).trim();
+  }
+  const paragraphs = out.split(/\n{2,}/).map((item) => item.trim()).filter(Boolean);
+  const metaStart = /^(?:思考|分析|推理|我们|首先|用户|需求|要求|说明|注|最终|The user|We need|Let me|I need|Analysis|Reasoning|Explanation|Here'?s|Okay|Sure)/i;
+  while (paragraphs.length > 1 && metaStart.test(paragraphs[0])) paragraphs.shift();
+  out = paragraphs.join("\n\n").trim();
+  out = out.replace(/^```[a-zA-Z]*\s*/, "").replace(/```$/, "").trim();
+  out = out.replace(/^["“「']+|["”」']+$/g, "").trim();
+  return out;
+}
+
+function sanitizeCaption(text) {
+  let out = stripReasoning(text);
+  out = out.replace(/^(?:画面描述|图片描述|描述|Caption)\s*[:：]\s*/i, "");
+  const paragraphs = out.split(/\n{2,}/).map((item) => item.trim()).filter(Boolean);
+  const metaStart = /^(?:思考|分析|推理|我们|首先|用户|需求|要求|说明|注|The user|We need|Let me|I need|Analysis|Reasoning|Explanation|Here'?s|Okay|Sure)/i;
+  while (paragraphs.length > 1 && metaStart.test(paragraphs[0])) paragraphs.shift();
+  return paragraphs.join("\n\n").trim();
+}
+
+function cloudChatUrl(baseUrl) {
+  const url = String(baseUrl || "").trim().replace(/\/+$/, "");
+  if (!url) throw new PromptOptimizeError("云端 API 未配置 Base URL", { status: 400, code: "cloud_not_configured" });
+  if (/\/chat\/completions$/i.test(url)) return url;
+  if (/\/v\d+$/i.test(url)) return `${url}/chat/completions`;
+  return `${url}/v1/chat/completions`;
+}
+
+const CLOUD_SYSTEM_PROMPT = `你是 MiniMax-H3 视频提示词专家。请将用户输入扩写为 H3 官方格式，只输出以下三段，不要输出任何思考过程、分析、解释、Markdown 代码块或前后缀：
+
+integrated_multimodal_description: [Shot 1] ...（按视频时长设计 1–4 个镜头；每个镜头写清主体、动作、镜头运动、光线、风格；默认自然速度，除非用户要求慢动作）
+[Shot 2] At 00:0X.000, ...
+overall_soundscape: ...
+non_diegetic_music: ...
+
+要求：画面与声音描述使用英文；保留用户的主体与意图；不要编造品牌或画面文字；镜头时间线与总时长一致。`;
+
+function cloudContent(data) {
+  const content = data?.choices?.[0]?.message?.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map((part) => (typeof part === "string" ? part : part?.text || "")).join("");
+  }
+  return "";
+}
+
+async function cloudOptimize({ prompt, mode, duration, referenceNote, uploadedImages = [], cloud = {}, signal }) {
+  const baseUrl = String(cloud.baseUrl || "").trim();
+  const apiKey = String(cloud.apiKey || "").trim();
+  const model = String(cloud.model || "").trim();
+  if (!baseUrl || !apiKey || !model) {
+    throw new PromptOptimizeError("云端 API 未配置：请先在设置中填写 Base URL、API Key 和模型", { status: 400, code: "cloud_not_configured" });
+  }
+  const endpoint = cloudChatUrl(baseUrl);
+  const userText = [
+    `任务类型：${mode}`,
+    `视频时长：${duration} 秒`,
+    referenceNote ? `参考素材说明：${referenceNote}` : "",
+    uploadedImages.length ? `参考图片：${uploadedImages.length} 张（云端模式仅使用文字说明）` : "",
+    `用户原始提示词：\n${prompt}`,
+  ].filter(Boolean).join("\n");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error("云端 API 超时")), 120000);
+  const onAbort = () => controller.abort(signal?.reason);
+  if (signal) {
+    if (signal.aborted) controller.abort(signal.reason);
+    else signal.addEventListener("abort", onAbort, { once: true });
+  }
+  const started = Date.now();
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: CLOUD_SYSTEM_PROMPT },
+          { role: "user", content: userText },
+        ],
+        temperature: 0.6,
+        max_tokens: 4096,
+      }),
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = null;
+    }
+    if (!response.ok) {
+      const message = data?.error?.message || data?.message || text || `HTTP ${response.status}`;
+      throw new PromptOptimizeError(`云端 API 失败：${truncate(String(message), 800)}`, { status: 502, code: "cloud_api_failed", details: data });
+    }
+    const raw = cloudContent(data);
+    const result = sanitizeH3Prompt(raw);
+    if (!result) throw new PromptOptimizeError("云端 API 没有返回提示词", { status: 502, code: "no_prompt_output", details: data });
+    return { prompt: result, mode, duration, provider: "cloud", model, elapsedMs: Date.now() - started };
+  } catch (error) {
+    if (error instanceof PromptOptimizeError) throw error;
+    if (error?.name === "AbortError") {
+      throw new PromptOptimizeError("云端 API 请求已取消或超时", { status: 504, code: "cloud_api_timeout" });
+    }
+    throw new PromptOptimizeError(`云端 API 请求失败：${error?.message || error}`, { status: 502, code: "cloud_api_failed" });
+  } finally {
+    clearTimeout(timer);
+    if (signal) signal.removeEventListener("abort", onAbort);
+  }
+}
+
 export function createPromptOptimizer({ config, comfy, logger }) {
   const workflowPath = path.join(config.rootDir, "prompts", "h3-prompt-enhance.json");
   const imageWorkflowPath = path.join(config.rootDir, "prompts", "image-prompt-enhance.json");
@@ -84,7 +228,7 @@ export function createPromptOptimizer({ config, comfy, logger }) {
     return deepClone(captionTemplate);
   }
 
-  async function optimize({ prompt, mode, duration, referenceNote, uploadedImages = [], signal }) {
+  async function optimize({ prompt, mode, duration, referenceNote, uploadedImages = [], signal, engine = "local", cloud = {} }) {
     const text = String(prompt || "").trim();
     if (!text) throw new PromptOptimizeError("缺少提示词", { status: 400, code: "missing_prompt" });
     if (text.length > 8000) throw new PromptOptimizeError("提示词过长", { status: 400, code: "prompt_too_long" });
@@ -93,6 +237,10 @@ export function createPromptOptimizer({ config, comfy, logger }) {
     const seconds = Number(duration);
     const optimizeSeconds = Number.isFinite(seconds) ? Math.min(15, Math.max(1, seconds)) : 5;
     const images = uploadedImages.slice(0, 8);
+
+    if (String(engine || "local").toLowerCase() === "cloud") {
+      return cloudOptimize({ prompt: text, mode: taskType, duration: optimizeSeconds, referenceNote, uploadedImages: images, cloud, signal });
+    }
 
     const workflow = workflowTemplate();
     workflow["2"].inputs["输入提示词"] = text;
@@ -113,6 +261,8 @@ export function createPromptOptimizer({ config, comfy, logger }) {
     } else {
       workflow["3"].inputs["输入模式"] = "文本";
     }
+    const baseSystemPrompt = String(workflow["3"].inputs["系统提示词"] || "").trim();
+    workflow["3"].inputs["系统提示词"] = `${baseSystemPrompt}${baseSystemPrompt ? "\n" : ""}只输出最终提示词正文；禁止输出思考过程、分析、推理、解释、Markdown 代码块、前后缀或自我说明。`;
 
     const started = Date.now();
     const submitted = await comfy.submit(workflow, { signal });
@@ -153,7 +303,9 @@ export function createPromptOptimizer({ config, comfy, logger }) {
       if (!historyCompleted(history)) {
         throw new PromptOptimizeError("提示词优化超时", { status: 504, code: "prompt_optimize_timeout" });
       }
-      const result = outputText(history).trim();
+      const raw = outputText(history).trim();
+      const result = sanitizeH3Prompt(raw);
+      if (raw !== result) logger?.info?.(`prompt optimize sanitized ${raw.length}->${result.length}`);
       if (!result) {
         throw new PromptOptimizeError("提示词工作流没有返回文本", {
           status: 502,
@@ -162,7 +314,7 @@ export function createPromptOptimizer({ config, comfy, logger }) {
         });
       }
       logger?.info?.(`prompt optimize ${taskType} images=${images.length} ${promptId} ${Date.now() - started}ms`);
-      return { prompt: result, mode: taskType, duration: optimizeSeconds, promptId, elapsedMs: Date.now() - started };
+      return { prompt: result, mode: taskType, duration: optimizeSeconds, promptId, elapsedMs: Date.now() - started, provider: "local" };
     } finally {
       running = false;
       signal?.removeEventListener("abort", onAbort);
@@ -232,7 +384,9 @@ export function createPromptOptimizer({ config, comfy, logger }) {
       if (!historyCompleted(history)) {
         throw new PromptOptimizeError("提示词优化超时", { status: 504, code: "prompt_optimize_timeout" });
       }
-      const result = outputText(history).trim();
+      const raw = outputText(history).trim();
+      const result = sanitizeImagePrompt(raw);
+      if (raw !== result) logger?.info?.(`image prompt optimize sanitized ${raw.length}->${result.length}`);
       if (!result) {
         throw new PromptOptimizeError("提示词工作流没有返回文本", {
           status: 502,
@@ -298,7 +452,9 @@ export function createPromptOptimizer({ config, comfy, logger }) {
       if (!historyCompleted(history)) {
         throw new PromptOptimizeError("反推提示词超时", { status: 504, code: "caption_timeout" });
       }
-      const result = outputText(history).trim();
+      const raw = outputText(history).trim();
+      const result = sanitizeCaption(raw);
+      if (raw !== result) logger?.info?.(`image caption sanitized ${raw.length}->${result.length}`);
       if (!result) {
         throw new PromptOptimizeError("反推工作流没有返回文本", {
           status: 502,

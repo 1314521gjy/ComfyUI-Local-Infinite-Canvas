@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
 import { ImageSettingsTheme, SeedSetting } from "@/components/image-settings-panel";
 import { type CanvasTheme } from "@/lib/canvas-theme";
-import { videoWorkflowId } from "@/lib/canvas/video-model-mode";
+import { videoWorkflowId, baseVideoWorkflowId } from "@/lib/canvas/video-model-mode";
 import { clampVideoSeconds, computeVideoSize, inferVideoRatio, parseVideoResolution, readVideoDimensions, VIDEO_SECONDS_MAX, VIDEO_SECONDS_MIN, videoRatioOptions } from "@/lib/media-size";
 import { type AiConfig } from "@/stores/use-config-store";
 
@@ -25,7 +25,7 @@ export const videoSecondsRange = { min: VIDEO_SECONDS_MIN, max: VIDEO_SECONDS_MA
 
 type VideoSettingsPanelProps = {
     config: AiConfig;
-    onConfigChange: (key: "vquality" | "size" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark" | "videoMode" | "seedFixed" | "seed", value: string) => void;
+    onConfigChange: (key: "vquality" | "size" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark" | "videoMode" | "videoInterpolation" | "videoSelfLiftMode" | "seedFixed" | "seed", value: string) => void;
     theme: CanvasTheme;
     showTitle?: boolean;
     className?: string;
@@ -44,7 +44,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
     const { t } = useTranslation();
     const seconds = Number(clampVideoSeconds(config.videoSeconds || "6"));
     const videoMode = normalizeVideoModeValue(config.videoMode);
-    const workflowId = videoWorkflowId(config, config.model);
+    const workflowId = baseVideoWorkflowId(videoWorkflowId(config, config.model));
     const isH3Reference = workflowId === "video-h3-ref2va";
     const isH3Frames = workflowId === "video-h3-frames";
     const isH3Text = workflowId === "video-h3-t2v";
@@ -119,6 +119,33 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                     </div>
                 </SettingGroup>
                 <SeedSetting fixed={config.seedFixed === "true"} seed={config.seed || ""} theme={theme} onChange={onConfigChange} />
+                <SettingGroup title={t("settingsPanels.video.interpolation")} color={theme.node.muted}>
+                    <div className="grid grid-cols-3 gap-2.5">
+                        {[
+                            { value: "off", labelKey: "interpolationOff" },
+                            { value: "2x", labelKey: "interpolation2x" },
+                            { value: "3x", labelKey: "interpolation3x" },
+                        ].map((item) => (
+                            <OptionPill key={item.value} selected={(config.videoInterpolation || "off") === item.value} theme={theme} onClick={() => onConfigChange("videoInterpolation", item.value)}>
+                                {t(`settingsPanels.video.${item.labelKey}`)}
+                            </OptionPill>
+                        ))}
+                    </div>
+                </SettingGroup>
+                {isH3 ? (
+                    <SettingGroup title={t("settingsPanels.video.selfLiftMode")} color={theme.node.muted}>
+                        <div className="grid grid-cols-2 gap-2.5">
+                            {[
+                                { value: "fast", labelKey: "selfLiftFast" },
+                                { value: "quality", labelKey: "selfLiftQuality" },
+                            ].map((item) => (
+                                <OptionPill key={item.value} selected={(config.videoSelfLiftMode || "fast") === item.value} theme={theme} onClick={() => onConfigChange("videoSelfLiftMode", item.value)}>
+                                    {t(`settingsPanels.video.${item.labelKey}`)}
+                                </OptionPill>
+                            ))}
+                        </div>
+                    </SettingGroup>
+                ) : null}
                 <SettingGroup title={t("settingsPanels.video.mode")} color={theme.node.muted}>
                     <div className={modeOptions.length > 1 ? "grid grid-cols-2 gap-2.5" : "grid grid-cols-1 gap-2.5"}>
                         {modeOptions.map((item) => (
@@ -176,6 +203,16 @@ export function videoSecondsLabel(value: string) {
 
 export function videoModeLabel(value: string) {
     return i18n.t(`settingsPanels.video.modes.${normalizeVideoModeValue(value)}`);
+}
+
+export function videoInterpolationLabel(value: string | undefined) {
+    if (value === "2x") return i18n.t("settingsPanels.video.interpolation2x");
+    if (value === "3x") return i18n.t("settingsPanels.video.interpolation3x");
+    return "";
+}
+
+export function videoSelfLiftLabel(value: string | undefined) {
+    return value === "quality" ? i18n.t("settingsPanels.video.selfLiftQuality") : "";
 }
 
 export function normalizeVideoModeValue(value: string | undefined) {

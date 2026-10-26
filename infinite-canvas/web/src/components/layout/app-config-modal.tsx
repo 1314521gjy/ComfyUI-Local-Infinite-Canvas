@@ -293,6 +293,28 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                         ),
                     },
                     {
+                        key: "cloud-api",
+                        label: t("config.tabs.cloudApi"),
+                        children: (
+                            <Form layout="vertical" requiredMark={false}>
+                                <div className="mb-2 text-sm font-semibold">{t("config.cloudApi.title")}</div>
+                                <div className="mb-4 text-xs text-stone-500">{t("config.cloudApi.description")}</div>
+                                <div className="grid gap-4 md:grid-cols-2">
+                                    <Form.Item label={t("config.cloudApi.baseUrl")} className="mb-4">
+                                        <Input value={config.promptCloudBaseUrl || ""} onChange={(event) => updateConfig("promptCloudBaseUrl", event.target.value)} placeholder="https://api.openai.com/v1" />
+                                    </Form.Item>
+                                    <Form.Item label={t("config.cloudApi.model")} className="mb-4">
+                                        <Input value={config.promptCloudModel || ""} onChange={(event) => updateConfig("promptCloudModel", event.target.value)} placeholder="gpt-4o-mini" />
+                                    </Form.Item>
+                                </div>
+                                <Form.Item label={t("config.cloudApi.apiKey")} className="mb-4">
+                                    <Input.Password value={config.promptCloudApiKey || ""} onChange={(event) => updateConfig("promptCloudApiKey", event.target.value)} placeholder="sk-..." autoComplete="off" />
+                                </Form.Item>
+                                <div className="text-xs text-stone-500">{t("config.cloudApi.hint")}</div>
+                            </Form>
+                        ),
+                    },
+                    {
                         key: "local-proxy",
                         label: t("config.tabs.localProxy"),
                         children: <ConfigLocalProxy />,

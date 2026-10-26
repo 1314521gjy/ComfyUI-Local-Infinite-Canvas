@@ -122,6 +122,8 @@ export function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | u
         videoGenerateAudio: node?.metadata?.generateAudio || config.videoGenerateAudio || defaultConfig.videoGenerateAudio,
         videoWatermark: node?.metadata?.watermark || config.videoWatermark || defaultConfig.videoWatermark,
         videoMode: node?.metadata?.videoMode || config.videoMode || defaultConfig.videoMode,
+        videoInterpolation: node?.metadata?.videoInterpolation || config.videoInterpolation || defaultConfig.videoInterpolation,
+        videoSelfLiftMode: node?.metadata?.videoSelfLiftMode || config.videoSelfLiftMode || defaultConfig.videoSelfLiftMode,
         frameMode: node?.metadata?.frameMode || config.frameMode,
         imageMode: node?.metadata?.imageMode || config.imageMode || "",
         outpaint: node?.metadata?.outpaint || config.outpaint,
@@ -154,6 +156,14 @@ export function resetInterruptedGeneration(nodes: CanvasNodeData[]) {
                           texts: node.metadata.texts?.map((text) => (text.status === "loading" ? { ...text, status: "error" as const, errorDetails: i18n.t("canvas.generation.interrupted") } : text)),
                       },
                   }
+            : node,
+    );
+}
+
+export function clearStaleNodeErrors(nodes: CanvasNodeData[]) {
+    return nodes.map((node) =>
+        node.metadata?.status === "error"
+            ? { ...node, metadata: { ...node.metadata, status: "idle" as const, errorDetails: undefined } }
             : node,
     );
 }

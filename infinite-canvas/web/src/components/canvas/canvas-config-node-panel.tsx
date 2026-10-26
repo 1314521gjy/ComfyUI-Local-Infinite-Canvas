@@ -8,7 +8,7 @@ import { LOCAL_ONLY } from "@/constant/app-mode";
 import { defaultConfig, resolveModelForCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 
 import { useCanvasTheme } from "@/lib/canvas/use-canvas-theme";
-import { videoModelForWorkflow, videoModelModePatch } from "@/lib/canvas/video-model-mode";
+import { videoModelForWorkflow, videoModelModePatch, videoWorkflowId, isNoVdnWorkflowId } from "@/lib/canvas/video-model-mode";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
 import { CanvasAudioSettingsPopover, type CanvasAudioSettingKey } from "./canvas-audio-settings-popover";
 import { CanvasVideoSettingsPopover } from "./canvas-video-settings-popover";
@@ -43,8 +43,8 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
               ? "both"
               : "first";
     const changeVideoMode = (value: "text" | "frames" | "reference") => {
-        const workflowId = value === "reference" ? "video-h3-ref2va" : value === "frames" ? "video-h3-frames" : "video-h3-t2v";
-        const nextModel = videoModelForWorkflow(config, workflowId);
+        const baseId = value === "reference" ? "video-h3-ref2va" : value === "frames" ? "video-h3-frames" : "video-h3-t2v";
+        const nextModel = videoModelForWorkflow(config, baseId, { noVdn: isNoVdnWorkflowId(videoWorkflowId(config, config.model)) });
         onConfigChange(node.id, { ...(nextModel ? { model: nextModel } : {}), videoMode: value, ...(value === "frames" ? { frameMode } : {}) });
     };
     const hasAnyInput = Boolean(inputSummary.textCount || inputSummary.imageCount || inputSummary.videoCount || inputSummary.audioCount);

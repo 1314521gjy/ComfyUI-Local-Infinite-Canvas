@@ -913,7 +913,7 @@ export type PromptOptimizeResult = { prompt: string; mode: string; duration: num
 
 export async function requestPromptOptimize(
     config: AiConfig,
-    params: { prompt: string; mode: PromptOptimizeMode; duration?: number; referenceNote?: string; images?: ReferenceImage[] },
+    params: { prompt: string; mode: PromptOptimizeMode; duration?: number; referenceNote?: string; images?: ReferenceImage[]; engine?: "local" | "cloud"; cloud?: { baseUrl?: string; apiKey?: string; model?: string } },
     options?: RequestOptions,
 ): Promise<PromptOptimizeResult> {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.videoModel);
@@ -924,6 +924,10 @@ export async function requestPromptOptimize(
     formData.set("mode", params.mode);
     formData.set("duration", String(params.duration || 5));
     if (params.referenceNote) formData.set("referenceNote", params.referenceNote);
+    if (params.engine) formData.set("engine", params.engine);
+    if (params.cloud?.baseUrl) formData.set("cloudBaseUrl", params.cloud.baseUrl);
+    if (params.cloud?.apiKey) formData.set("cloudApiKey", params.cloud.apiKey);
+    if (params.cloud?.model) formData.set("cloudModel", params.cloud.model);
     const images = params.images || [];
     const files = await Promise.all(images.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
     files.forEach((file, index) => formData.append(index === 0 ? "image" : `image${index + 1}`, file));

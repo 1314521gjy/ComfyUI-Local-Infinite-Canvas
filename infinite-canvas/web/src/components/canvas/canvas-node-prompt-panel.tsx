@@ -16,7 +16,7 @@ import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData } from "
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { resolveCanvasReferenceImages } from "@/lib/canvas/canvas-resource-references";
 import { requestImageCaption, requestImagePromptOptimize, requestPromptOptimize, type ImageCaptionEngine, type PromptOptimizeMode } from "@/services/api/image";
-import { videoModelForWorkflow, videoModelModePatch } from "@/lib/canvas/video-model-mode";
+import { videoModelForWorkflow, videoModelModePatch, baseVideoWorkflowId } from "@/lib/canvas/video-model-mode";
 import { CanvasNodeReferenceBar } from "./canvas-node-reference-bar";
 import { abortCaptionJob, hasCaptionJob, registerCaptionJob, releaseCaptionJob } from "@/lib/canvas/caption-jobs";
 import { abortPromptOptimizeJob, hasPromptOptimizeJob, registerPromptOptimizeJob, releasePromptOptimizeJob } from "@/lib/canvas/prompt-optimize-jobs";
@@ -46,6 +46,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     const { t } = useTranslation();
     const globalConfig = useEffectiveConfig();
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
+    const updateConfig = useConfigStore((state) => state.updateConfig);
     const theme = useCanvasTheme();
     const mode = modeOverride ?? defaultMode(node.type);
     const config = buildNodeConfig(globalConfig, node, mode);
@@ -61,6 +62,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     draftRef.current = draft;
     promptRef.current = prompt;
     const [expanded, setExpanded] = useState(false);
+    const [optimizeOptionsOpen, setOptimizeOptionsOpen] = useState(false);
     const lastAutoPromptRef = useRef("");
     const imageReferences = mentionReferences.filter((reference) => reference.kind === "image");
     const referencePrompt = mentionReferences
@@ -68,7 +70,9 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
         .map((reference) => reference.text!.trim())
         .join("\n\n");
     const captionEngine = node.metadata?.captionEngine;
-    const workflowId = channelModelOf(config, config.model)?.model.workflowId || modelOptionName(config.model);
+    const rawWorkflowId = channelModelOf(config, config.model)?.model.workflowId || modelOptionName(config.model);
+    const workflowId = baseVideoWorkflowId(rawWorkflowId);
+    const isNoVdnModel = rawWorkflowId !== workflowId;
     const isH3T2V = mode === "video" && workflowId === "video-h3-t2v";
     const isH3 = mode === "video" && (workflowId === "video-h3-t2v" || workflowId === "video-h3-frames" || workflowId === "video-h3-ref2va");
     const isImage = mode === "image";
@@ -78,6 +82,8 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     const optimizeError = node.metadata?.promptOptimizeError || "";
     const canOptimize = isH3 && Boolean(draft.trim()) && !isRunning && !optimizeRunning;
     const canOptimizeImage = isImage && Boolean(draft.trim()) && !isRunning && !optimizeRunning;
+    const optimizeEngine = config.promptApiEngine === "cloud" ? "cloud" : "local";
+    const optimizeCloudReady = Boolean((config.promptCloudBaseUrl || "").trim() && (config.promptCloudApiKey || "").trim() && (config.promptCloudModel || "").trim());
     const captionReady = mode === "text" && Boolean(captionEngine);
     const captionStatus = mode === "text" ? node.metadata?.captionStatus : undefined;
     const captionRunning = mode === "text" && captionStatus === "running";
@@ -94,8 +100,8 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
               ? "both"
               : "first";
     const changeVideoMode = (value: "text" | "frames" | "reference") => {
-        const workflowId = value === "reference" ? "video-h3-ref2va" : value === "frames" ? "video-h3-frames" : "video-h3-t2v";
-        const nextModel = videoModelForWorkflow(config, workflowId);
+        const baseId = value === "reference" ? "video-h3-ref2va" : value === "frames" ? "video-h3-frames" : "video-h3-t2v";
+        const nextModel = videoModelForWorkflow(config, baseId, { noVdn: isNoVdnModel });
         onConfigChange(node.id, { ...(nextModel ? { model: nextModel } : {}), videoMode: value, ...(value === "frames" ? { frameMode } : {}) });
     };
 
@@ -189,10 +195,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
         onGenerate(node.id, mode, text);
     };
 
-    const optimizePrompt = async () => {
-        const text = draft.trim();
-        if (!text || optimizeRunning) return;
-        commitPrompt(draft);
+    const optimizeDefaults = () => {
         const selectedRefs =
             workflowId === "video-h3-ref2va"
                 ? imageReferences.slice(0, 6)
@@ -215,17 +218,41 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                     : frameMode === "both" && selectedRefs.length >= 2
                       ? "首尾帧视频(FL2VA)"
                       : "首帧图生视频(I2VA)";
+        return { selectedRefs, referenceNote, taskType, duration: Number(config.videoSeconds) || 5 };
+    };
+
+    const openOptimizeOptions = () => {
+        setOptimizeOptionsOpen(true);
+    };
+
+    const optimizePrompt = async () => {
+        const text = draft.trim();
+        if (!text || optimizeRunning) return;
+        commitPrompt(draft);
+        const defaults = optimizeDefaults();
+        const cloud = {
+            baseUrl: (config.promptCloudBaseUrl || "").trim(),
+            apiKey: (config.promptCloudApiKey || "").trim(),
+            model: (config.promptCloudModel || "").trim(),
+        };
+        if (optimizeEngine === "cloud" && !(cloud.baseUrl && cloud.apiKey && cloud.model)) {
+            message.warning(t("canvas.promptPanel.optimizeCloudMissing"));
+            return;
+        }
+        setOptimizeOptionsOpen(false);
         const controller = new AbortController();
         registerPromptOptimizeJob(node.id, controller);
         onConfigChange(node.id, { promptOptimizeStatus: "running", promptOptimizeKind: "h3", promptOptimizePrompt: undefined, promptOptimizeError: undefined });
         try {
-            const images = selectedRefs.length ? await resolveCanvasReferenceImages(selectedRefs, nodes) : [];
+            const images = defaults.selectedRefs.length ? await resolveCanvasReferenceImages(defaults.selectedRefs, nodes) : [];
             const result = await requestPromptOptimize(config, {
                 prompt: text,
-                mode: taskType,
-                duration: Number(config.videoSeconds) || 5,
-                referenceNote,
+                mode: defaults.taskType,
+                duration: defaults.duration,
+                referenceNote: defaults.referenceNote,
                 images,
+                engine: optimizeEngine,
+                cloud: optimizeEngine === "cloud" ? cloud : undefined,
             }, { signal: controller.signal });
             onConfigChange(node.id, { promptOptimizeStatus: "done", promptOptimizePrompt: result.prompt });
         } catch (error) {
@@ -356,7 +383,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                                 style={{ color: theme.node.text }}
                                 icon={optimizeRunning ? <LoaderCircle className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
                                 disabled={!canOptimize}
-                                onClick={() => void optimizePrompt()}
+                                onClick={() => (optimizeOptionsOpen ? setOptimizeOptionsOpen(false) : openOptimizeOptions())}
                                 aria-label={t("canvas.promptPanel.optimize")}
                             >
                                 {optimizeRunning ? t("canvas.promptPanel.optimizing") : t("canvas.promptPanel.optimize")}
@@ -471,11 +498,44 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                     </span>
                 </Button>
             </div>
+            {isH3 && optimizeOptionsOpen ? (
+                <div className="mt-2 space-y-2 rounded-xl border p-2" style={{ borderColor: theme.toolbar.border, background: theme.toolbar.panel }} onPointerDown={(event) => event.stopPropagation()}>
+                    <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium">{t("canvas.promptPanel.optimizeOptions")}</span>
+                        <Button type="text" size="small" className="!h-6 !w-6 !min-w-6 !rounded-full !p-0" icon={<X className="size-3.5" />} onClick={() => setOptimizeOptionsOpen(false)} aria-label={t("canvas.promptPanel.optimizeClose")} />
+                    </div>
+                    <div>
+                        <div className="mb-1 text-[11px] opacity-70">{t("canvas.promptPanel.optimizeEngine")}</div>
+                        <div className="grid grid-cols-2 gap-2">
+                            <Button size="small" type={optimizeEngine === "local" ? "primary" : "default"} onClick={() => updateConfig("promptApiEngine", "local")}>
+                                {t("canvas.promptPanel.optimizeEngineLocal")}
+                            </Button>
+                            <Button size="small" type={optimizeEngine === "cloud" ? "primary" : "default"} onClick={() => updateConfig("promptApiEngine", "cloud")}>
+                                {t("canvas.promptPanel.optimizeEngineCloud")}
+                            </Button>
+                        </div>
+                        {optimizeEngine === "cloud" ? (
+                            <div className="mt-2 flex items-center justify-between gap-2 text-[11px] opacity-70">
+                                <span className="min-w-0 truncate">{optimizeCloudReady ? t("canvas.promptPanel.optimizeCloudReady", { model: config.promptCloudModel || "" }) : t("canvas.promptPanel.optimizeCloudMissing")}</span>
+                                {!optimizeCloudReady ? (
+                                    <Button size="small" className="shrink-0" onClick={() => openConfigDialog(true, "cloud-api")}>
+                                        {t("canvas.promptPanel.optimizeOpenSettings")}
+                                    </Button>
+                                ) : null}
+                            </div>
+                        ) : null}
+                    </div>
+                    <div className="flex justify-end gap-2">
+                        <Button size="small" onClick={() => setOptimizeOptionsOpen(false)}>{t("canvas.promptPanel.optimizeClose")}</Button>
+                        <Button size="small" type="primary" disabled={optimizeEngine === "cloud" && !optimizeCloudReady} onClick={() => void optimizePrompt()}>{t("canvas.promptPanel.optimizeStart")}</Button>
+                    </div>
+                </div>
+            ) : null}
             {(() => {
                 const previewRunning = mode === "text" ? captionRunning : optimizeRunning;
                 const previewPrompt = mode === "text" ? captionResult : optimizeResult;
                 const previewError = mode === "text" ? captionError : optimizeError;
-                const previewVisible = Boolean(previewRunning || previewPrompt || previewError);
+                const previewVisible = Boolean(previewRunning || previewPrompt || previewError) && !(mode !== "text" && optimizeOptionsOpen);
                 if (!previewVisible) return null;
                 const clearPreview = () => {
                     if (mode === "text") clearCaptionPreview();
@@ -588,6 +648,8 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
         videoGenerateAudio: node.metadata?.generateAudio || globalConfig.videoGenerateAudio || defaultConfig.videoGenerateAudio,
         videoWatermark: node.metadata?.watermark || globalConfig.videoWatermark || defaultConfig.videoWatermark,
         videoMode: node.metadata?.videoMode || globalConfig.videoMode || defaultConfig.videoMode,
+        videoInterpolation: node.metadata?.videoInterpolation || globalConfig.videoInterpolation || "off",
+        videoSelfLiftMode: node.metadata?.videoSelfLiftMode || globalConfig.videoSelfLiftMode || "fast",
         frameMode: node.metadata?.frameMode,
         imageMode: node.metadata?.imageMode || globalConfig.imageMode || "",
         outpaint: node.metadata?.outpaint || globalConfig.outpaint,
@@ -608,6 +670,8 @@ function videoConfigPatch(key: keyof AiConfig, value: string) {
     if (key === "videoGenerateAudio") return { generateAudio: value };
     if (key === "videoWatermark") return { watermark: value };
     if (key === "videoMode") return { videoMode: value };
+    if (key === "videoInterpolation") return { videoInterpolation: value };
+    if (key === "videoSelfLiftMode") return { videoSelfLiftMode: value };
     return { [key]: value };
 }
 

@@ -52,6 +52,12 @@ export type AiConfig = {
     videoGenerateAudio: string;
     videoWatermark: string;
     videoMode: string;
+    videoInterpolation?: string;
+    videoSelfLiftMode?: string;
+    promptApiEngine?: string;
+    promptCloudBaseUrl?: string;
+    promptCloudApiKey?: string;
+    promptCloudModel?: string;
     frameMode?: "first" | "last" | "both";
     imageMode?: string;
     outpaint?: { left: number; top: number; right: number; bottom: number; width: number; height: number };
@@ -81,7 +87,7 @@ export type WebdavSyncConfig = {
     directory: string;
     lastSyncedAt: string;
 };
-export type ConfigTabKey = "channels" | "local-proxy" | "preferences" | "prompt-sources" | "webdav" | "local-storage";
+export type ConfigTabKey = "channels" | "local-proxy" | "preferences" | "cloud-api" | "prompt-sources" | "webdav" | "local-storage";
 
 export type ChannelCredentialsImportResult = {
     status: "created" | "updated" | "missing-base-url" | "invalid-base-url";
@@ -129,6 +135,12 @@ const cloudDefaultConfig: AiConfig = {
     videoGenerateAudio: "true",
     videoWatermark: "false",
     videoMode: "frames",
+    videoInterpolation: "off",
+    videoSelfLiftMode: "fast",
+    promptApiEngine: "local",
+    promptCloudBaseUrl: "",
+    promptCloudApiKey: "",
+    promptCloudModel: "",
     systemPrompt: "",
     reasoningEffort: "auto",
     models: ["default::gpt-image-2", "default::grok-imagine-video", "default::gpt-5.5", "default::gpt-4o-mini-tts"],
@@ -407,6 +419,12 @@ export const useConfigStore = create<ConfigStore>()(
                         videoGenerateAudio: config.videoGenerateAudio || "true",
                         videoWatermark: config.videoWatermark || "false",
                         videoMode: config.videoMode === "reference" || config.videoMode === "text" ? config.videoMode : "frames",
+                        videoInterpolation: config.videoInterpolation === "2x" || config.videoInterpolation === "3x" ? config.videoInterpolation : "off",
+                        videoSelfLiftMode: config.videoSelfLiftMode === "quality" ? "quality" : "fast",
+                        promptApiEngine: config.promptApiEngine === "cloud" ? "cloud" : "local",
+                        promptCloudBaseUrl: config.promptCloudBaseUrl || "",
+                        promptCloudApiKey: config.promptCloudApiKey || "",
+                        promptCloudModel: config.promptCloudModel || "",
                         canvasImageCount: config.canvasImageCount || "3",
                         proxyEnabled: LOCAL_ONLY ? false : Boolean(config.proxyEnabled),
                         proxyUrl: config.proxyUrl || DEFAULT_LOCAL_PROXY_URL,

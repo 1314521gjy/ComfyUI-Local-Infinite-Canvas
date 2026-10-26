@@ -239,7 +239,9 @@
       "sigmas": [
         "112",
         0
-      ]
+      ],
+      "upscaler_unload": true,
+      "highres_tiling": false
     },
     "class_type": "SelfLiftH3Sampler",
     "_meta": {

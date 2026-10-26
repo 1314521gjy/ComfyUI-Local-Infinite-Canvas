@@ -15,6 +15,7 @@ const LOADER_SPECS = [
     { classType: "VAELoader", input: "vae_name", key: "vaes" },
     { classType: "LoraLoader", input: "lora_name", key: "loras" },
     { classType: "LoraLoaderModelOnly", input: "lora_name", key: "lorasModelOnly" },
+    { classType: "ApplyVDNH3Advanced", input: "vdn_checkpoint", key: "vdn" },
 ];
 
 function safeStat(file) {

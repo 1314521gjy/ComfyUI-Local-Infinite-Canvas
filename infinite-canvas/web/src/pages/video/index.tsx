@@ -12,7 +12,7 @@ import { BaseModelPicker, WorkflowModelPicker } from "@/components/model-picker"
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeValue, videoModeLabel, videoSizeLabel } from "@/components/video-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { videoModelForWorkflow, videoModelModePatch } from "@/lib/canvas/video-model-mode";
+import { videoModelForWorkflow, videoModelModePatch, videoWorkflowId, isNoVdnWorkflowId } from "@/lib/canvas/video-model-mode";
 import { clampVideoSeconds } from "@/lib/media-size";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { deleteStoredMedia, resolveMediaUrl } from "@/services/file-storage";
@@ -575,8 +575,8 @@ function GenerationSettings({
                     config={{ ...config, model }}
                     onConfigChange={(key, value) => updateConfig(key, value)}
                     onModeChange={(value) => {
-                        const workflowId = value === "reference" ? "video-h3-ref2va" : value === "frames" ? "video-h3-frames" : "video-h3-t2v";
-                        const nextModel = videoModelForWorkflow(config, workflowId);
+                        const baseId = value === "reference" ? "video-h3-ref2va" : value === "frames" ? "video-h3-frames" : "video-h3-t2v";
+                        const nextModel = videoModelForWorkflow(config, baseId, { noVdn: isNoVdnWorkflowId(videoWorkflowId(config, model)) });
                         updateConfig("videoMode", value);
                         if (nextModel) updateConfig("videoModel", nextModel);
                     }}

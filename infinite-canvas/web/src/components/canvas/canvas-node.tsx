@@ -551,18 +551,25 @@ function NodeContent(props: NodeContentRendererProps) {
     if (props.isBatchRoot && props.node.type === CanvasNodeType.Image) return <ImageNodeContent {...props} />;
     if (props.node.type === CanvasNodeType.Text && props.node.metadata?.texts?.length && (props.node.metadata.status !== "error" || props.node.metadata.texts.some((text) => text.content))) return <TextContent {...props} />;
     if (props.node.metadata?.status === "loading") return <LoadingContent theme={props.theme} node={props.node} />;
-    if (props.node.metadata?.status === "error") return <ErrorContent node={props.node} theme={props.theme} onRetry={props.onRetry} />;
 
     const Renderer = nodeContentRenderers[props.node.type as CanvasNodeType];
-    if (Renderer) return <Renderer {...props} />;
-
-    // Render plugin nodes with their registered renderer, or show the missing-plugin placeholder.
     const definition = getNodeDefinition(props.node.type);
-    if (definition?.Content && props.pluginContext) {
+    let content: ReactNode;
+    if (Renderer) content = <Renderer {...props} />;
+    else if (definition?.Content && props.pluginContext) {
         const PluginContent = definition.Content;
-        return <PluginContent ctx={props.pluginContext} />;
+        content = <PluginContent ctx={props.pluginContext} />;
+    } else content = <MissingPluginContent theme={props.theme} type={props.node.type} />;
+
+    if (props.node.metadata?.status === "error") {
+        return (
+            <div className="relative h-full w-full">
+                {content}
+                <NodeErrorBanner node={props.node} onRetry={props.onRetry} />
+            </div>
+        );
     }
-    return <MissingPluginContent theme={props.theme} type={props.node.type} />;
+    return content;
 }
 
 const nodeContentRenderers = {
@@ -654,24 +661,26 @@ function LoadingContent({ theme, node }: Pick<NodeContentRendererProps, "theme" 
     );
 }
 
-function ErrorContent({ node, theme, onRetry }: Pick<NodeContentRendererProps, "node" | "theme" | "onRetry">) {
+function NodeErrorBanner({ node, onRetry }: Pick<NodeContentRendererProps, "node" | "onRetry">) {
     const { t } = useTranslation();
     return (
-        <div className="flex max-w-[260px] flex-col items-center gap-3 px-5 text-center">
-            <div className="text-xs leading-5 text-red-300">{node.metadata?.errorDetails || t("canvas.node.failed")}</div>
-            <button
-                type="button"
-                className="inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition hover:scale-[1.02]"
-                style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
-                onClick={(event) => {
-                    event.stopPropagation();
-                    onRetry?.(node);
-                }}
-                onMouseDown={(event) => event.stopPropagation()}
-            >
-                <RefreshCw className="size-3.5" />
-                {t("canvas.node.retry")}
-            </button>
+        <div className="pointer-events-none absolute inset-x-2 top-2 z-30 flex justify-center">
+            <div className="pointer-events-auto flex max-w-[92%] items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] leading-none shadow-lg" style={{ background: "rgba(88,18,18,.92)", borderColor: "rgba(255,140,140,.45)", color: "#ffecec" }}>
+                <span className="min-w-0 truncate">{node.metadata?.errorDetails || t("canvas.node.failed")}</span>
+                <button
+                    type="button"
+                    className="inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 transition hover:opacity-80"
+                    style={{ borderColor: "rgba(255,255,255,.35)" }}
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        onRetry?.(node);
+                    }}
+                    onMouseDown={(event) => event.stopPropagation()}
+                >
+                    <RefreshCw className="size-3" />
+                    {t("canvas.node.retry")}
+                </button>
+            </div>
         </div>
     );
 }

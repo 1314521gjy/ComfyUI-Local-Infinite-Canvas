@@ -228,6 +228,8 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
     body.append("mode", mode);
     const requestParams = {
         ...(options?.params || config.params || {}),
+        ...(config.videoInterpolation && config.videoInterpolation !== "off" ? { interpolation: config.videoInterpolation } : {}),
+        transition_step: config.videoSelfLiftMode === "quality" ? 5 : 6,
         ...(mode === "frames" ? { frameMode } : {}),
     };
     if (Object.keys(requestParams).length) {

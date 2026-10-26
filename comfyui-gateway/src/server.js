@@ -14,6 +14,7 @@ import { createRegistry } from "./registry.js";
 import { createSessionTracker } from "./sessions.js";
 import { createSetupManager } from "./setup.js";
 import { createPromptOptimizer } from "./prompt-optimizer.js";
+import { createVideoInterpolator } from "./video-interpolation.js";
 import { createPreviewHub } from "./preview-hub.js";
 import { createFreeWorkflowStore, applyFreeInputs } from "./free-workflows.js";
 import { applyMossLayoutPrompt } from "./layout-prompt.js";
@@ -208,6 +209,7 @@ export async function createGatewayApp(overrides = {}) {
     };
   };
   const promptOptimizer = createPromptOptimizer({ config, comfy, logger });
+  const videoInterpolator = createVideoInterpolator({ config, logger });
 
   // 把 parameters.optionsFrom（如 "UpscaleModelLoader.model_name"）替换成 ComfyUI 实时选项。
   const enrichParameters = (parameters) => {
@@ -873,6 +875,12 @@ export async function createGatewayApp(overrides = {}) {
         referenceNote: body.referenceNote ?? body.reference_note,
         uploadedImages,
         signal: abort.signal,
+        engine: body.engine,
+        cloud: {
+          baseUrl: body.cloudBaseUrl,
+          apiKey: body.cloudApiKey,
+          model: body.cloudModel,
+        },
       });
       res.json({ ok: true, ...result });
     } catch (error) {
@@ -998,6 +1006,10 @@ export async function createGatewayApp(overrides = {}) {
     const audioFiles = orderedAudioRefFiles(req.files || []);
     const extraParams = parseParams(body.params);
     const params = { ...extraParams };
+    const interpolation = String(params.interpolation || "off").trim();
+    if (!["off", "2x", "3x"].includes(interpolation)) {
+      throw new HttpError("插帧只支持 off、2x、3x", { status: 400, code: "invalid_interpolation" });
+    }
     let videoMode = String(body.mode || "").trim();
     if (entry.id === "video-h3-t2v") videoMode = "text";
     else if (entry.id === "video-h3-frames") videoMode = "frames";
@@ -1067,6 +1079,7 @@ export async function createGatewayApp(overrides = {}) {
         images: uploadedImages.map((image) => image.name),
         videos: uploadedVideos.map((file) => file.name),
         audios: uploadedAudios.map((file) => file.name),
+        interpolation,
       },
     });
     tasks.enqueue(task, async (_task, progress, signal) => {
@@ -1082,7 +1095,19 @@ export async function createGatewayApp(overrides = {}) {
         logger,
         loraCatalog: setup.loraNames(),
       });
-      const file = result.files[0];
+      let file = result.files[0];
+      if (interpolation !== "off") {
+        progress?.({ phase: "interpolating", progress: 0.97 });
+        const interpolated = await videoInterpolator.interpolate({
+          comfy,
+          buffer: file.buffer,
+          filename: file.filename,
+          multiplier: interpolation === "3x" ? 3 : 2,
+          requestId: req.id,
+          signal,
+        });
+        file = { ...file, buffer: interpolated.buffer, filename: interpolated.filename, mimeType: interpolated.mimeType };
+      }
       return {
         buffer: file.buffer,
         ext: extFromMime(file.mimeType, file.filename, "mp4"),
