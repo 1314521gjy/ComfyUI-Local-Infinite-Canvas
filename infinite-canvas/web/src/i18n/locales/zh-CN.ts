@@ -1,7 +1,7 @@
 export default {
     meta: {
-        title: "无限画布",
-        description: "一个无限画布创作工具",
+        title: "无界工作台",
+        description: "一个本地 AI 创作工作台",
     },
     theme: { toggle: "切换主题" },
     common: {
@@ -381,7 +381,7 @@ export default {
     },
     home: {
         promptError: "获取提示词失败",
-        description: "在 <canvas>无限画布</canvas> 中生成、连接和重组 <content>图片、文字与图形</content>，让创作从单次生成变成连续推演。",
+        description: "在 <canvas>无界工作台</canvas> 中生成、连接和重组 <content>图片、文字与图形</content>，让创作从单次生成变成连续推演。",
         start: "开始使用",
         openCanvas: "打开画布",
         showcaseTitle: "沉淀每一次好结果",
