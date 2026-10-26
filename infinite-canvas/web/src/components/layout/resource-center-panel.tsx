@@ -234,7 +234,6 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
     const [expandedWorkflows, setExpandedWorkflows] = useState<Set<string>>(new Set());
     const [speeds, setSpeeds] = useState<Record<string, number>>({});
     const [stopping, setStopping] = useState(false);
-    const [showAll, setShowAll] = useState(false);
     const pollRef = useRef<number | null>(null);
     const selectedInitialized = useRef(false);
     const speedSamples = useRef<Map<string, { bytes: number; time: number; speed: number }>>(new Map());
@@ -363,10 +362,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
     const recommendedTotal = recommendationAvailable ? status?.summary.recommendedResources || 0 : status?.summary.resources || 0;
     const recommendedMissing = recommendationAvailable ? status?.summary.recommendedMissing || 0 : status?.summary.missing || 0;
     const recommendedMissingSize = recommendationAvailable ? status?.summary.recommendedMissingSize || 0 : status?.summary.missingSize || 0;
-    const visiblePacks = showAll || !recommendationAvailable
-        ? status?.packs || []
-        : (status?.packs || []).filter((pack) => pack.recommended || pack.id === "core" || pack.planned || (pack.optional && pack.tier !== "lite"));
-    const hiddenPackCount = (status?.packs || []).length - visiblePacks.length;
+    const visiblePacks = status?.packs || [];
 
     const installIds = useMemo(() => {
         if (!status) return [];
@@ -491,13 +487,6 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
             ) : null}
 
             <div className="space-y-2">
-                {hiddenPackCount > 0 ? (
-                    <div className="flex justify-end">
-                        <button type="button" className="text-[11px] text-stone-500 underline-offset-2 hover:underline dark:text-stone-400" onClick={() => setShowAll((value) => !value)}>
-                            {showAll ? copy.hideAll : copy.showAll}
-                        </button>
-                    </div>
-                ) : null}
                 {visiblePacks.map((pack) => {
                     const expanded = expandedPacks.has(pack.id);
                     const workflowDependencies = pack.workflowDependencies || [];
@@ -516,33 +505,47 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                         ...pack.requiredItems.filter((item) => item.status !== "present").map((item) => item.id),
                         ...selectedOptionalInPack.map((item) => item.id),
                     ];
+                    const expandable = pack.total > 0 || pack.optionalTotal > 0 || workflowDependencies.length > 0;
+                    const headerBody = (
+                        <>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-sm font-medium">{pack.label}</span>
+                                {pack.recommended ? <Tag color="blue">{copy.recommended}</Tag> : null}
+                                {pack.offload ? <Tag color="gold">{copy.offload}</Tag> : null}
+                                {pack.optional && !pack.recommended ? <Tag>{copy.optional}</Tag> : null}
+                                {pack.eligible === false ? <Tag color="red">{copy.incompatible}</Tag> : null}
+                                {packState(pack, copy)}
+                                {workflowDependencies.length ? <Tag>{copy.workflowSection} {workflowDependencies.length}</Tag> : null}
+                                {extraOptionalItems.length ? <Tag>{copy.optionalSection} {extraOptionalItems.length}</Tag> : null}
+                                {pack.missingSize ? <span className="text-[11px] text-stone-500 dark:text-stone-400">{copy.size} {formatBytes(pack.missingSize)}</span> : null}
+                            </div>
+                            <div className={`mt-0.5 text-[11px] leading-5 text-stone-500 dark:text-stone-400 ${compact ? "line-clamp-1" : "line-clamp-2"}`}>{pack.description}</div>
+                        </>
+                    );
                     return (
                         <div key={pack.id} className="rounded-xl border border-stone-200 dark:border-stone-800">
                             <div className="flex items-start gap-2 p-3">
-                                {!pack.planned && pack.total > 0 ? (
-                                    <Checkbox checked={selectedPacks.has(pack.id)} disabled={!pack.missing} onChange={(event) => togglePack(pack.id, event.target.checked)} />
+                                {expandable ? (
+                                    !pack.planned && pack.total > 0 ? (
+                                        <Checkbox checked={selectedPacks.has(pack.id)} disabled={!pack.missing} onChange={(event) => togglePack(pack.id, event.target.checked)} />
+                                    ) : (
+                                        <span className="mt-0.5 grid size-4 place-items-center text-stone-300 dark:text-stone-600">·</span>
+                                    )
+                                ) : null}
+                                {expandable ? (
+                                    <button type="button" className="min-w-0 flex-1 text-left" onClick={() => toggleExpanded(pack.id)} aria-expanded={expanded}>
+                                        {headerBody}
+                                    </button>
                                 ) : (
-                                    <span className="mt-0.5 grid size-4 place-items-center text-stone-300 dark:text-stone-600">·</span>
+                                    <div className="min-w-0 flex-1">{headerBody}</div>
                                 )}
-                                <button type="button" className="min-w-0 flex-1 text-left" onClick={() => toggleExpanded(pack.id)} aria-expanded={expanded}>
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        <span className="text-sm font-medium">{pack.label}</span>
-                                        {pack.recommended ? <Tag color="blue">{copy.recommended}</Tag> : null}
-                                        {pack.offload ? <Tag color="gold">{copy.offload}</Tag> : null}
-                                        {pack.optional && !pack.recommended ? <Tag>{copy.optional}</Tag> : null}
-                                        {pack.eligible === false ? <Tag color="red">{copy.incompatible}</Tag> : null}
-                                        {packState(pack, copy)}
-                                        {workflowDependencies.length ? <Tag>{copy.workflowSection} {workflowDependencies.length}</Tag> : null}
-                                        {extraOptionalItems.length ? <Tag>{copy.optionalSection} {extraOptionalItems.length}</Tag> : null}
-                                        {pack.missingSize ? <span className="text-[11px] text-stone-500 dark:text-stone-400">{copy.size} {formatBytes(pack.missingSize)}</span> : null}
-                                    </div>
-                                    <div className={`mt-0.5 text-[11px] leading-5 text-stone-500 dark:text-stone-400 ${compact ? "line-clamp-1" : "line-clamp-2"}`}>{pack.description}</div>
-                                </button>
-                                <button type="button" className="mt-0.5 rounded-md p-1 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-600 dark:text-stone-500 dark:hover:bg-white/5 dark:hover:text-stone-300" onClick={() => toggleExpanded(pack.id)} aria-label={expanded ? copy.collapse : copy.expand}>
-                                    <ChevronDown className={`size-4 transition-transform ${expanded ? "rotate-180" : ""}`} />
-                                </button>
+                                {expandable ? (
+                                    <button type="button" className="mt-0.5 rounded-md p-1 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-600 dark:text-stone-500 dark:hover:bg-white/5 dark:hover:text-stone-300" onClick={() => toggleExpanded(pack.id)} aria-label={expanded ? copy.collapse : copy.expand}>
+                                        <ChevronDown className={`size-4 transition-transform ${expanded ? "rotate-180" : ""}`} />
+                                    </button>
+                                ) : null}
                             </div>
-                            {expanded ? (
+                            {expandable && expanded ? (
                                 <div className="border-t border-stone-100 px-3 pb-3 pt-2 dark:border-stone-800/70">
                                     {workflowDependencies.length ? (
                                         <>
