@@ -619,34 +619,18 @@
     border-color: #ddcfb9 !important;
 }
 
-@keyframes whale-whip-swing {
-    0%, 58%, 100% { transform: scaleX(-1) rotate(0deg) translateX(0); }
-    66% { transform: scaleX(-1) rotate(-7deg) translateX(-2px); }
-    71% { transform: scaleX(-1) rotate(5deg) translateX(2px); }
-    76% { transform: scaleX(-1) rotate(-3deg) translateX(0); }
-    81% { transform: scaleX(-1) rotate(0deg) translateX(0); }
-}
-
 @keyframes whale-whip-bubble {
     0%, 12%, 100% { transform: translateY(0) scale(1); }
     6% { transform: translateY(-2px) scale(1.03); }
 }
 
-@keyframes whale-whip-lash {
-    0%, 62%, 100% { opacity: 0.2; transform: rotate(-10deg) scaleX(0.7); }
-    68% { opacity: 1; transform: rotate(5deg) scaleX(1.1); }
-    75% { opacity: 0.55; transform: rotate(-2deg) scaleX(0.9); }
-}
-
-@keyframes whale-whip-spark {
-    0%, 63%, 100% { opacity: 0; transform: scale(0.4) rotate(0deg); }
-    70% { opacity: 1; transform: scale(1.1) rotate(14deg); }
-    79% { opacity: 0; transform: scale(0.55) rotate(28deg); }
+@keyframes whale-whip-float {
+    0%, 100% { transform: scaleX(-1) translateY(0); }
+    50% { transform: scaleX(-1) translateY(-3px); }
 }
 
 .whale-whip-mascot {
-    animation: whale-whip-swing 2.3s ease-in-out infinite;
-    transform-origin: 55% 85%;
+    animation: whale-whip-float 2.4s ease-in-out infinite;
     will-change: transform;
 }
 
@@ -655,20 +639,9 @@
     transform-origin: 20% 100%;
 }
 
-.whale-whip-lash {
-    animation: whale-whip-lash 2.3s ease-in-out infinite;
-    transform-origin: left center;
-}
-
-.whale-whip-spark {
-    animation: whale-whip-spark 2.3s ease-in-out infinite;
-}
-
 @media (prefers-reduced-motion: reduce) {
     .whale-whip-mascot,
-    .whale-whip-bubble,
-    .whale-whip-lash,
-    .whale-whip-spark {
+    .whale-whip-bubble {
         animation: none;
     }
 }

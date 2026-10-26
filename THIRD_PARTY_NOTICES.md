@@ -24,7 +24,7 @@
 ## 主题素材
 
 - **蓝色大肥鱼卡片皮肤贴纸（鲸鱼娘）** — 基于开源梗图合集 [DeepSeek-chan meme pack](https://github.com/the-beating-light-of-the-nail/deepseek-chan-meme-pack) 的 #010 预览图改编：裁切、抠除背景并合成为透明贴纸，用于本地画布主题。原图版权归原作者/社区所有；如权利人不希望使用，可删除 `infinite-canvas/web/public/skins/blue-whale-girl.png` 并移除该主题。
-- **蓝色大肥鱼抽鞭子小贴纸** — 基于同一开源梗图合集的 #141「挥鞭教训」图改编：裁切上半身、抠除背景，用于生成中卡片旁的 CSS 动效；原图版权归原作者/社区所有；如权利人不希望使用，可删除 `infinite-canvas/web/public/skins/whale-whip.png` 并移除对应动画。
+- **蓝色大肥鱼抽鞭子小动图** — 由项目方使用 ImageGen 生成的四帧原创 sprite（参考社区鲸鱼娘形象），去底为透明 WebP，用于生成中卡片旁的动效；蓝发鲸鱼娘角色形象权利归原作者/社区，商用前请确认授权或替换为完全原创角色。
 
 ## 商标
 
