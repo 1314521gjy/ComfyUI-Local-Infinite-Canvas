@@ -156,6 +156,7 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
         return [...ordered, ...extra];
     }, [info?.aspectRatios]);
     const ratioValue = node.metadata?.aspectRatio || info?.aspectRatio || ratioOptions[0] || "";
+    const sourceMissing = Boolean(summary?.sourceMissing);
     const hasSeedSetting = Boolean(info && (info.hasSeed || info.seed != null));
     const hasSettings = Boolean(info && (info.size || ratioOptions.length || info.count != null || hasSeedSetting));
     const settingsSummary = [
@@ -364,7 +365,7 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
                     />
                     <Button size="small" icon={<RefreshCw className={`size-3.5 ${sourcesLoading ? "animate-spin" : ""}`} />} title={t("canvas.freeCard.refreshSources")} disabled={importing} onClick={() => void loadSources()} />
                     {info ? (
-                        <Button size="small" icon={<RefreshCw className={`size-3.5 ${syncing ? "animate-spin" : ""}`} />} disabled={syncing || isRunning} onClick={() => void syncCard()}>
+                        <Button size="small" icon={<RefreshCw className={`size-3.5 ${syncing ? "animate-spin" : ""}`} />} disabled={syncing || isRunning || sourceMissing} title={sourceMissing ? t("canvas.freeCard.sourceMissing") : undefined} onClick={() => void syncCard()}>
                             {syncing ? t("canvas.freeCard.syncing") : t("canvas.freeCard.sync")}
                         </Button>
                     ) : null}
@@ -380,8 +381,13 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
                             <span>·</span>
                             <span>{info.sourceFormat.toUpperCase()}</span>
                             {info.archived ? <span>· {t("canvas.freeCard.archived")}</span> : null}
-                            {summary?.sourceChanged ? <span className="text-amber-500">· {t("canvas.freeCard.sourceChanged")}</span> : null}
+                            {sourceMissing ? <span className="text-red-400">· {t("canvas.freeCard.sourceMissing")}</span> : summary?.sourceChanged ? <span className="text-amber-500">· {t("canvas.freeCard.sourceChanged")}</span> : null}
                         </div>
+                        {sourceMissing ? (
+                            <div className="rounded-lg px-2.5 py-2 text-[11px] leading-5" style={{ background: theme.node.fill, color: "#f87171" }}>
+                                {t("canvas.freeCard.sourceMissingHint")}
+                            </div>
+                        ) : null}
 
                         {hasSettings ? (
                             <div className="rounded-lg px-2.5 py-2 text-[11px] leading-5" style={{ background: theme.node.fill, color: theme.node.muted }}>
@@ -467,7 +473,7 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
                                         </Button>
                                     </Popover>
                                 ) : null}
-                                <Button size="small" icon={<ExternalLink className="size-3.5" />} disabled={isRunning} onClick={() => void openComfyUI()}>
+                                <Button size="small" icon={<ExternalLink className="size-3.5" />} disabled={isRunning || sourceMissing} title={sourceMissing ? t("canvas.freeCard.sourceMissing") : undefined} onClick={() => void openComfyUI()}>
                                     {t("canvas.freeCard.openInComfy")}
                                 </Button>
                                 <Button size="small" icon={<Archive className="size-3.5" />} loading={archiving} disabled={isRunning || info.archived} onClick={() => void archiveCard()}>

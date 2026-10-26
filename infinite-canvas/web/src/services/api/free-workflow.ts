@@ -35,6 +35,7 @@ export type FreeWorkflowSummary = {
     createdAt: string;
     updatedAt: string;
     sourceChanged: boolean;
+    sourceMissing?: boolean;
     prompt: boolean;
     imageInputs: number;
     size: { width: number; height: number } | null;

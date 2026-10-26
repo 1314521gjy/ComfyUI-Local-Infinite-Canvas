@@ -205,12 +205,12 @@ export function createFreeWorkflowStore({ dataDir, comfyWorkflowsDir = "", comfy
     return out.sort((a, b) => a.name.localeCompare(b.name) || a.relative.localeCompare(b.relative));
   }
 
-  async function sourceChanged(entry) {
+  async function sourceState(entry) {
     try {
       const stat = await fsp.stat(resolveSource(entry.sourceRel));
-      return sourceSignature(stat) !== entry.sourceSignature;
+      return { exists: stat.isFile(), changed: sourceSignature(stat) !== entry.sourceSignature };
     } catch {
-      return true;
+      return { exists: false, changed: true };
     }
   }
 
@@ -243,8 +243,9 @@ export function createFreeWorkflowStore({ dataDir, comfyWorkflowsDir = "", comfy
   async function sync(id) {
     const entry = entries.get(id);
     if (!entry) throw new Error("自由卡片不存在");
-    const changed = await sourceChanged(entry);
-    if (!changed) return { changed: false, entry };
+    const state = await sourceState(entry);
+    if (!state.exists) throw new Error("源工作流文件已不存在，可能已在 ComfyUI 中删除");
+    if (!state.changed) return { changed: false, entry };
     const source = await readSource(entry.sourceRel);
     const bindings = detectFreeBindings(source.workflow, await getObjectInfo());
     entry.workflow = source.workflow;
@@ -282,6 +283,7 @@ export function createFreeWorkflowStore({ dataDir, comfyWorkflowsDir = "", comfy
 
   async function publicEntry(entry) {
     if (!entry) return null;
+    const source = await sourceState(entry);
     return {
       id: entry.id,
       name: entry.name,
@@ -292,7 +294,8 @@ export function createFreeWorkflowStore({ dataDir, comfyWorkflowsDir = "", comfy
       archivedAt: entry.archivedAt || null,
       createdAt: entry.createdAt,
       updatedAt: entry.updatedAt,
-      sourceChanged: await sourceChanged(entry),
+      sourceChanged: source.changed,
+      sourceMissing: !source.exists,
       preset: entry.preset || null,
       ...bindingSummary(entry.bindings || {}),
       warnings: entry.warnings || [],
@@ -309,5 +312,5 @@ export function createFreeWorkflowStore({ dataDir, comfyWorkflowsDir = "", comfy
     return result;
   }
 
-  return { load, listSources, importSource, sync, setArchived, get, publicEntry, list, applyFreeInputs, readRawWorkflow };
+  return { load, listSources, importSource, sync, setArchived, get, publicEntry, list, applyFreeInputs, readRawWorkflow, sourceState };
 }

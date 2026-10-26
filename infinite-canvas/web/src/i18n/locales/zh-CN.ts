@@ -266,7 +266,7 @@ export default {
             settings: "生成设置", currentSettings: "当前参数", noSettings: "工作流默认", countSummary: "{{count}} 张", seedSummary: "种子 {{seed}}",
             aspectRatio: "画幅", aspectRatioHint: "写入工作流里的分辨率/画幅节点；输出像素仍由工作流内部决定",
             generate: "开始生成", stop: "停止", needPrompt: "请输入提示词", imageInputs: "图片输入", warnings: "提示",
-            sourceChanged: "源工作流已变化，点「同步工作流」更新", importFailed: "导入工作流失败", imported: "已导入工作流", selectFirst: "请先选择工作流",
+            sourceChanged: "源工作流已变化，点「同步工作流」更新", sourceMissing: "源工作流文件已不存在", sourceMissingHint: "源文件可能已在 ComfyUI 中删除；仍可使用当前快照生成，但无法同步或在 ComfyUI 编辑。可重新选择工作流。", importFailed: "导入工作流失败", imported: "已导入工作流", selectFirst: "请先选择工作流",
             cardArchived: "已归档到自由卡片库", saveFailed: "操作失败",
         },
         toolbar: {

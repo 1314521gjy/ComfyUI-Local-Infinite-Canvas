@@ -496,12 +496,15 @@ export async function createGatewayApp(overrides = {}) {
     try {
       res.json(await freeWorkflows.readRawWorkflow(entry));
     } catch (error) {
-      throw new HttpError(`读取工作流失败：${error.message}`, { status: 409, code: "free_workflow_read_failed" });
+      const message = /ENOENT/.test(String(error.message)) ? "源工作流文件已不存在，可能已在 ComfyUI 中删除" : error.message;
+      throw new HttpError(`读取工作流失败：${message}`, { status: 409, code: "free_workflow_read_failed" });
     }
   });
 
   app.get("/api/free-workflows/:id/open", async (req, res) => {
     const entry = requireFreeWorkflow(req.params.id);
+    const source = await freeWorkflows.sourceState(entry);
+    if (!source.exists) throw new HttpError("源工作流文件已不存在，无法在 ComfyUI 中编辑", { status: 409, code: "free_workflow_source_missing" });
     const bridge = await comfyBridge.ensure();
     const target = new URL(config.comfyUrl);
     target.searchParams.set("local_canvas_open", entry.id);
