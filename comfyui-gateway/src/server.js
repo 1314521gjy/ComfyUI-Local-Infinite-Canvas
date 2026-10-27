@@ -19,6 +19,7 @@ import { createSessionTracker } from "./sessions.js";
 import { createSetupManager } from "./setup.js";
 import { createResourceManager } from "./resources.js";
 import { createPromptOptimizer } from "./prompt-optimizer.js";
+import { reorderQwenEditFiles, reorderQwenEditPrompt } from "./qwen-edit.js";
 import { createVideoInterpolator } from "./video-interpolation.js";
 import { createPreviewHub } from "./preview-hub.js";
 import { createFreeWorkflowStore, applyFreeInputs } from "./free-workflows.js";
@@ -896,20 +897,23 @@ export async function createGatewayApp(overrides = {}) {
         throw new HttpError("Qwen 扩图需要且只接收 1 张原图", { status: 400, code: "invalid_outpaint_media" });
       }
     }
+    const qwenEdit = entry.id === "image-qwen21" && mode === "edit" && files.length > 1;
+    const orderedFiles = qwenEdit ? reorderQwenEditFiles(files) : files;
+    const promptText = qwenEdit ? reorderQwenEditPrompt(body.prompt, files.length) : body.prompt;
     const resolvedEntry = registry.resolveForMode(entry, mode);
     if (body.background && !resolvedEntry.bindings?.background && !resolvedEntry.backgroundPrompt) {
       throw new HttpError(`工作流 ${resolvedEntry.name} 没有 background 绑定，不能保证透明背景。`, { status: 400, code: "unsupported_background" });
     }
-    const uploadedImages = await uploadImages(comfy, files);
+    const uploadedImages = await uploadImages(comfy, orderedFiles);
     const context = buildContext({
-      prompt: applyBackgroundPrompt(body.prompt, body.background, resolvedEntry),
+      prompt: applyBackgroundPrompt(promptText, body.background, resolvedEntry),
       negative: body.negative,
       size: body.size,
       count: body.n ?? body.count,
       quality: body.quality,
       background: body.background,
       mode,
-      images: files,
+      images: orderedFiles,
       uploadedImages,
       params: parseParams(body.params),
       presets: entry.presets,
