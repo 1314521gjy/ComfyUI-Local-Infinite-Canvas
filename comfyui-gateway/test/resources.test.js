@@ -388,7 +388,9 @@ test("zimage pack keeps one default base and exposes int8 as an optional base mo
     assert.equal(pack.autoRecommend, false);
     assert.equal(pack.optional, true);
     assert.equal(pack.variants, undefined);
-    assert.equal(pack.workflowDependencies, undefined);
+    assert.deepEqual(pack.workflowDependencies, {
+        "image-z-image-turbo": ["z_image_turbo_bf16", "qwen_3_4b", "ae"],
+    });
     assert.deepEqual(pack.workflows, ["image-z-image-turbo"]);
     assert.deepEqual(pack.resources, [
         "z_image_turbo_bf16",
@@ -396,7 +398,8 @@ test("zimage pack keeps one default base and exposes int8 as an optional base mo
         "ae",
         "z_image_turbo_int8_convrot",
     ]);
-    assert.deepEqual(pack.optionalResources, ["z_image_turbo_int8_convrot"]);
+    assert.deepEqual(pack.optionalResources, pack.resources);
+    assert.ok(!pack.workflowDependencies["image-z-image-turbo"].includes("z_image_turbo_int8_convrot"));
     assert.equal(index.resources.some((item) => item.id === "z_image_turbo_distill_lora"), false);
 });
 
@@ -407,7 +410,9 @@ test("krea2 pack matches the zimage shape with no bundled LoRAs", () => {
     assert.equal(pack.autoRecommend, false);
     assert.equal(pack.optional, true);
     assert.equal(pack.variants, undefined);
-    assert.equal(pack.workflowDependencies, undefined);
+    assert.deepEqual(pack.workflowDependencies, {
+        "image-krea2-turbo": ["krea2_turbo_fp8_scaled", "qwen3vl_4b_fp8_scaled", "qwen_image_vae"],
+    });
     assert.deepEqual(pack.workflows, ["image-krea2-turbo"]);
     assert.deepEqual(pack.resources, [
         "krea2_turbo_fp8_scaled",
@@ -415,7 +420,8 @@ test("krea2 pack matches the zimage shape with no bundled LoRAs", () => {
         "qwen_image_vae",
         "krea2_turbo_int8_convrot",
     ]);
-    assert.deepEqual(pack.optionalResources, ["krea2_turbo_int8_convrot"]);
+    assert.deepEqual(pack.optionalResources, pack.resources);
+    assert.ok(!pack.workflowDependencies["image-krea2-turbo"].includes("krea2_turbo_int8_convrot"));
     assert.equal(index.resources.some((item) => item.id === "krea2_darkbrush_lora"), false);
     assert.equal(index.resources.some((item) => item.id === "krea2_retroanime_lora"), false);
     assert.equal(index.resources.length, 52);
@@ -437,25 +443,23 @@ test("h3 pack lists the shared models, VDN/noVDN variants and character swap", (
         "video-h3-frames-novdn",
         "video-h3-character-swap",
     ]);
-    assert.ok(pack.resources.includes("h3_unet_singularity_ref2va_v13_int8"));
-    assert.ok(pack.resources.includes("h3_te_qwen3vl_32b_int8_convrot"));
-    assert.ok(pack.resources.includes("h3_audio_vae_fp32"));
-    assert.ok(pack.resources.includes("h3_vae_onnx_decoder"));
-    assert.ok(!pack.optionalResources.includes("h3_vae_onnx_decoder"));
+    const byId = new Map(index.resources.map((item) => [item.id, item]));
+    assert.deepEqual(pack.optionalResources, pack.resources, "h3 must not declare pack-level required resources");
+    for (const id of ["h3_unet_singularity_ref2va_v13_int8", "h3_te_qwen3vl_32b_int8_convrot", "h3_audio_vae_fp32", "h3_vae_onnx_decoder", "h3_trt_vae_decoder_engine", "h3_trt_vae_encoder_engine"]) {
+        assert.ok(pack.resources.includes(id), `h3 missing ${id}`);
+    }
+    for (const id of pack.resources) {
+        assert.notEqual(byId.get(id)?.type, "node", `${id} is a node and must ship with the app, not download`);
+    }
     assert.ok(pack.workflowDependencies["video-h3-ref2va"].includes("h3_vae_onnx_decoder"));
-    assert.ok(pack.optionalResources.includes("h3_vdn_stage_model"));
-    assert.ok(pack.optionalResources.includes("h3_lightx2v_8step_lora"));
-    assert.ok(pack.optionalResources.includes("h3_character_swap_lora"));
-    assert.ok(pack.resources.includes("h3_trt_vae_decoder_engine"));
-    assert.ok(pack.resources.includes("h3_trt_vae_encoder_engine"));
-    const decoderEngine = index.resources.find((item) => item.id === "h3_trt_vae_decoder_engine");
-    assert.equal(decoderEngine.type, "bake");
-    assert.equal(decoderEngine.builder.kind, "h3-trt-vae");
-    assert.deepEqual(decoderEngine.requires, ["h3_vae_onnx_decoder", "h3_vae_onnx_decoder_data"]);
     assert.ok(pack.workflowDependencies["video-h3-ref2va"].includes("h3_vdn_stage_model"));
     assert.ok(pack.workflowDependencies["video-h3-ref2va"].includes("h3_trt_vae_decoder_engine"));
     assert.ok(pack.workflowDependencies["video-h3-ref2va-novdn"].includes("h3_lightx2v_8step_lora"));
     assert.ok(pack.workflowDependencies["video-h3-character-swap"].includes("h3_character_swap_lora"));
+    const decoderEngine = index.resources.find((item) => item.id === "h3_trt_vae_decoder_engine");
+    assert.equal(decoderEngine.type, "bake");
+    assert.equal(decoderEngine.builder.kind, "h3-trt-vae");
+    assert.deepEqual(decoderEngine.requires, ["h3_vae_onnx_decoder", "h3_vae_onnx_decoder_data"]);
     const ids = new Set(index.resources.map((item) => item.id));
     assert.equal(ids.size, index.resources.length, "duplicate resource ids");
 });
@@ -680,14 +684,11 @@ test("qwen21 all-in-one pack declares both workflows and their full dependencies
         "qwen3vl_8b_int8_convrot",
         "qwen_image_2.1_vae_bf16",
         "qwen21_outpaint_lora",
-        "inpaint_cropandstitch",
-        "kjnodes",
     ]);
     assert.deepEqual(pack.workflowDependencies["image-qwen21-angle"], [
         "qwen_image_2.1_turbo_int8_convrot",
         "qwen3vl_8b_int8_convrot",
         "qwen_image_2.1_vae_bf16",
-        "qwenmultiangle",
     ]);
     const byId = new Map(index.resources.map((item) => [item.id, item]));
     const lora = byId.get("qwen21_outpaint_lora");
@@ -879,4 +880,24 @@ test("trt compile failure hint is copy-ready for the user's agent", () => {
     });
     assert.ok(spaced.includes('"C:/Program Files/Python312/python.exe"'));
     assert.ok(spaced.includes('"D:/My ComfyUI/custom_nodes/ComfyUI-H3VAE_TRT/compile.py"'));
+});
+
+test("packs only declare downloadable weights; nodes ship with the app", () => {
+    const index = JSON.parse(fs.readFileSync(new URL("../resources/index.json", import.meta.url), "utf8"));
+    const byId = new Map(index.resources.map((item) => [item.id, item]));
+    for (const pack of index.packs) {
+        const optional = new Set(pack.optionalResources || []);
+        for (const id of pack.resources || []) {
+            assert.notEqual(byId.get(id)?.type, "node", `${pack.id} lists node ${id}`);
+            assert.ok(optional.has(id), `${pack.id} declares ${id} as required; packs must not have a required base`);
+        }
+        for (const [workflowId, ids] of Object.entries(pack.workflowDependencies || {})) {
+            for (const id of ids) {
+                assert.notEqual(byId.get(id)?.type, "node", `${workflowId} depends on node ${id}`);
+            }
+        }
+    }
+    for (const id of index.resources.filter((item) => item.type === "node").map((item) => item.id)) {
+        assert.ok(index.resources.find((item) => item.id === id), `node ${id} must stay in the index for the launcher`);
+    }
 });

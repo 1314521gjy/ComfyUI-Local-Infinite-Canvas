@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026.10.27-16",
+  "version": "2026.10.27-17",
   "channel": "stable",
   "updatedAt": "2026-10-27T17:10:00+08:00",
   "packs": [
@@ -11,7 +11,8 @@
       "resources": [],
       "workflows": [],
       "family": "core",
-      "tier": "core"
+      "tier": "core",
+      "optionalResources": []
     },
     {
       "id": "moss",
@@ -25,7 +26,6 @@
         "flux2-vae",
         "moss_image_sft_8steps_lora",
         "moss_balanced_s100",
-        "tespeed_moss",
         "moss_guanlan_lora"
       ],
       "workflows": [
@@ -85,6 +85,11 @@
       ],
       "optionalResources": [
         "moss_image_base_bf16",
+        "moss_image_sft_bf16",
+        "moss_image_sft_int8_convrot",
+        "qwen3.5_9b_int8_convrot",
+        "flux2-vae",
+        "moss_image_sft_8steps_lora",
         "moss_balanced_s100",
         "moss_guanlan_lora"
       ],
@@ -98,8 +103,7 @@
         "image-moss-sft-50step": [
           "moss_image_sft_bf16",
           "qwen3.5_9b_int8_convrot",
-          "flux2-vae",
-          "tespeed_moss"
+          "flux2-vae"
         ],
         "image-moss-balanced-8step": [
           "moss_balanced_s100",
@@ -110,8 +114,7 @@
         "image-moss-balanced-50step": [
           "moss_balanced_s100",
           "qwen3.5_9b_int8_convrot",
-          "flux2-vae",
-          "tespeed_moss"
+          "flux2-vae"
         ],
         "image-moss-sft-int8-8step": [
           "moss_image_sft_int8_convrot",
@@ -122,8 +125,7 @@
         "image-moss-sft-int8-50step": [
           "moss_image_sft_int8_convrot",
           "qwen3.5_9b_int8_convrot",
-          "flux2-vae",
-          "tespeed_moss"
+          "flux2-vae"
         ]
       },
       "optionalLabel": "LoRA"
@@ -136,10 +138,7 @@
         "qwen_image_2.1_turbo_int8_convrot",
         "qwen3vl_8b_int8_convrot",
         "qwen_image_2.1_vae_bf16",
-        "qwen21_outpaint_lora",
-        "qwenmultiangle",
-        "inpaint_cropandstitch",
-        "kjnodes"
+        "qwen21_outpaint_lora"
       ],
       "workflows": [
         "image-qwen21",
@@ -159,17 +158,20 @@
           "qwen_image_2.1_turbo_int8_convrot",
           "qwen3vl_8b_int8_convrot",
           "qwen_image_2.1_vae_bf16",
-          "qwen21_outpaint_lora",
-          "inpaint_cropandstitch",
-          "kjnodes"
+          "qwen21_outpaint_lora"
         ],
         "image-qwen21-angle": [
           "qwen_image_2.1_turbo_int8_convrot",
           "qwen3vl_8b_int8_convrot",
-          "qwen_image_2.1_vae_bf16",
-          "qwenmultiangle"
+          "qwen_image_2.1_vae_bf16"
         ]
-      }
+      },
+      "optionalResources": [
+        "qwen_image_2.1_turbo_int8_convrot",
+        "qwen3vl_8b_int8_convrot",
+        "qwen_image_2.1_vae_bf16",
+        "qwen21_outpaint_lora"
+      ]
     },
     {
       "id": "zimage",
@@ -196,8 +198,18 @@
         "recommendVramGb": 16
       },
       "optionalResources": [
+        "z_image_turbo_bf16",
+        "qwen_3_4b",
+        "ae",
         "z_image_turbo_int8_convrot"
-      ]
+      ],
+      "workflowDependencies": {
+        "image-z-image-turbo": [
+          "z_image_turbo_bf16",
+          "qwen_3_4b",
+          "ae"
+        ]
+      }
     },
     {
       "id": "krea2",
@@ -224,8 +236,18 @@
         "recommendVramGb": 16
       },
       "optionalResources": [
+        "krea2_turbo_fp8_scaled",
+        "qwen3vl_4b_fp8_scaled",
+        "qwen_image_vae",
         "krea2_turbo_int8_convrot"
-      ]
+      ],
+      "workflowDependencies": {
+        "image-krea2-turbo": [
+          "krea2_turbo_fp8_scaled",
+          "qwen3vl_4b_fp8_scaled",
+          "qwen_image_vae"
+        ]
+      }
     },
     {
       "id": "h3",
@@ -237,14 +259,6 @@
         "h3_te_qwen3vl_32b_int8_convrot",
         "h3_audio_vae_fp32",
         "h3_latent_upscaler_3d_fp16",
-        "h3_te_speed_node",
-        "h3_audio_t8_node",
-        "h3_yc_nodes",
-        "h3_selflift_node",
-        "h3_trt_vae_node",
-        "h3_vhs_node",
-        "kjnodes",
-        "h3_vdn_node",
         "h3_vdn_stage_model",
         "h3_vdn_stage_turbo_adapter",
         "h3_vdn_stage_default_adapter",
@@ -254,7 +268,6 @@
         "h3_vdn_stage_turbo_config",
         "h3_vdn_stage_default_config",
         "h3_lightx2v_8step_lora",
-        "h3_solattn_node",
         "h3_character_swap_lora",
         "h3_video_vae_fp16",
         "h3_vae_onnx_decoder",
@@ -284,7 +297,10 @@
       "optional": true,
       "autoRecommend": false,
       "optionalResources": [
-        "h3_vdn_node",
+        "h3_unet_singularity_ref2va_v13_int8",
+        "h3_te_qwen3vl_32b_int8_convrot",
+        "h3_audio_vae_fp32",
+        "h3_latent_upscaler_3d_fp16",
         "h3_vdn_stage_model",
         "h3_vdn_stage_turbo_adapter",
         "h3_vdn_stage_default_adapter",
@@ -294,9 +310,13 @@
         "h3_vdn_stage_turbo_config",
         "h3_vdn_stage_default_config",
         "h3_lightx2v_8step_lora",
-        "h3_solattn_node",
         "h3_character_swap_lora",
-        "h3_video_vae_fp16"
+        "h3_video_vae_fp16",
+        "h3_vae_onnx_decoder",
+        "h3_vae_onnx_decoder_data",
+        "h3_vae_onnx_encoder",
+        "h3_trt_vae_decoder_engine",
+        "h3_trt_vae_encoder_engine"
       ],
       "workflowDependencies": {
         "video-h3-ref2va": [
@@ -304,14 +324,6 @@
           "h3_te_qwen3vl_32b_int8_convrot",
           "h3_audio_vae_fp32",
           "h3_latent_upscaler_3d_fp16",
-          "h3_te_speed_node",
-          "h3_audio_t8_node",
-          "h3_yc_nodes",
-          "h3_selflift_node",
-          "h3_trt_vae_node",
-          "h3_vhs_node",
-          "kjnodes",
-          "h3_vdn_node",
           "h3_vdn_stage_model",
           "h3_vdn_stage_turbo_adapter",
           "h3_vdn_stage_default_adapter",
@@ -331,14 +343,6 @@
           "h3_te_qwen3vl_32b_int8_convrot",
           "h3_audio_vae_fp32",
           "h3_latent_upscaler_3d_fp16",
-          "h3_te_speed_node",
-          "h3_audio_t8_node",
-          "h3_yc_nodes",
-          "h3_selflift_node",
-          "h3_trt_vae_node",
-          "h3_vhs_node",
-          "kjnodes",
-          "h3_vdn_node",
           "h3_vdn_stage_model",
           "h3_vdn_stage_turbo_adapter",
           "h3_vdn_stage_default_adapter",
@@ -358,14 +362,6 @@
           "h3_te_qwen3vl_32b_int8_convrot",
           "h3_audio_vae_fp32",
           "h3_latent_upscaler_3d_fp16",
-          "h3_te_speed_node",
-          "h3_audio_t8_node",
-          "h3_yc_nodes",
-          "h3_selflift_node",
-          "h3_trt_vae_node",
-          "h3_vhs_node",
-          "kjnodes",
-          "h3_vdn_node",
           "h3_vdn_stage_model",
           "h3_vdn_stage_turbo_adapter",
           "h3_vdn_stage_default_adapter",
@@ -385,15 +381,7 @@
           "h3_te_qwen3vl_32b_int8_convrot",
           "h3_audio_vae_fp32",
           "h3_latent_upscaler_3d_fp16",
-          "h3_te_speed_node",
-          "h3_audio_t8_node",
-          "h3_yc_nodes",
-          "h3_selflift_node",
-          "h3_trt_vae_node",
-          "h3_vhs_node",
-          "kjnodes",
           "h3_lightx2v_8step_lora",
-          "h3_solattn_node",
           "h3_vae_onnx_decoder",
           "h3_vae_onnx_decoder_data",
           "h3_vae_onnx_encoder",
@@ -405,15 +393,7 @@
           "h3_te_qwen3vl_32b_int8_convrot",
           "h3_audio_vae_fp32",
           "h3_latent_upscaler_3d_fp16",
-          "h3_te_speed_node",
-          "h3_audio_t8_node",
-          "h3_yc_nodes",
-          "h3_selflift_node",
-          "h3_trt_vae_node",
-          "h3_vhs_node",
-          "kjnodes",
           "h3_lightx2v_8step_lora",
-          "h3_solattn_node",
           "h3_vae_onnx_decoder",
           "h3_vae_onnx_decoder_data",
           "h3_vae_onnx_encoder",
@@ -425,15 +405,7 @@
           "h3_te_qwen3vl_32b_int8_convrot",
           "h3_audio_vae_fp32",
           "h3_latent_upscaler_3d_fp16",
-          "h3_te_speed_node",
-          "h3_audio_t8_node",
-          "h3_yc_nodes",
-          "h3_selflift_node",
-          "h3_trt_vae_node",
-          "h3_vhs_node",
-          "kjnodes",
           "h3_lightx2v_8step_lora",
-          "h3_solattn_node",
           "h3_vae_onnx_decoder",
           "h3_vae_onnx_decoder_data",
           "h3_vae_onnx_encoder",
@@ -445,14 +417,6 @@
           "h3_te_qwen3vl_32b_int8_convrot",
           "h3_audio_vae_fp32",
           "h3_latent_upscaler_3d_fp16",
-          "h3_te_speed_node",
-          "h3_audio_t8_node",
-          "h3_yc_nodes",
-          "h3_selflift_node",
-          "h3_trt_vae_node",
-          "h3_vhs_node",
-          "kjnodes",
-          "h3_vdn_node",
           "h3_vdn_stage_model",
           "h3_vdn_stage_turbo_adapter",
           "h3_vdn_stage_default_adapter",
@@ -812,13 +776,10 @@
           "kind": "bundled",
           "path": "resources/nodes/TE-Speed-MOSS.zip",
           "label": "内置"
-        },
-        {
-          "url": "https://github.com/tl2012tl/TE-Speed-MOSS/archive/refs/heads/main.zip",
-          "label": "上游 GitHub",
-          "verify": false
         }
-      ]
+      ],
+      "bundleDir": "resources/nodes/unpacked/TE-Speed-MOSS",
+      "autoInstall": true
     },
     {
       "id": "moss_guanlan_lora",
