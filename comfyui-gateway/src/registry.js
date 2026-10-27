@@ -3,7 +3,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 
 import { deepClone, isPlainObject, nowIso, readJsonFile, slugify, truncate, writeJsonAtomic } from "./util.js";
-import { decorateEntry, listModelDescriptors, resolveBaseModelVariant } from "./base-models.js";
+import { baseModelDefault, decorateEntry, listBaseModels, listModelDescriptors, resolveBaseModelVariant } from "./base-models.js";
 
 const REGISTRY_FILE = "registry.json";
 const TYPE_PREFIX = { image: "image", video: "video", audio: "audio", text: "text" };
@@ -338,7 +338,16 @@ export function createRegistry({ dir, maxWorkflowBytes = 5 * 1024 * 1024, logger
 
   function resolveModel(idOrName, loaderOptions = {}) {
     const direct = resolve(idOrName);
-    if (direct) return { entry: decorateEntry(direct, null, loaderOptions), variant: null };
+    if (direct) {
+      const config = direct.baseModels;
+      const defaultFile = baseModelDefault(direct, config);
+      const files = loaderOptions?.[config?.classType || "UNETLoader"] || [];
+      if (config && defaultFile && !files.includes(defaultFile)) {
+        const variant = listBaseModels(direct, loaderOptions)[0];
+        if (variant) return { entry: decorateEntry(direct, variant, loaderOptions), variant };
+      }
+      return { entry: decorateEntry(direct, null, loaderOptions), variant: null };
+    }
     for (const entry of cache.values()) {
       const variant = resolveBaseModelVariant(entry, idOrName, loaderOptions);
       if (!variant) continue;

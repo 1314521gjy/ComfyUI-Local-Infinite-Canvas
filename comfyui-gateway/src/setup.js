@@ -139,7 +139,33 @@ export function createSetupManager({ config, registry, comfy, logger } = {}) {
         return loaders;
     }
 
-    function validateWorkflow(workflow, classes, loaders) {
+    function hasBaseModelAlternative(entry, classType, input, options) {
+        const config = entry?.baseModels;
+        if (!config) return false;
+        if ((config.classType || "UNETLoader") !== classType) return false;
+        if ((config.input || "unet_name") !== input) return false;
+        for (const file of options) {
+            if (typeof file !== "string") continue;
+            if (config.filter) {
+                try {
+                    if (!new RegExp(config.filter, "i").test(file)) continue;
+                } catch {
+                    continue;
+                }
+            }
+            if (config.exclude) {
+                try {
+                    if (new RegExp(config.exclude, "i").test(file)) continue;
+                } catch {
+                    continue;
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    function validateWorkflow(workflow, classes, loaders, entry) {
         const problems = [];
         for (const [nodeId, node] of Object.entries(workflow || {})) {
             const classType = node?.class_type;
@@ -151,6 +177,7 @@ export function createSetupManager({ config, registry, comfy, logger } = {}) {
             if (!loader) continue;
             const value = node.inputs?.[loader.input];
             if (typeof value === "string" && value && !loader.options.has(value)) {
+                if (hasBaseModelAlternative(entry, classType, loader.input, loader.options)) continue;
                 problems.push({ type: "model", message: `缺少模型 ${classType}.${loader.input}=${value}` });
             }
         }
@@ -185,7 +212,7 @@ export function createSetupManager({ config, registry, comfy, logger } = {}) {
                 availability.clear();
                 for (const entry of entries) {
                     const variants = [entry.workflow, ...Object.values(entry.variants || {}).map((variant) => variant?.workflow)].filter(Boolean);
-                    const problems = variants.flatMap((workflow) => validateWorkflow(workflow, classes, loaders));
+                    const problems = variants.flatMap((workflow) => validateWorkflow(workflow, classes, loaders, entry));
                     const unique = [];
                     for (const problem of problems) {
                         const key = `${problem.type}:${problem.message}`;

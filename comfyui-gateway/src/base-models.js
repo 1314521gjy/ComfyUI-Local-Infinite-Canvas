@@ -50,6 +50,14 @@ function aliasFor(config, file) {
   return config?.aliases?.[file] || config?.aliases?.[path.basename(String(file || ""))] || "";
 }
 
+function loaderFiles(config, loaderOptions) {
+  return loaderOptions?.[config?.classType || "UNETLoader"] || [];
+}
+
+function filePresent(config, loaderOptions, file) {
+  return loaderFiles(config, loaderOptions).includes(file);
+}
+
 function explicitVariants(config) {
   if (!Array.isArray(config?.variants)) return null;
   return config.variants
@@ -100,9 +108,11 @@ export function listModelDescriptors(entries, loaderOptions) {
   const descriptors = [];
   for (const entry of entries) {
     const defaultFile = baseModelDefault(entry);
-    descriptors.push({ modelId: entry.name, baseId: entry.id, entry, variant: null, defaultFile });
+    const defaultPresent = !entry.baseModels || !defaultFile || filePresent(entry.baseModels, loaderOptions, defaultFile);
+    if (defaultPresent) descriptors.push({ modelId: entry.name, baseId: entry.id, entry, variant: null, defaultFile });
     for (const variant of listBaseModels(entry, loaderOptions)) {
       if (variant.file === defaultFile) continue;
+      if (entry.baseModels && !filePresent(entry.baseModels, loaderOptions, variant.file)) continue;
       descriptors.push({ modelId: modelIdFor(entry, variant), baseId: entry.id, entry, variant, defaultFile });
     }
   }
