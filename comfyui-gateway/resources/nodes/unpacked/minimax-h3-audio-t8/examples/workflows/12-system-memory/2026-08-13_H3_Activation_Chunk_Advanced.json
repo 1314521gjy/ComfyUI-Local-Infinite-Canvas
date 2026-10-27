@@ -1,0 +1,185 @@
+{
+  "id": "4941dba5-ea74-4d4e-b086-21738e0c73f6",
+  "revision": 0,
+  "last_node_id": 3,
+  "last_link_id": 2,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "UNETLoader",
+      "title": "Load H3 FL2VA pruned INT8",
+      "pos": [
+        0,
+        0
+      ],
+      "size": [
+        390,
+        168
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            1
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "Node name for S&R": "UNETLoader"
+      },
+      "widgets_values": [
+        "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+        "default"
+      ]
+    },
+    {
+      "id": 2,
+      "type": "MiniMaxH3ActivationChunkT8Advanced",
+      "title": "Report first; switch to apply_exp only after review",
+      "pos": [
+        440,
+        0
+      ],
+      "size": [
+        390,
+        502
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 1
+        }
+      ],
+      "outputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "links": [
+            2
+          ]
+        },
+        {
+          "name": "report_json",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "minimax-h3-audio-T8",
+        "Node name for S&R": "MiniMaxH3ActivationChunkT8Advanced"
+      },
+      "widgets_values": [
+        "report_only",
+        256,
+        0,
+        49,
+        true,
+        736,
+        416,
+        124,
+        0
+      ]
+    },
+    {
+      "id": 3,
+      "type": "MiniMaxH3EnvironmentAuditT8Advanced",
+      "title": "Inspect the clone-local activation-chunk stack",
+      "pos": [
+        880,
+        0
+      ],
+      "size": [
+        390,
+        722
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 2
+        }
+      ],
+      "outputs": [
+        {
+          "name": "no_known_blocker",
+          "type": "BOOLEAN",
+          "links": null
+        },
+        {
+          "name": "status",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "name": "report_json",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "minimax-h3-audio-T8",
+        "Node name for S&R": "MiniMaxH3EnvironmentAuditT8Advanced"
+      },
+      "widgets_values": [
+        "general",
+        736,
+        416,
+        124,
+        "fl2va",
+        "int8_convrot",
+        "stock",
+        "none",
+        "regular",
+        "auto_detect",
+        0,
+        0,
+        512.0,
+        "report_only"
+      ]
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      2,
+      0,
+      "MODEL"
+    ],
+    [
+      2,
+      2,
+      0,
+      3,
+      0,
+      "MODEL"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.75,
+      "offset": [
+        120,
+        120
+      ]
+    },
+    "workflow_title": "MiniMax H3 Activation Chunk Advanced"
+  },
+  "version": 0.4
+}

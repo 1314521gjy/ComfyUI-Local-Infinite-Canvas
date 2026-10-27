@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026.10.27-11",
+  "version": "2026.10.27-12",
   "channel": "stable",
   "updatedAt": "2026-10-27T17:10:00+08:00",
   "packs": [
@@ -229,19 +229,211 @@
     },
     {
       "id": "h3",
-      "label": "H3 视频（后续包）",
-      "description": "H3/VDN/TRT/Triton 依赖较重，作为后续编译包提供。",
-      "planned": true,
-      "resources": [],
-      "workflows": [],
+      "label": "H3 视频生成（VDN / 无VDN / 角色替换）",
+      "description": "H3 视频生成资源包：Singularity Ref2VA int8 主模型 + Qwen3-VL-32B int8 TE + 音频 VAE + 放缩器；含 VDN 8步、无VDN 8步、角色替换入口。节点包已预解压随包；TRT VAE engine 需在本机用 MiniMax-H3 TRT VAE Compiler 编译，不随包分发。完整约 60GB+。",
+      "planned": false,
+      "resources": [
+        "h3_unet_singularity_ref2va_v13_int8",
+        "h3_te_qwen3vl_32b_int8_convrot",
+        "h3_audio_vae_fp32",
+        "h3_latent_upscaler_3d_fp16",
+        "h3_te_speed_node",
+        "h3_audio_t8_node",
+        "h3_yc_nodes",
+        "h3_selflift_node",
+        "h3_trt_vae_node",
+        "h3_vhs_node",
+        "kjnodes",
+        "h3_vdn_node",
+        "h3_vdn_stage_model",
+        "h3_vdn_stage_turbo_adapter",
+        "h3_vdn_stage_default_adapter",
+        "h3_vdn_stage_spec",
+        "h3_vdn_stage_metadata",
+        "h3_vdn_stage_linear_config",
+        "h3_vdn_stage_turbo_config",
+        "h3_vdn_stage_default_config",
+        "h3_lightx2v_8step_lora",
+        "h3_solattn_node",
+        "h3_character_swap_lora",
+        "h3_video_vae_fp16",
+        "h3_vae_onnx_decoder",
+        "h3_vae_onnx_decoder_data",
+        "h3_vae_onnx_encoder"
+      ],
+      "workflows": [
+        "video-h3-ref2va",
+        "video-h3-t2v",
+        "video-h3-frames",
+        "video-h3-ref2va-novdn",
+        "video-h3-t2v-novdn",
+        "video-h3-frames-novdn",
+        "video-h3-character-swap"
+      ],
       "family": "h3",
       "tier": "quality",
       "requirements": {
-        "vramFloorGb": 12,
+        "vramFloorGb": 24,
         "weightsGb": 50,
-        "ramBaseGb": 12,
+        "ramBaseGb": 32,
         "safety": 0.15,
-        "recommendVramGb": 24
+        "recommendVramGb": 32
+      },
+      "optional": true,
+      "autoRecommend": false,
+      "optionalResources": [
+        "h3_vdn_node",
+        "h3_vdn_stage_model",
+        "h3_vdn_stage_turbo_adapter",
+        "h3_vdn_stage_default_adapter",
+        "h3_vdn_stage_spec",
+        "h3_vdn_stage_metadata",
+        "h3_vdn_stage_linear_config",
+        "h3_vdn_stage_turbo_config",
+        "h3_vdn_stage_default_config",
+        "h3_lightx2v_8step_lora",
+        "h3_solattn_node",
+        "h3_character_swap_lora",
+        "h3_video_vae_fp16",
+        "h3_vae_onnx_decoder",
+        "h3_vae_onnx_decoder_data",
+        "h3_vae_onnx_encoder"
+      ],
+      "workflowDependencies": {
+        "video-h3-ref2va": [
+          "h3_unet_singularity_ref2va_v13_int8",
+          "h3_te_qwen3vl_32b_int8_convrot",
+          "h3_audio_vae_fp32",
+          "h3_latent_upscaler_3d_fp16",
+          "h3_te_speed_node",
+          "h3_audio_t8_node",
+          "h3_yc_nodes",
+          "h3_selflift_node",
+          "h3_trt_vae_node",
+          "h3_vhs_node",
+          "kjnodes",
+          "h3_vdn_node",
+          "h3_vdn_stage_model",
+          "h3_vdn_stage_turbo_adapter",
+          "h3_vdn_stage_default_adapter",
+          "h3_vdn_stage_spec",
+          "h3_vdn_stage_metadata",
+          "h3_vdn_stage_linear_config",
+          "h3_vdn_stage_turbo_config",
+          "h3_vdn_stage_default_config"
+        ],
+        "video-h3-t2v": [
+          "h3_unet_singularity_ref2va_v13_int8",
+          "h3_te_qwen3vl_32b_int8_convrot",
+          "h3_audio_vae_fp32",
+          "h3_latent_upscaler_3d_fp16",
+          "h3_te_speed_node",
+          "h3_audio_t8_node",
+          "h3_yc_nodes",
+          "h3_selflift_node",
+          "h3_trt_vae_node",
+          "h3_vhs_node",
+          "kjnodes",
+          "h3_vdn_node",
+          "h3_vdn_stage_model",
+          "h3_vdn_stage_turbo_adapter",
+          "h3_vdn_stage_default_adapter",
+          "h3_vdn_stage_spec",
+          "h3_vdn_stage_metadata",
+          "h3_vdn_stage_linear_config",
+          "h3_vdn_stage_turbo_config",
+          "h3_vdn_stage_default_config"
+        ],
+        "video-h3-frames": [
+          "h3_unet_singularity_ref2va_v13_int8",
+          "h3_te_qwen3vl_32b_int8_convrot",
+          "h3_audio_vae_fp32",
+          "h3_latent_upscaler_3d_fp16",
+          "h3_te_speed_node",
+          "h3_audio_t8_node",
+          "h3_yc_nodes",
+          "h3_selflift_node",
+          "h3_trt_vae_node",
+          "h3_vhs_node",
+          "kjnodes",
+          "h3_vdn_node",
+          "h3_vdn_stage_model",
+          "h3_vdn_stage_turbo_adapter",
+          "h3_vdn_stage_default_adapter",
+          "h3_vdn_stage_spec",
+          "h3_vdn_stage_metadata",
+          "h3_vdn_stage_linear_config",
+          "h3_vdn_stage_turbo_config",
+          "h3_vdn_stage_default_config"
+        ],
+        "video-h3-ref2va-novdn": [
+          "h3_unet_singularity_ref2va_v13_int8",
+          "h3_te_qwen3vl_32b_int8_convrot",
+          "h3_audio_vae_fp32",
+          "h3_latent_upscaler_3d_fp16",
+          "h3_te_speed_node",
+          "h3_audio_t8_node",
+          "h3_yc_nodes",
+          "h3_selflift_node",
+          "h3_trt_vae_node",
+          "h3_vhs_node",
+          "kjnodes",
+          "h3_lightx2v_8step_lora",
+          "h3_solattn_node"
+        ],
+        "video-h3-t2v-novdn": [
+          "h3_unet_singularity_ref2va_v13_int8",
+          "h3_te_qwen3vl_32b_int8_convrot",
+          "h3_audio_vae_fp32",
+          "h3_latent_upscaler_3d_fp16",
+          "h3_te_speed_node",
+          "h3_audio_t8_node",
+          "h3_yc_nodes",
+          "h3_selflift_node",
+          "h3_trt_vae_node",
+          "h3_vhs_node",
+          "kjnodes",
+          "h3_lightx2v_8step_lora",
+          "h3_solattn_node"
+        ],
+        "video-h3-frames-novdn": [
+          "h3_unet_singularity_ref2va_v13_int8",
+          "h3_te_qwen3vl_32b_int8_convrot",
+          "h3_audio_vae_fp32",
+          "h3_latent_upscaler_3d_fp16",
+          "h3_te_speed_node",
+          "h3_audio_t8_node",
+          "h3_yc_nodes",
+          "h3_selflift_node",
+          "h3_trt_vae_node",
+          "h3_vhs_node",
+          "kjnodes",
+          "h3_lightx2v_8step_lora",
+          "h3_solattn_node"
+        ],
+        "video-h3-character-swap": [
+          "h3_unet_singularity_ref2va_v13_int8",
+          "h3_te_qwen3vl_32b_int8_convrot",
+          "h3_audio_vae_fp32",
+          "h3_latent_upscaler_3d_fp16",
+          "h3_te_speed_node",
+          "h3_audio_t8_node",
+          "h3_yc_nodes",
+          "h3_selflift_node",
+          "h3_trt_vae_node",
+          "h3_vhs_node",
+          "kjnodes",
+          "h3_vdn_node",
+          "h3_vdn_stage_model",
+          "h3_vdn_stage_turbo_adapter",
+          "h3_vdn_stage_default_adapter",
+          "h3_vdn_stage_spec",
+          "h3_vdn_stage_metadata",
+          "h3_vdn_stage_linear_config",
+          "h3_vdn_stage_turbo_config",
+          "h3_vdn_stage_default_config",
+          "h3_character_swap_lora"
+        ]
       }
     }
   ],
@@ -603,6 +795,378 @@
       "note": "可选；本地已装。下载源为私有魔搭资源集，公开分发前需公开资源集或换公开源。",
       "sources": [
         "https://www.modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/comfyui-gateway/resources/loras/KOOK-MOSS-SFT-%E8%A7%82%E6%BE%9C.safetensors"
+      ]
+    },
+    {
+      "id": "h3_unet_singularity_ref2va_v13_int8",
+      "type": "model",
+      "label": "H3 Singularity Ref2VA v1.3 int8（剪枝）",
+      "target": "diffusion_models/Minimax-h3_Singularity_ref2va_Pruned_v1.3_int8.safetensors",
+      "size": 20967647456,
+      "sha256": "412a7b126595a958964193f3b42513d7cf2df4196ef04223a0f05e3622949cce",
+      "license": "Apache-2.0（Singularity）/ MiniMax H3 Community License",
+      "note": "H3 主模型；T2V/I2V/Ref2V/V2V 通用。",
+      "sources": [
+        "https://www.modelscope.cn/models/zhouwenbin1994/Minimax-h3_Singularity_ref2va_Pruned_v1.3_int8/resolve/master/Minimax-h3_Singularity_ref2va_Pruned_v1.3_int8.safetensors",
+        "https://huggingface.co/WarmBloodAban/Minimax-h3_Singularity/resolve/main/Minimax-h3_Singularity_ref2va_Pruned_v1.3_int8.safetensors"
+      ]
+    },
+    {
+      "id": "h3_te_qwen3vl_32b_int8_convrot",
+      "type": "model",
+      "label": "Qwen3-VL-32B H3 文本编码器 int8 ConvRot",
+      "target": "text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
+      "size": 27141342152,
+      "license": "MiniMax H3 Community License / Qwen",
+      "note": "H3 共用 TE；约 27.1GB，加载占显存较大。",
+      "sources": [
+        "https://www.modelscope.cn/models/Comfy-Org/MiniMax-H3/resolve/master/text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
+        "https://hf-mirror.com/Comfy-Org/MiniMax-H3/resolve/main/text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors"
+      ]
+    },
+    {
+      "id": "h3_audio_vae_fp32",
+      "type": "model",
+      "label": "H3 音频 VAE fp32",
+      "target": "vae/minimax_h3_audio_vae_fp32.safetensors",
+      "size": 605254808,
+      "license": "MiniMax H3 Community License",
+      "sources": [
+        "https://www.modelscope.cn/models/Comfy-Org/MiniMax-H3/resolve/master/vae/minimax_h3_audio_vae_fp32.safetensors",
+        "https://hf-mirror.com/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_audio_vae_fp32.safetensors"
+      ]
+    },
+    {
+      "id": "h3_latent_upscaler_3d_fp16",
+      "type": "model",
+      "label": "H3 Latent Upscaler 3D fp16",
+      "target": "latent_upscale_models/minimax_h3_latent_upscaler_3d_fp16.safetensors",
+      "size": 690592672,
+      "license": "Apache-2.0",
+      "note": "SelfLift 高清二采使用；HF 源，国内可用 hf-mirror。",
+      "sources": [
+        "https://hf-mirror.com/LBH-123-AI/Minimax_h3_latent_Upscaler/resolve/main/minimax_h3_latent_upscaler_3d_fp16.safetensors",
+        "https://huggingface.co/LBH-123-AI/Minimax_h3_latent_Upscaler/resolve/main/minimax_h3_latent_upscaler_3d_fp16.safetensors"
+      ]
+    },
+    {
+      "id": "h3_video_vae_fp16",
+      "type": "model",
+      "label": "H3 视频 VAE fp16（非 TRT 备用）",
+      "target": "vae/minimax_h3_video_vae_fp16.safetensors",
+      "size": 5207808496,
+      "license": "MiniMax H3 Community License",
+      "note": "当前 VDN/无VDN 工作流使用 TRT VAE；此文件用于替换/备用。",
+      "sources": [
+        "https://www.modelscope.cn/models/Comfy-Org/MiniMax-H3/resolve/master/vae/minimax_h3_video_vae_fp16.safetensors",
+        "https://hf-mirror.com/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_video_vae_fp16.safetensors"
+      ]
+    },
+    {
+      "id": "h3_lightx2v_8step_lora",
+      "type": "model",
+      "label": "H3 LightX2V 8步 Turbo LoRA",
+      "target": "loras/minimax_h3_fl2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors",
+      "size": 1956193000,
+      "license": "MiniMax H3 Community License",
+      "note": "无VDN 工作流使用；魔搭源文件名不带 768p，内容一致。",
+      "sources": [
+        "https://www.modelscope.cn/models/Comfy-Org/MiniMax-H3/resolve/master/loras/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
+        "https://hf-mirror.com/Comfy-Org/MiniMax-H3/resolve/main/loras/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
+      ]
+    },
+    {
+      "id": "h3_character_swap_lora",
+      "type": "model",
+      "label": "H3 Character Swap v1.5 LoRA",
+      "target": "loras/h3_character_swap_v1.5.safetensors",
+      "size": 155110792,
+      "license": "MiniMax H3 Community License",
+      "note": "角色替换入口使用。",
+      "sources": [
+        "https://www.modelscope.cn/models/akatz-ai/MiniMax-H3-Character-Swap-LoRA/resolve/master/h3_character_swap_v1.5.safetensors",
+        "https://hf-mirror.com/akatz-ai/MiniMax-H3-Character-Swap-LoRA/resolve/main/h3_character_swap_v1.5.safetensors"
+      ]
+    },
+    {
+      "id": "h3_vdn_stage_model",
+      "type": "model",
+      "label": "VDN linear_branch/model.safetensors",
+      "target": "vdn/stage-dmd-step-250/linear_branch/model.safetensors",
+      "size": 4279428112,
+      "license": "MiniMax H3 Community License",
+      "sources": [
+        "https://www.modelscope.cn/models/OpenVDN/vdn-minimax-h3/resolve/master/stage-dmd-step-250/linear_branch/model.safetensors"
+      ]
+    },
+    {
+      "id": "h3_vdn_stage_turbo_adapter",
+      "type": "model",
+      "label": "VDN adapters/turbo/adapter_model.safetensors",
+      "target": "vdn/stage-dmd-step-250/adapters/turbo/adapter_model.safetensors",
+      "size": 851452696,
+      "license": "MiniMax H3 Community License",
+      "sources": [
+        "https://www.modelscope.cn/models/OpenVDN/vdn-minimax-h3/resolve/master/stage-dmd-step-250/adapters/turbo/adapter_model.safetensors"
+      ]
+    },
+    {
+      "id": "h3_vdn_stage_default_adapter",
+      "type": "model",
+      "label": "VDN adapters/default/adapter_model.safetensors",
+      "target": "vdn/stage-dmd-step-250/adapters/default/adapter_model.safetensors",
+      "size": 334026912,
+      "license": "MiniMax H3 Community License",
+      "sources": [
+        "https://www.modelscope.cn/models/OpenVDN/vdn-minimax-h3/resolve/master/stage-dmd-step-250/adapters/default/adapter_model.safetensors"
+      ]
+    },
+    {
+      "id": "h3_vdn_stage_spec",
+      "type": "model",
+      "label": "VDN model_spec.json",
+      "target": "vdn/stage-dmd-step-250/model_spec.json",
+      "size": 25705,
+      "license": "MiniMax H3 Community License",
+      "sources": [
+        "https://www.modelscope.cn/models/OpenVDN/vdn-minimax-h3/resolve/master/stage-dmd-step-250/model_spec.json"
+      ]
+    },
+    {
+      "id": "h3_vdn_stage_metadata",
+      "type": "model",
+      "label": "VDN metadata.json",
+      "target": "vdn/stage-dmd-step-250/metadata.json",
+      "size": 463,
+      "license": "MiniMax H3 Community License",
+      "sources": [
+        "https://www.modelscope.cn/models/OpenVDN/vdn-minimax-h3/resolve/master/stage-dmd-step-250/metadata.json"
+      ]
+    },
+    {
+      "id": "h3_vdn_stage_linear_config",
+      "type": "model",
+      "label": "VDN linear_branch/config.json",
+      "target": "vdn/stage-dmd-step-250/linear_branch/config.json",
+      "size": 465,
+      "license": "MiniMax H3 Community License",
+      "sources": [
+        "https://www.modelscope.cn/models/OpenVDN/vdn-minimax-h3/resolve/master/stage-dmd-step-250/linear_branch/config.json"
+      ]
+    },
+    {
+      "id": "h3_vdn_stage_turbo_config",
+      "type": "model",
+      "label": "VDN adapters/turbo/adapter_config.json",
+      "target": "vdn/stage-dmd-step-250/adapters/turbo/adapter_config.json",
+      "size": 22264,
+      "license": "MiniMax H3 Community License",
+      "sources": [
+        "https://www.modelscope.cn/models/OpenVDN/vdn-minimax-h3/resolve/master/stage-dmd-step-250/adapters/turbo/adapter_config.json"
+      ]
+    },
+    {
+      "id": "h3_vdn_stage_default_config",
+      "type": "model",
+      "label": "VDN adapters/default/adapter_config.json",
+      "target": "vdn/stage-dmd-step-250/adapters/default/adapter_config.json",
+      "size": 415,
+      "license": "MiniMax H3 Community License",
+      "sources": [
+        "https://www.modelscope.cn/models/OpenVDN/vdn-minimax-h3/resolve/master/stage-dmd-step-250/adapters/default/adapter_config.json"
+      ]
+    },
+    {
+      "id": "h3_vae_onnx_decoder",
+      "type": "model",
+      "label": "H3 VAE ONNX decoder",
+      "target": "vae/minimax_h3_vae_decoder.onnx",
+      "size": 1609440,
+      "license": "MiniMax H3 Community License",
+      "note": "用于本机编译 TRT VAE engine；HF 源。",
+      "sources": [
+        "https://hf-mirror.com/lihaoyun6/MiniMax-H3-VAE-ONNX/resolve/main/minimax_h3_vae_decoder.onnx",
+        "https://huggingface.co/lihaoyun6/MiniMax-H3-VAE-ONNX/resolve/main/minimax_h3_vae_decoder.onnx"
+      ]
+    },
+    {
+      "id": "h3_vae_onnx_decoder_data",
+      "type": "model",
+      "label": "H3 VAE ONNX decoder data",
+      "target": "vae/minimax_h3_vae_decoder.onnx.data",
+      "size": 4847062144,
+      "license": "MiniMax H3 Community License",
+      "note": "decoder 外置权重；与 .onnx 同目录。",
+      "sources": [
+        "https://hf-mirror.com/lihaoyun6/MiniMax-H3-VAE-ONNX/resolve/main/minimax_h3_vae_decoder.onnx.data",
+        "https://huggingface.co/lihaoyun6/MiniMax-H3-VAE-ONNX/resolve/main/minimax_h3_vae_decoder.onnx.data"
+      ]
+    },
+    {
+      "id": "h3_vae_onnx_encoder",
+      "type": "model",
+      "label": "H3 VAE ONNX encoder",
+      "target": "vae/minimax_h3_vae_encoder.onnx",
+      "size": 361041889,
+      "license": "MiniMax H3 Community License",
+      "note": "用于本机编译 TRT VAE engine；HF 源。",
+      "sources": [
+        "https://hf-mirror.com/lihaoyun6/MiniMax-H3-VAE-ONNX/resolve/main/minimax_h3_vae_encoder.onnx",
+        "https://huggingface.co/lihaoyun6/MiniMax-H3-VAE-ONNX/resolve/main/minimax_h3_vae_encoder.onnx"
+      ]
+    },
+    {
+      "id": "h3_vdn_node",
+      "type": "node",
+      "label": "ComfyUI-VDN-H3",
+      "target": "custom_nodes/ComfyUI-VDN-H3",
+      "bundleDir": "resources/nodes/unpacked/ComfyUI-VDN-H3",
+      "size": 0,
+      "license": "Apache-2.0",
+      "autoInstall": true,
+      "provides": [
+        "ApplyVDNH3Advanced"
+      ],
+      "note": "预解压目录随包复制，不跑 pip；节点依赖按 README 处理。",
+      "sources": [
+        {
+          "url": "https://github.com/Saganaki22/ComfyUI-VDN-H3/archive/refs/heads/main.zip",
+          "label": "GitHub 备源",
+          "verify": false
+        }
+      ]
+    },
+    {
+      "id": "h3_te_speed_node",
+      "type": "node",
+      "label": "TE-Speed MiniMaxH3",
+      "target": "custom_nodes/TE-Speed-MiniMaxH3",
+      "bundleDir": "resources/nodes/unpacked/TE-Speed-MiniMaxH3",
+      "size": 0,
+      "license": "未声明 LICENSE",
+      "autoInstall": true,
+      "provides": [
+        "TESpeedMiniMaxH3"
+      ],
+      "note": "预解压目录随包复制，不跑 pip；节点依赖按 README 处理。",
+      "sources": []
+    },
+    {
+      "id": "h3_audio_t8_node",
+      "type": "node",
+      "label": "MiniMax H3 Audio T8",
+      "target": "custom_nodes/minimax-h3-audio-t8",
+      "bundleDir": "resources/nodes/unpacked/minimax-h3-audio-t8",
+      "size": 0,
+      "license": "GPL-3.0-or-later",
+      "autoInstall": true,
+      "provides": [
+        "MiniMaxH3AudioConditioningT8",
+        "MiniMaxH3AVDecodeT8",
+        "MiniMaxH3SigmaShift",
+        "ModelAttentionBackend",
+        "LoraLoaderBypassModelOnly"
+      ],
+      "note": "预解压目录随包复制，不跑 pip；节点依赖按 README 处理。",
+      "sources": [
+        {
+          "url": "https://github.com/T8mars/comfyui-minimax-h3-audio-T8/archive/refs/heads/main.zip",
+          "label": "GitHub 备源",
+          "verify": false
+        }
+      ]
+    },
+    {
+      "id": "h3_yc_nodes",
+      "type": "node",
+      "label": "YC MiniMax H3 Nodes",
+      "target": "custom_nodes/ComfyUI-YCNodes-MiniMax-H3",
+      "bundleDir": "resources/nodes/unpacked/ComfyUI-YCNodes-MiniMax-H3",
+      "size": 0,
+      "license": "MIT",
+      "autoInstall": true,
+      "provides": [
+        "H3SigmaRefiner"
+      ],
+      "note": "预解压目录随包复制，不跑 pip；节点依赖按 README 处理。",
+      "sources": []
+    },
+    {
+      "id": "h3_selflift_node",
+      "type": "node",
+      "label": "SelfLift H3",
+      "target": "custom_nodes/comfyui-SelfLift",
+      "bundleDir": "resources/nodes/unpacked/comfyui-SelfLift",
+      "size": 0,
+      "license": "未声明 LICENSE",
+      "autoInstall": true,
+      "provides": [
+        "SelfLiftH3Sampler"
+      ],
+      "note": "预解压目录随包复制，不跑 pip；节点依赖按 README 处理。",
+      "sources": [
+        {
+          "url": "https://github.com/facok/comfyui-SelfLift/archive/refs/heads/main.zip",
+          "label": "GitHub 备源",
+          "verify": false
+        }
+      ]
+    },
+    {
+      "id": "h3_solattn_node",
+      "type": "node",
+      "label": "SolAttn H3（Triton）",
+      "target": "custom_nodes/ComfyUI-SolAttn_triton",
+      "bundleDir": "resources/nodes/unpacked/ComfyUI-SolAttn_triton",
+      "size": 0,
+      "license": "未声明 LICENSE",
+      "autoInstall": true,
+      "provides": [
+        "SolAttnPatch"
+      ],
+      "note": "预解压目录随包复制，不跑 pip；节点依赖按 README 处理。",
+      "sources": []
+    },
+    {
+      "id": "h3_trt_vae_node",
+      "type": "node",
+      "label": "H3 TRT VAE",
+      "target": "custom_nodes/ComfyUI-H3VAE_TRT",
+      "bundleDir": "resources/nodes/unpacked/ComfyUI-H3VAE_TRT",
+      "size": 0,
+      "license": "Apache-2.0",
+      "autoInstall": true,
+      "provides": [
+        "MiniMaxH3TRTVAELoader"
+      ],
+      "note": "预解压目录随包复制，不跑 pip；节点依赖按 README 处理。",
+      "sources": [
+        {
+          "url": "https://github.com/lihaoyun6/ComfyUI-H3VAE_TRT/archive/refs/heads/main.zip",
+          "label": "GitHub 备源",
+          "verify": false
+        }
+      ]
+    },
+    {
+      "id": "h3_vhs_node",
+      "type": "node",
+      "label": "VideoHelperSuite",
+      "target": "custom_nodes/ComfyUI-VideoHelperSuite",
+      "bundleDir": "resources/nodes/unpacked/ComfyUI-VideoHelperSuite",
+      "size": 0,
+      "license": "GPL-3.0",
+      "autoInstall": true,
+      "provides": [
+        "VHS_VideoCombine"
+      ],
+      "note": "预解压目录随包复制，不跑 pip；节点依赖按 README 处理。",
+      "sources": [
+        {
+          "url": "https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite/archive/refs/heads/main.zip",
+          "label": "GitHub 备源",
+          "verify": false
+        }
       ]
     }
   ]

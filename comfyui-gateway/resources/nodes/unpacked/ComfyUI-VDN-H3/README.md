@@ -1,0 +1,373 @@
+# ComfyUI-VDN-H3 — VDN-H3 (Video Delta Net) for MiniMax-H3
+
+
+<img width="1039" height="505" alt="image" src="https://github.com/user-attachments/assets/ab4c1691-bff5-46fe-8b3e-635429b0700f" />
+
+
+
+**English** | [中文](README_ZH.md)
+
+Video Delta Net hybrid attention for MiniMax-H3 as a native ComfyUI node. Nearby
+frames keep exact softmax attention; distant temporal context goes through the
+checkpoint's **Video Delta Attention** linear branch, replacing the quadratic
+long-range attention with a constant-cost recurrent state.
+
+Reference implementation: [OpenVDN/vdn-minimax-h3](https://github.com/OpenVDN/vdn-minimax-h3)
+(Apache-2.0). Weights: [OpenVDN/vdn-minimax-h3](https://huggingface.co/OpenVDN/vdn-minimax-h3)
+(MiniMax H3 Community License — **read it before use**; the license excludes some
+territories).
+
+This package is a **port, not a fork**: it reproduces the official hybrid-attention
+math on ComfyUI's native MiniMax-H3 model as runtime model patches. No ComfyUI core
+files are modified.
+
+**Why this repo exists (and what it isn't).** The official VDN-H3 release targets a datacenter stack: 8× B200 GPUs with Ulysses sequence parallelism, and FlashAttention-4 kernels that only support Hopper and datacenter Blackwell — consumer Blackwell (sm_120) isn't supported, and there are no Windows builds. Upstream also uses FP8 linears and custom fused Triton kernels; this port substitutes those with portable PyTorch equivalents that run everywhere ComfyUI runs.
+
+What you get: the same released checkpoints and the same architecture — windowed softmax + Video Delta Attention branch, unit-tested against the official implementation — with zero new dependencies. The 8-step distilled model, near-lossless quality versus dense H3, and an attention cost that grows linearly with clip length instead of quadratically — the longer the video, the more this matters.
+
+What you don't get: the headline numbers. The official 74.5× figure combines 8-GPU parallelism, FA4, FP8, and 8-step distillation; upstream's own single-GPU measurement is ~2.6× at 50 steps, and this port's portable kernels land somewhat under that (measured ~17 s/it at 1280×736 / 145 frames on an RTX 5090 — see Benchmarks.md). If you want to experiment with the architecture on your own hardware, this is for you; if you want the streaming-real-time numbers, that takes their B200 cluster.
+
+**Hardware reality check.** This is not the fastest or lightest way to run MiniMax-H3 — it is an experimental PyTorch port that re-implements similar math to reach a similar result. The node runs an extra linear-branch network on every transformer block of every step, which needs considerably more compute and VRAM than int8-fused attention routes (comfy-kitchen), SageAttention, SOL or SLA — with those, the same card can push roughly double the resolution and clip length. What you get back: the benefit grows with longer clips and larger resolutions — VDN's attention cost is linear in clip length, not quadratic — provided your GPU has the VRAM to feed it. Upstream was designed for a cluster of 8× B200 datacenter GPUs, not consumer hardware. **If your VRAM or RAM is limited, I do not recommend this repo, model, or method.**
+
+| CK, Sol-attn, res_multi / simple — 20 Steps, 1280x736, 3:05 | LightXv2 4-Step Turbo v1.1, CK, Sol-attn, er_sde / beta — 8 steps, 1280x736, 1:24 |
+|:---:|:---:|
+| <video src="https://github.com/user-attachments/assets/7120657d-af61-4414-b621-53b39208ffe0" controls></video> | <video src="https://github.com/user-attachments/assets/b0373566-fc78-4616-b591-13462c4b50e6" controls></video> |
+
+| VDN-H3 Turbo, er_sde / beta — 8 steps, 1280x736, 2:04 | VDN-H3 Advanced fast_kernels Turbo, er_sde / beta — 8 steps, 1280x736, 1:13 |
+|:---:|:---:|
+| <video src="https://github.com/user-attachments/assets/89cc7155-ca89-459e-9996-5b5f6bfcd284" controls></video> | <video src="https://github.com/user-attachments/assets/5cc9906e-acec-4c61-a3b9-17c79153945b" controls></video> |
+
+<details>
+<summary><strong>VDN-H3 bf16 vs INT8 ConvRot — A/B videos (same seed &amp; settings) — click to expand</strong></summary>
+
+| VDN-H3 bf16 stage, er_sde / beta — 8 steps, 1280x736, 1:51 | VDN-H3 INT8 ConvRot stage, er_sde / beta — 8 steps, 1280x736, 1:35 |
+|:---:|:---:|
+| <video src="https://github.com/user-attachments/assets/13a6016d-89fc-48bc-9a57-7920994f2fbf" controls loop></video> | <video src="https://github.com/user-attachments/assets/28e539f6-ebf4-4ae6-b383-2605ec6cf6bb" controls loop></video> |
+
+Same seed and settings on both sides (merge, `cache_gpu`); only the stage
+differs. The INT8 stage's branch matmuls run 2.7x faster; end-to-end ~1.2x
+faster in this single-run A/B. Identical output.
+[Details + timing table](#bf16-vs-int8-convrot--ab-same-seed--settings).
+
+
+
+
+
+
+
+</details>
+
+**Ref2V example (INT8 ConvRot stage)** — ref2va base, 8 steps, er_sde / beta,
+928x928:
+
+
+
+https://github.com/user-attachments/assets/5b17a3fb-1361-4da9-b52c-603bd5e7c1f1
+
+
+
+
+### Same seed 
+`981445682258077`
+
+## v1.5.0
+
+- Bounds long-clip frame-statistics preparation to about 1 GiB instead of
+  materializing every frame at once. At the reported 72-frame, 1,032-token
+  geometry, the complete INT8 branch path reduced measured peak additional
+  allocation from 9.41 GiB to 6.81 GiB with bit-identical output and effectively
+  unchanged runtime.
+- Restores the released text-refiner attention adapter weights, which were
+  previously skipped because their paths did not match ComfyUI's fused QKV
+  layout.
+- Fixes the dense full-coverage attention shape, query short-convolution support,
+  cancellation-safe stream prefetch, bounded FlexAttention mask caching, and
+  validation of incomplete INT8 checkpoints.
+- Releases large QKV and branch intermediates earlier and removes a per-block GPU
+  synchronization. The Comfy compiler workaround now encloses the complete model
+  call and always restores the process setting.
+
+The CUDA regression suite passes 46 tests with no skips. Full measurements and
+the upstream mathematical comparison are in
+[PerformanceReview.md](PerformanceReview.md).
+
+
+## v1.5.1
+
+- Fixes a branch-prefetch lifetime bug inherited from v1.4.3: `record_stream`
+  was skipped for the whole `cudaMallocAsync` allocator, but PyTorch 2.10's
+  cudaMallocAsync allocator does require cross-stream recording — its warning
+  only concerns recording a tensor's original allocation stream. Skipping the
+  protection could free branch weights while the consumer stream was still
+  reading them, implicated in a post-release CUDA illegal-memory-access crash.
+- The stream prefetcher now records every storage directly, including INT8
+  scale storage, and no longer swallows `record_stream` registration errors.
+- Regression tests cover prefetch handoff ordering and storage registration for
+  plain and INT8 tensors; the full suite passes 51 tests.
+
+
+## Install
+
+1. Clone into `ComfyUI/custom_nodes/` and restart ComfyUI:
+
+```bash
+cd ComfyUI/custom_nodes
+git clone https://github.com/Saganaki22/ComfyUI-VDN-H3
+```
+
+2. Download the VDN checkpoint stage you want into `ComfyUI/models/vdn/`:
+
+```bash
+hf download OpenVDN/vdn-minimax-h3 --include "stage-dmd-step-250/*" --local-dir <ComfyUI>/models/vdn
+```
+
+Keep the release directory layout intact (`model_spec.json`, `linear_branch/`,
+`adapters/`). Nothing is converted on disk — the node re-keys the diffusers-format
+tensors onto ComfyUI module paths in memory.
+
+**No new Python dependencies.** The node runs the official math in eager PyTorch
+that ships with ComfyUI (torch + safetensors). No Triton, no flash-attn-4, no CUDA
+builds, no `pip install`.
+
+## Nodes
+
+**Apply VDN-H3 (MiniMax-H3 Hybrid Attention)** — `MODEL -> MODEL`
+
+| Input | Meaning |
+|---|---|
+| `vdn_checkpoint` | a stage directory under `models/vdn` |
+| `apply_turbo_adapter` | ON = the released **8-step** model (use 8 sampler steps); OFF = the **50-step** model (use ~50 steps) |
+| `strength` | adapter strength, 1.0 = released model |
+| `lora_mode` | **`merge`** (default; adapters folded into the weights — reproduces the validated model exactly) / `bypass` (runtime injection) |
+
+> **`lora_mode` — use `merge`, especially on 8-step DMD checkpoints (`stage-dmd-*`).**
+> Measured on a pruned int8 base: bypass applies the same adapters, but each
+> module's delta carries bf16 rounding noise instead of being baked into the
+> weights. Blocks 0-33 stay bit-identical to merge; the deep blocks (34+) amplify
+> that noise to ~10% of feature magnitude, and every bypass render of the 8-step
+> model comes out grainy/degraded. A coherent perturbation of the same size
+> (strength 1.016) renders clean — it is specifically off-manifold rounding
+> noise, not the delta math. Merge is required for stage-dmd-*; bypass remains
+> available for non-DMD checkpoints.
+| `branch_weights` | **`auto`** (default; picks `cache_gpu` when free VRAM after the base load exceeds 1.5x the stage size + 4 GiB headroom, else `stream`; prefers the int8_convrot stage file under memory pressure) / `stream` (weights stream from disk straight to GPU per block per step, with a one-block lookahead prefetch — nothing extra held in RAM; safe on small cards) / `cache_gpu` (resident, faster, keep ~4.3 GB VRAM free) |
+| `attention_backend` | `grouped` (default; one dense SDPA per window group) / `flex` (one compiled FlexAttention kernel; opt-in, see Benchmarks.md) |
+| `verbose` | log the applied adapters and per-forward layout |
+
+Drop it between your MiniMax-H3 loader and the sampler; conditioning, LoRAs,
+samplers, VAE decode and video/audio output nodes are unchanged. Example workflow:
+`example_workflows/vdn_h3_t2v_8step.json`.
+
+**Apply VDN-H3 Advanced** — everything above plus, for experimenters:
+
+| Input | Meaning |
+|---|---|
+| `stage_b_strength` / `turbo_strength` | per-adapter strengths (default node applies one global strength) |
+| `window_radius`, `window_chunk` | deviate from the trained c=5 r=1 window (ablation) |
+| `anchor_frames` | `both` / `columns` / `rows` / `none` (trained: `both`) |
+| `text_state` | write the prompt into the branch's states at init (trained: on) |
+| `linear_branch` | off = window-only ablation (debug — output loses all long-range context) |
+| `fast_kernels` | torch.compile the branch's hot spots (RMSNorm+gate epilogue, state gather, frame-major q store, bidirectional scan as one CUDA-graph replay; falls back to eager if compile fails). **Known to drift on 8-step DMD stages (`stage-dmd-*`) on torch 2.10** — ulp-level bf16 rounding in the fused epilogue/gather that the distilled sampler amplifies. Ablation use only; keep it off for final renders (the node logs a warning) |
+
+Ablation inputs warn in the console when they deviate from the checkpoint's
+trained spec; defaults reproduce the released model exactly.
+
+## Attention backends and stacking
+
+VDN's windowed softmax always runs exact SDPA — dispatched through ComfyUI's
+backend-priority chain (flash / cuDNN / mem-efficient), but never through
+quantized backends: routing the windows through sage/kitchen int8 measurably
+softens output, and the released model validated exact local attention. Backend
+override patches (SageAttention, kitchen-int8, KJNodes) still apply to the base
+model's own attention (text refiner, and the dense fallback on very short
+clips). The delta-rule branch never calls softmax kernels and is unaffected by
+backend patches.
+
+**Do not stack the "MiniMax H3 Scheduled Sol Attention" patch with this node.**
+It replaces `blocks.*.attn.forward` — the same path VDN owns — so wherever SOL
+handles a call, VDN's linear branch is skipped and you are no longer running
+VDN-H3 (with VDN's LoRAs applied to an attention they were not trained for).
+Use SOL-H3 for plain H3 runs; use VDN alone for VDN runs. SOL's FFN-chunking
+node and general attention overrides do compose.
+
+## Required models
+
+| Component | File | Source | Place in |
+|---|---|---|---|
+| Base diffusion model | `minimax_h3_fl2va_int8_convrot.safetensors` (recommended with torch cu130; use the `fp8_scaled` variant only if you can't) | [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3) | `models/diffusion_models` |
+| Text encoder | `qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors` | [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3) | `models/text_encoders` |
+| Video VAE | `minimax_h3_video_vae_int8_convrot.safetensors` (the fp16 variant also works, but int8_convrot fixed a decode-stuck report on a 3060 and is what the example workflow loads) | [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3) | `models/vae` |
+| Audio VAE | `minimax_h3_audio_vae_fp32.safetensors` | [Comfy-Org/MiniMax-H3](https://huggingface.co/Comfy-Org/MiniMax-H3) | `models/vae` |
+| VDN branch + adapters | `stage-dmd-step-250/` (8-step) and/or `stage-b-step-2000/` (50-step) | [OpenVDN/vdn-minimax-h3](https://huggingface.co/OpenVDN/vdn-minimax-h3) | `models/vdn` |
+
+The VDN release **does not contain base weights** — it is branch + LoRA adapters
+only, applied at runtime on whatever MiniMax-H3 base you load. The 72 GB diffusers
+base (`h3-base/`) in the HF repo is *not* needed.
+
+**Tested and working with both the `fl2v` (fl2va) and `ref2v` (ref2va) MiniMax-H3
+base models.**
+
+Download the VDN checkpoint stage you want into `ComfyUI/models/vdn/`:
+
+```bash
+hf download OpenVDN/vdn-minimax-h3 --include "stage-dmd-step-250/*" --local-dir <ComfyUI>/models/vdn
+```
+
+Or, for the pre-quantized **INT8 ConvRot** version of the 8-step stage —
+[drbaph/vdn-minimax-h3-int8-convrot-comfyui](https://huggingface.co/drbaph/vdn-minimax-h3-int8-convrot-comfyui)
+(identical output, branch 4.3 -> 2.2 GB, ~4.7 GB lower peak VRAM while loading,
+requires v1.3.0+):
+
+```bash
+hf download drbaph/vdn-minimax-h3-int8-convrot-comfyui --local-dir <ComfyUI>/models/vdn/vdn-minimax-h3-int8-convrot-comfyui
+```
+
+The folder name becomes the `vdn_checkpoint` entry. You can also quantize any
+stage yourself with `tools/quantize_vdn_branch_int8.py`.
+
+### BF16 vs INT8 ConvRot — A/B (same seed & settings)
+
+<details>
+<summary><strong>click to expand — timing table &amp; videos</strong></summary>
+
+8 steps, er_sde / beta, 1280x736 / 61 frames, merge, `cache_gpu`. Identical
+output; wall clock from a single run each (±5 s sampling).
+
+| stage | precision | wall time | peak VRAM (min free) | video |
+|---|---|---|---|---|
+| `stage-dmd-step-250` | bf16 | ~111 s | 3.6 GB free | <video src="https://github.com/user-attachments/assets/7539d6be-95fd-48e4-b3a4-b7bae677f194" controls></video> |
+| `stage-dmd-step-250-int8_convrot_comfyui` | int8 convrot | ~95 s | 8.3 GB free | <video src="https://github.com/user-attachments/assets/a5204f2e-7fab-40df-b761-f1f4d9caf54a" controls></video> |
+
+</details>
+
+The 8-step model's `turbo` adapter replaces (does not stack with) community
+MiniMax-H3 turbo LoRAs — do not run both.
+
+## What is official vs adapted
+
+**Faithful to the official implementation** (verified against the reference math by
+unit tests in `tests/`): chunk-aligned softmax window with anchor frames
+(`radius=1, chunk=5, anchor_frames=both` in the released spec), the `vdn_solve`
+delta rule, bidirectional frame scans with the alpha bridge and prompt text state,
+the K/V short conv, output gates, and both LoRA adapters.
+
+**ComfyUI-specific adaptations:**
+
+- The default windowed softmax runs as one dense SDPA per chunk-group instead of
+  block-sparse FlexAttention. Same partition, same math; needs no Triton and no
+  torch.compile. A FlexAttention + BlockMask path IS included (opt-in via
+  `attention_backend: flex`) and compiled fine on triton-windows — measured
+  parity with grouped on RTX 5090 at 34.5k tokens (see Benchmarks.md), so grouped
+  stays the default. The official FA4 backend is faster still but needs
+  Linux + datacenter Blackwell.
+- Eager pointwise ops instead of the official Triton/compiled fusions (temporal
+  conv, RMSNorm epilogue, gather) by default — the Advanced node's `fast_kernels`
+  torch.compiles the epilogue, state gather, frame-major q store, and the
+  bidirectional scan (one CUDA-graph replay replacing 2×F kernel launches per
+  block per step); same math, eager fallback.
+- LoRA applied through ComfyUI's bypass/merge machinery (int8-fused `fc2` weights
+  route through merge automatically; pruned/curve bases get the e-grid adaln
+  re-injection).
+- The packed-sequence geometry is read from ComfyUI's own `PackedLayout`, so
+  conditioning variants (t2va / fl2va / ref2va) keep working; only t2va-style
+  layouts were exercised by VDN's training.
+
+## GPUs / platform
+
+- **Windows + NVIDIA**: primary target, tested (RTX 5090, torch 2.10+cu130).
+- **Linux + NVIDIA**: should work identically (pure PyTorch).
+- Single GPU only in this port. The official Ulysses 8-GPU path is not implemented
+  (it is distribution, not algorithm).
+- AMD/Intel/CPU: untested; eager PyTorch means it will *run*, slowly. The delta-rule
+  Cholesky needs a batched-solve backend — CPU works for small tests.
+
+## VRAM and performance
+
+The base model dominates VRAM; VDN adds ~4.3 GB of branch weights (streamed per
+block in `stream` mode, so the working-set increase is roughly one block's ~86 MB).
+Transient raw q/k copies inside attention are released before the branch runs,
+and long-clip frame-statistics preparation is processed in bounded batches.
+
+Measured on RTX 5090 (int8 convrot base, `stream` mode, sage2 patch): 1280x736,
+145 frames, 8 steps, euler/simple, seed 42, ~17 s/it (~2:15 sampling), audio
+included. `grouped` vs `flex` attention backends measured parity at 34.5k tokens
+— the grouped path issues only ~6 dense SDPA calls per block per step at this
+length, so flex's fusion buys nothing yet; grouped stays the default. Reference
+points from the official VDN report: a single B200 runs the dense 50-step model
+in 13.95 min and the optimized VDN-H3 in 5.34 min (~2.6x from the hybrid alone);
+the headline 74.5x combines 8xB200 parallelism, 8-step distillation, fp8 linears,
+and FA4/flex kernels. Expect single-GPU gains on this port to track the ~2.6x
+architectural figure, scaled by which attention backend your windows dispatch to.
+Full measurement data and verification status: [Benchmarks.md](Benchmarks.md).
+
+**Smaller cards (12–16 GB).** The int8 stack (int8_convrot base + int4 text
+encoder + [int8_convrot VDN stage](https://huggingface.co/drbaph/vdn-minimax-h3-int8-convrot-comfyui))
+fits 736p on 12–16 GB without `--lowvram`. Avoid `--lowvram` if you can:
+measured cost is 20–40% sampling speed for the offload churn, and the int8
+stack doesn't need it at 736p. Keep `branch_weights: auto` (default) — it
+picks `stream` automatically when VRAM is tight.
+
+**`retain_buffers` — speed vs VRAM, resolved automatically.** The node keeps
+some branch scratch alive between blocks (scan banks, delta-solve scratch,
+window gather buffers, q/k/v copies) and prefetches the next weight block in
+stream mode. Retained, steps run without per-block allocation churn — measured
+~15% faster than v1.3.1 at 1280x736/145f in stream mode; the measured peak
+increment is small (~0.1 GiB at 736p, none detected at 145f). `auto` (the
+default) measures it for you: retain when free VRAM ≥ stage size + 10 GiB
+headroom, otherwise fall back to the transient v1.3.1 allocation pattern (and
+skip the prefetch stream) so small cards prioritize fitting over speed. `on`
+/ `off` override.
+
+**VAE decode VRAM spike.** Stock `VAEDecode` untiled is the decode-time VRAM
+spike at 768p+ or on long clips — it decodes every frame in one shot. Use a
+tiled VAE decode node (e.g. `VAEDecodeTiled`) there; sampling fits but the
+decode OOMs otherwise. Keep the default overlap — it blends tile edges, so no
+seams; if you ever see grid artifacts, raise the tile size rather than the
+overlap.
+
+## Troubleshooting
+
+- **`VDN checkpoint ... not found`** — the stage dir must sit under
+  `models/vdn/` and contain `linear_branch/model.safetensors` and `model_spec.json`.
+- **"checkpoint has N blocks but the loaded model has M"** — the VDN stage and the
+  loaded base do not belong together (e.g. a 50-block stage on a different-depth
+  model). Load the matching MiniMax-H3 base.
+- **"This MODEL already has VDN-H3 applied"** — chain the node once.
+- **`aimdo memory compile error`, or the process dying mid-step (comfy builds
+  from 2026-09-04, the "Comfy Compiler" update)** — comfy's new model compiler /
+  malloc-graph planner (comfy commits `804eb551`, which also removed a MiniMax
+  memory workaround in `5c23fb7b`) cannot handle VDN-patched MiniMax-H3
+  forwards. The node handles this for you: while a VDN workflow samples, comfy's
+  compiler is switched off, and it flips back on the moment each step ends —
+  nothing persists, no unload or restart needed, non-VDN workflows always run
+  with comfy's compiler active (a single console warning marks it). Manual
+  equivalents: launch comfy with `--disable-comfy-compiler`, or use a
+  comfy build older than 2026-09-04.
+- **OOM** — keep `branch_weights: auto` (default; it picks `stream` under memory
+  pressure), use `lora_mode: merge`, shorter clips, or a smaller resolution.
+  v1.5.0 also bounds the long-clip statistics workspace. **Cancelling mid-run:**
+  VDN drops its own GPU cache on cancel so
+  reruns start clean; if the *base model* itself was pushed host-side by VRAM
+  pressure, free/unload it once (Manager → Free, an Unload node, or
+  `POST /free`) — that residency belongs to comfy, not the node.
+- **Wrong-looking motion at 8 steps** — make sure `apply_turbo_adapter` is ON with
+  8 steps, or OFF with ~50 steps; mixing the two schedules degrades output.
+- **Video renders but looks like the plain model** — check `verbose` and look for
+  `[vdn] layout:` in the console; on clips with <= 15 latent frames the window
+  covers everything and VDN correctly falls back to dense attention.
+
+## License & citation
+
+This port is Apache-2.0 (see LICENSE). The VDN-H3 architecture, training, and
+checkpoints are by [OpenVDN](https://github.com/OpenVDN/vdn-minimax-h3)
+(Apache-2.0); the MiniMax-H3 weights are under the MiniMax H3 Community License.
+If you use VDN-H3, cite the authors:
+
+```bibtex
+@misc{xi2026videodeltanet,
+  title  = {VideoDeltaNet on MiniMax H3},
+  author = {Haocheng Xi and Yiming Xie and Hexu Zhao and Yiwen Zhang and Michael Liu and Thomas Creavin and Kurt Keutzer and Xiuyu Li and Zhaoyang Lv and Chenfeng Xu and Haiwen Feng},
+  year   = {2026},
+  url    = {https://openvdn.github.io/}
+}
+```
+

@@ -1,0 +1,461 @@
+"""Sol-Attn with an INT8 exact branch (Sage-style smoothed K, per-token scales).
+
+K smoothing shifts every score in a row by the same constant, so softmax and
+routing are unchanged and bit-identical to the BF16 kernel. The approximate
+branch stays BF16: the pooled tensors are O(N*d), so quantizing them saves
+nothing.
+"""
+
+import torch
+import triton
+import triton.language as tl
+try:
+    from triton.tools.tensor_descriptor import TensorDescriptor
+except Exception:
+    TensorDescriptor = None
+
+from ._autotune_log import (
+    AUTOTUNE_EXTRAS as _AUTOTUNE_EXTRAS,
+    BV_SAFE_AUTOTUNE as _BV_SAFE_AUTOTUNE,
+    wrap as _wrap_autotune,
+)
+from ._fused_prep import fused_preprocess
+from ._tri_fwd import _has_tma, _to_blocks
+
+
+BLOCK = 64
+GROUP = 32
+
+
+@triton.autotune(
+    configs=[
+        triton.Config({}, num_warps=warps, num_stages=stages)
+        for warps in (4, 8)
+        for stages in (1, 2, 3, 4)
+    ],
+    key=["T"],
+    **_AUTOTUNE_EXTRAS,
+)
+@triton.jit
+def _forward_int8(
+    q_desc, kc_desc, vc_desc, o_desc,
+    qi_ptr, qs_ptr, ki_ptr, ks_ptr, vi_ptr, vsc_ptr, v_ptr,
+    threshold,
+    scale,
+    sink_start,
+    sink_end,
+    sink_q_start,
+    sink_q_end,
+    T,
+    TP,  # padded token count: the batch stride of qi/qs/ki/ks (T is only the mask bound)
+    sv_b, sv_t, sv_h,  # bf16 V strides, read only when INT8_PV is off
+    H: tl.constexpr,
+    D: tl.constexpr,
+    NT: tl.constexpr,
+    BV: tl.constexpr,
+    BLOCK_SIZE: tl.constexpr,
+    GROUP_SIZE: tl.constexpr,
+    INT8_PV: tl.constexpr,
+):
+    v_tile, q_block, batch_head = (
+        tl.program_id(0),
+        tl.program_id(1),
+        tl.program_id(2),
+    )
+    batch, head = batch_head // H, batch_head % H
+    group_offsets = tl.max_contiguous(tl.arange(0, GROUP_SIZE), GROUP_SIZE)
+    token_offsets = tl.max_contiguous(tl.arange(0, BLOCK_SIZE), BLOCK_SIZE)
+    d_offsets = tl.arange(0, D)
+    bv_offsets = v_tile * BV + tl.arange(0, BV)
+    q_start = q_block * BLOCK_SIZE
+
+    q = q_desc.load([batch, q_start, head, 0]).reshape([BLOCK_SIZE, D])
+    q_len = tl.minimum(BLOCK_SIZE, T - q_start).to(tl.float32)
+    if INT8_PV:
+        v_scale = tl.load(vsc_ptr + batch_head * D + bv_offsets)
+
+    # INT8 query tile + per-token scales, staged once for the whole program.
+    q_rows = q_start + token_offsets
+    q_valid = q_rows < T
+    qi = tl.load(
+        qi_ptr + ((batch * TP + q_rows[:, None]).to(tl.int64) * H + head) * D + d_offsets[None, :],
+        mask=q_valid[:, None],
+        other=0,
+    )
+    qs = tl.load(qs_ptr + (batch * TP + q_rows) * H + head, mask=q_valid, other=0.0)
+
+    output = tl.zeros([BLOCK_SIZE, BV], dtype=tl.float32)
+    row_sum = tl.zeros((BLOCK_SIZE,), dtype=tl.float32)
+    row_max = tl.full((BLOCK_SIZE,), -float("inf"), tl.float32)
+    scale_log2 = scale * 1.4426950408889634
+    # Folded once here so the exact branch does not redo it per routed block.
+    qs_log2 = qs * scale_log2
+    tail_length = T - (NT - 1) * BLOCK_SIZE
+    route_threshold = tl.load(threshold + (batch * NT + q_block) * H + head)
+    q_in_sink = (q_block >= sink_q_start) & (q_block < sink_q_end)
+
+    for group_start in range(0, NT, GROUP_SIZE):
+        block_indices = group_start + group_offsets
+        valid = block_indices < NT
+        kc = kc_desc.load([batch, group_start, head, 0]).reshape([GROUP_SIZE, D])
+        vc = vc_desc.load([batch, group_start, head, v_tile * BV]).reshape([GROUP_SIZE, BV])
+
+        # --- routing + approximate correction, BF16 ---
+        scores = tl.dot(q, kc.T).to(tl.float32) * scale_log2
+        sink_kv = (block_indices >= sink_start) & (block_indices < sink_end)
+        routed = (
+            (tl.sum(scores, axis=0) / q_len > route_threshold)
+            | (tl.abs(q_block - block_indices) <= 1)
+            | sink_kv
+        ) & valid
+        exact = tl.where(q_in_sink, valid, routed)
+
+        approximate = valid & ~exact
+        approximate_scores = tl.where(approximate[None, :], scores, -float("inf"))
+        new_max = tl.maximum(row_max, tl.max(approximate_scores, axis=1))
+        alpha = tl.math.exp2(tl.where(row_max == new_max, 0.0, row_max - new_max))
+        approximate_probability = tl.where(
+            approximate[None, :],
+            tl.math.exp2(approximate_scores - new_max[:, None]),
+            0.0,
+        )
+        output = output * alpha[:, None] + tl.dot(approximate_probability.to(vc.dtype), vc)
+        lengths = tl.where(block_indices == NT - 1, tail_length, BLOCK_SIZE).to(tl.float32)
+        row_sum = row_sum * alpha + tl.sum(approximate_probability * lengths[None, :], axis=1)
+        row_max = new_max
+
+        # --- exact branch, INT8 QK ---
+        exact_offsets = tl.where(exact, group_offsets, GROUP_SIZE)
+        for _ in range(tl.sum(exact.to(tl.int32))):
+            offset = tl.min(exact_offsets)
+            block = group_start + offset
+            exact_offsets = tl.where(group_offsets == offset, GROUP_SIZE, exact_offsets)
+            kv_start = block * BLOCK_SIZE
+            k_rows = kv_start + token_offsets
+            k_valid = k_rows < T
+
+            ki = tl.load(
+                ki_ptr + ((batch * TP + k_rows[:, None]).to(tl.int64) * H + head) * D + d_offsets[None, :],
+                mask=k_valid[:, None],
+                other=0,
+            )
+            ks = tl.load(ks_ptr + (batch * TP + k_rows) * H + head, mask=k_valid, other=0.0)
+
+            acc = tl.dot(qi, ki.T, out_dtype=tl.int32)
+            exact_scores = acc.to(tl.float32) * (qs_log2[:, None] * ks[None, :])
+            exact_scores += tl.where(k_valid[None, :], 0.0, -float("inf"))
+
+            block_max = tl.max(exact_scores, axis=1)
+            new_max = tl.maximum(row_max, block_max)
+            alpha = tl.math.exp2(row_max - new_max)
+
+            if INT8_PV:
+                # P is non-negative with a known per-row max, so its scale and
+                # V's per-channel scale both factor out of the int32 dot.
+                # Exponentiating against the block max instead of the running max
+                # lands P in [0, 1], which is exactly the range the INT8
+                # quantization wants -- so the softmax rescale and the quant scale
+                # are the same constant and P is never materialized twice.
+                vi = tl.load(
+                    vi_ptr + ((batch * TP + k_rows[:, None]).to(tl.int64) * H + head) * D
+                    + bv_offsets[None, :],
+                    mask=k_valid[:, None],
+                    other=0,
+                )
+                pe = tl.math.exp2(exact_scores - block_max[:, None])
+                beta = tl.math.exp2(block_max - new_max)
+                row_sum = row_sum * alpha + beta * tl.sum(pe, axis=1)
+                pi = tl.minimum(pe * 127.0 + 0.5, 127.0).to(tl.int8)
+                pv = tl.dot(pi, vi, out_dtype=tl.int32).to(tl.float32) * (
+                    (beta * (1.0 / 127.0))[:, None] * v_scale[None, :])
+            else:
+                vb = tl.load(
+                    v_ptr + batch * sv_b + k_rows[:, None].to(tl.int64) * sv_t
+                    + head * sv_h + bv_offsets[None, :],
+                    mask=k_valid[:, None],
+                    other=0.0,
+                )
+                exact_probability = tl.math.exp2(exact_scores - new_max[:, None])
+                row_sum = row_sum * alpha + tl.sum(exact_probability, axis=1)
+                pv = tl.dot(exact_probability.to(vb.dtype), vb)
+            output = output * alpha[:, None] + pv
+            row_max = new_max
+
+    o_desc.store(
+        [batch, q_start, head, v_tile * BV],
+        (output / row_sum[:, None]).to(tl.bfloat16)[None, :, None, :],
+    )
+
+
+@triton.autotune(
+    configs=[
+        # Kept small: every config costs seconds of compile per new T.
+        # The kernel sits at the 255-register ceiling, so num_warps=8 (which
+        # relieves registers but starves a 64-row tile of MMA work) and BV=64
+        # (which reruns the QK dot per V tile) lose badly at D=128; they are kept
+        # only because D=64 heads and other archs need them.
+        triton.Config({"BV": 128, "GROUP_SIZE": 64}, num_warps=4, num_stages=1),
+        triton.Config({"BV": 128, "GROUP_SIZE": 64}, num_warps=8, num_stages=1),
+        triton.Config({"BV": 128, "GROUP_SIZE": 64}, num_warps=4, num_stages=2),
+        triton.Config({"BV": 128, "GROUP_SIZE": 32}, num_warps=4, num_stages=1),
+        triton.Config({"BV": 128, "GROUP_SIZE": 32}, num_warps=4, num_stages=2),
+        triton.Config({"BV": 64, "GROUP_SIZE": 64}, num_warps=4, num_stages=1),
+    ],
+    key=["T"],
+    **_BV_SAFE_AUTOTUNE,
+)
+@triton.jit
+def _forward_int8_ptr(
+    q_ptr, kc_ptr, vc_ptr, o_ptr,
+    qi_ptr, qs_ptr, ki_ptr, ks_ptr, vi_ptr, vsc_ptr, v_ptr,
+    threshold,
+    scale,
+    sink_start,
+    sink_end,
+    sink_q_start,
+    sink_q_end,
+    T,
+    TP,    # padded token count: batch stride of o/qi/qs/ki/ks (our allocations)
+    NPAD,  # padded block count: batch stride of kc/vc
+    sq_b, sq_t, sq_h,   # q strides (last dim must be contiguous)
+    sv_b, sv_t, sv_h,   # bf16 V strides, read only when INT8_PV is off
+    H: tl.constexpr,
+    D: tl.constexpr,
+    NT: tl.constexpr,
+    BV: tl.constexpr,
+    BLOCK_SIZE: tl.constexpr,
+    GROUP_SIZE: tl.constexpr,
+    INT8_PV: tl.constexpr,
+):
+    # Same math as _forward_int8. q/v/o mask their ragged token tails; kc/vc
+    # are GROUP-padded allocations and load unmasked.
+    v_tile, q_block, batch_head = (
+        tl.program_id(0),
+        tl.program_id(1),
+        tl.program_id(2),
+    )
+    batch, head = batch_head // H, batch_head % H
+    group_offsets = tl.max_contiguous(tl.arange(0, GROUP_SIZE), GROUP_SIZE)
+    token_offsets = tl.max_contiguous(tl.arange(0, BLOCK_SIZE), BLOCK_SIZE)
+    d_offsets = tl.arange(0, D)
+    bv_offsets = v_tile * BV + tl.arange(0, BV)
+    q_start = q_block * BLOCK_SIZE
+
+    q_rows_ok = q_start + token_offsets < TP
+    q = tl.load(
+        q_ptr + batch * sq_b + (q_start + token_offsets[:, None]).to(tl.int64) * sq_t
+        + head * sq_h + d_offsets[None, :],
+        mask=q_rows_ok[:, None],
+        other=0.0,
+    )
+    q_len = tl.minimum(BLOCK_SIZE, T - q_start).to(tl.float32)
+    if INT8_PV:
+        v_scale = tl.load(vsc_ptr + batch_head * D + bv_offsets)
+
+    # INT8 query tile + per-token scales, staged once for the whole program.
+    q_rows = q_start + token_offsets
+    q_valid = q_rows < T
+    qi = tl.load(
+        qi_ptr + ((batch * TP + q_rows[:, None]).to(tl.int64) * H + head) * D + d_offsets[None, :],
+        mask=q_valid[:, None],
+        other=0,
+    )
+    qs = tl.load(qs_ptr + (batch * TP + q_rows) * H + head, mask=q_valid, other=0.0)
+
+    output = tl.zeros([BLOCK_SIZE, BV], dtype=tl.float32)
+    row_sum = tl.zeros((BLOCK_SIZE,), dtype=tl.float32)
+    row_max = tl.full((BLOCK_SIZE,), -float("inf"), tl.float32)
+    scale_log2 = scale * 1.4426950408889634
+    # Folded once here so the exact branch does not redo it per routed block.
+    qs_log2 = qs * scale_log2
+    tail_length = T - (NT - 1) * BLOCK_SIZE
+    route_threshold = tl.load(threshold + (batch * NT + q_block) * H + head)
+    q_in_sink = (q_block >= sink_q_start) & (q_block < sink_q_end)
+
+    for group_start in range(0, NT, GROUP_SIZE):
+        block_indices = group_start + group_offsets
+        valid = block_indices < NT
+        kc = tl.load(
+            kc_ptr + ((batch * NPAD + block_indices[:, None]) * H + head) * D
+            + d_offsets[None, :]
+        )
+        vc = tl.load(
+            vc_ptr + ((batch * NPAD + block_indices[:, None]) * H + head) * D
+            + bv_offsets[None, :]
+        )
+
+        # --- routing + approximate correction, BF16 ---
+        scores = tl.dot(q, kc.T).to(tl.float32) * scale_log2
+        sink_kv = (block_indices >= sink_start) & (block_indices < sink_end)
+        routed = (
+            (tl.sum(scores, axis=0) / q_len > route_threshold)
+            | (tl.abs(q_block - block_indices) <= 1)
+            | sink_kv
+        ) & valid
+        exact = tl.where(q_in_sink, valid, routed)
+
+        approximate = valid & ~exact
+        approximate_scores = tl.where(approximate[None, :], scores, -float("inf"))
+        new_max = tl.maximum(row_max, tl.max(approximate_scores, axis=1))
+        alpha = tl.math.exp2(tl.where(row_max == new_max, 0.0, row_max - new_max))
+        approximate_probability = tl.where(
+            approximate[None, :],
+            tl.math.exp2(approximate_scores - new_max[:, None]),
+            0.0,
+        )
+        output = output * alpha[:, None] + tl.dot(approximate_probability.to(vc.dtype), vc)
+        lengths = tl.where(block_indices == NT - 1, tail_length, BLOCK_SIZE).to(tl.float32)
+        row_sum = row_sum * alpha + tl.sum(approximate_probability * lengths[None, :], axis=1)
+        row_max = new_max
+
+        # --- exact branch, INT8 QK ---
+        exact_offsets = tl.where(exact, group_offsets, GROUP_SIZE)
+        for _ in range(tl.sum(exact.to(tl.int32))):
+            offset = tl.min(exact_offsets)
+            block = group_start + offset
+            exact_offsets = tl.where(group_offsets == offset, GROUP_SIZE, exact_offsets)
+            kv_start = block * BLOCK_SIZE
+            k_rows = kv_start + token_offsets
+            k_valid = k_rows < T
+
+            ki = tl.load(
+                ki_ptr + ((batch * TP + k_rows[:, None]).to(tl.int64) * H + head) * D + d_offsets[None, :],
+                mask=k_valid[:, None],
+                other=0,
+            )
+            ks = tl.load(ks_ptr + (batch * TP + k_rows) * H + head, mask=k_valid, other=0.0)
+
+            acc = tl.dot(qi, ki.T, out_dtype=tl.int32)
+            exact_scores = acc.to(tl.float32) * (qs_log2[:, None] * ks[None, :])
+            exact_scores += tl.where(k_valid[None, :], 0.0, -float("inf"))
+
+            block_max = tl.max(exact_scores, axis=1)
+            new_max = tl.maximum(row_max, block_max)
+            alpha = tl.math.exp2(row_max - new_max)
+
+            if INT8_PV:
+                # see _forward_int8 for why both scales factor out of the dot.
+                # Exponentiating against the block max instead of the running max
+                # lands P in [0, 1], which is exactly what the INT8 quantization
+                # wants -- so the softmax rescale and the quant scale are the same
+                # constant, and P never has to be materialized at running-max scale.
+                vi = tl.load(
+                    vi_ptr + ((batch * TP + k_rows[:, None]).to(tl.int64) * H + head) * D
+                    + bv_offsets[None, :],
+                    mask=k_valid[:, None],
+                    other=0,
+                )
+                pe = tl.math.exp2(exact_scores - block_max[:, None])
+                beta = tl.math.exp2(block_max - new_max)
+                row_sum = row_sum * alpha + beta * tl.sum(pe, axis=1)
+                pi = tl.minimum(pe * 127.0 + 0.5, 127.0).to(tl.int8)
+                pv = tl.dot(pi, vi, out_dtype=tl.int32).to(tl.float32) * (
+                    (beta * (1.0 / 127.0))[:, None] * v_scale[None, :])
+            else:
+                vb = tl.load(
+                    v_ptr + batch * sv_b + k_rows[:, None].to(tl.int64) * sv_t
+                    + head * sv_h + bv_offsets[None, :],
+                    mask=k_valid[:, None],
+                    other=0.0,
+                )
+                exact_probability = tl.math.exp2(exact_scores - new_max[:, None])
+                row_sum = row_sum * alpha + tl.sum(exact_probability, axis=1)
+                pv = tl.dot(exact_probability.to(vb.dtype), vb)
+            output = output * alpha[:, None] + pv
+            row_max = new_max
+
+    tl.store(
+        o_ptr + ((batch * TP + q_start + token_offsets[:, None]).to(tl.int64) * H + head) * D
+        + bv_offsets[None, :],
+        (output / row_sum[:, None]).to(tl.bfloat16),
+        mask=q_rows_ok[:, None],
+    )
+
+
+_wrap_autotune(_forward_int8, "int8 forward (descriptor)")
+_wrap_autotune(_forward_int8_ptr, "int8 forward (pointer)")
+
+
+def sol_attn_int8(q, k, v, *, scale=None, tau=1.0, sink_blocks=(0, 0), sink_q=(0, 0),
+                  use_tma=False, int8_pv=True):
+    """Sol-Attn with an INT8 exact branch. Same contract as the BF16 kernel."""
+    scale = q.shape[-1] ** -0.5 if scale is None else float(scale)
+    batch, _, heads, head_dim = q.shape
+    use_tma = use_tma and _has_tma(q.device)
+    if use_tma:
+        q, tokens, padded = _to_blocks(q, BLOCK)
+        # k and v only feed the strided preprocess kernels; the forward reaches
+        # them as ki/ks and vi/vsc, so neither ever needs a descriptor.
+        if k.stride(-1) != 1:
+            k = k.contiguous()
+        if v.stride(-1) != 1:
+            v = v.contiguous()
+    else:
+        # Pointer kernel and quantizer take strides; skip the copies.
+        if q.stride(-1) != 1 or k.stride(-1) != 1 or v.stride(-1) != 1:
+            q, k, v = q.contiguous(), k.contiguous(), v.contiguous()
+        tokens = padded = q.shape[1]
+    blocks = triton.cdiv(tokens, BLOCK)
+
+    kc, vc, threshold, qi, qs, ki, ks, vi, vsc = fused_preprocess(
+        q, k, v, tau=tau, scale=scale, tokens=tokens,
+        int8_pv=int8_pv,
+    )
+    del k  # the forward reaches K only as ki/ks
+    if vi is None:
+        vi = vsc = v   # unused placeholders; the INT8_PV branch drops them
+
+    output = torch.empty((batch, padded, heads, head_dim),
+                         device=q.device, dtype=v.dtype)
+    if not use_tma:
+        grid = lambda META: (head_dim // META["BV"], blocks, batch * heads)
+        _forward_int8_ptr[grid](
+            q, kc, vc, output,
+            qi, qs, ki, ks, vi, vsc, v,
+            threshold,
+            scale,
+            int(sink_blocks[0]),
+            int(sink_blocks[1]),
+            int(sink_q[0]),
+            int(sink_q[1]),
+            tokens,
+            padded,
+            kc.shape[1],
+            q.stride(0), q.stride(1), q.stride(2),
+            v.stride(0), v.stride(1), v.stride(2),
+            H=heads,
+            D=head_dim,
+            NT=blocks,
+            BLOCK_SIZE=BLOCK,
+            INT8_PV=int8_pv,
+        )
+        return output[:, :tokens]
+    block_shape = [1, BLOCK, 1, head_dim]
+    summary_shape = [1, GROUP, 1, head_dim]
+    _forward_int8[(1, blocks, batch * heads)](
+        TensorDescriptor.from_tensor(q, block_shape),
+        TensorDescriptor.from_tensor(kc, summary_shape),
+        TensorDescriptor.from_tensor(vc, summary_shape),
+        TensorDescriptor.from_tensor(output, block_shape),
+        qi, qs, ki, ks, vi, vsc, v,
+        threshold,
+        scale,
+        int(sink_blocks[0]),
+        int(sink_blocks[1]),
+        int(sink_q[0]),
+        int(sink_q[1]),
+        tokens,
+        padded,
+        v.stride(0), v.stride(1), v.stride(2),
+        heads,
+        head_dim,
+        blocks,
+        head_dim,
+        BLOCK,
+        GROUP,
+        int8_pv,
+    )
+    return output[:, :tokens]
+
+
+__all__ = ["sol_attn_int8"]

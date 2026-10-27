@@ -11,7 +11,7 @@ import { Transform } from "node:stream";
 import { findUnetLoader } from "./base-models.js";
 import { nowIso, truncate, writeJsonAtomic } from "./util.js";
 
-const MODEL_DIRS = new Set(["diffusion_models", "text_encoders", "vae", "loras", "checkpoints", "upscale_models", "clip_vision"]);
+const MODEL_DIRS = new Set(["diffusion_models", "text_encoders", "vae", "loras", "checkpoints", "upscale_models", "latent_upscale_models", "vdn", "clip_vision"]);
 const LOADER_BY_DIR = {
     diffusion_models: { classType: "UNETLoader", input: "unet_name" },
     text_encoders: { classType: "CLIPLoader", input: "clip_name" },

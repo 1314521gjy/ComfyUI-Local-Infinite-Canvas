@@ -1,0 +1,460 @@
+{
+  "id": "3375ce4b-3509-40e5-bfff-ec25b85932a9",
+  "revision": 0,
+  "last_node_id": 8,
+  "last_link_id": 8,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "LoadAudio",
+      "title": "Load an independent speech stem; do not use a mixed H3 master",
+      "pos": [
+        0,
+        0
+      ],
+      "size": [
+        390,
+        124
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "AUDIO",
+          "type": "AUDIO",
+          "links": [
+            1,
+            3
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "Node name for S&R": "LoadAudio"
+      },
+      "widgets_values": [
+        "replace_with_verified_speech_stem.wav"
+      ]
+    },
+    {
+      "id": 2,
+      "type": "LoadAudio",
+      "title": "Load exact-duration music stem",
+      "pos": [
+        0,
+        300
+      ],
+      "size": [
+        390,
+        124
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "AUDIO",
+          "type": "AUDIO",
+          "links": [
+            5
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "Node name for S&R": "LoadAudio"
+      },
+      "widgets_values": [
+        "replace_with_exact_duration_music_bed.wav"
+      ]
+    },
+    {
+      "id": 3,
+      "type": "LoadAudio",
+      "title": "Load exact-duration ambience stem",
+      "pos": [
+        0,
+        600
+      ],
+      "size": [
+        390,
+        124
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "AUDIO",
+          "type": "AUDIO",
+          "links": [
+            6
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "Node name for S&R": "LoadAudio"
+      },
+      "widgets_values": [
+        "replace_with_exact_duration_ambience.wav"
+      ]
+    },
+    {
+      "id": 4,
+      "type": "LoadAudio",
+      "title": "Load exact-duration SFX stem",
+      "pos": [
+        0,
+        900
+      ],
+      "size": [
+        390,
+        124
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "AUDIO",
+          "type": "AUDIO",
+          "links": [
+            7
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "Node name for S&R": "LoadAudio"
+      },
+      "widgets_values": [
+        "replace_with_exact_duration_sound_effects.wav"
+      ]
+    },
+    {
+      "id": 5,
+      "type": "PrimitiveStringMultiline",
+      "title": "Exact expected dialogue",
+      "pos": [
+        0,
+        1200
+      ],
+      "size": [
+        390,
+        124
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            2
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "Node name for S&R": "PrimitiveStringMultiline"
+      },
+      "widgets_values": [
+        "The light is on."
+      ]
+    },
+    {
+      "id": 6,
+      "type": "MiniMaxH3DialogueBoundaryAnalyzerT8",
+      "title": "Require one unique exact target; repeated or extra words are rejected",
+      "pos": [
+        440,
+        0
+      ],
+      "size": [
+        390,
+        396
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 1
+        },
+        {
+          "name": "expected_text",
+          "type": "STRING",
+          "link": 2
+        }
+      ],
+      "outputs": [
+        {
+          "name": "transcript",
+          "type": "STRING",
+          "links": null
+        },
+        {
+          "name": "unique_target_found",
+          "type": "BOOLEAN",
+          "links": null
+        },
+        {
+          "name": "clean_exact",
+          "type": "BOOLEAN",
+          "links": [
+            4
+          ]
+        },
+        {
+          "name": "speech_start_seconds",
+          "type": "FLOAT",
+          "links": null
+        },
+        {
+          "name": "speech_end_seconds",
+          "type": "FLOAT",
+          "links": null
+        },
+        {
+          "name": "extra_before_units",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "name": "extra_after_units",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "name": "report_json",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "minimax-h3-audio-T8",
+        "Node name for S&R": "MiniMaxH3DialogueBoundaryAnalyzerT8"
+      },
+      "widgets_values": [
+        "faster-whisper-small-multilingual-536b0662",
+        "auto",
+        5,
+        8,
+        true,
+        -45.0
+      ]
+    },
+    {
+      "id": 7,
+      "type": "MiniMaxH3DialogueSafeMasterT8",
+      "title": "Build 10s master; dialogue ends but music, ambience and SFX continue",
+      "pos": [
+        880,
+        0
+      ],
+      "size": [
+        390,
+        782
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "speech_audio",
+          "type": "AUDIO",
+          "link": 3
+        },
+        {
+          "name": "speech_accepted",
+          "type": "BOOLEAN",
+          "link": 4
+        },
+        {
+          "name": "music_audio",
+          "type": "AUDIO",
+          "link": 5
+        },
+        {
+          "name": "ambience_audio",
+          "type": "AUDIO",
+          "link": 6
+        },
+        {
+          "name": "sfx_audio",
+          "type": "AUDIO",
+          "link": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "master_audio",
+          "type": "AUDIO",
+          "links": [
+            8
+          ]
+        },
+        {
+          "name": "speech_stem",
+          "type": "AUDIO",
+          "links": null
+        },
+        {
+          "name": "background_stem",
+          "type": "AUDIO",
+          "links": null
+        },
+        {
+          "name": "report_json",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "minimax-h3-audio-T8",
+        "Node name for S&R": "MiniMaxH3DialogueSafeMasterT8"
+      },
+      "widgets_values": [
+        10.0,
+        0.0,
+        32000,
+        "strict",
+        "strict",
+        "strict",
+        0.25,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.25,
+        -1.0
+      ]
+    },
+    {
+      "id": 8,
+      "type": "SaveAudio",
+      "title": "Save full-duration master",
+      "pos": [
+        1320,
+        0
+      ],
+      "size": [
+        390,
+        150
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 8
+        }
+      ],
+      "outputs": [
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "Node name for S&R": "SaveAudio"
+      },
+      "widgets_values": [
+        "MiniMaxH3_T8_DialogueSafe/dialogue_safe_master"
+      ]
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      6,
+      0,
+      "AUDIO"
+    ],
+    [
+      2,
+      5,
+      0,
+      6,
+      1,
+      "STRING"
+    ],
+    [
+      3,
+      1,
+      0,
+      7,
+      0,
+      "AUDIO"
+    ],
+    [
+      4,
+      6,
+      2,
+      7,
+      1,
+      "BOOLEAN"
+    ],
+    [
+      5,
+      2,
+      0,
+      7,
+      2,
+      "AUDIO"
+    ],
+    [
+      6,
+      3,
+      0,
+      7,
+      3,
+      "AUDIO"
+    ],
+    [
+      7,
+      4,
+      0,
+      7,
+      4,
+      "AUDIO"
+    ],
+    [
+      8,
+      7,
+      0,
+      8,
+      0,
+      "AUDIO"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.75,
+      "offset": [
+        120,
+        120
+      ]
+    },
+    "workflow_title": "MiniMax H3 Dialogue Safe Master EXP"
+  },
+  "version": 0.4
+}

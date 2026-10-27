@@ -1,0 +1,31 @@
+[project]
+name = "minimax-h3-audio-t8"
+version = "1.47.0"
+description = "MiniMax H3 joint AV, RAVEN streaming guards, LightX2V SLA, motion recovery, FETA, latent upscale, Hybrid, multi-keyframe, long-video, and Ref2VA nodes for ComfyUI"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = []
+classifiers = [
+    "Operating System :: Microsoft :: Windows",
+    "Environment :: GPU :: NVIDIA CUDA",
+]
+
+[project.urls]
+Repository = "https://github.com/T8mars/comfyui-minimax-h3-audio-T8"
+Documentation = "https://github.com/T8mars/comfyui-minimax-h3-audio-T8#readme"
+"Bug Tracker" = "https://github.com/T8mars/comfyui-minimax-h3-audio-T8/issues"
+
+[tool.comfy]
+PublisherId = "t8star"
+DisplayName = "MiniMax H3 Audio T8"
+Icon = "https://avatars.githubusercontent.com/u/96167788"
+includes = []
+
+[tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
+testpaths = ["tests"]
+norecursedirs = ["artifacts"]
+
+[tool.ruff.lint.per-file-ignores]
+"tools/*.py" = ["T201"]
