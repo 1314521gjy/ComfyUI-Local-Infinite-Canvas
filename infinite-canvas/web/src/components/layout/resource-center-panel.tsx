@@ -416,7 +416,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
             .flatMap((pack) => pack.requiredItems.filter((item) => item.status !== "present").map((item) => item.id));
         const optional = status.resources.filter((item) => selectedOptional.has(item.id) && item.status !== "present").map((item) => item.id);
         return [...new Set([...required, ...optional])];
-    }, [selectedOptional, selectedPacks, status]);
+    }, [selectedOptional, selectedPacks, status]);
 
     const resourceById = useMemo(() => new Map((status?.resources || []).map((item) => [item.id, item])), [status]);
     const totalSpeed = Object.values(speeds).reduce((sum, speed) => sum + speed, 0);
@@ -580,7 +580,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                 </div>
             ) : null}
 
-            <div className="space-y-3">
+            <div className="space-y-4 rounded-2xl bg-stone-100/60 p-2.5 dark:bg-white/[0.03]">
                 {visiblePacks.map((pack) => {
                     const expanded = expandedPacks.has(pack.id);
                     const workflowDependencies = pack.workflowDependencies || [];
@@ -661,7 +661,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                     return (
                         <div
                             key={pack.id}
-                            className="overflow-hidden rounded-xl border border-stone-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.05)] transition-colors hover:border-stone-300 dark:border-stone-800 dark:bg-stone-900/40 dark:shadow-none dark:hover:border-stone-700"
+                            className="overflow-hidden rounded-xl border border-stone-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.06),0_12px_28px_-20px_rgba(15,23,42,0.45)] transition-colors hover:border-stone-300 dark:border-stone-700/80 dark:bg-stone-900/70 dark:shadow-[0_1px_3px_rgba(0,0,0,0.55)] dark:hover:border-stone-600"
                             title={pack.description}
                         >
                             <div className="flex items-start gap-2 p-3">
