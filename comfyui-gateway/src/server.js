@@ -1051,14 +1051,18 @@ export async function createGatewayApp(overrides = {}) {
     const body = req.body || {};
     const files = orderedPromptImages(req.files || []);
     if (!files.length) throw new HttpError("反推提示词请求缺少图片", { status: 400, code: "missing_reference_image" });
-    const uploadedImages = await uploadImages(comfy, files.slice(0, 1));
+    const useCloud = String(body.engine || "").toLowerCase() === "cloud";
+    const uploadedImages = useCloud ? [] : await uploadImages(comfy, files.slice(0, 1));
+    const cloudImages = useCloud ? files.slice(0, 1).map((file) => `data:${file.mimetype || "image/png"};base64,${file.buffer.toString("base64")}`) : [];
     const abort = abortOnDisconnect(req, res, registerActiveRequest);
     try {
       const result = await promptOptimizer.captionImage({
         uploadedImages,
+        cloudImages,
         language: body.language,
         instruction: body.instruction,
         engine: body.engine,
+        cloud: { baseUrl: body.cloudBaseUrl, apiKey: body.cloudApiKey, model: body.cloudModel },
         signal: abort.signal,
       });
       res.json({ ok: true, ...result });

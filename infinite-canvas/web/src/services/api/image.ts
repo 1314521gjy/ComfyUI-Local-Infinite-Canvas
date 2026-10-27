@@ -974,6 +974,9 @@ export async function requestPromptOptimize(
     if (params.cloud?.baseUrl) formData.set("cloudBaseUrl", params.cloud.baseUrl);
     if (params.cloud?.apiKey) formData.set("cloudApiKey", params.cloud.apiKey);
     if (params.cloud?.model) formData.set("cloudModel", params.cloud.model);
+    if (params.cloud?.baseUrl) formData.set("cloudBaseUrl", params.cloud.baseUrl);
+    if (params.cloud?.apiKey) formData.set("cloudApiKey", params.cloud.apiKey);
+    if (params.cloud?.model) formData.set("cloudModel", params.cloud.model);
     const images = params.images || [];
     const files = await Promise.all(images.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
     files.forEach((file, index) => formData.append(index === 0 ? "image" : `image${index + 1}`, file));
@@ -1027,10 +1030,10 @@ export async function requestImagePromptOptimize(
     }
 }
 
-export type ImageCaptionEngine = "qwen35" | "florence";
+export type ImageCaptionEngine = "qwen35" | "florence" | "cloud";
 export type ImageCaptionResult = { prompt: string; engine?: ImageCaptionEngine; promptId?: string; elapsedMs?: number };
 
-export async function requestImageCaption(config: AiConfig, params: { images: ReferenceImage[]; language?: "zh" | "en"; instruction?: string; engine?: ImageCaptionEngine }, options?: RequestOptions): Promise<ImageCaptionResult> {
+export async function requestImageCaption(config: AiConfig, params: { images: ReferenceImage[]; language?: "zh" | "en"; instruction?: string; engine?: ImageCaptionEngine; cloud?: { baseUrl: string; apiKey: string; model: string } }, options?: RequestOptions): Promise<ImageCaptionResult> {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.imageModel);
     const root = localGatewayRoot(requestConfig.baseUrl);
     if (!root) throw new Error(apiText("promptOptimizeLocalOnly"));

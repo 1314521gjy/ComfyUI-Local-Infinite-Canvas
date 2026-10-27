@@ -537,7 +537,21 @@ export function createPromptOptimizer({ config, comfy, logger }) {
     }
   }
 
-  async function captionImage({ uploadedImages = [], language = "zh", instruction = "", engine = "qwen35", signal }) {
+  async function captionImage({ uploadedImages = [], cloudImages = [], language = "zh", instruction = "", engine = "qwen35", cloud = {}, signal }) {
+    if (String(engine || "").toLowerCase() === "cloud") {
+      const startedCloud = Date.now();
+      if (!cloudImages.length) throw new PromptOptimizeError("云端反推需要 1 张图片", { status: 400, code: "missing_reference_image" });
+      const englishCloud = String(language || "zh").toLowerCase() === "en";
+      const systemCloud = String(instruction || "").trim() || (englishCloud ? CAPTION_SYSTEM_EN : CAPTION_SYSTEM_ZH);
+      const { content, model } = await cloudChat({
+        system: systemCloud,
+        userText: englishCloud ? CAPTION_USER_EN : CAPTION_USER_ZH,
+        images: cloudImages,
+        cloud,
+        signal,
+      });
+      return { prompt: content, engine: "cloud", model, elapsedMs: Date.now() - startedCloud };
+    }
     const image = uploadedImages[0];
     if (!image) throw new PromptOptimizeError("反推提示词需要 1 张图片", { status: 400, code: "missing_reference_image" });
     const engineName = engine === "florence" ? "florence" : "qwen35";

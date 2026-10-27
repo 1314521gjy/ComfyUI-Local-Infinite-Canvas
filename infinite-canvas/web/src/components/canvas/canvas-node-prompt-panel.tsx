@@ -115,7 +115,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     const captionResult = mode === "text" ? node.metadata?.captionPrompt || "" : "";
     const captionError = mode === "text" ? node.metadata?.captionError || "" : "";
     const captionEngineUsed = node.metadata?.captionEngineUsed || captionEngine || "qwen35";
-    const canCaption = mode === "text" && Boolean(captionEngine) && imageReferences.length > 0 && !isRunning && !captionRunning;
+    const canCaption = mode === "text" && Boolean(captionEngine) && (captionEngine !== "cloud" || optimizeCloudReady) && imageReferences.length > 0 && !isRunning && !captionRunning;
     const hasMediaReferences = mentionReferences.some((reference) => reference.kind !== "text");
     const textVideoHasReferences = isH3T2V && hasMediaReferences;
     const frameMode: "first" | "last" | "both" =
@@ -354,7 +354,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
         try {
             const images = await resolveCanvasReferenceImages(imageReferences.slice(0, 1), nodes);
             if (!images.length) throw new Error(t("canvas.promptPanel.captionNoImage"));
-            const result = await requestImageCaption(config, { images, language: "zh", engine: captionEngine }, { signal: controller.signal });
+            const result = await requestImageCaption(config, { images, language: "zh", engine: captionEngine, cloud: captionEngine === "cloud" ? { baseUrl: (config.promptCloudBaseUrl || "").trim(), apiKey: (config.promptCloudApiKey || "").trim(), model: (config.promptCloudModel || "").trim() } : undefined }, { signal: controller.signal });
             onConfigChange(node.id, { captionStatus: "done", captionPrompt: result.prompt });
         } catch (error) {
             if (controller.signal.aborted) clearCaptionPreview();
@@ -487,13 +487,14 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                                 config={config}
                                 value={captionEngine ? `caption:${captionEngine}` : config.model}
                                 onChange={(model) => {
-                                    if (model === "caption:qwen35" || model === "caption:florence") onConfigChange(node.id, { captionEngine: model.slice(8) as ImageCaptionEngine });
+                                    if (model === "caption:qwen35" || model === "caption:florence" || model === "caption:cloud") onConfigChange(node.id, { captionEngine: model.slice(8) as ImageCaptionEngine });
                                     else onConfigChange(node.id, { model, captionEngine: undefined });
                                 }}
                                 capability="text"
                                 extraOptions={[
                                     { value: "caption:qwen35", label: "反推 · Qwen3.5-9B" },
                                     { value: "caption:florence", label: "反推 · Florence-2 PromptGen" },
+                                    ...(optimizeCloudReady ? [{ value: "caption:cloud", label: `反推 · ${t("canvas.promptPanel.optimizeEngineCloud")}（${config.promptCloudModel}）` }] : []),
                                 ]}
                                 onMissingConfig={() => openConfigDialog(true)}
                                 className="max-w-[190px]"
