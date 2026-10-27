@@ -424,7 +424,7 @@ test("krea2 pack matches the zimage shape with no bundled LoRAs", () => {
     assert.ok(!pack.workflowDependencies["image-krea2-turbo"].includes("krea2_turbo_int8_convrot"));
     assert.equal(index.resources.some((item) => item.id === "krea2_darkbrush_lora"), false);
     assert.equal(index.resources.some((item) => item.id === "krea2_retroanime_lora"), false);
-    assert.equal(index.resources.length, 51);
+    assert.equal(index.resources.length, 52);
 });
 
 test("h3 pack lists the shared models, VDN/noVDN variants and character swap", () => {

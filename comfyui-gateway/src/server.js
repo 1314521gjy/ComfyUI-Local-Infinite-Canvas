@@ -231,6 +231,26 @@ export async function createGatewayApp(overrides = {}) {
   const setup = createSetupManager({ config, registry, comfy, logger, mainModelFile: (id) => mainModels.fileForWorkflow(id) });
   const resources = createResourceManager({ config, setup, registry, logger, workflowVisibility, mainModels });
   await resources.init();
+  // 随包节点由启动器首次启动复制；直接用 start-all/start-gateway 启动时这里补一次（幂等）
+  void ensureBundledNodes();
+  async function ensureBundledNodes() {
+    try {
+      const packageRoot = path.join(config.rootDir, "..");
+      const modulePath = path.join(packageRoot, "launcher", "bootstrap-nodes.mjs");
+      if (!fs.existsSync(modulePath)) return;
+      const comfyDir = resources.comfyRoot();
+      if (!comfyDir) return;
+      const { installBundledNodes } = await import(pathToFileURL(modulePath).href);
+      const installed = await installBundledNodes({
+        root: packageRoot,
+        comfyRoot: comfyDir,
+        log: (message, level) => (level === "WARN" ? logger.warn(message) : logger.info(message)),
+      });
+      if (installed.length) logger.info(`已放置 ${installed.length} 个随包节点，重启 ComfyUI 后生效`);
+    } catch (error) {
+      logger.warn(`随包节点检查失败：${error.message}`);
+    }
+  }
   let lastOOM = null;
   const activeRequests = new Map();
   const registerActiveRequest = (id, controller) => {

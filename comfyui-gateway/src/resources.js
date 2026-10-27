@@ -11,7 +11,7 @@ import { Transform } from "node:stream";
 import { findUnetLoader } from "./base-models.js";
 import { nowIso, truncate, writeJsonAtomic } from "./util.js";
 
-const MODEL_DIRS = new Set(["diffusion_models", "text_encoders", "vae", "loras", "checkpoints", "upscale_models", "latent_upscale_models", "vdn", "clip_vision"]);
+const MODEL_DIRS = new Set(["diffusion_models", "text_encoders", "vae", "vae_approx", "loras", "checkpoints", "upscale_models", "latent_upscale_models", "vdn", "clip_vision"]);
 const LOADER_BY_DIR = {
     diffusion_models: { classType: "UNETLoader", input: "unet_name" },
     text_encoders: { classType: "CLIPLoader", input: "clip_name" },
@@ -74,11 +74,11 @@ function resolveComfyRoot(config) {
     }
     const home = os.homedir();
     for (const fallback of [
-        "C:\ComfyUI",
-        "D:\ComfyUI",
-        "E:\ComfyUI",
-        "E:\ComfyUI_windows_portable",
-        "E:\ComfyUI\ComfyUI",
+        "C:/ComfyUI",
+        "D:/ComfyUI",
+        "E:/ComfyUI",
+        "E:/ComfyUI_windows_portable",
+        "E:/ComfyUI/ComfyUI",
         path.join(home, "ComfyUI"),
         path.join(home, "Documents", "ComfyUI"),
     ]) {
@@ -356,12 +356,15 @@ export function createResourceManager({ config, setup, registry, logger, workflo
     function mainModelInfo(pack, installed) {
         const workflowIds = [...new Set([...(pack.workflows || []), ...Object.keys(pack.workflowDependencies || {})])];
         if (!workflowIds.length) return null;
-        const entries = workflowIds.map((id) => registry?.resolve?.(id)).filter(Boolean);
-        const files = [...new Set(entries.map((entry) => findUnetLoader(entry.workflow)?.file).filter(Boolean))];
+        const resolved = workflowIds.map((id) => ({ id, entry: registry?.resolve?.(id) })).filter((item) => item.entry);
+        const files = [...new Set(resolved.map(({ entry }) => findUnetLoader(entry.workflow)?.file).filter(Boolean))];
         if (!files.length) return null;
+        // 烘焙产物（如 MOSS Balanced）不是可替换的底模，主模型覆盖不能套到它上面
+        const bakeFiles = new Set((index?.resources || []).filter((item) => item.type === "bake").map((item) => resourceFile(item)).filter(Boolean));
+        const overrideIds = resolved.filter(({ entry }) => !bakeFiles.has(findUnetLoader(entry.workflow)?.file || "")).map((item) => item.id);
         const selected = mainModels?.fileForPack?.(pack.id) || "";
         const selectedInstalled = Boolean(selected && installed.has(selected));
-        const filter = entries.map((entry) => entry.baseModels?.filter).find(Boolean) || "";
+        const filter = resolved.map(({ entry }) => entry.baseModels?.filter).find(Boolean) || "";
         const matchesFamily = (file) => {
             if (!filter) return true;
             try {
@@ -373,7 +376,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         const options = new Map();
         for (const id of pack.resources || []) {
             const resource = index?.resources?.find((item) => item.id === id);
-            if (!resource || !resourceFile(resource)) continue;
+            if (!resource || resource.type === "bake" || !resourceFile(resource)) continue;
             let dir = "";
             try {
                 dir = targetParts(resource.target).dir;
@@ -395,7 +398,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             .map((id) => index?.resources?.find((item) => item.id === id))
             .find((resource) => resource && resourceFile(resource) === files[0]);
         return {
-            workflowIds,
+            workflowIds: overrideIds,
             files,
             defaultFile: files[0],
             defaultLabel: files.length > 1 ? "各工作流原底模" : defaultResource?.label || path.basename(files[0], path.extname(files[0])),
@@ -426,7 +429,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 } catch {
                     continue;
                 }
-                if (dir === "diffusion_models" && info.files.includes(resourceFile(resource))) overriddenResources.set(resource.id, info.selected);
+                if (dir === "diffusion_models" && resource.type !== "bake" && info.files.includes(resourceFile(resource))) overriddenResources.set(resource.id, info.selected);
             }
         }
         const resources = (index?.resources || []).map((resource) => {
@@ -684,6 +687,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             size: item.size,
             source: item.source,
             error: item.error,
+            hint: item.hint || "",
             skipped: item.skipped,
         }));
         const known = items.filter((item) => item.size > 0 && item.status !== "skipped");
@@ -1165,15 +1169,17 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 updateJob(job);
             }
         }
-        const failed = job.items.filter((item) => item.status === "error").length;
-        const hinted = job.items.some((item) => item.status === "error" && item.hint);
-        job.status = failed ? "error" : "done";
-        job.message = failed
-            ? hinted
-                ? `${failed} 项失败，其中本机编译失败，请按提示交给 AI Agent 处理`
-                : `${failed} 项失败，请查看日志或用备用源重试`
-            : "资源已就绪";
-        job.error = failed ? "部分资源安装失败" : "";
+        if (job.status === "running") {
+            const failed = job.items.filter((item) => item.status === "error").length;
+            const hinted = job.items.some((item) => item.status === "error" && item.hint);
+            job.status = failed ? "error" : "done";
+            job.message = failed
+                ? hinted
+                    ? `${failed} 项失败，其中本机编译失败，请按提示交给 AI Agent 处理`
+                    : `${failed} 项失败，请查看日志或用备用源重试`
+                : "资源已就绪";
+            job.error = failed ? "部分资源安装失败" : "";
+        }
         updateJob(job);
         try {
             await setup?.scan?.();

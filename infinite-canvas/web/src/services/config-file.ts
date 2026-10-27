@@ -18,7 +18,7 @@ type AppConfigFile = {
     };
 };
 
-const SECRET_KEY = /^(apiKey|password|token|secret|accessKey|secretKey|authorization)$/i;
+const SECRET_KEY = /^(apiKey|password|token|secret|accessKey|secretKey|authorization)$|(apiKey|accessKey|secretKey|api_key|access_key|secret_key)$/i;
 
 function redactSecrets<T>(value: T): T {
     if (Array.isArray(value)) return value.map((item) => redactSecrets(item)) as T;
@@ -46,13 +46,20 @@ export async function importAppConfig(file: File) {
     }
     if (data.app !== "infinite-canvas" || data.version !== 1 || !data.config || !data.webdav || !data.promptSources) throw new Error(i18n.t("config.invalidFile"));
     const current = useConfigStore.getState();
-    const nextConfig = normalizePromptCloudConfig(data.config);
+    let nextConfig = normalizePromptCloudConfig(data.config);
     if (data.secretsStripped) {
         nextConfig.channels = nextConfig.channels.map((channel) => {
             if (channel.apiKey) return channel;
             const existing = current.config.channels.find((item) => item.id === channel.id) || current.config.channels.find((item) => item.baseUrl === channel.baseUrl);
             return existing?.apiKey ? { ...channel, apiKey: existing.apiKey } : channel;
         });
+        const restoredApis = (nextConfig.promptCloudApis || []).map((api) => {
+            if (api.apiKey) return api;
+            const existing = current.config.promptCloudApis?.find((item) => item.id === api.id)
+                || current.config.promptCloudApis?.find((item) => item.baseUrl === api.baseUrl);
+            return existing?.apiKey ? { ...api, apiKey: existing.apiKey } : api;
+        });
+        nextConfig = normalizePromptCloudConfig({ ...nextConfig, promptCloudApis: restoredApis });
     }
     const nextWebdav = data.secretsStripped && !data.webdav.password ? { ...data.webdav, password: current.webdav.password } : data.webdav;
     useConfigStore.setState({ config: nextConfig, webdav: nextWebdav });

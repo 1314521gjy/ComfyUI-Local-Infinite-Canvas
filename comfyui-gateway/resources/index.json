@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026.10.27-20",
+  "version": "2026.10.27-21",
   "channel": "stable",
   "updatedAt": "2026-10-27T17:10:00+08:00",
   "packs": [
@@ -273,7 +273,8 @@
         "h3_vae_onnx_decoder_data",
         "h3_vae_onnx_encoder",
         "h3_trt_vae_decoder_engine",
-        "h3_trt_vae_encoder_engine"
+        "h3_trt_vae_encoder_engine",
+        "h3_tiny_vae"
       ],
       "workflows": [
         "video-h3-ref2va",
@@ -314,7 +315,8 @@
         "h3_vae_onnx_decoder_data",
         "h3_vae_onnx_encoder",
         "h3_trt_vae_decoder_engine",
-        "h3_trt_vae_encoder_engine"
+        "h3_trt_vae_encoder_engine",
+        "h3_tiny_vae"
       ],
       "workflowDependencies": {
         "video-h3-ref2va": [
@@ -334,7 +336,8 @@
           "h3_vae_onnx_decoder_data",
           "h3_vae_onnx_encoder",
           "h3_trt_vae_decoder_engine",
-          "h3_trt_vae_encoder_engine"
+          "h3_trt_vae_encoder_engine",
+          "h3_tiny_vae"
         ],
         "video-h3-t2v": [
           "h3_unet_singularity_ref2va_v13_int8",
@@ -353,7 +356,8 @@
           "h3_vae_onnx_decoder_data",
           "h3_vae_onnx_encoder",
           "h3_trt_vae_decoder_engine",
-          "h3_trt_vae_encoder_engine"
+          "h3_trt_vae_encoder_engine",
+          "h3_tiny_vae"
         ],
         "video-h3-frames": [
           "h3_unet_singularity_ref2va_v13_int8",
@@ -372,7 +376,8 @@
           "h3_vae_onnx_decoder_data",
           "h3_vae_onnx_encoder",
           "h3_trt_vae_decoder_engine",
-          "h3_trt_vae_encoder_engine"
+          "h3_trt_vae_encoder_engine",
+          "h3_tiny_vae"
         ],
         "video-h3-ref2va-novdn": [
           "h3_unet_singularity_ref2va_v13_int8",
@@ -384,7 +389,8 @@
           "h3_vae_onnx_decoder_data",
           "h3_vae_onnx_encoder",
           "h3_trt_vae_decoder_engine",
-          "h3_trt_vae_encoder_engine"
+          "h3_trt_vae_encoder_engine",
+          "h3_tiny_vae"
         ],
         "video-h3-t2v-novdn": [
           "h3_unet_singularity_ref2va_v13_int8",
@@ -396,7 +402,8 @@
           "h3_vae_onnx_decoder_data",
           "h3_vae_onnx_encoder",
           "h3_trt_vae_decoder_engine",
-          "h3_trt_vae_encoder_engine"
+          "h3_trt_vae_encoder_engine",
+          "h3_tiny_vae"
         ],
         "video-h3-frames-novdn": [
           "h3_unet_singularity_ref2va_v13_int8",
@@ -408,7 +415,8 @@
           "h3_vae_onnx_decoder_data",
           "h3_vae_onnx_encoder",
           "h3_trt_vae_decoder_engine",
-          "h3_trt_vae_encoder_engine"
+          "h3_trt_vae_encoder_engine",
+          "h3_tiny_vae"
         ],
         "video-h3-character-swap": [
           "h3_unet_singularity_ref2va_v13_int8",
@@ -428,7 +436,8 @@
           "h3_vae_onnx_decoder_data",
           "h3_vae_onnx_encoder",
           "h3_trt_vae_decoder_engine",
-          "h3_trt_vae_encoder_engine"
+          "h3_trt_vae_encoder_engine",
+          "h3_tiny_vae"
         ]
       }
     }
@@ -1209,6 +1218,23 @@
       },
       "license": "MiniMax H3 Community License",
       "note": "安装器下载 ONNX 后自动调用 ComfyUI-H3VAE_TRT/compile.py 编译；engine 与 GPU/TRT 版本绑定，不随包分发。"
+    },
+    {
+      "id": "h3_tiny_vae",
+      "type": "model",
+      "label": "H3 预览用 TAESD (taeh3)",
+      "target": "vae_approx/taeh3.safetensors",
+      "size": 9791388,
+      "sha256": "f0f60fa072089997f817402098c2fd90777cb2660dd79cf5df42fc1e3e08e527",
+      "license": "MiniMax H3 Community License",
+      "note": "VDN/无VDN 工作流的预览解码用；随包分发（9.8MB）。",
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/vae_approx/taeh3.safetensors",
+          "label": "随包"
+        }
+      ]
     }
   ]
 }
