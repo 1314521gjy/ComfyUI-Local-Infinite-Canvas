@@ -158,7 +158,18 @@ function loadH3SkillFiles() {
   return h3SkillFiles;
 }
 
-function buildCloudH3System(mode, duration) {
+function normalizePromptLanguage(value) {
+  return String(value || "").toLowerCase() === "en" ? "en" : "zh";
+}
+
+function h3LanguageDirective(language) {
+  if (normalizePromptLanguage(language) === "en") {
+    return "Write every field body in English. Keep dialogue, lyrics, and on-screen visible text in their original language; Chinese dialogue stays Chinese inside <d>[Chinese]...</d>. Official field names stay English.";
+  }
+  return "字段正文全部使用中文（覆盖 skill 默认英文）；台词、旁白、歌词保留原文语言（中文仍为中文）；官方字段名保留英文。";
+}
+
+function buildCloudH3System(mode, duration, language) {
   const files = loadH3SkillFiles();
   if (files.error) {
     throw new PromptOptimizeError("H3 提示词 Skill 文件缺失，请检查 comfyui-gateway/prompts/skills/h3-prompt-writing", {
@@ -171,7 +182,7 @@ function buildCloudH3System(mode, duration) {
   return `${files.skill}\n\n${guide}\n\n## 本次任务
 模式：${mode}
 时长：${duration} 秒
-输出语言：官方字段名保留英文；字段正文默认中文；台词、旁白、歌词保留原文语言。
+输出语言：${h3LanguageDirective(language)}
 对齐句由系统在正文前补充，正文不要另写。
 只输出最终 H3 提示词正文，不要输出思考过程、分析、解释、Markdown 代码块或前后缀。`;
 }
@@ -244,7 +255,8 @@ async function cloudChat({ system, userText, cloud = {}, signal, temperature = 0
   }
 }
 
-async function cloudOptimize({ prompt, mode, duration, referenceNote, uploadedImages = [], cloud = {}, signal }) {
+async function cloudOptimize({ prompt, mode, duration, referenceNote, language, uploadedImages = [], cloud = {}, signal }) {
+  const outputLanguage = normalizePromptLanguage(language);
   const frameGuide = /I2VA/i.test(mode)
     ? "首帧图生视频：从 <Picture 1> 的 0.00 秒首帧开始向后发展，不要换成别的底图。"
     : /FL2VA/i.test(mode)
@@ -255,12 +267,13 @@ async function cloudOptimize({ prompt, mode, duration, referenceNote, uploadedIm
   const userText = [
     `任务类型：${mode}`,
     `视频时长：${duration} 秒`,
+    `输出语言：${outputLanguage === "en" ? "英文（正文英文，台词保留原文语言）" : "中文"}`,
     frameGuide ? `画面路径：${frameGuide}` : "",
     referenceNote ? `参考素材说明：${referenceNote}` : "",
     uploadedImages.length ? `参考图片：${uploadedImages.length} 张（云端模式仅使用文字说明）` : "",
     `用户原始提示词：\n${prompt}`,
   ].filter(Boolean).join("\n");
-  const system = buildCloudH3System(mode, duration);
+  const system = buildCloudH3System(mode, duration, outputLanguage);
   const { content, model, elapsedMs } = await cloudChat({ system, userText, cloud, signal });
   const result = sanitizeH3Prompt(content);
   if (!result) throw new PromptOptimizeError("云端 API 没有返回提示词", { status: 502, code: "no_prompt_output" });
@@ -309,7 +322,7 @@ export function createPromptOptimizer({ config, comfy, logger }) {
     return deepClone(captionTemplate);
   }
 
-  async function optimize({ prompt, mode, duration, referenceNote, uploadedImages = [], signal, engine = "local", cloud = {} }) {
+  async function optimize({ prompt, mode, duration, referenceNote, language, uploadedImages = [], signal, engine = "local", cloud = {} }) {
     const text = String(prompt || "").trim();
     if (!text) throw new PromptOptimizeError("缺少提示词", { status: 400, code: "missing_prompt" });
     if (text.length > 8000) throw new PromptOptimizeError("提示词过长", { status: 400, code: "prompt_too_long" });
@@ -317,10 +330,11 @@ export function createPromptOptimizer({ config, comfy, logger }) {
     if (!MODES.has(taskType)) throw new PromptOptimizeError(`不支持的任务类型：${taskType}`, { status: 400, code: "invalid_mode" });
     const seconds = Number(duration);
     const optimizeSeconds = Number.isFinite(seconds) ? Math.min(15, Math.max(1, seconds)) : 5;
+    const outputLanguage = normalizePromptLanguage(language);
     const images = uploadedImages.slice(0, 8);
 
     if (String(engine || "local").toLowerCase() === "cloud") {
-      const cloudResult = await cloudOptimize({ prompt: text, mode: taskType, duration: optimizeSeconds, referenceNote, uploadedImages: images, cloud, signal });
+      const cloudResult = await cloudOptimize({ prompt: text, mode: taskType, duration: optimizeSeconds, referenceNote, language: outputLanguage, uploadedImages: images, cloud, signal });
       return { ...cloudResult, prompt: ensureFrameAlignmentPrompt(cloudResult.prompt, taskType, optimizeSeconds) };
     }
 
@@ -344,7 +358,7 @@ export function createPromptOptimizer({ config, comfy, logger }) {
       workflow["3"].inputs["输入模式"] = "文本";
     }
     const baseSystemPrompt = String(workflow["3"].inputs["系统提示词"] || "").trim();
-    workflow["3"].inputs["系统提示词"] = `${baseSystemPrompt}${baseSystemPrompt ? "\n" : ""}只输出最终提示词正文；禁止输出思考过程、分析、推理、解释、Markdown 代码块、前后缀或自我说明。`;
+    workflow["3"].inputs["系统提示词"] = `${baseSystemPrompt}${baseSystemPrompt ? "\n" : ""}${h3LanguageDirective(outputLanguage)}\n只输出最终提示词正文；禁止输出思考过程、分析、推理、解释、Markdown 代码块、前后缀或自我说明。`;
 
     const started = Date.now();
     const submitted = await comfy.submit(workflow, { signal });

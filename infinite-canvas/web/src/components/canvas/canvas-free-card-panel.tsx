@@ -96,6 +96,7 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [optimizeOptionsOpen, setOptimizeOptionsOpen] = useState(false);
     const optimizeEngine = config.promptApiEngine === "cloud" ? "cloud" : "local";
+    const optimizeLanguage = config.promptOptimizeLanguage === "en" ? "en" : "zh";
     const optimizeCloudReady = Boolean((config.promptCloudBaseUrl || "").trim() && (config.promptCloudApiKey || "").trim() && (config.promptCloudModel || "").trim());
 
     useEffect(() => {
@@ -292,7 +293,7 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
             const result = await requestImagePromptOptimize(config, {
                 prompt: text,
                 mode: references.length ? "image" : "text",
-                language: "zh",
+                language: optimizeLanguage,
                 images: useCloud ? [] : references,
                 imageCount: references.length,
                 engine: optimizeEngine,
@@ -454,10 +455,12 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
                                         className="mt-2"
                                         title={t("canvas.promptPanel.optimizeImageTitle")}
                                         engine={optimizeEngine}
+                                        language={optimizeLanguage}
                                         cloudReady={optimizeCloudReady}
                                         cloudModel={config.promptCloudModel}
                                         disabled={optimizing}
                                         onEngineChange={(engine) => updateConfig("promptApiEngine", engine)}
+                                        onLanguageChange={(language) => updateConfig("promptOptimizeLanguage", language)}
                                         onOpenSettings={() => openConfigDialog(true, "cloud-api")}
                                         onStart={() => void optimizePrompt()}
                                         onClose={() => setOptimizeOptionsOpen(false)}

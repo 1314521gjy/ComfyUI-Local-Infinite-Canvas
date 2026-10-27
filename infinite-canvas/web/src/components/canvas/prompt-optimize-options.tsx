@@ -5,15 +5,18 @@ import { useTranslation } from "react-i18next";
 import { useCanvasTheme } from "@/lib/canvas/use-canvas-theme";
 
 export type PromptOptimizeEngine = "local" | "cloud";
+export type PromptOptimizeLanguage = "zh" | "en";
 
 type PromptOptimizeOptionsProps = {
     engine: PromptOptimizeEngine;
+    language: PromptOptimizeLanguage;
     cloudReady: boolean;
     cloudModel?: string;
     title?: string;
     disabled?: boolean;
     className?: string;
     onEngineChange: (engine: PromptOptimizeEngine) => void;
+    onLanguageChange: (language: PromptOptimizeLanguage) => void;
     onOpenSettings: () => void;
     onStart: () => void;
     onClose: () => void;
@@ -21,12 +24,14 @@ type PromptOptimizeOptionsProps = {
 
 export function PromptOptimizeOptions({
     engine,
+    language,
     cloudReady,
     cloudModel,
     title,
     disabled = false,
     className = "",
     onEngineChange,
+    onLanguageChange,
     onOpenSettings,
     onStart,
     onClose,
@@ -74,6 +79,17 @@ export function PromptOptimizeOptions({
                         ) : null}
                     </div>
                 ) : null}
+            </div>
+            <div>
+                <div className="mb-1 text-[11px] opacity-70">{t("canvas.promptPanel.optimizeLanguage")}</div>
+                <div className="grid grid-cols-2 gap-2">
+                    <Button size="small" type={language === "zh" ? "primary" : "default"} onClick={() => onLanguageChange("zh")}>
+                        {t("canvas.promptPanel.optimizeLanguageZh")}
+                    </Button>
+                    <Button size="small" type={language === "en" ? "primary" : "default"} onClick={() => onLanguageChange("en")}>
+                        {t("canvas.promptPanel.optimizeLanguageEn")}
+                    </Button>
+                </div>
             </div>
             <div className="flex justify-end gap-2">
                 <Button size="small" onClick={onClose}>

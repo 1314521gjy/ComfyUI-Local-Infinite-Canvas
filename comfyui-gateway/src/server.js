@@ -967,6 +967,7 @@ export async function createGatewayApp(overrides = {}) {
         mode: body.mode,
         duration: body.duration ?? body.seconds,
         referenceNote: body.referenceNote ?? body.reference_note,
+        language: body.language,
         uploadedImages,
         signal: abort.signal,
         engine: body.engine,

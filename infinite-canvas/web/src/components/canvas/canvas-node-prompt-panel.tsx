@@ -107,6 +107,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     const canOptimize = isH3 && Boolean(draft.trim()) && !isRunning && !optimizeRunning;
     const canOptimizeImage = isImage && Boolean(draft.trim()) && !isRunning && !optimizeRunning;
     const optimizeEngine = config.promptApiEngine === "cloud" ? "cloud" : "local";
+    const optimizeLanguage = config.promptOptimizeLanguage === "en" ? "en" : "zh";
     const optimizeCloudReady = Boolean((config.promptCloudBaseUrl || "").trim() && (config.promptCloudApiKey || "").trim() && (config.promptCloudModel || "").trim());
     const captionReady = mode === "text" && Boolean(captionEngine);
     const captionStatus = mode === "text" ? node.metadata?.captionStatus : undefined;
@@ -270,6 +271,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                 mode: defaults.taskType,
                 duration: defaults.duration,
                 referenceNote: defaults.referenceNote,
+                language: optimizeLanguage,
                 images,
                 engine: optimizeEngine,
                 cloud: optimizeEngine === "cloud" ? cloud : undefined,
@@ -298,7 +300,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
             const result = await requestImagePromptOptimize(config, {
                 prompt: text,
                 mode: selectedRefs.length ? "image" : "text",
-                language: "zh",
+                language: optimizeLanguage,
                 images,
                 imageCount: selectedRefs.length,
                 engine: optimizeEngine,
@@ -542,9 +544,11 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                     className="mt-2"
                     title={isImage ? t("canvas.promptPanel.optimizeImageTitle") : undefined}
                     engine={optimizeEngine}
+                    language={optimizeLanguage}
                     cloudReady={optimizeCloudReady}
                     cloudModel={config.promptCloudModel}
                     onEngineChange={(engine) => updateConfig("promptApiEngine", engine)}
+                    onLanguageChange={(language) => updateConfig("promptOptimizeLanguage", language)}
                     onOpenSettings={() => openConfigDialog(true, "cloud-api")}
                     onStart={() => (isH3 ? void optimizePrompt() : void optimizeImagePrompt())}
                     onClose={() => setOptimizeOptionsOpen(false)}

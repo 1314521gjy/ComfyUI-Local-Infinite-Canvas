@@ -64,6 +64,7 @@ export type AiConfig = {
     videoInterpolation?: string;
     videoSelfLiftMode?: string;
     promptApiEngine?: string;
+    promptOptimizeLanguage?: "zh" | "en";
     promptCloudBaseUrl?: string;
     promptCloudApiKey?: string;
     promptCloudModel?: string;
@@ -149,6 +150,7 @@ const cloudDefaultConfig: AiConfig = {
     videoInterpolation: "off",
     videoSelfLiftMode: "fast",
     promptApiEngine: "local",
+    promptOptimizeLanguage: "zh",
     promptCloudBaseUrl: "",
     promptCloudApiKey: "",
     promptCloudModel: "",

@@ -958,7 +958,7 @@ export type PromptOptimizeResult = { prompt: string; mode: string; duration: num
 
 export async function requestPromptOptimize(
     config: AiConfig,
-    params: { prompt: string; mode: PromptOptimizeMode; duration?: number; referenceNote?: string; images?: ReferenceImage[]; engine?: "local" | "cloud"; cloud?: { baseUrl?: string; apiKey?: string; model?: string } },
+    params: { prompt: string; mode: PromptOptimizeMode; duration?: number; referenceNote?: string; language?: "zh" | "en"; images?: ReferenceImage[]; engine?: "local" | "cloud"; cloud?: { baseUrl?: string; apiKey?: string; model?: string } },
     options?: RequestOptions,
 ): Promise<PromptOptimizeResult> {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.videoModel);
@@ -969,6 +969,7 @@ export async function requestPromptOptimize(
     formData.set("mode", params.mode);
     formData.set("duration", String(params.duration || 5));
     if (params.referenceNote) formData.set("referenceNote", params.referenceNote);
+    if (params.language) formData.set("language", params.language);
     if (params.engine) formData.set("engine", params.engine);
     if (params.cloud?.baseUrl) formData.set("cloudBaseUrl", params.cloud.baseUrl);
     if (params.cloud?.apiKey) formData.set("cloudApiKey", params.cloud.apiKey);
