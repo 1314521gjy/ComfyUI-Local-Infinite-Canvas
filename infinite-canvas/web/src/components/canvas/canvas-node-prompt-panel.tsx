@@ -87,7 +87,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     const textOnlyImageMode = isImage && (imageModeValue === "t2i" || (!imageModeValue && workflowId === "image-qwen21"));
     const usesImageReferences = textOnlyImageMode ? false : imageInputLimit === undefined ? !isH3T2V : imageInputLimit > 0;
     const sourceImageReference: CanvasResourceReference | null =
-        usesImageReferences && node.type === CanvasNodeType.Image && node.metadata?.content && config.nodeRegenerateBehavior !== "overwrite"
+        usesImageReferences && node.type === CanvasNodeType.Image && node.metadata?.content && config.nodeRegenerateBehavior !== "overwrite" && !imageReferences.length
             ? {
                   id: `canvas:${node.id}`,
                   nodeId: node.id,

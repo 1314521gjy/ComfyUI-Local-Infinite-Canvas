@@ -16,6 +16,10 @@ test("Qwen edit prompt labels follow the reordered reference sequence", () => {
   assert.match(result, /保持图片2整体构图/);
   assert.match(result, /图片1中的棒棒糖/);
   assert.doesNotMatch(result, /参考图片编号/);
+  const crlf = reorderQwenEditPrompt("参考图片编号：图片1、图片2。\r\n\r\n保持原图；用图2的棒棒糖。", 2);
+  assert.doesNotMatch(crlf, /参考图片编号/);
+  assert.match(crlf, /保持图片2/);
+  assert.match(crlf, /图片1的棒棒糖/);
 });
 
 test("Qwen edit prompt maps Chinese numerals for three references", () => {

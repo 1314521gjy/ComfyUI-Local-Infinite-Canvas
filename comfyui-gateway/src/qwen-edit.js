@@ -8,8 +8,10 @@ export function reorderQwenEditPrompt(prompt, count) {
   const total = Math.max(0, Number(count) || 0);
   if (total < 2) return String(prompt || "").trim();
   let text = String(prompt || "")
-    .replace(/^参考图片编号：[\s\S]*?\n\n/, "")
-    .replace(/^Reference image labels:[\s\S]*?\n\n/, "")
+    .replace(/^\uFEFF/, "")
+    .trim()
+    .replace(/^参考图片编号：[\s\S]*?\r?\n\r?\n/, "")
+    .replace(/^Reference image labels:[\s\S]*?\r?\n\r?\n/, "")
     .trim();
   const target = total;
   const mapped = (index) => (index === 1 ? target : index >= 2 && index <= total ? index - 1 : index);
