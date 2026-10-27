@@ -22,6 +22,8 @@ export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: stri
 export type VideoGenerationTask = { id: string; provider: "openai" | "gemini" | "plugin"; model: string };
 export type VideoUpscaleSource = { name: string; type?: string; url?: string; storageKey?: string };
 export type VideoUpscaleParams = { scale: number; resolution: number; fps?: number; seed?: number; batchSize?: number; colorCorrection?: string };
+export type VideoInterpolateSource = VideoUpscaleSource;
+export type VideoInterpolateParams = { multiplier: 2 | 3 };
 export type VideoPreview = { url: string; mime?: string; step?: number; total?: number };
 type WaitOptions = RequestOptions & { onPreview?: (preview: VideoPreview | null) => void; onSteps?: (steps: { step: number; total: number }) => void };
 type GeminiInlineData = { bytesBase64Encoded: string; mimeType: string };
@@ -131,6 +133,26 @@ export async function createVideoUpscaleTask(config: AiConfig, source: VideoUpsc
         );
         if (!created.id) throw new Error(apiText("noVideoTaskId"));
         return { id: created.id, provider: "openai", model: "video-seedvr2-upscale" };
+    } catch (error) {
+        throw new Error(readAxiosError(error, apiText("videoTaskCreateFailed")));
+    }
+}
+
+export async function createVideoInterpolateTask(config: AiConfig, source: VideoInterpolateSource, params: VideoInterpolateParams, options?: RequestOptions): Promise<VideoGenerationTask> {
+    const file = await referenceMediaToFile(source, "source.mp4", "invalidReferenceVideo", options);
+    const formData = new FormData();
+    formData.append("video", file, file.name);
+    formData.append("multiplier", `${params.multiplier}x`);
+    const requestConfig = resolveModelRequestConfig(config, config.videoModel || config.model);
+    try {
+        const created = unwrapVideoResponse(
+            (await axios.post<ApiVideoResponse>(aiApiUrl(requestConfig, "/videos/interpolate"), formData, {
+                headers: aiHeaders(requestConfig),
+                signal: options?.signal,
+            })).data,
+        );
+        if (!created.id) throw new Error(apiText("noVideoTaskId"));
+        return { id: created.id, provider: "openai", model: modelOptionName(config.videoModel || config.model) };
     } catch (error) {
         throw new Error(readAxiosError(error, apiText("videoTaskCreateFailed")));
     }

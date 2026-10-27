@@ -9,7 +9,7 @@ import { requestEdit, requestGeneration, requestImageAngle, requestImageQuestion
 import { createFreeWorkflowVideoTask, fetchFreeWorkflows, requestFreeWorkflowImage, type FreeWorkflowSummary } from "@/services/api/free-workflow";
 import { bindStepProgress, unbindStepProgress } from "@/services/api/step-progress";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
-import { createVideoGenerationTask, createVideoUpscaleTask, isVideoTaskFailed, storeGeneratedVideo, waitForVideoGenerationTask, type VideoPreview } from "@/services/api/video";
+import { createVideoGenerationTask, createVideoInterpolateTask, createVideoUpscaleTask, isVideoTaskFailed, storeGeneratedVideo, waitForVideoGenerationTask, type VideoPreview } from "@/services/api/video";
 import { channelModelOf, defaultConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { ensureImagePreview, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
@@ -2470,6 +2470,79 @@ function InfiniteCanvasPage() {
         [effectiveConfig, finishGenerationRequest, message, startGenerationRequest, t],
     );
 
+    const interpolateVideoNode = useCallback(
+        async (node: CanvasNodeData) => {
+            if (!node.metadata?.content) return;
+            const childId = nanoid();
+            const sourceWidth = node.metadata?.naturalWidth || node.width;
+            const sourceHeight = node.metadata?.naturalHeight || node.height;
+            const size = fitNodeSize(sourceWidth, sourceHeight, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
+            setRunningNodeId(childId);
+            setNodes((prev) => [
+                ...prev,
+                {
+                    id: childId,
+                    type: CanvasNodeType.Video,
+                    title: t("canvas.nodeToolbar.interpolateTitle"),
+                    position: { x: node.position.x + node.width + 96, y: node.position.y },
+                    width: size.width,
+                    height: size.height,
+                    metadata: { prompt: node.metadata?.prompt, status: NODE_STATUS_LOADING },
+                },
+            ]);
+            setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: node.id, toNodeId: childId }]);
+            setSelectedNodeIds(new Set([childId]));
+            setSelectedConnectionId(null);
+            setDialogNodeId(childId);
+            const controller = startGenerationRequest(childId, node.id, childId);
+            try {
+                const task = await createVideoInterpolateTask(
+                    effectiveConfig,
+                    {
+                        name: `${node.title || node.id}.mp4`,
+                        type: node.metadata?.mimeType || "video/mp4",
+                        url: node.metadata?.content,
+                        storageKey: node.metadata?.storageKey,
+                    },
+                    { multiplier: 2 },
+                    { signal: controller.signal },
+                );
+                setNodes((prev) =>
+                    prev.map((item) =>
+                        item.id === childId
+                            ? { ...item, metadata: { ...item.metadata, videoTaskId: task.id, videoTaskProvider: "openai", model: "video-rife", params: { multiplier: 2 } } }
+                            : item,
+                    ),
+                );
+                const video = await storeGeneratedVideo(await waitForVideoGenerationTask(effectiveConfig, task, { signal: controller.signal }));
+                setNodes((prev) =>
+                    prev.map((item) =>
+                        item.id === childId
+                            ? applyGeneratedVideo(item, video, {
+                                  prompt: node.metadata?.prompt,
+                                  model: "video-rife",
+                                  videoMode: "interpolate",
+                                  previewUrl: undefined,
+                                  previewMime: undefined,
+                                  previewStep: undefined,
+                                  previewTotal: undefined,
+                              })
+                            : item,
+                    ),
+                );
+            } catch (error) {
+                if (isGenerationCanceled(error)) return;
+                const errorDetails = error instanceof Error ? error.message : t("canvas.projectPage.generationFailed");
+                message.error(errorDetails);
+                setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails } } : item)));
+            } finally {
+                finishGenerationRequest(childId, controller);
+                setRunningNodeId((current) => (current === childId ? null : current));
+            }
+        },
+        [effectiveConfig, finishGenerationRequest, message, startGenerationRequest, t],
+    );
+
     const generateAngleNode = useCallback(
         async (node: CanvasNodeData, params: CanvasImageAngleParams) => {
             if (!node.metadata?.content) return;
@@ -3971,6 +4044,7 @@ function InfiniteCanvasPage() {
                     onGenerateImage={generateImageFromTextNode}
                     onUpload={(node) => handleUploadRequest(node.id)}
                     onVideoUpscale={(node) => setVideoUpscaleNodeId(node.id)}
+                    onInterpolateVideo={(node) => void interpolateVideoNode(node)}
                     onDownload={downloadNodeImage}
                     onSaveAsset={(node) => void saveNodeAsset(node)}
                     onMaskEdit={(node) => setMaskEditNodeId(node.id)}

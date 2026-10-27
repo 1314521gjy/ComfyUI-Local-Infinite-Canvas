@@ -1099,6 +1099,40 @@ export async function createGatewayApp(overrides = {}) {
     res.json({ id: task.id, object: "video", status: "queued", progress: 0, created_at: Math.floor(Date.now() / 1000) });
   });
 
+  app.post("/v1/videos/interpolate", upload.any(), async (req, res) => {
+    const body = req.body || {};
+    const videoFiles = orderedVideoRefFiles(req.files || []);
+    if (!videoFiles.length) throw new HttpError("插帧请求缺少输入视频", { status: 400, code: "missing_input_video" });
+    const multiplier = String(body.multiplier || "2x").trim().toLowerCase();
+    if (!["2x", "3x"].includes(multiplier)) {
+      throw new HttpError("插帧只支持 2x 或 3x", { status: 400, code: "invalid_interpolation" });
+    }
+    const source = videoFiles[0];
+    const task = tasks.create({
+      model: "video-rife",
+      request: { mode: "interpolate", multiplier, video: source.originalname || "input.mp4" },
+    });
+    tasks.enqueue(task, async (_task, progress, signal) => {
+      progress?.({ phase: "interpolating", progress: 0.1 });
+      const interpolated = await videoInterpolator.interpolate({
+        comfy,
+        buffer: source.buffer,
+        filename: source.originalname || "input.mp4",
+        multiplier: multiplier === "3x" ? 3 : 2,
+        requestId: req.id,
+        signal,
+        timeoutMs: Number(config.videoTimeoutMs) > 0 ? config.videoTimeoutMs : 10 * 60 * 1000,
+      });
+      return {
+        buffer: interpolated.buffer,
+        ext: extFromMime(interpolated.mimeType, interpolated.filename, "mp4"),
+        mimeType: interpolated.mimeType,
+      };
+    });
+    logger.info(`video interpolate ${multiplier} queued ${task.id} ${req.id}`);
+    res.json({ id: task.id, object: "video", status: "queued", progress: 0, created_at: Math.floor(Date.now() / 1000) });
+  });
+
   app.post("/v1/videos", upload.any(), async (req, res) => {
     await registry.reloadIfChanged();
     const body = req.body || {};
