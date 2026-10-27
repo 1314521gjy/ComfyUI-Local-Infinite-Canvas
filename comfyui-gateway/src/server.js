@@ -959,7 +959,9 @@ export async function createGatewayApp(overrides = {}) {
   app.post("/v1/prompts/optimize", upload.any(), async (req, res) => {
     const body = req.body || {};
     const files = orderedPromptImages(req.files || []);
-    const uploadedImages = files.length ? await uploadImages(comfy, files) : [];
+    const useCloud = String(body.engine || "").toLowerCase() === "cloud";
+    const uploadedImages = !useCloud && files.length ? await uploadImages(comfy, files) : [];
+    const cloudImages = useCloud ? files.map((file) => `data:${file.mimetype || "image/png"};base64,${file.buffer.toString("base64")}`) : [];
     const abort = abortOnDisconnect(req, res, registerActiveRequest);
     try {
       const result = await promptOptimizer.optimize({
@@ -969,6 +971,8 @@ export async function createGatewayApp(overrides = {}) {
         referenceNote: body.referenceNote ?? body.reference_note,
         language: body.language,
         uploadedImages,
+        cloudImages,
+        imageCount: files.length,
         signal: abort.signal,
         engine: body.engine,
         cloud: {

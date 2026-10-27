@@ -183,6 +183,7 @@ function buildCloudH3System(mode, duration, language) {
 模式：${mode}
 时长：${duration} 秒
 输出语言：${h3LanguageDirective(language)}
+参考图片（若有）已随消息附上：以图片内容为准，不要编造图中不存在的室内外、家具、陈设或光线。
 对齐句由系统在正文前补充，正文不要另写。
 只输出最终 H3 提示词正文，不要输出思考过程、分析、解释、Markdown 代码块或前后缀。`;
 }
@@ -200,7 +201,7 @@ function cloudContent(data) {
   return "";
 }
 
-async function cloudChat({ system, userText, cloud = {}, signal, temperature = 0.6, maxTokens = 4096 }) {
+async function cloudChat({ system, userText, images = [], cloud = {}, signal, temperature = 0.6, maxTokens = 4096 }) {
   const baseUrl = String(cloud.baseUrl || "").trim();
   const apiKey = String(cloud.apiKey || "").trim();
   const model = String(cloud.model || "").trim();
@@ -208,6 +209,9 @@ async function cloudChat({ system, userText, cloud = {}, signal, temperature = 0
     throw new PromptOptimizeError("云端 API 未配置：请先在设置中填写 Base URL、API Key 和模型", { status: 400, code: "cloud_not_configured" });
   }
   const endpoint = cloudChatUrl(baseUrl);
+  const userContent = images.length
+    ? [{ type: "text", text: userText }, ...images.map((url) => ({ type: "image_url", image_url: { url } }))]
+    : userText;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("云端 API 超时")), 120000);
   const onAbort = () => controller.abort(signal?.reason);
@@ -224,7 +228,7 @@ async function cloudChat({ system, userText, cloud = {}, signal, temperature = 0
         model,
         messages: [
           { role: "system", content: system },
-          { role: "user", content: userText },
+          { role: "user", content: userContent },
         ],
         temperature,
         max_tokens: maxTokens,
@@ -240,7 +244,10 @@ async function cloudChat({ system, userText, cloud = {}, signal, temperature = 0
     }
     if (!response.ok) {
       const message = data?.error?.message || data?.message || text || `HTTP ${response.status}`;
-      throw new PromptOptimizeError(`云端 API 失败：${truncate(String(message), 800)}`, { status: 502, code: "cloud_api_failed", details: data });
+      const imageHint = images.length && [400, 415, 422].includes(response.status)
+        ? "（若当前模型不支持图片输入，请换支持视觉的模型或改用本地优化）"
+        : "";
+      throw new PromptOptimizeError(`云端 API 失败：${truncate(String(message), 800)}${imageHint}`, { status: 502, code: "cloud_api_failed", details: data });
     }
     return { content: cloudContent(data), model, elapsedMs: Date.now() - started };
   } catch (error) {
@@ -255,8 +262,14 @@ async function cloudChat({ system, userText, cloud = {}, signal, temperature = 0
   }
 }
 
-async function cloudOptimize({ prompt, mode, duration, referenceNote, language, uploadedImages = [], cloud = {}, signal }) {
+async function cloudOptimize({ prompt, mode, duration, referenceNote, language, uploadedImages = [], cloudImages = [], imageCount = 0, cloud = {}, signal }) {
   const outputLanguage = normalizePromptLanguage(language);
+  const imageTotal = cloudImages.length || uploadedImages.length || Number(imageCount) || 0;
+  const imageLine = imageTotal
+    ? cloudImages.length
+      ? `参考图片：${imageTotal} 张（已随消息附上，以图片为准；不要编造图中不存在的场景、陈设、家具或光线）`
+      : `参考图片：${imageTotal} 张（云端未附图片，仅使用文字说明；不要编造未看到的场景细节）`
+    : "";
   const frameGuide = /I2VA/i.test(mode)
     ? "首帧图生视频：从 <Picture 1> 的 0.00 秒首帧开始向后发展，不要换成别的底图。"
     : /FL2VA/i.test(mode)
@@ -270,11 +283,11 @@ async function cloudOptimize({ prompt, mode, duration, referenceNote, language, 
     `输出语言：${outputLanguage === "en" ? "英文（正文英文，台词保留原文语言）" : "中文"}`,
     frameGuide ? `画面路径：${frameGuide}` : "",
     referenceNote ? `参考素材说明：${referenceNote}` : "",
-    uploadedImages.length ? `参考图片：${uploadedImages.length} 张（云端模式仅使用文字说明）` : "",
+    imageLine,
     `用户原始提示词：\n${prompt}`,
   ].filter(Boolean).join("\n");
   const system = buildCloudH3System(mode, duration, outputLanguage);
-  const { content, model, elapsedMs } = await cloudChat({ system, userText, cloud, signal });
+  const { content, model, elapsedMs } = await cloudChat({ system, userText, images: cloudImages, cloud, signal });
   const result = sanitizeH3Prompt(content);
   if (!result) throw new PromptOptimizeError("云端 API 没有返回提示词", { status: 502, code: "no_prompt_output" });
   return { prompt: result, mode, duration, provider: "cloud", model, elapsedMs };
@@ -322,7 +335,7 @@ export function createPromptOptimizer({ config, comfy, logger }) {
     return deepClone(captionTemplate);
   }
 
-  async function optimize({ prompt, mode, duration, referenceNote, language, uploadedImages = [], signal, engine = "local", cloud = {} }) {
+  async function optimize({ prompt, mode, duration, referenceNote, language, uploadedImages = [], cloudImages = [], imageCount = 0, signal, engine = "local", cloud = {} }) {
     const text = String(prompt || "").trim();
     if (!text) throw new PromptOptimizeError("缺少提示词", { status: 400, code: "missing_prompt" });
     if (text.length > 8000) throw new PromptOptimizeError("提示词过长", { status: 400, code: "prompt_too_long" });
@@ -334,7 +347,7 @@ export function createPromptOptimizer({ config, comfy, logger }) {
     const images = uploadedImages.slice(0, 8);
 
     if (String(engine || "local").toLowerCase() === "cloud") {
-      const cloudResult = await cloudOptimize({ prompt: text, mode: taskType, duration: optimizeSeconds, referenceNote, language: outputLanguage, uploadedImages: images, cloud, signal });
+      const cloudResult = await cloudOptimize({ prompt: text, mode: taskType, duration: optimizeSeconds, referenceNote, language: outputLanguage, uploadedImages: images, cloudImages: cloudImages.slice(0, 8), imageCount, cloud, signal });
       return { ...cloudResult, prompt: ensureFrameAlignmentPrompt(cloudResult.prompt, taskType, optimizeSeconds) };
     }
 
