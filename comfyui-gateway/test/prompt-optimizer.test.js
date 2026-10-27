@@ -83,9 +83,46 @@ test("cloud H3 optimize uses the full-reference prompt for reference mode", asyn
         });
         assert.ok(captured, "cloud request was not captured");
         assert.match(captured.messages[0].content, /subject_definitions/);
+        assert.match(captured.messages[0].content, /六段正文使用中文/);
+        assert.match(captured.messages[0].content, /对话、旁白、歌词、画面文字默认使用中文/);
         assert.match(captured.messages[0].content, /人物替换/);
         assert.match(result.prompt, /^subject_definitions:/);
         assert.match(result.prompt, /retention_analysis:/);
+    } finally {
+        await new Promise((resolve) => server.close(resolve));
+    }
+});
+
+test("cloud H3 three-part prompt keeps headings and asks for Chinese content", async () => {
+    const output = `integrated_multimodal_description: [Shot 1] 人物看向镜头。\noverall_soundscape: 街道环境声。\nnon_diegetic_music: 无配乐。`;
+    let captured = null;
+    const server = http.createServer((req, res) => {
+        let body = "";
+        req.on("data", (chunk) => { body += String(chunk); });
+        req.on("end", () => {
+            captured = JSON.parse(body);
+            res.setHeader("content-type", "application/json");
+            res.end(JSON.stringify({ choices: [{ message: { content: output } }] }));
+        });
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = server.address().port;
+    try {
+        const optimizer = createPromptOptimizer({ config: { rootDir }, comfy: null, logger: null });
+        const result = await optimizer.optimize({
+            prompt: "人物看向镜头",
+            mode: "首尾帧视频(FL2VA)",
+            duration: 5,
+            engine: "cloud",
+            cloud: { baseUrl: `http://127.0.0.1:${port}/v1`, apiKey: "test", model: "test-model" },
+        });
+        assert.ok(captured, "cloud request was not captured");
+        assert.match(captured.messages[0].content, /integrated_multimodal_description/);
+        assert.match(captured.messages[0].content, /字段正文使用中文/);
+        assert.match(captured.messages[0].content, /对话、旁白、歌词、画面文字默认使用中文/);
+        assert.match(result.prompt, /^integrated_multimodal_description:/);
+        assert.match(result.prompt, /overall_soundscape:/);
+        assert.match(result.prompt, /non_diegetic_music:/);
     } finally {
         await new Promise((resolve) => server.close(resolve));
     }
