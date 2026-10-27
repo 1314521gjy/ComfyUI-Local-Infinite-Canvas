@@ -160,6 +160,16 @@ function validateIndex(index) {
     return index;
 }
 
+export function buildTrtCompileHint({ python, compiler, input, output, device = 0 }) {
+    const quote = (value) => (/[\s"]/.test(value) ? `"${String(value).replace(/"/g, '\\"')}"` : value);
+    const command = [python, compiler, "--input", input, "--output", output, "--device", String(device)].map(quote).join(" ");
+    return [
+        "H3 的 TensorRT VAE engine 没有编译成功，视频工作流暂时用不了。",
+        "可以把下面这段话直接发给你的 AI Agent：",
+        `「请在这台机器的 ComfyUI 环境里安装与本机 CUDA/驱动匹配的 tensorrt，然后重新编译 H3 的 VAE engine：${command}。如果编译仍然报错，把完整报错贴给你。」`,
+    ].join("\n");
+}
+
 export function createResourceManager({ config, setup, registry, logger, workflowVisibility = null, mainModels = null, hardware: hardwareOverride = null } = {}) {
     const indexPath = path.join(config.rootDir, "resources", "index.json");
     const lockPath = path.join(config.dataDir, "resource-lock.json");
@@ -1034,6 +1044,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         const target = targetPath(resource, root);
         const h3Trt = resource.builder?.kind === "h3-trt-vae";
         let args;
+        let trtInput = "";
+        let trtCompiler = "";
         if (h3Trt) {
             const script = path.join(config.rootDir, "scripts", "build-h3-trt-vae.py");
             if (!isFile(script)) throw new Error("缺少编译脚本 scripts/build-h3-trt-vae.py");
@@ -1043,6 +1055,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             if (!isFile(input)) throw new Error("TRT 编译依赖的 ONNX 尚未就绪");
             const compiler = path.join(root, "custom_nodes", "ComfyUI-H3VAE_TRT", "compile.py");
             if (!isFile(compiler)) throw new Error("缺少 ComfyUI-H3VAE_TRT/compile.py，请先安装 H3 TRT VAE 节点");
+            trtInput = input;
+            trtCompiler = compiler;
             args = [script, "--compiler", compiler, "--input", input, "--output", target, "--device", String(resource.builder?.device ?? 0)];
         } else {
             const script = path.join(config.rootDir, "scripts", "bake-moss-preset.py");
@@ -1058,23 +1072,30 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         jobItem.status = "baking";
         jobItem.source = h3Trt ? "本机编译 TRT Engine" : "本地烘焙";
         await fsp.mkdir(path.dirname(target), { recursive: true });
-        await new Promise((resolve, reject) => {
-            const child = spawn(python, args, { cwd: config.rootDir, windowsHide: true });
-            jobItem.child = child;
-            let stderr = "";
-            child.stdout.on("data", (data) => logger?.info?.(`[bake] ${String(data).trim()}`));
-            child.stderr.on("data", (data) => {
-                stderr += String(data);
-                if (stderr.length > 4000) stderr = stderr.slice(-4000);
+        try {
+            await new Promise((resolve, reject) => {
+                const child = spawn(python, args, { cwd: config.rootDir, windowsHide: true });
+                jobItem.child = child;
+                let stderr = "";
+                child.stdout.on("data", (data) => logger?.info?.(`[bake] ${String(data).trim()}`));
+                child.stderr.on("data", (data) => {
+                    stderr += String(data);
+                    if (stderr.length > 4000) stderr = stderr.slice(-4000);
+                });
+                child.on("error", reject);
+                child.on("exit", (code) => {
+                    jobItem.child = null;
+                    if (signal?.aborted) return reject(new Error("已取消"));
+                    if (code !== 0 || !isFile(target)) return reject(new Error(`烘焙失败（exit ${code}）${stderr ? `：${truncate(stderr, 500)}` : ""}`));
+                    resolve();
+                });
             });
-            child.on("error", reject);
-            child.on("exit", (code) => {
-                jobItem.child = null;
-                if (signal?.aborted) return reject(new Error("已取消"));
-                if (code !== 0 || !isFile(target)) return reject(new Error(`烘焙失败（exit ${code}）${stderr ? `：${truncate(stderr, 500)}` : ""}`));
-                resolve();
-            });
-        });
+        } catch (error) {
+            if (h3Trt && !signal?.aborted) {
+                error.hint = buildTrtCompileHint({ python, compiler: trtCompiler, input: trtInput, output: target, device: resource.builder?.device ?? 0 });
+            }
+            throw error;
+        }
         lock.installed = lock.installed || {};
         lock.installed[resource.id] = { version: index?.version || "", target: resource.target, size: resource.size || 0, installedAt: nowIso(), baked: true };
         lock.updatedAt = nowIso();
@@ -1137,6 +1158,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             } catch (error) {
                 item.status = "error";
                 item.error = truncate(error.message || String(error), 500);
+                if (error.hint) item.hint = error.hint;
                 logger?.warn?.(`资源烘焙失败 ${item.id}: ${item.error}`);
             } finally {
                 job.controllers.delete(item.id);
@@ -1144,8 +1166,13 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             }
         }
         const failed = job.items.filter((item) => item.status === "error").length;
+        const hinted = job.items.some((item) => item.status === "error" && item.hint);
         job.status = failed ? "error" : "done";
-        job.message = failed ? `${failed} 项失败，请查看日志或用备用源重试` : "资源已就绪";
+        job.message = failed
+            ? hinted
+                ? `${failed} 项失败，其中本机编译失败，请按提示交给 AI Agent 处理`
+                : `${failed} 项失败，请查看日志或用备用源重试`
+            : "资源已就绪";
         job.error = failed ? "部分资源安装失败" : "";
         updateJob(job);
         try {

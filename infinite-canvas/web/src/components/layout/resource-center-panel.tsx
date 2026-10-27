@@ -68,6 +68,9 @@ const copyByLocale = {
         copying: "安装中",
         done: "安装完成",
         failed: "部分资源安装失败",
+        compileFailed: "本机编译失败",
+        copyHint: "复制给 AI Agent",
+        hintCopied: "已复制，直接发给你的 AI Agent",
         notReachable: "ComfyUI 当前未连接，资源状态可能不准确。",
         indexError: "资源索引读取失败，当前使用内置清单。",
         selectHint: "选择需要安装的功能包；已具备的资源会自动跳过。",
@@ -136,6 +139,9 @@ const copyByLocale = {
         copying: "Installing",
         done: "Install complete",
         failed: "Some resources failed",
+        compileFailed: "Local compile failed",
+        copyHint: "Copy for your AI agent",
+        hintCopied: "Copied — paste it to your AI agent",
         notReachable: "ComfyUI is not reachable; resource status may be stale.",
         indexError: "Failed to load the resource index; using the bundled manifest.",
         selectHint: "Select the packs to install; existing resources are skipped.",
@@ -386,6 +392,15 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
         }
     };
 
+    const copyHintText = async (text: string) => {
+        try {
+            await navigator.clipboard.writeText(text);
+            message.success(copy.hintCopied);
+        } catch (copyError) {
+            message.error(copyError instanceof Error ? copyError.message : String(copyError));
+        }
+    };
+
     const recommendationAvailable = Boolean(status?.recommendationAvailable);
     const hardwareName = status?.hardware?.gpuName || "";
     const recommendedPresent = recommendationAvailable ? status?.summary.recommendedPresent || 0 : status?.summary.present || 0;
@@ -533,16 +548,40 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                     <Progress percent={job.progress} size="small" status={job.status === "error" ? "exception" : job.status === "done" ? "success" : "active"} />
                     <div className="mt-2 max-h-32 space-y-1 overflow-y-auto text-[11px]">
                         {job.items.map((item) => (
-                            <div key={item.id} className="flex items-center justify-between gap-2">
-                                <span className="min-w-0 truncate text-stone-600 dark:text-stone-300">{item.label}</span>
-                                <span className={item.status === "error" ? "shrink-0 text-red-500" : "shrink-0 text-stone-400 dark:text-stone-500"}>
-                                    {item.status === "downloading"
-                                        ? `${formatBytes(item.bytes)} / ${formatBytes(item.size)}${speeds[item.id] ? ` · ${formatSpeed(speeds[item.id])}` : ""}`
-                                        : item.status === "copying" ? copy.copying : item.status === "baking" ? copy.localBake : item.status}
-                                </span>
+                            <div key={item.id} className="space-y-0.5">
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className="min-w-0 truncate text-stone-600 dark:text-stone-300">{item.label}</span>
+                                    <span className={item.status === "error" ? "shrink-0 text-red-500" : "shrink-0 text-stone-400 dark:text-stone-500"}>
+                                        {item.status === "downloading"
+                                            ? `${formatBytes(item.bytes)} / ${formatBytes(item.size)}${speeds[item.id] ? ` · ${formatSpeed(speeds[item.id])}` : ""}`
+                                            : item.status === "copying" ? copy.copying : item.status === "baking" ? copy.localBake : item.status}
+                                    </span>
+                                </div>
+                                {item.status === "error" && item.error ? (
+                                    <div className="line-clamp-2 break-words pl-1 text-[10px] text-red-500" title={item.error}>{item.error}</div>
+                                ) : null}
                             </div>
                         ))}
                     </div>
+                    {job.items.some((item) => item.hint) ? (
+                        <div className="mt-2 space-y-2">
+                            {job.items.filter((item) => item.hint).map((item) => (
+                                <div
+                                    key={`${item.id}-hint`}
+                                    className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+                                >
+                                    <div className="mb-1 flex items-center justify-between gap-2">
+                                        <span className="flex min-w-0 items-center gap-1 font-medium">
+                                            <AlertTriangle className="size-3.5 shrink-0" />
+                                            <span className="truncate">{copy.compileFailed} · {item.label}</span>
+                                        </span>
+                                        <Button size="small" onClick={() => void copyHintText(item.hint || "")}>{copy.copyHint}</Button>
+                                    </div>
+                                    <div className="whitespace-pre-wrap break-all text-[10px] leading-4">{item.hint}</div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : null}
                 </div>
             ) : null}
 

@@ -8,7 +8,7 @@ import path from "node:path";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
 
-import { createResourceManager } from "../src/resources.js";
+import { buildTrtCompileHint, createResourceManager } from "../src/resources.js";
 
 async function waitForJob(manager, id, timeoutMs = 10000) {
     const started = Date.now();
@@ -418,7 +418,46 @@ test("krea2 pack matches the zimage shape with no bundled LoRAs", () => {
     assert.deepEqual(pack.optionalResources, ["krea2_turbo_int8_convrot"]);
     assert.equal(index.resources.some((item) => item.id === "krea2_darkbrush_lora"), false);
     assert.equal(index.resources.some((item) => item.id === "krea2_retroanime_lora"), false);
-    assert.equal(index.resources.length, 24);
+    assert.equal(index.resources.length, 52);
+});
+
+test("h3 pack lists the shared models, VDN/noVDN variants and character swap", () => {
+    const index = JSON.parse(fs.readFileSync(new URL("../resources/index.json", import.meta.url), "utf8"));
+    const pack = index.packs.find((item) => item.id === "h3");
+    assert.ok(pack, "h3 pack is missing");
+    assert.equal(pack.planned, false);
+    assert.equal(pack.optional, true);
+    assert.equal(pack.autoRecommend, false);
+    assert.deepEqual(pack.workflows, [
+        "video-h3-ref2va",
+        "video-h3-t2v",
+        "video-h3-frames",
+        "video-h3-ref2va-novdn",
+        "video-h3-t2v-novdn",
+        "video-h3-frames-novdn",
+        "video-h3-character-swap",
+    ]);
+    assert.ok(pack.resources.includes("h3_unet_singularity_ref2va_v13_int8"));
+    assert.ok(pack.resources.includes("h3_te_qwen3vl_32b_int8_convrot"));
+    assert.ok(pack.resources.includes("h3_audio_vae_fp32"));
+    assert.ok(pack.resources.includes("h3_vae_onnx_decoder"));
+    assert.ok(!pack.optionalResources.includes("h3_vae_onnx_decoder"));
+    assert.ok(pack.workflowDependencies["video-h3-ref2va"].includes("h3_vae_onnx_decoder"));
+    assert.ok(pack.optionalResources.includes("h3_vdn_stage_model"));
+    assert.ok(pack.optionalResources.includes("h3_lightx2v_8step_lora"));
+    assert.ok(pack.optionalResources.includes("h3_character_swap_lora"));
+    assert.ok(pack.resources.includes("h3_trt_vae_decoder_engine"));
+    assert.ok(pack.resources.includes("h3_trt_vae_encoder_engine"));
+    const decoderEngine = index.resources.find((item) => item.id === "h3_trt_vae_decoder_engine");
+    assert.equal(decoderEngine.type, "bake");
+    assert.equal(decoderEngine.builder.kind, "h3-trt-vae");
+    assert.deepEqual(decoderEngine.requires, ["h3_vae_onnx_decoder", "h3_vae_onnx_decoder_data"]);
+    assert.ok(pack.workflowDependencies["video-h3-ref2va"].includes("h3_vdn_stage_model"));
+    assert.ok(pack.workflowDependencies["video-h3-ref2va"].includes("h3_trt_vae_decoder_engine"));
+    assert.ok(pack.workflowDependencies["video-h3-ref2va-novdn"].includes("h3_lightx2v_8step_lora"));
+    assert.ok(pack.workflowDependencies["video-h3-character-swap"].includes("h3_character_swap_lora"));
+    const ids = new Set(index.resources.map((item) => item.id));
+    assert.equal(ids.size, index.resources.length, "duplicate resource ids");
 });
 
 test("a selected pack main model activates the workflow and replaces the default model resource", async () => {
@@ -815,4 +854,29 @@ test("remote resource index falls back to the backup URL", async () => {
         await new Promise((resolve) => server.close(resolve));
         await fsp.rm(root, { recursive: true, force: true });
     }
+});
+
+test("trt compile failure hint is copy-ready for the user's agent", () => {
+    const hint = buildTrtCompileHint({
+        python: "E:/ComfyUI/python_embeded/python.exe",
+        compiler: "E:/ComfyUI/custom_nodes/ComfyUI-H3VAE_TRT/compile.py",
+        input: "E:/ComfyUI/models/vae/minimax_h3_vae_decoder.onnx",
+        output: "E:/ComfyUI/models/vae/minimax_h3_vae_decoder.engine",
+        device: 0,
+    });
+    assert.match(hint, /tensorrt/);
+    assert.match(hint, /AI Agent/);
+    assert.match(hint, /compile\.py/);
+    assert.match(hint, /--input/);
+    assert.match(hint, /--output/);
+    assert.match(hint, /--device 0/);
+
+    const spaced = buildTrtCompileHint({
+        python: "C:/Program Files/Python312/python.exe",
+        compiler: "D:/My ComfyUI/custom_nodes/ComfyUI-H3VAE_TRT/compile.py",
+        input: "D:/My ComfyUI/models/vae/a.onnx",
+        output: "D:/My ComfyUI/models/vae/a.engine",
+    });
+    assert.ok(spaced.includes('"C:/Program Files/Python312/python.exe"'));
+    assert.ok(spaced.includes('"D:/My ComfyUI/custom_nodes/ComfyUI-H3VAE_TRT/compile.py"'));
 });

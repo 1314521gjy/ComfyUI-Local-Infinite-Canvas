@@ -151,6 +151,7 @@ export type ResourceJobItem = {
     size: number;
     source?: string | null;
     error?: string;
+    hint?: string;
     skipped?: boolean;
 };
 
