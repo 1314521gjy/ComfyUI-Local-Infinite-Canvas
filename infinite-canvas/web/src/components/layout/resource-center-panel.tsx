@@ -45,6 +45,7 @@ const copyByLocale = {
         workflowRestart: "待重启",
         workflowEnabled: "启用",
         workflowDisabled: "已屏蔽",
+        canvasEntry: "画布入口",
         visibilityHint: "勾选后才会出现在模型选择；不删除已下载资源",
         plugin: "插件",
         bakeRequires: "本地烘焙，依赖",
@@ -103,6 +104,7 @@ const copyByLocale = {
         workflowRestart: "Restart needed",
         workflowEnabled: "Enabled",
         workflowDisabled: "Hidden",
+        canvasEntry: "Canvas entry",
         visibilityHint: "Only checked workflows appear in the model picker; downloaded resources are kept",
         plugin: "Plugin",
         bakeRequires: "Local bake requires",
@@ -605,25 +607,32 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                                                         {workflowTag}
                                                                     </div>
                                                                     <div className={`truncate text-[10px] ${workflow.enabled === false ? "text-stone-400 dark:text-stone-500" : "text-emerald-700/70 dark:text-emerald-300/60"}`}>{workflow.id}</div>
+                                                                    {Object.values(workflow.variantLabels || {}).length ? (
+                                                                        <div className="mt-0.5 truncate text-[10px] text-stone-400 dark:text-stone-500">{Object.values(workflow.variantLabels || {}).join(" · ")}</div>
+                                                                    ) : null}
                                                                 </button>
-                                                                <Tooltip title={copy.visibilityHint}>
-                                                                    <span
-                                                                        className="mt-1 flex shrink-0 cursor-pointer select-none items-center gap-1.5"
-                                                                        onClick={(event) => {
-                                                                            event.stopPropagation();
-                                                                            void toggleWorkflowEnabled(workflow.id, workflow.enabled === false);
-                                                                        }}
-                                                                    >
-                                                                        <Checkbox
-                                                                            checked={workflow.enabled !== false}
-                                                                            onClick={(event) => event.stopPropagation()}
-                                                                            onChange={(event) => void toggleWorkflowEnabled(workflow.id, event.target.checked)}
-                                                                        />
-                                                                        <span className={`min-w-8 text-[10px] ${workflow.enabled === false ? "text-stone-400 dark:text-stone-500" : "text-emerald-600 dark:text-emerald-400"}`}>
-                                                                            {workflow.enabled === false ? copy.workflowDisabled : copy.workflowEnabled}
+                                                                {workflow.modelVisible === false ? (
+                                                                    <Tag className="m-0 mt-1 shrink-0">{copy.canvasEntry}</Tag>
+                                                                ) : (
+                                                                    <Tooltip title={copy.visibilityHint}>
+                                                                        <span
+                                                                            className="mt-1 flex shrink-0 cursor-pointer select-none items-center gap-1.5"
+                                                                            onClick={(event) => {
+                                                                                event.stopPropagation();
+                                                                                void toggleWorkflowEnabled(workflow.id, workflow.enabled === false);
+                                                                            }}
+                                                                        >
+                                                                            <Checkbox
+                                                                                checked={workflow.enabled !== false}
+                                                                                onClick={(event) => event.stopPropagation()}
+                                                                                onChange={(event) => void toggleWorkflowEnabled(workflow.id, event.target.checked)}
+                                                                            />
+                                                                            <span className={`min-w-8 text-[10px] ${workflow.enabled === false ? "text-stone-400 dark:text-stone-500" : "text-emerald-600 dark:text-emerald-400"}`}>
+                                                                                {workflow.enabled === false ? copy.workflowDisabled : copy.workflowEnabled}
+                                                                            </span>
                                                                         </span>
-                                                                    </span>
-                                                                </Tooltip>
+                                                                    </Tooltip>
+                                                                )}
                                                                 <button type="button" className="mt-1 rounded-lg p-1 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-600 dark:text-stone-500 dark:hover:bg-white/5 dark:hover:text-stone-300" onClick={() => toggleWorkflow(workflow.id)} aria-label={workflowExpanded ? copy.collapse : copy.expand}>
                                                                     <ChevronDown className={`size-4 transition-transform ${workflowExpanded ? "rotate-180" : ""}`} />
                                                                 </button>
@@ -656,29 +665,29 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                                     );
                                                 })}
                                             </div>
-                                            <div className="mt-3 mb-1.5 flex items-center justify-between gap-2 text-[11px]">
-                                                <span className="font-medium text-stone-600 dark:text-stone-300">{optionalLabel}</span>
-                                                <span className="text-stone-400 dark:text-stone-500">
-                                                    {extraOptionalItems.length ? `${copy.optionalMissingLabel} ${extraOptionalMissing.length}${extraOptionalSize ? ` · ${formatBytes(extraOptionalSize)}` : ""}` : copy.optionalHint}
-                                                </span>
-                                            </div>
                                             {extraOptionalItems.length ? (
-                                                <div className="space-y-1.5">
-                                                    {extraOptionalItems.map((item) => (
-                                                        <ResourceCard
-                                                            key={item.id}
-                                                            item={item}
-                                                            copy={copy}
-                                                            compact={compact}
-                                                            optional
-                                                            selected={selectedOptional.has(item.id)}
-                                                            onToggle={(checked) => toggleOptional(item.id, checked)}
-                                                        />
-                                                    ))}
-                                                </div>
-                                            ) : (
-                                                <div className="text-[11px] text-stone-400 dark:text-stone-500">{copy.optionalEmpty}</div>
-                                            )}
+                                                <>
+                                                    <div className="mt-3 mb-1.5 flex items-center justify-between gap-2 text-[11px]">
+                                                        <span className="font-medium text-stone-600 dark:text-stone-300">{optionalLabel}</span>
+                                                        <span className="text-stone-400 dark:text-stone-500">
+                                                            {`${copy.optionalMissingLabel} ${extraOptionalMissing.length}${extraOptionalSize ? ` · ${formatBytes(extraOptionalSize)}` : ""}`}
+                                                        </span>
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        {extraOptionalItems.map((item) => (
+                                                            <ResourceCard
+                                                                key={item.id}
+                                                                item={item}
+                                                                copy={copy}
+                                                                compact={compact}
+                                                                optional
+                                                                selected={selectedOptional.has(item.id)}
+                                                                onToggle={(checked) => toggleOptional(item.id, checked)}
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                </>
+                                            ) : null}
                                         </>
                                     ) : (
                                         <>

@@ -46,6 +46,8 @@ export type WorkflowDependency = {
     label: string;
     available: boolean;
     enabled?: boolean;
+    modelVisible?: boolean;
+    variantLabels?: Record<string, string>;
     recommended?: boolean;
     problems: Array<{ type?: string; message?: string }>;
     resources: ResourceItem[];

@@ -354,6 +354,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                     label: entry?.label || entry?.name || workflowId,
                     available: availability.available !== false,
                     enabled: !workflowVisibility?.isHidden?.(workflowId),
+                    modelVisible: entry?.hidden !== true,
+                    variantLabels: entry?.variantLabels || {},
                     problems: availability.problems || [],
                     recommended: false,
                     resources: dependencyItems,

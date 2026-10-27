@@ -417,3 +417,72 @@ test("workflow dependencies expand bake prerequisites and keep workflow labels",
         await fsp.rm(root, { recursive: true, force: true });
     }
 });
+
+test("qwen21 all-in-one pack declares both workflows and their full dependencies", () => {
+    const index = JSON.parse(fs.readFileSync(new URL("../resources/index.json", import.meta.url), "utf8"));
+    const pack = index.packs.find((item) => item.id === "qwen21");
+    assert.ok(pack, "qwen21 pack is missing");
+    assert.equal(index.packs.some((item) => item.id === "angle"), false);
+    assert.deepEqual(pack.workflows, ["image-qwen21", "image-qwen21-angle"]);
+    assert.deepEqual(pack.workflowDependencies["image-qwen21"], [
+        "qwen_image_2.1_turbo_int8_convrot",
+        "qwen3vl_8b_int8_convrot",
+        "qwen_image_2.1_vae_bf16",
+        "qwen21_outpaint_lora",
+        "inpaint_cropandstitch",
+        "kjnodes",
+    ]);
+    assert.deepEqual(pack.workflowDependencies["image-qwen21-angle"], [
+        "qwen_image_2.1_turbo_int8_convrot",
+        "qwen3vl_8b_int8_convrot",
+        "qwen_image_2.1_vae_bf16",
+        "qwenmultiangle",
+    ]);
+    const byId = new Map(index.resources.map((item) => [item.id, item]));
+    const lora = byId.get("qwen21_outpaint_lora");
+    assert.equal(lora.size, 159436576);
+    assert.equal(lora.sha256, "3611a5ccae5f790405eeacf1dfb2c89285c1e4f2987b9abc88cd0161a60eca28");
+    assert.equal(lora.sources.length, 2);
+    assert.ok(byId.get("inpaint_cropandstitch").provides.includes("InpaintCropImproved"));
+    assert.ok(byId.get("kjnodes").provides.includes("DrawMaskOnImage"));
+});
+
+test("statically hidden workflows are marked canvas-only in resource status", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-canvas-entry-test-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(path.join(comfy, "models"), { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    const index = {
+        schema: 1,
+        version: "canvas-entry-test",
+        packs: [{
+            id: "test",
+            family: "test",
+            tier: "standard",
+            resources: [],
+            workflowDependencies: { visible: [], hidden: [] },
+            requirements: { vramFloorGb: 8, weightsGb: 10, ramBaseGb: 8, safety: 0.15, recommendVramGb: 12 },
+        }],
+        resources: [],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: { loaderOptions: () => ({}), status: () => ({ comfyReachable: true }), scan: async () => ({}), workflowStatus: () => ({ available: true, problems: [] }) },
+        registry: { resolve: (id) => ({ id, label: id, hidden: id === "hidden", variantLabels: id === "visible" ? { t2i: "文生图" } : {} }) },
+        logger: null,
+    });
+    try {
+        await manager.init();
+        const [visible, hidden] = manager.status().packs[0].workflowDependencies;
+        assert.equal(visible.modelVisible, true);
+        assert.deepEqual(visible.variantLabels, { t2i: "文生图" });
+        assert.equal(hidden.modelVisible, false);
+        assert.deepEqual(hidden.variantLabels, {});
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});

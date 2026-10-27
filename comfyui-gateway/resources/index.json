@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "version": "2026.10.27-4",
+  "version": "2026.10.27-5",
   "channel": "stable",
-  "updatedAt": "2026-10-27T01:35:00+08:00",
+  "updatedAt": "2026-10-27T10:40:00+08:00",
   "packs": [
     {
       "id": "core",
@@ -129,27 +129,46 @@
       "optionalLabel": "LoRA"
     },
     {
-      "id": "angle",
-      "label": "Qwen 2.1 多角度",
-      "description": "Qwen Image 2.1 Turbo、Qwen3VL-8B 文本编码器和 VAE；已存在同名文件会直接复用。",
+      "id": "qwen21",
+      "label": "千问 2.1 全能工作流",
+      "description": "按工作流安装：生图/编辑（文生图、多图编辑、局部重绘、扩图）共用三件套；扩图另含 Outpaint LoRA，局部重绘/扩图节点随包安装；多角度从画布「多角度」进入。",
       "resources": [
         "qwen_image_2.1_turbo_int8_convrot",
         "qwen3vl_8b_int8_convrot",
         "qwen_image_2.1_vae_bf16",
-        "qwenmultiangle"
+        "qwen21_outpaint_lora",
+        "qwenmultiangle",
+        "inpaint_cropandstitch",
+        "kjnodes"
       ],
       "workflows": [
-        "image-qwen21-angle",
-        "image-qwen21"
+        "image-qwen21",
+        "image-qwen21-angle"
       ],
-      "family": "angle",
+      "family": "qwen21",
       "tier": "standard",
       "requirements": {
         "vramFloorGb": 8,
-        "weightsGb": 19,
+        "weightsGb": 19.2,
         "ramBaseGb": 8,
         "safety": 0.15,
         "recommendVramGb": 12
+      },
+      "workflowDependencies": {
+        "image-qwen21": [
+          "qwen_image_2.1_turbo_int8_convrot",
+          "qwen3vl_8b_int8_convrot",
+          "qwen_image_2.1_vae_bf16",
+          "qwen21_outpaint_lora",
+          "inpaint_cropandstitch",
+          "kjnodes"
+        ],
+        "image-qwen21-angle": [
+          "qwen_image_2.1_turbo_int8_convrot",
+          "qwen3vl_8b_int8_convrot",
+          "qwen_image_2.1_vae_bf16",
+          "qwenmultiangle"
+        ]
       }
     },
     {
@@ -346,9 +365,10 @@
       "type": "node",
       "label": "Qwen Multiangle Camera 节点",
       "target": "custom_nodes/ComfyUI-qwenmultiangle",
-      "size": 0,
+      "size": 4587520,
+      "sha256": "430263e1baafb7a0b4f4451b95ab251e9c5aae0a96d1c18837604cd7eeb05b78",
       "license": "MIT",
-      "note": "安装后需重启 ComfyUI；主源 GitHub，后续可切到我们的魔搭镜像。",
+      "note": "安装后需重启 ComfyUI；主源内置 zip，备源魔搭资源集。",
       "provides": [
         "QwenMultiangleCameraNode"
       ],
@@ -359,6 +379,63 @@
           "label": "内置"
         },
         "https://www.modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/comfyui-gateway/resources/nodes/ComfyUI-qwenmultiangle.zip"
+      ]
+    },
+    {
+      "id": "qwen21_outpaint_lora",
+      "type": "model",
+      "label": "Qwen 2.1 扩图 LoRA（Outpaint V2）",
+      "target": "loras/Qwen-功能2.1/Qwen21-图像扩展qwen-image-2.1-outpaint-v2.safetensors",
+      "size": 159436576,
+      "sha256": "3611a5ccae5f790405eeacf1dfb2c89285c1e4f2987b9abc88cd0161a60eca28",
+      "license": "Qwen research license",
+      "note": "扩图变体使用；公开源 ausboss / bozoyan，权重与本机一致。",
+      "sources": [
+        "https://www.modelscope.cn/models/ausboss/Qwen-Image-2.1-Outpaint-LoRA/resolve/master/qwen-image-2.1-outpaint-v2.safetensors",
+        "https://www.modelscope.cn/models/bozoyan/Qwen-Image-2.1-Outpaint-LoRA/resolve/master/qwen-image-2.1-outpaint-v2.safetensors"
+      ]
+    },
+    {
+      "id": "inpaint_cropandstitch",
+      "type": "node",
+      "label": "Inpaint Crop & Stitch（局部重绘节点）",
+      "target": "custom_nodes/ComfyUI-Inpaint-CropAndStitch",
+      "size": 35574,
+      "sha256": "19c8cb82b1b3ed36a2db794788a46d2095f6f01c456f296243b7883fab0ea26c",
+      "license": "GPL-3.0",
+      "note": "局部重绘所需；安装后需重启 ComfyUI。",
+      "provides": [
+        "InpaintCropImproved",
+        "InpaintStitchImproved"
+      ],
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/ComfyUI-Inpaint-CropAndStitch.zip",
+          "label": "内置"
+        },
+        "https://www.modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/comfyui-gateway/resources/nodes/ComfyUI-Inpaint-CropAndStitch.zip"
+      ]
+    },
+    {
+      "id": "kjnodes",
+      "type": "node",
+      "label": "KJNodes（扩图蒙版节点）",
+      "target": "custom_nodes/comfyui-kjnodes",
+      "size": 846875,
+      "sha256": "f06aafd1969b5f26f60c2860b095714b23496baaa29ff12e3afbb4d68b52ac39",
+      "license": "GPL-3.0",
+      "note": "仅扩图的 DrawMaskOnImage 使用；无需额外 pip 依赖；安装后需重启 ComfyUI。",
+      "provides": [
+        "DrawMaskOnImage"
+      ],
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/comfyui-kjnodes.zip",
+          "label": "内置"
+        },
+        "https://www.modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/comfyui-gateway/resources/nodes/comfyui-kjnodes.zip"
       ]
     },
     {
