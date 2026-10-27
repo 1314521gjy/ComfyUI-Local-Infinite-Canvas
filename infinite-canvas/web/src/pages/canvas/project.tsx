@@ -3759,6 +3759,17 @@ function InfiniteCanvasPage() {
         setContextMenu({ type: "node", x: event.clientX, y: event.clientY, nodeId });
     }, []);
 
+    const hasActiveGeneration = useCallback(
+        (nodeId: string) => {
+            if (runningNodeId === nodeId) return true;
+            for (const request of generationRequestsRef.current.values()) {
+                if (request.targetNodeId === nodeId || request.originNodeId === nodeId || request.runningNodeId === nodeId) return true;
+            }
+            return false;
+        },
+        [runningNodeId],
+    );
+
     const renderNodePanel = useCallback(
         (panelNode: CanvasNodeData) =>
             getNodeDefinition(panelNode.type)?.Panel ? (
@@ -3768,7 +3779,7 @@ function InfiniteCanvasPage() {
                     node={panelNode}
                     nodes={nodes}
                     connectedNodes={connectedNodesByNodeId.get(panelNode.id) || []}
-                    isRunning={runningNodeId === panelNode.id}
+                    isRunning={hasActiveGeneration(panelNode.id)}
                     onChange={(patch) => handleConfigNodeChange(panelNode.id, patch)}
                     onGenerate={(nodeId, prompt) => void generateFreeCard(nodeId, prompt)}
                     onStop={confirmStopGeneration}
@@ -3791,7 +3802,7 @@ function InfiniteCanvasPage() {
                 <CanvasNodePromptPanel
                     node={panelNode}
                     nodes={nodes}
-                    isRunning={runningNodeId === panelNode.id}
+                    isRunning={hasActiveGeneration(panelNode.id)}
                     mentionReferences={mentionReferencesByNodeId.get(panelNode.id) || EMPTY_REFERENCES}
                     connectedNodes={connectedNodesByNodeId.get(panelNode.id) || []}
                     onPromptChange={handleNodePromptChange}
@@ -3810,14 +3821,14 @@ function InfiniteCanvasPage() {
                     }}
                 />
             ),
-        [configInputsById, confirmStopGeneration, connectedNodesByNodeId, disconnectNodeReference, generateFreeCard, handleConfigNodeChange, handleGenerateNode, handleNodePromptChange, mentionReferencesByNodeId, nodes, renderPluginPanel, runningNodeId, startNodeReferenceSelection],
+        [configInputsById, confirmStopGeneration, connectedNodesByNodeId, disconnectNodeReference, generateFreeCard, handleConfigNodeChange, handleGenerateNode, handleNodePromptChange, hasActiveGeneration, mentionReferencesByNodeId, nodes, renderPluginPanel, startNodeReferenceSelection],
     );
 
     const renderNodeContentPanel = useCallback(
         (contentNode: CanvasNodeData) => (
             <CanvasConfigNodePanel
                 node={contentNode}
-                isRunning={runningNodeId === contentNode.id}
+                isRunning={hasActiveGeneration(contentNode.id)}
                 inputSummary={getInputSummary(configInputsById.get(contentNode.id) || [])}
                 onConfigChange={handleConfigNodeChange}
                 onComposerToggle={() => setDialogNodeId((current) => (current === contentNode.id ? null : contentNode.id))}
@@ -3831,7 +3842,7 @@ function InfiniteCanvasPage() {
                 }}
             />
         ),
-        [configInputsById, confirmStopGeneration, handleConfigNodeChange, handleGenerateNode, runningNodeId],
+        [configInputsById, confirmStopGeneration, handleConfigNodeChange, handleGenerateNode, hasActiveGeneration],
     );
 
     const hoverPreviewNode = hoverPreviewNodeId ? nodeById.get(hoverPreviewNodeId) || null : null;
