@@ -1021,7 +1021,7 @@
       "label": "ComfyUI-VDN-H3",
       "target": "custom_nodes/ComfyUI-VDN-H3",
       "bundleDir": "resources/nodes/unpacked/ComfyUI-VDN-H3",
-      "size": 0,
+      "size": 7313853,
       "license": "Apache-2.0",
       "autoInstall": true,
       "provides": [
@@ -1042,7 +1042,7 @@
       "label": "TE-Speed MiniMaxH3",
       "target": "custom_nodes/TE-Speed-MiniMaxH3",
       "bundleDir": "resources/nodes/unpacked/TE-Speed-MiniMaxH3",
-      "size": 0,
+      "size": 398955,
       "license": "未声明 LICENSE",
       "autoInstall": true,
       "provides": [
@@ -1057,7 +1057,7 @@
       "label": "MiniMax H3 Audio T8",
       "target": "custom_nodes/minimax-h3-audio-t8",
       "bundleDir": "resources/nodes/unpacked/minimax-h3-audio-t8",
-      "size": 0,
+      "size": 6464467,
       "license": "GPL-3.0-or-later",
       "autoInstall": true,
       "provides": [
@@ -1082,7 +1082,7 @@
       "label": "YC MiniMax H3 Nodes",
       "target": "custom_nodes/ComfyUI-YCNodes-MiniMax-H3",
       "bundleDir": "resources/nodes/unpacked/ComfyUI-YCNodes-MiniMax-H3",
-      "size": 0,
+      "size": 94573,
       "license": "MIT",
       "autoInstall": true,
       "provides": [
@@ -1097,7 +1097,7 @@
       "label": "SelfLift H3",
       "target": "custom_nodes/comfyui-SelfLift",
       "bundleDir": "resources/nodes/unpacked/comfyui-SelfLift",
-      "size": 0,
+      "size": 330000,
       "license": "未声明 LICENSE",
       "autoInstall": true,
       "provides": [
@@ -1118,7 +1118,7 @@
       "label": "SolAttn H3（Triton）",
       "target": "custom_nodes/ComfyUI-SolAttn_triton",
       "bundleDir": "resources/nodes/unpacked/ComfyUI-SolAttn_triton",
-      "size": 0,
+      "size": 104848,
       "license": "未声明 LICENSE",
       "autoInstall": true,
       "provides": [
@@ -1133,7 +1133,7 @@
       "label": "H3 TRT VAE",
       "target": "custom_nodes/ComfyUI-H3VAE_TRT",
       "bundleDir": "resources/nodes/unpacked/ComfyUI-H3VAE_TRT",
-      "size": 0,
+      "size": 164610,
       "license": "Apache-2.0",
       "autoInstall": true,
       "provides": [
@@ -1154,7 +1154,7 @@
       "label": "VideoHelperSuite",
       "target": "custom_nodes/ComfyUI-VideoHelperSuite",
       "bundleDir": "resources/nodes/unpacked/ComfyUI-VideoHelperSuite",
-      "size": 0,
+      "size": 414305,
       "license": "GPL-3.0",
       "autoInstall": true,
       "provides": [
