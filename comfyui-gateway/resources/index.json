@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026.10.27-12",
+  "version": "2026.10.27-14",
   "channel": "stable",
   "updatedAt": "2026-10-27T17:10:00+08:00",
   "packs": [
@@ -230,7 +230,7 @@
     {
       "id": "h3",
       "label": "H3 视频生成（VDN / 无VDN / 角色替换）",
-      "description": "H3 视频生成资源包：Singularity Ref2VA int8 主模型 + Qwen3-VL-32B int8 TE + 音频 VAE + 放缩器；含 VDN 8步、无VDN 8步、角色替换入口。节点包已预解压随包；TRT VAE engine 需在本机用 MiniMax-H3 TRT VAE Compiler 编译，不随包分发。完整约 60GB+。",
+      "description": "H3 视频生成资源包：Singularity Ref2VA int8 主模型 + Qwen3-VL-32B int8 TE + 音频 VAE + 放缩器；含 VDN 8步、无VDN 8步、角色替换入口。节点包已预解压随包；TRT ONNX 已列入必下；安装器会在 ONNX 下载完后自动调用本机 TensorRT 编译 decoder/encoder engine（每台机器一次，GPU/TRT 版本相关，不能随包分发）。完整约 60GB+。",
       "planned": false,
       "resources": [
         "h3_unet_singularity_ref2va_v13_int8",
@@ -259,7 +259,9 @@
         "h3_video_vae_fp16",
         "h3_vae_onnx_decoder",
         "h3_vae_onnx_decoder_data",
-        "h3_vae_onnx_encoder"
+        "h3_vae_onnx_encoder",
+        "h3_trt_vae_decoder_engine",
+        "h3_trt_vae_encoder_engine"
       ],
       "workflows": [
         "video-h3-ref2va",
@@ -274,7 +276,7 @@
       "tier": "quality",
       "requirements": {
         "vramFloorGb": 24,
-        "weightsGb": 50,
+        "weightsGb": 55,
         "ramBaseGb": 32,
         "safety": 0.15,
         "recommendVramGb": 32
@@ -294,10 +296,7 @@
         "h3_lightx2v_8step_lora",
         "h3_solattn_node",
         "h3_character_swap_lora",
-        "h3_video_vae_fp16",
-        "h3_vae_onnx_decoder",
-        "h3_vae_onnx_decoder_data",
-        "h3_vae_onnx_encoder"
+        "h3_video_vae_fp16"
       ],
       "workflowDependencies": {
         "video-h3-ref2va": [
@@ -320,7 +319,12 @@
           "h3_vdn_stage_metadata",
           "h3_vdn_stage_linear_config",
           "h3_vdn_stage_turbo_config",
-          "h3_vdn_stage_default_config"
+          "h3_vdn_stage_default_config",
+          "h3_vae_onnx_decoder",
+          "h3_vae_onnx_decoder_data",
+          "h3_vae_onnx_encoder",
+          "h3_trt_vae_decoder_engine",
+          "h3_trt_vae_encoder_engine"
         ],
         "video-h3-t2v": [
           "h3_unet_singularity_ref2va_v13_int8",
@@ -342,7 +346,12 @@
           "h3_vdn_stage_metadata",
           "h3_vdn_stage_linear_config",
           "h3_vdn_stage_turbo_config",
-          "h3_vdn_stage_default_config"
+          "h3_vdn_stage_default_config",
+          "h3_vae_onnx_decoder",
+          "h3_vae_onnx_decoder_data",
+          "h3_vae_onnx_encoder",
+          "h3_trt_vae_decoder_engine",
+          "h3_trt_vae_encoder_engine"
         ],
         "video-h3-frames": [
           "h3_unet_singularity_ref2va_v13_int8",
@@ -364,7 +373,12 @@
           "h3_vdn_stage_metadata",
           "h3_vdn_stage_linear_config",
           "h3_vdn_stage_turbo_config",
-          "h3_vdn_stage_default_config"
+          "h3_vdn_stage_default_config",
+          "h3_vae_onnx_decoder",
+          "h3_vae_onnx_decoder_data",
+          "h3_vae_onnx_encoder",
+          "h3_trt_vae_decoder_engine",
+          "h3_trt_vae_encoder_engine"
         ],
         "video-h3-ref2va-novdn": [
           "h3_unet_singularity_ref2va_v13_int8",
@@ -379,7 +393,12 @@
           "h3_vhs_node",
           "kjnodes",
           "h3_lightx2v_8step_lora",
-          "h3_solattn_node"
+          "h3_solattn_node",
+          "h3_vae_onnx_decoder",
+          "h3_vae_onnx_decoder_data",
+          "h3_vae_onnx_encoder",
+          "h3_trt_vae_decoder_engine",
+          "h3_trt_vae_encoder_engine"
         ],
         "video-h3-t2v-novdn": [
           "h3_unet_singularity_ref2va_v13_int8",
@@ -394,7 +413,12 @@
           "h3_vhs_node",
           "kjnodes",
           "h3_lightx2v_8step_lora",
-          "h3_solattn_node"
+          "h3_solattn_node",
+          "h3_vae_onnx_decoder",
+          "h3_vae_onnx_decoder_data",
+          "h3_vae_onnx_encoder",
+          "h3_trt_vae_decoder_engine",
+          "h3_trt_vae_encoder_engine"
         ],
         "video-h3-frames-novdn": [
           "h3_unet_singularity_ref2va_v13_int8",
@@ -409,7 +433,12 @@
           "h3_vhs_node",
           "kjnodes",
           "h3_lightx2v_8step_lora",
-          "h3_solattn_node"
+          "h3_solattn_node",
+          "h3_vae_onnx_decoder",
+          "h3_vae_onnx_decoder_data",
+          "h3_vae_onnx_encoder",
+          "h3_trt_vae_decoder_engine",
+          "h3_trt_vae_encoder_engine"
         ],
         "video-h3-character-swap": [
           "h3_unet_singularity_ref2va_v13_int8",
@@ -432,7 +461,12 @@
           "h3_vdn_stage_linear_config",
           "h3_vdn_stage_turbo_config",
           "h3_vdn_stage_default_config",
-          "h3_character_swap_lora"
+          "h3_character_swap_lora",
+          "h3_vae_onnx_decoder",
+          "h3_vae_onnx_decoder_data",
+          "h3_vae_onnx_encoder",
+          "h3_trt_vae_decoder_engine",
+          "h3_trt_vae_encoder_engine"
         ]
       }
     }
@@ -1139,7 +1173,7 @@
       "provides": [
         "MiniMaxH3TRTVAELoader"
       ],
-      "note": "预解压目录随包复制，不跑 pip；节点依赖按 README 处理。",
+      "note": "预解压目录随包复制；装好后首次需在 ComfyUI 用 MiniMax-H3 TRT Compiler 编译 decoder/encoder engine（每台机器一次），否则 H3 工作流不可用。",
       "sources": [
         {
           "url": "https://github.com/lihaoyun6/ComfyUI-H3VAE_TRT/archive/refs/heads/main.zip",
@@ -1168,6 +1202,41 @@
           "verify": false
         }
       ]
+    },
+    {
+      "id": "h3_trt_vae_decoder_engine",
+      "type": "bake",
+      "label": "H3 TRT VAE decoder engine（本机自动编译）",
+      "target": "vae/minimax_h3_vae_decoder.engine",
+      "size": 4849975380,
+      "requires": [
+        "h3_vae_onnx_decoder",
+        "h3_vae_onnx_decoder_data"
+      ],
+      "builder": {
+        "kind": "h3-trt-vae",
+        "input": "h3_vae_onnx_decoder",
+        "device": 0
+      },
+      "license": "MiniMax H3 Community License",
+      "note": "安装器下载 ONNX 后自动调用 ComfyUI-H3VAE_TRT/compile.py 编译；engine 与 GPU/TRT 版本绑定，不随包分发。"
+    },
+    {
+      "id": "h3_trt_vae_encoder_engine",
+      "type": "bake",
+      "label": "H3 TRT VAE encoder engine（本机自动编译）",
+      "target": "vae/minimax_h3_vae_encoder.engine",
+      "size": 362512564,
+      "requires": [
+        "h3_vae_onnx_encoder"
+      ],
+      "builder": {
+        "kind": "h3-trt-vae",
+        "input": "h3_vae_onnx_encoder",
+        "device": 0
+      },
+      "license": "MiniMax H3 Community License",
+      "note": "安装器下载 ONNX 后自动调用 ComfyUI-H3VAE_TRT/compile.py 编译；engine 与 GPU/TRT 版本绑定，不随包分发。"
     }
   ]
 }

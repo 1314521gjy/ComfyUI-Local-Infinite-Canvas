@@ -1031,18 +1031,32 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         if (!root) throw new Error("未找到 ComfyUI 安装目录");
         const python = comfyPython(root);
         if (!python) throw new Error("未找到 ComfyUI 的 Python");
-        const script = path.join(config.rootDir, "scripts", "bake-moss-preset.py");
-        if (!isFile(script)) throw new Error("缺少烘焙脚本 scripts/bake-moss-preset.py");
-        const baseResource = resourceById(resource.requires?.[0]);
-        const sftResource = resourceById(resource.requires?.[1]);
-        if (!baseResource || !sftResource) throw new Error("烘焙缺少 Base/SFT 依赖");
-        const basePath = targetPath(baseResource, root);
-        const sftPath = targetPath(sftResource, root);
-        if (!isFile(basePath) || !isFile(sftPath)) throw new Error("烘焙依赖的 Base/SFT 尚未就绪");
         const target = targetPath(resource, root);
-        const args = [script, "--base", basePath, "--sft", sftPath, "--out", target, "--preset", resource.builder?.preset || "Balanced", "--strength", String(resource.builder?.strength ?? 1)];
+        const h3Trt = resource.builder?.kind === "h3-trt-vae";
+        let args;
+        if (h3Trt) {
+            const script = path.join(config.rootDir, "scripts", "build-h3-trt-vae.py");
+            if (!isFile(script)) throw new Error("缺少编译脚本 scripts/build-h3-trt-vae.py");
+            const inputResource = resourceById(resource.builder?.input || resource.requires?.[0]);
+            if (!inputResource) throw new Error("TRT 编译缺少 ONNX 输入资源");
+            const input = targetPath(inputResource, root);
+            if (!isFile(input)) throw new Error("TRT 编译依赖的 ONNX 尚未就绪");
+            const compiler = path.join(root, "custom_nodes", "ComfyUI-H3VAE_TRT", "compile.py");
+            if (!isFile(compiler)) throw new Error("缺少 ComfyUI-H3VAE_TRT/compile.py，请先安装 H3 TRT VAE 节点");
+            args = [script, "--compiler", compiler, "--input", input, "--output", target, "--device", String(resource.builder?.device ?? 0)];
+        } else {
+            const script = path.join(config.rootDir, "scripts", "bake-moss-preset.py");
+            if (!isFile(script)) throw new Error("缺少烘焙脚本 scripts/bake-moss-preset.py");
+            const baseResource = resourceById(resource.requires?.[0]);
+            const sftResource = resourceById(resource.requires?.[1]);
+            if (!baseResource || !sftResource) throw new Error("烘焙缺少 Base/SFT 依赖");
+            const basePath = targetPath(baseResource, root);
+            const sftPath = targetPath(sftResource, root);
+            if (!isFile(basePath) || !isFile(sftPath)) throw new Error("烘焙依赖的 Base/SFT 尚未就绪");
+            args = [script, "--base", basePath, "--sft", sftPath, "--out", target, "--preset", resource.builder?.preset || "Balanced", "--strength", String(resource.builder?.strength ?? 1)];
+        }
         jobItem.status = "baking";
-        jobItem.source = "本地烘焙";
+        jobItem.source = h3Trt ? "本机编译 TRT Engine" : "本地烘焙";
         await fsp.mkdir(path.dirname(target), { recursive: true });
         await new Promise((resolve, reject) => {
             const child = spawn(python, args, { cwd: config.rootDir, windowsHide: true });
