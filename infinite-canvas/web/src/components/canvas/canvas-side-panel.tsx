@@ -164,26 +164,27 @@ function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, on
     const nodeViewMode = useCanvasSidePanelStore((state) => state.nodeViewMode);
     const setNodeViewMode = useCanvasSidePanelStore((state) => state.setNodeViewMode);
 
+    const orderedNodes = useMemo(() => [...nodes].reverse(), [nodes]);
     const filtered = useMemo(() => {
         const query = keyword.trim().toLowerCase();
-        return nodes.filter((node) => (typeFilter === "all" || node.type === typeFilter) && (!query || [node.title, node.metadata?.content, node.metadata?.prompt].filter(Boolean).join(" ").toLowerCase().includes(query)));
-    }, [nodes, keyword, typeFilter]);
+        return orderedNodes.filter((node) => (typeFilter === "all" || node.type === typeFilter) && (!query || [node.title, node.metadata?.content, node.metadata?.prompt].filter(Boolean).join(" ").toLowerCase().includes(query)));
+    }, [orderedNodes, keyword, typeFilter]);
     const treeRows = useMemo(() => {
         const filteredIds = new Set(filtered.map((node) => node.id));
-        const groups = new Set(nodes.filter((node) => node.type === CanvasNodeType.Group).map((node) => node.id));
+        const groups = new Set(orderedNodes.filter((node) => node.type === CanvasNodeType.Group).map((node) => node.id));
         const children = new Map<string, CanvasNodeData[]>();
         filtered.forEach((node) => {
             const groupId = node.metadata?.groupId;
             if (groupId && groups.has(groupId)) children.set(groupId, [...(children.get(groupId) || []), node]);
         });
-        return nodes.flatMap((node) => {
+        return orderedNodes.flatMap((node) => {
             if (node.metadata?.groupId && groups.has(node.metadata.groupId)) return [];
             if (node.type !== CanvasNodeType.Group) return filteredIds.has(node.id) ? [{ node, depth: 0, hasChildren: false }] : [];
             const groupChildren = children.get(node.id) || [];
             if (!filteredIds.has(node.id) && !groupChildren.length) return [];
             return [{ node, depth: 0, hasChildren: groupChildren.length > 0 }, ...(collapsedGroups.has(node.id) ? [] : groupChildren.map((child) => ({ node: child, depth: 1, hasChildren: false })))];
         });
-    }, [collapsedGroups, filtered, nodes]);
+    }, [collapsedGroups, filtered, orderedNodes]);
 
     const exitSelect = () => {
         setSelectMode(false);
