@@ -18,6 +18,34 @@ import {
     type ResourceStatus,
 } from "@/services/api/resources";
 
+const packAccent: Record<string, { card: string; bar: string }> = {
+    moss: {
+        card: "border-emerald-200/80 bg-emerald-50/40 dark:border-emerald-900/60 dark:bg-emerald-950/15",
+        bar: "bg-emerald-500/70",
+    },
+    qwen21: {
+        card: "border-sky-200/80 bg-sky-50/40 dark:border-sky-900/60 dark:bg-sky-950/15",
+        bar: "bg-sky-500/70",
+    },
+    zimage: {
+        card: "border-violet-200/80 bg-violet-50/40 dark:border-violet-900/60 dark:bg-violet-950/15",
+        bar: "bg-violet-500/70",
+    },
+    krea2: {
+        card: "border-amber-200/80 bg-amber-50/40 dark:border-amber-900/60 dark:bg-amber-950/15",
+        bar: "bg-amber-500/70",
+    },
+    h3: {
+        card: "border-rose-200/80 bg-rose-50/40 dark:border-rose-900/60 dark:bg-rose-950/15",
+        bar: "bg-rose-500/70",
+    },
+    core: {
+        card: "border-stone-200 dark:border-stone-800",
+        bar: "bg-stone-300 dark:bg-stone-700",
+    },
+};
+const defaultAccent = { card: "border-stone-200 dark:border-stone-800", bar: "bg-stone-300 dark:bg-stone-700" };
+
 const copyByLocale = {
     zh: {
         title: "添加工作流",
@@ -585,7 +613,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                 </div>
             ) : null}
 
-            <div className="space-y-2">
+            <div className="space-y-3">
                 {visiblePacks.map((pack) => {
                     const expanded = expandedPacks.has(pack.id);
                     const workflowDependencies = pack.workflowDependencies || [];
@@ -664,8 +692,10 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                             <div className={`mt-0.5 text-[11px] leading-5 text-stone-500 dark:text-stone-400 ${compact ? "line-clamp-1" : "line-clamp-2"}`}>{pack.description}</div>
                         </>
                     );
+                    const accent = packAccent[pack.id] || defaultAccent;
                     return (
-                        <div key={pack.id} className="rounded-xl border border-stone-200 dark:border-stone-800">
+                        <div key={pack.id} className={`relative overflow-hidden rounded-xl border ${accent.card}`}>
+                            <span className={`absolute inset-y-0 left-0 w-[3px] ${accent.bar}`} aria-hidden />
                             <div className="flex items-start gap-2 p-3">
                                 {expandable ? (
                                     !pack.planned && pack.total > 0 ? (
