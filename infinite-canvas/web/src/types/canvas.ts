@@ -116,6 +116,7 @@ export type CanvasNodeMetadata = {
     promptOptimizeStatus?: "running" | "done" | "error";
     promptOptimizeKind?: "h3" | "image";
     promptOptimizePrompt?: string;
+    promptOptimizeSource?: string;
     promptOptimizeError?: string;
     outpaint?: { left: number; top: number; right: number; bottom: number; width: number; height: number };
     layout?: CanvasMossLayout;
