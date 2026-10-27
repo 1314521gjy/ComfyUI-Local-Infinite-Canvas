@@ -139,5 +139,33 @@
       ],
       "filename_prefix": "Qwen21T2I"
     }
+  },
+  "13": {
+    "class_type": "EmptyImage",
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "batch_size": 1,
+      "color": 0
+    },
+    "_meta": {
+      "title": "Output canvas"
+    }
+  },
+  "14": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": [
+        "13",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Output latent"
+    }
   }
 }

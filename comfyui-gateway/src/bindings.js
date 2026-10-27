@@ -263,13 +263,21 @@ export function applyBindings(workflow, entry, context, { logger } = {}) {
     node.inputs[binding.input] = value;
   }
 
-  if (entry.outputSize && context.outputSize) {
+  const outputSize = entry.outputSize?.fromSize ? context.size : context.outputSize;
+  const nativeResolution = Math.max(256, Math.round((Number(context.params?.resolution) || 1024) / 32) * 32);
+  const skipNativeSquare = Boolean(
+    entry.outputSize?.skipNativeSquare &&
+    outputSize &&
+    outputSize.width === outputSize.height &&
+    Math.round(outputSize.width / 32) * 32 === nativeResolution,
+  );
+  if (entry.outputSize && outputSize && !skipNativeSquare) {
     const sizeNode = next[entry.outputSize.node];
     const latentNode = next[entry.outputSize.latentNode];
     if (sizeNode?.inputs && latentNode?.inputs) {
       const snap = (value) => Math.max(256, Math.round(Number(value) / 32) * 32);
-      sizeNode.inputs.width = snap(context.outputSize.width);
-      sizeNode.inputs.height = snap(context.outputSize.height);
+      sizeNode.inputs.width = snap(outputSize.width);
+      sizeNode.inputs.height = snap(outputSize.height);
       latentNode.inputs[entry.outputSize.latentInput || "latent_image"] = [entry.outputSize.latentSource || entry.outputSize.node, 0];
     }
   }

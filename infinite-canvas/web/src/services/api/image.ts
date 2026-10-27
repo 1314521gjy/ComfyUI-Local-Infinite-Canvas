@@ -876,7 +876,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         const { left, top, right, bottom, width, height } = config.outpaint;
         // ComfyUI's ImageScaleToTotalPixels counts 1 MP as 1024², not 1e6.
         const megapixels = Math.min(16, Math.max(0.1, (width * height) / (1024 * 1024)));
-        Object.assign(requestParams, { left, top, right, bottom, megapixels });
+        Object.assign(requestParams, { left, top, right, bottom, megapixels, outpaintWidth: width, outpaintHeight: height });
     }
     if (config.imageMode === "layout" && config.layout) {
         requestParams.layout = config.layout;

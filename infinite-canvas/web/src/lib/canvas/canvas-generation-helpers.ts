@@ -203,12 +203,36 @@ export function isAudioFile(file: File) {
     return file.type.startsWith("audio/") || /\.(mp3|wav)$/i.test(file.name);
 }
 
+function angleViewLabel(signed: number) {
+    const abs = Math.abs(signed);
+    const right = signed > 0;
+    if (abs <= 15) return i18n.t("canvas.generation.viewFront");
+    if (abs <= 45) return i18n.t(right ? "canvas.generation.viewFrontRight" : "canvas.generation.viewFrontLeft");
+    if (abs <= 75) return i18n.t(right ? "canvas.generation.viewSideRight" : "canvas.generation.viewSideLeft");
+    if (abs <= 135) return i18n.t(right ? "canvas.generation.viewBackSideRight" : "canvas.generation.viewBackSideLeft");
+    return i18n.t(right ? "canvas.generation.viewBackRight" : "canvas.generation.viewBackLeft");
+}
+
+function angleShotLabel(distance: number) {
+    if (distance <= 2.5) return i18n.t("canvas.generation.shotClose");
+    if (distance <= 5) return i18n.t("canvas.generation.shotMedium");
+    if (distance <= 7.5) return i18n.t("canvas.generation.shotMediumWide");
+    return i18n.t("canvas.generation.shotWide");
+}
+
 export function buildAngleLabel(params: CanvasImageAngleParams) {
     const raw = ((params.horizontalAngle % 360) + 360) % 360;
     const signed = raw > 180 ? raw - 360 : raw;
     const horizontal = signed === 0 ? i18n.t("canvas.generation.front") : signed > 0 ? i18n.t("canvas.generation.rotateRight", { angle: Math.round(signed) }) : i18n.t("canvas.generation.rotateLeft", { angle: Math.abs(Math.round(signed)) });
     const pitch = params.pitchAngle === 0 ? i18n.t("canvas.generation.level") : params.pitchAngle > 0 ? i18n.t("canvas.generation.topDown", { angle: params.pitchAngle }) : i18n.t("canvas.generation.lowAngle", { angle: Math.abs(params.pitchAngle) });
-    return i18n.t("canvas.generation.angleLabel", { horizontal, pitch, distance: params.cameraDistance.toFixed(1), lens: i18n.t(params.wideAngle ? "canvas.editors.wide" : "canvas.editors.standard") });
+    return i18n.t("canvas.generation.angleLabel", {
+        view: angleViewLabel(signed),
+        horizontal,
+        pitch,
+        shot: angleShotLabel(params.cameraDistance),
+        distance: params.cameraDistance.toFixed(1),
+        lens: i18n.t(params.wideAngle ? "canvas.editors.wide" : "canvas.editors.standard"),
+    });
 }
 
 export function buildAnglePrompt(params: CanvasImageAngleParams) {

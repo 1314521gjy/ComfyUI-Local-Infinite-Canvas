@@ -12,7 +12,6 @@ const INHERITABLE_FIELDS = new Set([
     "generateAudio",
     "watermark",
     "videoMode",
-    "videoInterpolation",
     "videoSelfLiftMode",
     "frameMode",
     "imageMode",

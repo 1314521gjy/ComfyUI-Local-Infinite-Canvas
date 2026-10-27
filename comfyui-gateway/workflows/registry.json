@@ -1827,6 +1827,20 @@
               "input": "megapixels",
               "from": "params.megapixels",
               "default": 1.5
+            },
+            "outpaintWidth": {
+              "node": "18",
+              "input": "width",
+              "from": "params.outpaintWidth",
+              "transform": "int",
+              "default": 1024
+            },
+            "outpaintHeight": {
+              "node": "18",
+              "input": "height",
+              "from": "params.outpaintHeight",
+              "transform": "int",
+              "default": 1024
             }
           }
         },
@@ -1864,6 +1878,14 @@
               "transform": "int",
               "default": 1024
             }
+          },
+          "outputSize": {
+            "node": "13",
+            "latentNode": "10",
+            "latentInput": "latent_image",
+            "latentSource": "14",
+            "fromSize": true,
+            "skipNativeSquare": true
           }
         }
       },

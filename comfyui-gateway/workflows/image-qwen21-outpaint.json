@@ -190,10 +190,26 @@
     "class_type": "SaveImage",
     "inputs": {
       "images": [
-        "16",
+        "18",
         0
       ],
       "filename_prefix": "Qwen21Outpaint"
+    }
+  },
+  "18": {
+    "class_type": "ImageScale",
+    "inputs": {
+      "image": [
+        "16",
+        0
+      ],
+      "upscale_method": "lanczos",
+      "width": 1024,
+      "height": 1024,
+      "crop": "disabled"
+    },
+    "_meta": {
+      "title": "Final outpaint size"
     }
   }
 }
