@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026.10.27-17",
+  "version": "2026.10.27-18",
   "channel": "stable",
   "updatedAt": "2026-10-27T17:10:00+08:00",
   "packs": [
@@ -269,7 +269,6 @@
         "h3_vdn_stage_default_config",
         "h3_lightx2v_8step_lora",
         "h3_character_swap_lora",
-        "h3_video_vae_fp16",
         "h3_vae_onnx_decoder",
         "h3_vae_onnx_decoder_data",
         "h3_vae_onnx_encoder",
@@ -311,7 +310,6 @@
         "h3_vdn_stage_default_config",
         "h3_lightx2v_8step_lora",
         "h3_character_swap_lora",
-        "h3_video_vae_fp16",
         "h3_vae_onnx_decoder",
         "h3_vae_onnx_decoder_data",
         "h3_vae_onnx_encoder",
@@ -851,19 +849,6 @@
         "https://www.modelscope.cn/models/LBH-123-AI/Minimax_h3_latent_Upscaler/resolve/master/minimax_h3_latent_upscaler_3d_conv_v1/minimax_h3_latent_upscaler_3d_conv_v1_fp16.safetensors",
         "https://hf-mirror.com/LBH-123-AI/Minimax_h3_latent_Upscaler/resolve/main/minimax_h3_latent_upscaler_3d_fp16.safetensors",
         "https://huggingface.co/LBH-123-AI/Minimax_h3_latent_Upscaler/resolve/main/minimax_h3_latent_upscaler_3d_fp16.safetensors"
-      ]
-    },
-    {
-      "id": "h3_video_vae_fp16",
-      "type": "model",
-      "label": "H3 视频 VAE fp16（非 TRT 备用）",
-      "target": "vae/minimax_h3_video_vae_fp16.safetensors",
-      "size": 5207808496,
-      "license": "MiniMax H3 Community License",
-      "note": "当前 VDN/无VDN 工作流使用 TRT VAE；此文件用于替换/备用。",
-      "sources": [
-        "https://www.modelscope.cn/models/Comfy-Org/MiniMax-H3/resolve/master/vae/minimax_h3_video_vae_fp16.safetensors",
-        "https://hf-mirror.com/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_video_vae_fp16.safetensors"
       ]
     },
     {
