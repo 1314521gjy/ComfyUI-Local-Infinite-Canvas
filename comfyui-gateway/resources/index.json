@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026.10.27-19",
+  "version": "2026.10.27-20",
   "channel": "stable",
   "updatedAt": "2026-10-27T17:10:00+08:00",
   "packs": [
@@ -951,8 +951,9 @@
       "size": 22264,
       "license": "MiniMax H3 Community License",
       "sources": [
-        "https://www.modelscope.cn/models/OpenVDN/vdn-minimax-h3/resolve/master/stage-dmd-step-250/adapters/turbo/adapter_config.json"
-      ]
+        "https://www.modelscope.cn/models/OpenVDN/vdn-minimax-h3/resolve/master/stage-dmd-step-250/adapters/turbo/adapter_spec.json"
+      ],
+      "note": "魔搭仓内文件名为 adapter_spec.json（内容与本地 adapter_config.json 一致），下载后落到 adapter_config.json。"
     },
     {
       "id": "h3_vdn_stage_default_config",
@@ -962,8 +963,9 @@
       "size": 415,
       "license": "MiniMax H3 Community License",
       "sources": [
-        "https://www.modelscope.cn/models/OpenVDN/vdn-minimax-h3/resolve/master/stage-dmd-step-250/adapters/default/adapter_config.json"
-      ]
+        "https://www.modelscope.cn/models/OpenVDN/vdn-minimax-h3/resolve/master/stage-dmd-step-250/adapters/default/adapter_spec.json"
+      ],
+      "note": "魔搭仓内文件名为 adapter_spec.json（内容与本地 adapter_config.json 一致），下载后落到 adapter_config.json。"
     },
     {
       "id": "h3_vae_onnx_decoder",
