@@ -818,13 +818,17 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                     });
                 }
                 jobItem.status = "verifying";
-                if (resource.size) {
-                    const size = (await fsp.stat(archive)).size;
-                    if (size !== resource.size) throw new Error(`节点包大小不一致（${size}/${resource.size}）`);
-                }
-                if (resource.sha256) {
-                    const digest = await sha256File(archive, signal);
-                    if (digest.toLowerCase() !== String(resource.sha256).toLowerCase()) throw new Error("节点包 SHA256 校验失败");
+                if (source.verify !== false) {
+                    const expectedSize = Number(source.size ?? resource.size) || 0;
+                    const expectedSha = String(source.sha256 ?? resource.sha256 ?? "");
+                    if (expectedSize) {
+                        const size = (await fsp.stat(archive)).size;
+                        if (size !== expectedSize) throw new Error(`节点包大小不一致（${size}/${expectedSize}）`);
+                    }
+                    if (expectedSha) {
+                        const digest = await sha256File(archive, signal);
+                        if (digest.toLowerCase() !== expectedSha.toLowerCase()) throw new Error("节点包 SHA256 校验失败");
+                    }
                 }
                 await extractArchive(archive, extract);
                 const sourceDir = await findNodeRoot(extract);

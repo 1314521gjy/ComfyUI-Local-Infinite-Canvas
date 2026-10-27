@@ -23,6 +23,8 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+import { installBundledNodes } from "./bootstrap-nodes.mjs";
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 const CONFIG_PATH = path.join(__dirname, "config.json");
@@ -910,6 +912,13 @@ async function main() {
     cfg.comfyWorkflowsDir = cfg.comfyWorkflowsDir || comfyInstall.workflowsDir;
     persistDiscovery(cfg);
     log(`记录 ComfyUI 安装目录：${cfg.comfyDir}${cfg.comfyWorkflowsDir ? `，工作流目录：${cfg.comfyWorkflowsDir}` : ""}`);
+  }
+  if (comfyInstall && !DRY_RUN) {
+    const comfyRoot = comfyInstall.mainPy
+      ? path.dirname(comfyInstall.mainPy)
+      : (isDir(path.join(comfyInstall.dir, "ComfyUI")) ? path.join(comfyInstall.dir, "ComfyUI") : comfyInstall.dir);
+    const installed = await installBundledNodes({ root: ROOT, comfyRoot, log });
+    if (installed.length) log(`已自动放置 ${installed.length} 个内置节点包${comfy ? "；ComfyUI 已在运行，重启后生效" : ""}`);
   }
   if (!comfy) {
     if (!comfyInstall) {

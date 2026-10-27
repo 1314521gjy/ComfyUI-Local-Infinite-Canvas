@@ -148,6 +148,76 @@ test("resources can install a custom node zip", async () => {
     }
 });
 
+test("node backup sources can opt out of the primary zip hash", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-node-backup-test-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(path.join(comfy, "custom_nodes"), { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    const buildZip = async (name, content) => {
+        const source = path.join(root, name);
+        await fsp.mkdir(path.join(source, "ComfyUI-testnode"), { recursive: true });
+        await fsp.writeFile(path.join(source, "ComfyUI-testnode", "__init__.py"), content, "utf8");
+        const archive = path.join(root, `${name}.zip`);
+        const zipped = spawnSync("tar", ["-a", "-c", "-f", `${name}.zip`, "-C", name, "ComfyUI-testnode"], { cwd: root, encoding: "utf8" });
+        assert.equal(zipped.status, 0, zipped.stderr);
+        return fsp.readFile(archive);
+    };
+    const primary = await buildZip("primary", "PRIMARY = True\n");
+    const backup = await buildZip("backup", "BACKUP = True\n");
+    assert.notEqual(
+        crypto.createHash("sha256").update(primary).digest("hex"),
+        crypto.createHash("sha256").update(backup).digest("hex"),
+    );
+    const server = http.createServer((req, res) => {
+        if (req.url === "/missing.zip") {
+            res.statusCode = 500;
+            res.end("no");
+            return;
+        }
+        res.setHeader("Content-Type", "application/zip");
+        res.setHeader("Content-Length", backup.length);
+        res.end(backup);
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = server.address().port;
+    const index = {
+        schema: 1,
+        version: "test-node-backup-1",
+        packs: [{ id: "test", resources: ["test-node"] }],
+        resources: [{
+            id: "test-node",
+            type: "node",
+            label: "Test node",
+            target: "custom_nodes/ComfyUI-testnode",
+            size: primary.length,
+            sha256: crypto.createHash("sha256").update(primary).digest("hex"),
+            sources: [
+                `http://127.0.0.1:${port}/missing.zip`,
+                { url: `http://127.0.0.1:${port}/node.zip`, label: "backup", verify: false },
+            ],
+        }],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: { loaderOptions: () => ({}), status: () => ({ comfyReachable: true }), scan: async () => ({}) },
+        logger: null,
+    });
+    try {
+        await manager.init();
+        const job = manager.install({ ids: ["test-node"] });
+        const finished = await waitForJob(manager, job.id);
+        assert.equal(finished.status, "done", JSON.stringify(finished));
+        assert.equal(await fsp.readFile(path.join(comfy, "custom_nodes", "ComfyUI-testnode", "__init__.py"), "utf8"), "BACKUP = True\n");
+    } finally {
+        await new Promise((resolve) => server.close(resolve));
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});
+
 test("8GB GPU recommends the int8 lite pack instead of bf16", async () => {
     const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-recommend-test-"));
     const comfy = path.join(root, "ComfyUI");

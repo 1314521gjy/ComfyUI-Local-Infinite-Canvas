@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "version": "2026.10.27-5",
+  "version": "2026.10.27-6",
   "channel": "stable",
-  "updatedAt": "2026-10-27T10:40:00+08:00",
+  "updatedAt": "2026-10-27T11:15:00+08:00",
   "packs": [
     {
       "id": "core",
@@ -365,10 +365,11 @@
       "type": "node",
       "label": "Qwen Multiangle Camera 节点",
       "target": "custom_nodes/ComfyUI-qwenmultiangle",
+      "autoInstall": true,
       "size": 4587520,
       "sha256": "430263e1baafb7a0b4f4451b95ab251e9c5aae0a96d1c18837604cd7eeb05b78",
       "license": "MIT",
-      "note": "安装后需重启 ComfyUI；主源内置 zip，备源魔搭资源集。",
+      "note": "安装后需重启 ComfyUI；主源内置 zip，备源公开 GitHub 归档。",
       "provides": [
         "QwenMultiangleCameraNode"
       ],
@@ -378,7 +379,11 @@
           "path": "resources/nodes/ComfyUI-qwenmultiangle.zip",
           "label": "内置"
         },
-        "https://www.modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/comfyui-gateway/resources/nodes/ComfyUI-qwenmultiangle.zip"
+        {
+          "url": "https://github.com/jtydhr88/ComfyUI-qwenmultiangle/archive/refs/heads/master.zip",
+          "label": "上游 GitHub",
+          "verify": false
+        }
       ]
     },
     {
@@ -400,6 +405,7 @@
       "type": "node",
       "label": "Inpaint Crop & Stitch（局部重绘节点）",
       "target": "custom_nodes/ComfyUI-Inpaint-CropAndStitch",
+      "autoInstall": true,
       "size": 35574,
       "sha256": "19c8cb82b1b3ed36a2db794788a46d2095f6f01c456f296243b7883fab0ea26c",
       "license": "GPL-3.0",
@@ -414,7 +420,11 @@
           "path": "resources/nodes/ComfyUI-Inpaint-CropAndStitch.zip",
           "label": "内置"
         },
-        "https://www.modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/comfyui-gateway/resources/nodes/ComfyUI-Inpaint-CropAndStitch.zip"
+        {
+          "url": "https://github.com/lquesada/ComfyUI-Inpaint-CropAndStitch/archive/refs/heads/main.zip",
+          "label": "上游 GitHub",
+          "verify": false
+        }
       ]
     },
     {
@@ -422,6 +432,7 @@
       "type": "node",
       "label": "KJNodes（扩图蒙版节点）",
       "target": "custom_nodes/comfyui-kjnodes",
+      "autoInstall": true,
       "size": 846875,
       "sha256": "f06aafd1969b5f26f60c2860b095714b23496baaa29ff12e3afbb4d68b52ac39",
       "license": "GPL-3.0",
@@ -435,7 +446,11 @@
           "path": "resources/nodes/comfyui-kjnodes.zip",
           "label": "内置"
         },
-        "https://www.modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/comfyui-gateway/resources/nodes/comfyui-kjnodes.zip"
+        {
+          "url": "https://github.com/kijai/ComfyUI-KJNodes/archive/refs/heads/main.zip",
+          "label": "上游 GitHub",
+          "verify": false
+        }
       ]
     },
     {
