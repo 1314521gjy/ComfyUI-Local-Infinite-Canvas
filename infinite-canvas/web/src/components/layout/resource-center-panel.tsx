@@ -686,20 +686,25 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                 ) : null}
                             </div>
                             {mainModel ? (
-                                <div className="flex flex-wrap items-center gap-2 border-t border-stone-100 px-3 py-1.5 dark:border-stone-800/70">
+                                <div
+                                    className={`flex flex-wrap items-center gap-2 border-t border-stone-100 px-3 py-1.5 dark:border-stone-800/70 ${expandable ? "cursor-pointer" : ""}`}
+                                    onClick={expandable ? () => toggleExpanded(pack.id) : undefined}
+                                >
                                     <span className="text-[11px] text-stone-500 dark:text-stone-400">{copy.mainModel}</span>
-                                    <Select
-                                        size="small"
-                                        value={mainModel.selected || ""}
-                                        options={mainModelOptions}
-                                        onChange={(value) => void switchMainModel(pack.id, String(value || ""))}
-                                        loading={mainModelSaving === pack.id}
-                                        disabled={Boolean(job && job.status === "running") || Boolean(mainModelSaving && mainModelSaving !== pack.id)}
-                                        popupMatchSelectWidth={false}
-                                        showSearch
-                                        optionFilterProp="label"
-                                        style={{ minWidth: 220, maxWidth: 360 }}
-                                    />
+                                    <span className="contents" onClick={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()}>
+                                        <Select
+                                            size="small"
+                                            value={mainModel.selected || ""}
+                                            options={mainModelOptions}
+                                            onChange={(value) => void switchMainModel(pack.id, String(value || ""))}
+                                            loading={mainModelSaving === pack.id}
+                                            disabled={Boolean(job && job.status === "running") || Boolean(mainModelSaving && mainModelSaving !== pack.id)}
+                                            popupMatchSelectWidth={false}
+                                            showSearch
+                                            optionFilterProp="label"
+                                            style={{ minWidth: 220, maxWidth: 360 }}
+                                        />
+                                    </span>
                                     {mainModel.selected ? <Tag color="blue" className="m-0">{copy.mainModelSelected}</Tag> : null}
                                     {mainModel.selected && mainModel.selectedInstalled && mainModel.available ? <Tag color="green" className="m-0">{copy.mainModelActive}</Tag> : null}
                                 </div>
