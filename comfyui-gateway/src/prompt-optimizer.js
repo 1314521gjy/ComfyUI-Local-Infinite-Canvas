@@ -86,6 +86,28 @@ function sanitizeH3Prompt(text) {
   return out.trim();
 }
 
+function lastShotIndex(text) {
+  const matches = [...String(text || "").matchAll(/\[Shot\s+(\d+)\]/gi)].map((match) => Number(match[1]));
+  return matches.length ? Math.max(...matches) : 1;
+}
+
+function ensureFrameAlignmentPrompt(text, mode, duration) {
+  const body = String(text || "").trim();
+  if (!body) return body;
+  if (!/首帧图生视频|首尾帧视频|尾帧图生视频|I2VA|FL2VA|L2VA/i.test(String(mode || ""))) return body;
+  const content = body.replace(/^(?:For the target video, at 0\.00 seconds[^\n]*|How the reference pictures align[^\n]*)\s*\n+/i, "").trim();
+  const seconds = Number(duration) > 0 ? Number(duration) : 5;
+  const time = seconds.toFixed(2);
+  const last = lastShotIndex(content);
+  if (/首帧图生视频|I2VA/i.test(mode)) {
+    return `For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.\n\n${content}`;
+  }
+  if (/首尾帧视频|FL2VA/i.test(mode)) {
+    return `How the reference pictures align with the target video — Picture 1 (from Shot 1) aligns with the 0.00-second mark of the target video; Picture 2 (from Shot ${last}) aligns with the ${time}-second mark of the target video.\n\n${content}`;
+  }
+  return `How the reference pictures align with the target video — <Picture 1> (from [Shot ${last}]) aligns with the ${time}-second mark of the target video.\n\n${content}`;
+}
+
 function sanitizeImagePrompt(text) {
   let out = stripReasoning(text);
   for (const marker of ["最终提示词：", "最终提示词:", "提示词：", "提示词:", "**Prompt:**", "Prompt:", "输出：", "输出:"]) {
@@ -125,18 +147,19 @@ integrated_multimodal_description: [Shot 1] ...（按视频时长设计 1–4 �
 overall_soundscape: ...
 non_diegetic_music: ...
 
-要求：三个官方字段名保留英文；字段正文使用中文。对话、旁白、歌词、画面文字默认使用中文；若用户明确指定其他语言，则按用户指定。保留用户的主体与意图；不要编造品牌或画面文字；镜头时间线与总时长一致。`;
+要求：三个官方字段名保留英文；字段正文使用中文。对话、旁白、歌词、画面文字默认使用中文；若用户明确指定其他语言，则按用户指定。保留用户的主体与意图；不要编造品牌或画面文字；镜头时间线与总时长一致。
+格式：[Shot 1] 不写时间；后续用 [Shot N] At MM:SS.mmm；说话人按目标视频首次发声顺序写 (S1)/(S2)，台词/歌词写成 <d>[Chinese] ...</d>，不要把完整台词重复进声音两段。首帧/首尾帧/尾帧模式的对齐句由系统在正文前补充，正文不要另写；首帧模式从 <Picture 1> 的 0.00 秒开始，首尾帧从 Picture 1 连续过渡到 Picture 2，尾帧模式收敛到结尾的 <Picture 1>。`;
 
 const CLOUD_H3_REF_SYSTEM_PROMPT = `你是 MiniMax-H3 全参考模式（Ref2VA）视频提示词专家。请将用户输入改写为 H3 官方全参考格式，只输出以下六段，不要输出任何思考过程、分析、解释、Markdown 代码块或前后缀：
 
-subject_definitions: 逐项定义 <Subject N>（可复用的人物/物体/场景/服装等）、<Picture N>（图像参考）、<Video N>（源视频/结构参考）、<Audio N>（音频参考）；标签在全文含义一致。只作为来源引用的图片不必单独成条。
-summary: 概括任务类型、目标视频和主要参考关系。
-retention_analysis: 逐项写 fully_preserved / partially_preserved / transferred / reused，并说明保留或替换了什么。
-detailed_description: 按播放顺序写镜头、构图、主体、动作、镜头运动、光线、环境、声音和对白；明确参考内容在何时生效。
-overall_soundscape: 环境声与物理声音。
+subject_definitions: 每个标签单独一行。<Subject N> 定义可复用的人物/物体/场景/服装；<Picture N> 仅在图片作为首帧、关键帧、尾帧或构图锚点时单独成条，只提供人物身份/风格的图片写进对应 <Subject N> 定义内；<Video N>/<Audio N> 各自独立编号；标签在全文含义一致。
+summary: 以一个方括号任务类型开头，如 [reference generation]、[keyframe completion]、[video editing]、[video continuation]、[audio reuse]、[audio reference]，可组合 +，再概括目标视频与参考关系。
+retention_analysis: 每个标签一行；可见内容固定用 fully_preserved / partially_preserved / attribute_transfer / weak_reference；音频用 fully_copy / partially_copy / reference / weak_reference，并说明保留或替换了什么。
+detailed_description: 按播放顺序写镜头、构图、主体、动作、镜头运动、光线、环境、声音和对白；[Shot 1] 不写时间，后续 [Shot N] At MM:SS.mmm；说话人按首次发声顺序写 (S1)/(S2)，台词/歌词写成 <d>[Chinese] ...</d>；画外说话人写 <Subject N> (Sx) off-screen；完整台词只写在 detailed_description。
+overall_soundscape: 环境声与物理声音，不重复台词。
 non_diegetic_music: 观众才能听到的背景音乐。
 
-要求：六个官方字段名保留英文；六段正文使用中文。对话、旁白、歌词、画面文字默认使用中文；若用户明确指定其他语言，则按用户指定。保留用户的替换/保留关系。如果任务是人物替换，必须写清用 <Picture N> 中的哪个人替换 <Video N> 里的哪个人，并逐项列出必须原样保留的人、动作、机位、背景和声音；不要把被替换的人写成保留对象。不要编造品牌或画面文字；时间线与视频总时长一致。`;
+要求：六个官方字段名保留英文；六段正文使用中文。对话、旁白、歌词、画面文字默认使用中文；若用户明确指定其他语言，则按用户指定。每个标签单独一行，不要出现没有标签的被引用人物/声音。保留用户的替换/保留关系。如果任务是人物替换，必须写清用 <Picture N> 中的哪个人替换 <Video N> 里的哪个人，并逐项列出必须原样保留的人、动作、机位、背景和声音；不要把被替换的人写成保留对象。不要编造品牌或画面文字；时间线与视频总时长一致。`;
 
 const CLOUD_IMAGE_SYSTEM_PROMPT = `你是 AI 生图提示词专家。请把用户输入改写为一条可直接使用的生图/图生图提示词，只输出最终提示词本身，不要输出任何思考过程、分析、解释、Markdown 代码块、标题或前后缀。
 
@@ -207,9 +230,17 @@ async function cloudChat({ system, userText, cloud = {}, signal, temperature = 0
 }
 
 async function cloudOptimize({ prompt, mode, duration, referenceNote, uploadedImages = [], cloud = {}, signal }) {
+  const frameGuide = /I2VA/i.test(mode)
+    ? "首帧图生视频：从 <Picture 1> 的 0.00 秒首帧开始向后发展，不要换成别的底图。"
+    : /FL2VA/i.test(mode)
+      ? "首尾帧视频：从 Picture 1 连续过渡到 Picture 2，优先单镜头，最后一镜落到尾帧。"
+      : /L2VA/i.test(mode)
+        ? "尾帧图生视频：从合理的前置状态收敛到结尾的 <Picture 1>。"
+        : "";
   const userText = [
     `任务类型：${mode}`,
     `视频时长：${duration} 秒`,
+    frameGuide ? `画面路径：${frameGuide}` : "",
     referenceNote ? `参考素材说明：${referenceNote}` : "",
     uploadedImages.length ? `参考图片：${uploadedImages.length} 张（云端模式仅使用文字说明）` : "",
     `用户原始提示词：\n${prompt}`,
@@ -274,7 +305,8 @@ export function createPromptOptimizer({ config, comfy, logger }) {
     const images = uploadedImages.slice(0, 8);
 
     if (String(engine || "local").toLowerCase() === "cloud") {
-      return cloudOptimize({ prompt: text, mode: taskType, duration: optimizeSeconds, referenceNote, uploadedImages: images, cloud, signal });
+      const cloudResult = await cloudOptimize({ prompt: text, mode: taskType, duration: optimizeSeconds, referenceNote, uploadedImages: images, cloud, signal });
+      return { ...cloudResult, prompt: ensureFrameAlignmentPrompt(cloudResult.prompt, taskType, optimizeSeconds) };
     }
 
     const workflow = workflowTemplate();
@@ -349,7 +381,7 @@ export function createPromptOptimizer({ config, comfy, logger }) {
         });
       }
       logger?.info?.(`prompt optimize ${taskType} images=${images.length} ${promptId} ${Date.now() - started}ms`);
-      return { prompt: result, mode: taskType, duration: optimizeSeconds, promptId, elapsedMs: Date.now() - started, provider: "local" };
+      return { prompt: ensureFrameAlignmentPrompt(result, taskType, optimizeSeconds), mode: taskType, duration: optimizeSeconds, promptId, elapsedMs: Date.now() - started, provider: "local" };
     } finally {
       running = false;
       signal?.removeEventListener("abort", onAbort);
