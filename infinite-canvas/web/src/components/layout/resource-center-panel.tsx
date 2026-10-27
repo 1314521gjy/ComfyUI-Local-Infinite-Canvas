@@ -1,5 +1,5 @@
 import { App, Button, Checkbox, Progress, Select, Tag, Tooltip } from "antd";
-import { AlertTriangle, CheckCircle2, ChevronDown, Download, HardDriveDownload, RefreshCw, Server, XCircle } from "lucide-react";
+import { AlertTriangle, ChevronDown, Download, HardDriveDownload, RefreshCw, Server, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -17,34 +17,6 @@ import {
     type ResourcePack,
     type ResourceStatus,
 } from "@/services/api/resources";
-
-const packAccent: Record<string, { card: string; bar: string }> = {
-    moss: {
-        card: "border-emerald-200/80 bg-emerald-50/40 dark:border-emerald-900/60 dark:bg-emerald-950/15",
-        bar: "bg-emerald-500/70",
-    },
-    qwen21: {
-        card: "border-sky-200/80 bg-sky-50/40 dark:border-sky-900/60 dark:bg-sky-950/15",
-        bar: "bg-sky-500/70",
-    },
-    zimage: {
-        card: "border-violet-200/80 bg-violet-50/40 dark:border-violet-900/60 dark:bg-violet-950/15",
-        bar: "bg-violet-500/70",
-    },
-    krea2: {
-        card: "border-amber-200/80 bg-amber-50/40 dark:border-amber-900/60 dark:bg-amber-950/15",
-        bar: "bg-amber-500/70",
-    },
-    h3: {
-        card: "border-rose-200/80 bg-rose-50/40 dark:border-rose-900/60 dark:bg-rose-950/15",
-        bar: "bg-rose-500/70",
-    },
-    core: {
-        card: "border-stone-200 dark:border-stone-800",
-        bar: "bg-stone-300 dark:bg-stone-700",
-    },
-};
-const defaultAccent = { card: "border-stone-200 dark:border-stone-800", bar: "bg-stone-300 dark:bg-stone-700" };
 
 const copyByLocale = {
     zh: {
@@ -444,12 +416,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
             .flatMap((pack) => pack.requiredItems.filter((item) => item.status !== "present").map((item) => item.id));
         const optional = status.resources.filter((item) => selectedOptional.has(item.id) && item.status !== "present").map((item) => item.id);
         return [...new Set([...required, ...optional])];
-    }, [selectedOptional, selectedPacks, status]);
-
-    const requiredMissingIds = useMemo(() => {
-        if (!status) return [];
-        return status.packs.filter((pack) => !pack.planned).flatMap((pack) => pack.requiredItems.filter((item) => item.status !== "present").map((item) => item.id));
-    }, [status]);
+    }, [selectedOptional, selectedPacks, status]);
 
     const resourceById = useMemo(() => new Map((status?.resources || []).map((item) => [item.id, item])), [status]);
     const totalSpeed = Object.values(speeds).reduce((sum, speed) => sum + speed, 0);
@@ -689,13 +656,14 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                 {extraOptionalItems.length ? <Tag>{optionalLabel} {extraOptionalItems.length}</Tag> : null}
                                 {pack.missingSize ? <span className="text-[11px] text-stone-500 dark:text-stone-400">{copy.size} {formatBytes(pack.missingSize)}</span> : null}
                             </div>
-                            <div className={`mt-0.5 text-[11px] leading-5 text-stone-500 dark:text-stone-400 ${compact ? "line-clamp-1" : "line-clamp-2"}`}>{pack.description}</div>
                         </>
                     );
-                    const accent = packAccent[pack.id] || defaultAccent;
                     return (
-                        <div key={pack.id} className={`relative overflow-hidden rounded-xl border ${accent.card}`}>
-                            <span className={`absolute inset-y-0 left-0 w-[3px] ${accent.bar}`} aria-hidden />
+                        <div
+                            key={pack.id}
+                            className="overflow-hidden rounded-xl border border-stone-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.05)] transition-colors hover:border-stone-300 dark:border-stone-800 dark:bg-stone-900/40 dark:shadow-none dark:hover:border-stone-700"
+                            title={pack.description}
+                        >
                             <div className="flex items-start gap-2 p-3">
                                 {expandable ? (
                                     !pack.planned && pack.total > 0 ? (
@@ -905,12 +873,6 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                     );
                 })}
             </div>
-
-            {requiredMissingIds.length === 0 && status?.summary.resources ? (
-                <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700 dark:border-green-900/60 dark:bg-green-950/30 dark:text-green-300">
-                    <CheckCircle2 className="size-4" />{copy.emptyMissing}
-                </div>
-            ) : null}
             {footer}
         </div>
     );
