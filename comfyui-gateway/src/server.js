@@ -234,6 +234,7 @@ export async function createGatewayApp(overrides = {}) {
   // 随包节点由启动器首次启动复制；直接用 start-all/start-gateway 启动时这里补一次（幂等）
   void ensureBundledNodes();
   async function ensureBundledNodes() {
+    if (process.env.DISABLE_NODE_BOOTSTRAP === "1") return;
     try {
       const packageRoot = path.join(config.rootDir, "..");
       const modulePath = path.join(packageRoot, "launcher", "bootstrap-nodes.mjs");

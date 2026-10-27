@@ -60,6 +60,7 @@ export async function importAppConfig(file: File) {
             return existing?.apiKey ? { ...api, apiKey: existing.apiKey } : api;
         });
         nextConfig = normalizePromptCloudConfig({ ...nextConfig, promptCloudApis: restoredApis });
+        if (!nextConfig.apiKey && current.config.apiKey) nextConfig.apiKey = current.config.apiKey;
     }
     const nextWebdav = data.secretsStripped && !data.webdav.password ? { ...data.webdav, password: current.webdav.password } : data.webdav;
     useConfigStore.setState({ config: nextConfig, webdav: nextWebdav });

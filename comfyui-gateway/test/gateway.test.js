@@ -8,6 +8,8 @@ import { after, before, test } from "node:test";
 import { createMockComfyServer } from "../mock/comfyui-mock.mjs";
 import { createGatewayApp } from "../src/server.js";
 
+process.env.DISABLE_NODE_BOOTSTRAP = "1";
+
 const root = path.resolve(import.meta.dirname, "..");
 let tempDir;
 let mock;

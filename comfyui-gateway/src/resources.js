@@ -388,7 +388,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             options.set(file, { file, label: resource.label || file, installed: installed.has(file), source: "pack", matches: true, resourceId: resource.id });
         }
         for (const file of installed) {
-            if (options.has(file)) continue;
+            if (options.has(file) || bakeFiles.has(file)) continue;
             options.set(file, { file, label: path.basename(file, path.extname(file)), installed: true, source: "local", matches: matchesFamily(file) });
         }
         if (selected && !options.has(selected)) {
@@ -400,7 +400,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         return {
             workflowIds: overrideIds,
             files,
-            defaultFile: files[0],
+            defaultFile: files.find((file) => !bakeFiles.has(file)) || files[0],
             defaultLabel: files.length > 1 ? "各工作流原底模" : defaultResource?.label || path.basename(files[0], path.extname(files[0])),
             selected,
             selectedLabel: options.get(selected)?.label || "",
@@ -667,6 +667,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         if (!info) throw new Error("该功能包没有可切换的主模型");
         const raw = String(file || "").trim();
         const value = raw === info.defaultFile ? "" : raw;
+        const bakeFiles = new Set((index?.resources || []).filter((item) => item.type === "bake").map((item) => resourceFile(item)).filter(Boolean));
+        if (value && bakeFiles.has(value)) throw new Error("烘焙产物不能作为主模型");
         if (value && !installed.has(value)) throw new Error("所选主模型尚未安装");
         await mainModels.set(pack.id, { file: value, workflows: info.workflowIds });
         try {
@@ -1244,6 +1246,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
     function cancelJob(id) {
         const job = jobs.get(String(id || ""));
         if (!job) return null;
+        if (job.status !== "running") return jobSnapshot(job);
         job.status = "canceled";
         job.message = "已取消";
         for (const controller of job.controllers.values()) controller.abort(new Error("用户取消"));
@@ -1272,10 +1275,31 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         return status();
     }
 
+    async function pruneMainModels() {
+        if (!mainModels?.snapshot) return;
+        const installed = new Set(Array.isArray(setup?.loaderOptions?.()?.UNETLoader) ? setup.loaderOptions().UNETLoader : []);
+        const snapshot = mainModels.snapshot();
+        for (const pack of index?.packs || []) {
+            const stored = snapshot?.[pack.id];
+            const file = String(stored?.file || "");
+            if (!file) continue;
+            const info = mainModelInfo(pack, installed);
+            if (!info) continue;
+            const current = Array.isArray(stored.workflows) ? stored.workflows : [];
+            const same = current.length === info.workflowIds.length && current.every((id) => info.workflowIds.includes(id));
+            if (!same) await mainModels.set(pack.id, { file, workflows: info.workflowIds });
+        }
+    }
+
     async function init() {
         if (!hardwareOverride) hardware = await probeHardware();
         await loadLock();
         await loadIndex();
+        try {
+            await pruneMainModels();
+        } catch (error) {
+            logger?.warn?.(`主模型覆盖范围校正失败：${error.message}`);
+        }
         return status();
     }
 
