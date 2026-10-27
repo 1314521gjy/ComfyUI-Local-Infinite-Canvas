@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "version": "2026.10.27-8",
+  "version": "2026.10.27-9",
   "channel": "stable",
-  "updatedAt": "2026-10-27T16:20:00+08:00",
+  "updatedAt": "2026-10-27T17:10:00+08:00",
   "packs": [
     {
       "id": "core",
@@ -174,15 +174,14 @@
     {
       "id": "zimage",
       "label": "Z-Image Turbo",
-      "description": "Z-Image Turbo 默认 BF16 底模、Qwen3-4B 文本编码器和 ae VAE；4–8 步蒸馏。底模可在画布底模下拉自选，小显存可另装 INT8 底模切换；选下内容含 INT8 低显存底模和官方蒸馏 LoRA。",
+      "description": "Z-Image Turbo 默认 BF16 底模、Qwen3-4B 文本编码器和 ae VAE；4–8 步蒸馏。底模可在画布底模下拉自选，小显存可另装 INT8 底模切换。",
       "optional": true,
       "autoRecommend": false,
       "resources": [
         "z_image_turbo_bf16",
         "qwen_3_4b",
         "ae",
-        "z_image_turbo_int8_convrot",
-        "z_image_turbo_distill_lora"
+        "z_image_turbo_int8_convrot"
       ],
       "workflows": [
         "image-z-image-turbo"
@@ -197,8 +196,7 @@
         "recommendVramGb": 16
       },
       "optionalResources": [
-        "z_image_turbo_int8_convrot",
-        "z_image_turbo_distill_lora"
+        "z_image_turbo_int8_convrot"
       ]
     },
     {
@@ -571,20 +569,6 @@
       "sources": [
         "https://www.modelscope.cn/models/Comfy-Org/z_image_turbo/resolve/master/split_files/diffusion_models/z_image_turbo_int8_convrot.safetensors",
         "https://aifasthub.com/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_int8_convrot.safetensors"
-      ]
-    },
-    {
-      "id": "z_image_turbo_distill_lora",
-      "type": "model",
-      "label": "Z-Image Turbo 蒸馏 LoRA",
-      "target": "loras/Z-Image/z_image_turbo_distill_patch_lora_bf16.safetensors",
-      "size": 158826336,
-      "sha256": "340cc573d887681b89a45d850af77db43fb82dd994872be5d0a9d48649eb91c8",
-      "license": "Apache-2.0",
-      "note": "选下内容；官方蒸馏补丁 LoRA，可在 LoRA 卡片中挂载。",
-      "sources": [
-        "https://www.modelscope.cn/models/Comfy-Org/z_image_turbo/resolve/master/split_files/loras/z_image_turbo_distill_patch_lora_bf16.safetensors",
-        "https://aifasthub.com/Comfy-Org/z_image_turbo/resolve/main/split_files/loras/z_image_turbo_distill_patch_lora_bf16.safetensors"
       ]
     },
     {
