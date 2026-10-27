@@ -20,6 +20,7 @@ export function buildContext({ prompt, negative, size, count, quality, seconds, 
     prompt: String(prompt || ""),
     negative: negative === undefined || negative === null ? undefined : String(negative),
     size: parsedSize ? { width: parsedSize.width, height: parsedSize.height, raw: parsedSize.raw } : undefined,
+    outputSize: parseSize(params?.editCanvasSize) || undefined,
     count: clamp(Number(count) || 1, 1, 15),
     quality: { value: qualityValue, ...preset },
     seconds: Number(seconds) > 0 ? Number(seconds) : undefined,
@@ -260,6 +261,17 @@ export function applyBindings(workflow, entry, context, { logger } = {}) {
     if (binding.map && Object.prototype.hasOwnProperty.call(binding.map, value)) value = binding.map[value];
     value = applyTransform(value, binding);
     node.inputs[binding.input] = value;
+  }
+
+  if (entry.outputSize && context.outputSize) {
+    const sizeNode = next[entry.outputSize.node];
+    const latentNode = next[entry.outputSize.latentNode];
+    if (sizeNode?.inputs && latentNode?.inputs) {
+      const snap = (value) => Math.max(256, Math.round(Number(value) / 32) * 32);
+      sizeNode.inputs.width = snap(context.outputSize.width);
+      sizeNode.inputs.height = snap(context.outputSize.height);
+      latentNode.inputs[entry.outputSize.latentInput || "latent_image"] = [entry.outputSize.latentSource || entry.outputSize.node, 0];
+    }
   }
 
   return next;

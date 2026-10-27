@@ -28,10 +28,20 @@ type CanvasImageSettingsPopoverProps = {
 const qwenModeLabels: Record<string, string> = { t2i: "文生图", edit: "多图编辑", inpaint: "局部重绘", outpaint: "扩图" };
 const qwenModeHints: Record<string, string> = {
     t2i: "纯文生图：不需要参考图，按提示词生成完整画面",
-    edit: "接 1–4 张参考图，按提示词编辑或融合；输出尺寸跟随第一张参考图",
+    edit: "接 1–4 张参考图，按提示词编辑或融合；可跟随首图或手动选画布比例",
     inpaint: "选择后自动打开蒙版，只修改蒙版覆盖区域",
     outpaint: "打开扩图画布，拖图 / 滚轮调整扩图范围",
 };
+const editRatioOptions = ["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3"] as const;
+
+function qwenCanvasSize(resolution: string | number, ratio: string) {
+    const value = Number(resolution);
+    const area = value > 0 ? value : 1024;
+    const [width, height] = ratio.split(":").map(Number);
+    if (!width || !height) return "";
+    const snap = (number: number) => Math.max(256, Math.round(number / 32) * 32);
+    return `${snap(Math.sqrt(area * area * (width / height)))}x${snap(Math.sqrt(area * area * (height / width)))}`;
+}
 
 function mossModelInfo(config: AiConfig) {
     const workflowId = channelModelOf(config, config.model)?.model.workflowId || "";
@@ -55,6 +65,7 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onParamsCha
     const count = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const activeSize = config.size || "auto";
     const qwen = qwenModelInfo(config);
+    const editCanvasRatio = String((config.params as Record<string, unknown> | undefined)?.editCanvasRatio || "auto");
     const updateOpen = (nextOpen: boolean) => {
         setOpen(nextOpen);
         onOpenChange?.(nextOpen);
@@ -90,7 +101,7 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onParamsCha
             <span ref={buttonRef} className="inline-flex min-w-0">
                 <Button size="small" type="text" className={buttonClassName || "!h-8 !max-w-[180px] !justify-start !rounded-full !px-2.5"} style={{ background: theme.node.fill, color: theme.node.text }} icon={<Settings2 className="size-3.5" />} onClick={() => updateOpen(!open)}>
                     <span className="truncate">
-                        {qwen ? `${qwen.labels[String(config.imageMode || "t2i")] || qwen.labels.t2i || qwen.labels.edit}${String(config.imageMode || "t2i") === "t2i" ? "" : " · 跟随原图"}` : `${imageSizeLabel(activeSize)} · ${t("canvas.controls.images", { count })}`}
+                        {qwen ? `${qwen.labels[String(config.imageMode || "t2i")] || qwen.labels.t2i || qwen.labels.edit}${String(config.imageMode || "t2i") === "t2i" ? "" : String(config.imageMode || "t2i") === "edit" ? ` · ${editCanvasRatio === "auto" ? "跟随首图" : editCanvasRatio}` : " · 跟随原图"}` : `${imageSizeLabel(activeSize)} · ${t("canvas.controls.images", { count })}`}
                     </span>
                 </Button>
             </span>
@@ -128,6 +139,7 @@ function ImageSettingsPortal({
     const moss = mossModelInfo(config);
     const qwenMode = String(config.imageMode || "t2i");
     const refResolution = String((config.params as Record<string, unknown> | undefined)?.resolution ?? 1024);
+    const editCanvasRatio = String((config.params as Record<string, unknown> | undefined)?.editCanvasRatio || "auto");
     const width = 356;
     const gap = 8;
     const margin = 12;
@@ -188,6 +200,27 @@ function ImageSettingsPortal({
                         ) : qwenMode === "edit" ? (
                             <div className="space-y-3">
                                 <div className="space-y-2 rounded-xl border p-3" style={{ borderColor: theme.node.stroke }}>
+                                    <SettingTitle color={theme.node.muted}>画布比例</SettingTitle>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <OptionPill selected={editCanvasRatio === "auto"} theme={theme} onClick={() => onParamsChange?.({ editCanvasRatio: "auto", editCanvasSize: "" })}>
+                                            跟随首图
+                                        </OptionPill>
+                                        {editRatioOptions.map((ratio) => (
+                                            <OptionPill
+                                                key={ratio}
+                                                selected={editCanvasRatio === ratio}
+                                                theme={theme}
+                                                onClick={() => onParamsChange?.({ editCanvasRatio: ratio, editCanvasSize: qwenCanvasSize(refResolution, ratio) })}
+                                            >
+                                                {ratio}
+                                            </OptionPill>
+                                        ))}
+                                    </div>
+                                    <div className="text-xs leading-4" style={{ color: theme.node.muted }}>
+                                        跟随首图保持原输出尺寸；手动比例按当前参考分辨率生成画布（原始按 1k）。
+                                    </div>
+                                </div>
+                                <div className="space-y-2 rounded-xl border p-3" style={{ borderColor: theme.node.stroke }}>
                                     <SettingTitle color={theme.node.muted}>参考分辨率</SettingTitle>
                                     <div className="grid grid-cols-4 gap-2">
                                         {[
@@ -196,13 +229,13 @@ function ImageSettingsPortal({
                                             ["2048", "2k"],
                                             ["0", "原始"],
                                         ].map(([value, label]) => (
-                                            <OptionPill key={value} selected={refResolution === value} theme={theme} onClick={() => onParamsChange?.({ resolution: Number(value) })}>
+                                            <OptionPill key={value} selected={refResolution === value} theme={theme} onClick={() => onParamsChange?.({ resolution: Number(value), ...(editCanvasRatio !== "auto" ? { editCanvasSize: qwenCanvasSize(value, editCanvasRatio) } : {}) })}>
                                                 {label}
                                             </OptionPill>
                                         ))}
                                     </div>
                                     <div className="text-xs leading-4" style={{ color: theme.node.muted }}>
-                                        多图尺寸不同时各自按比例缩放；输出尺寸跟随第一张参考图，原始表示不缩放。
+                                        多图尺寸不同时各自按比例缩放；输出尺寸默认跟随第一张参考图，原始表示不缩放。
                                     </div>
                                 </div>
                                 <ImageSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" maxCount={10} showSize={false} />

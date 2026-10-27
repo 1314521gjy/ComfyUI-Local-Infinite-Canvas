@@ -1688,7 +1688,13 @@
         "edit": {
           "file": "image-qwen21-edit-turbo.json",
           "label": "多图编辑",
-          "description": "1–4 张参考图的指令编辑与融合"
+          "description": "1–4 张参考图的指令编辑与融合",
+          "outputSize": {
+            "node": "13",
+            "latentNode": "10",
+            "latentInput": "latent_image",
+            "latentSource": "14"
+          }
         },
         "inpaint": {
           "file": "image-qwen21-inpaint.json",
