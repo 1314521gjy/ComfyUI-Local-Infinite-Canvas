@@ -28,3 +28,7 @@ infinite-canvas/plugins/canvas/*/dist/
 
 # local test artifacts
 tmp-*
+
+# bundled model files: shipped inside the distribution package, too large for git
+comfyui-gateway/resources/bundled/
+comfyui-gateway/resources/loras/*.safetensors

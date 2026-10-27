@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026.10.27-15",
+  "version": "2026.10.27-16",
   "channel": "stable",
   "updatedAt": "2026-10-27T17:10:00+08:00",
   "packs": [
@@ -545,12 +545,13 @@
       "type": "model",
       "label": "Qwen Image 2.1 Turbo int8 convrot",
       "target": "diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors",
-      "size": 7256828688,
-      "sha256": "bc77cb2f0220311a158a10e77677f0912fac72d53a66faf78a67d7946b81f5c1",
+      "size": 7256787829,
+      "sha256": "8144a0182964aa8403ad6dbc011db837304167d235161b9aabaa8532e967314c",
       "license": "Qwen-Image",
+      "note": "Comfy-Org 官方 int8 ConvRot，与本机实测文件哈希一致。",
       "sources": [
-        "https://aifasthub.com/NidAll/Turbo-INT8-ConvRot-for-Qwen-Image-2.1/resolve/main/qwen-image-2.1-turbo-int8-convrot.safetensors",
-        "https://hf-mirror.com/NidAll/Turbo-INT8-ConvRot-for-Qwen-Image-2.1/resolve/main/qwen-image-2.1-turbo-int8-convrot.safetensors"
+        "https://www.modelscope.cn/models/Comfy-Org/Qwen-Image-2.1/resolve/master/diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors",
+        "https://hf-mirror.com/Comfy-Org/Qwen-Image-2.1/resolve/main/diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors"
       ]
     },
     {
@@ -558,13 +559,13 @@
       "type": "model",
       "label": "Qwen3VL-8B int8 convrot 文本编码器",
       "target": "text_encoders/qwen3vl_8b_int8_convrot.safetensors",
-      "size": 10985825432,
-      "sha256": "5deb0b5742b7ac2b1d2a9c6c48433a98b9444954b6114b616812ebd5d977296e",
+      "size": 9350798360,
+      "sha256": "8bfd0f6e12abf2d2d697ecc888e5e90b0d6741d6708f05799f53afa560452e8f",
       "license": "Qwen",
-      "note": "本地可能是不同量化版本；同名文件存在时直接复用，不校验大小。",
+      "note": "Comfy-Org 官方 int8 ConvRot，与本机实测文件哈希一致。",
       "sources": [
-        "https://aifasthub.com/Stick9190/qwen3vl_8b_int8_convrot/resolve/main/qwen3vl_8b_int8_convrot.safetensors",
-        "https://hf-mirror.com/Stick9190/qwen3vl_8b_int8_convrot/resolve/main/qwen3vl_8b_int8_convrot.safetensors"
+        "https://www.modelscope.cn/models/Comfy-Org/Qwen-Image-2.1/resolve/master/text_encoders/qwen3vl_8b_int8_convrot.safetensors",
+        "https://hf-mirror.com/Comfy-Org/Qwen-Image-2.1/resolve/main/text_encoders/qwen3vl_8b_int8_convrot.safetensors"
       ]
     },
     {
@@ -827,8 +828,13 @@
       "size": 145157232,
       "sha256": "52e41bc8ab3964b11104332bc7fc742571e5fd1eaf7bc046285a5b37c56d3020",
       "license": "未知（社区 LoRA）",
-      "note": "可选；本地已装。下载源为私有魔搭资源集，公开分发前需公开资源集或换公开源。",
+      "note": "可选；随包分发（魔搭资源集为私有，匿名不可用）。",
       "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/loras/KOOK-MOSS-SFT-观澜.safetensors",
+          "label": "随包"
+        },
         "https://www.modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/comfyui-gateway/resources/loras/KOOK-MOSS-SFT-%E8%A7%82%E6%BE%9C.safetensors"
       ]
     },
@@ -1020,8 +1026,13 @@
       "target": "vae/minimax_h3_vae_decoder.onnx",
       "size": 1609440,
       "license": "MiniMax H3 Community License",
-      "note": "用于本机编译 TRT VAE engine；HF 源。",
+      "note": "用于本机编译 TRT VAE engine；魔搭无源，随包分发（hf-mirror 为备源）。",
       "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/bundled/h3-vae/minimax_h3_vae_decoder.onnx",
+          "label": "随包"
+        },
         "https://hf-mirror.com/lihaoyun6/MiniMax-H3-VAE-ONNX/resolve/main/minimax_h3_vae_decoder.onnx",
         "https://huggingface.co/lihaoyun6/MiniMax-H3-VAE-ONNX/resolve/main/minimax_h3_vae_decoder.onnx"
       ]
@@ -1033,8 +1044,13 @@
       "target": "vae/minimax_h3_vae_decoder.onnx.data",
       "size": 4847062144,
       "license": "MiniMax H3 Community License",
-      "note": "decoder 外置权重；与 .onnx 同目录。",
+      "note": "decoder 外置权重；与 .onnx 同目录；魔搭无源，随包分发。",
       "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/bundled/h3-vae/minimax_h3_vae_decoder.onnx.data",
+          "label": "随包"
+        },
         "https://hf-mirror.com/lihaoyun6/MiniMax-H3-VAE-ONNX/resolve/main/minimax_h3_vae_decoder.onnx.data",
         "https://huggingface.co/lihaoyun6/MiniMax-H3-VAE-ONNX/resolve/main/minimax_h3_vae_decoder.onnx.data"
       ]
@@ -1046,8 +1062,13 @@
       "target": "vae/minimax_h3_vae_encoder.onnx",
       "size": 361041889,
       "license": "MiniMax H3 Community License",
-      "note": "用于本机编译 TRT VAE engine；HF 源。",
+      "note": "用于本机编译 TRT VAE engine；魔搭无源，随包分发（hf-mirror 为备源）。",
       "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/bundled/h3-vae/minimax_h3_vae_encoder.onnx",
+          "label": "随包"
+        },
         "https://hf-mirror.com/lihaoyun6/MiniMax-H3-VAE-ONNX/resolve/main/minimax_h3_vae_encoder.onnx",
         "https://huggingface.co/lihaoyun6/MiniMax-H3-VAE-ONNX/resolve/main/minimax_h3_vae_encoder.onnx"
       ]
