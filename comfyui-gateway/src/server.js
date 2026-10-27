@@ -28,6 +28,7 @@ import { createSkinUnlockStore } from "./skin-unlocks.js";
 import { readSystemStats } from "./system-stats.js";
 import { createTaskStore } from "./tasks.js";
 import { applyUpdate, checkForUpdate } from "./update.js";
+import { uploadImages } from "./uploads.js";
 import { createWorkflowVisibilityStore } from "./workflow-visibility.js";
 import { extFromMime, jsonError, nowIso, parseSize, randomId, safeFileName, sleep } from "./util.js";
 
@@ -160,16 +161,6 @@ function orderedVideoRefFiles(files = []) {
 
 function orderedAudioRefFiles(files = []) {
   return files.filter((file) => file?.buffer && /^audios?(\[\])?$/i.test(file.fieldname || "")).slice(0, 2);
-}
-
-async function uploadImages(comfy, files) {
-  const uploaded = [];
-  for (const file of files) {
-    const filename = safeFileName(file.originalname || `input-${uploaded.length + 1}.png`);
-    const result = await comfy.uploadImage(file.buffer, filename, file.mimetype || "image/png");
-    uploaded.push({ ...result, originalName: filename, bytes: file.buffer.length });
-  }
-  return uploaded;
 }
 
 const RGBA_PROMPT_PREFIX = "This is an RGBA format image with transparency.";

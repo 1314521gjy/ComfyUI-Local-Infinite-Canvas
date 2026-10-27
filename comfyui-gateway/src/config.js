@@ -27,6 +27,10 @@ function list(value, fallback) {
 export function loadConfig(overrides = {}) {
   const port = num(overrides.port ?? process.env.PORT, 8190);
   const host = overrides.host ?? process.env.HOST ?? "127.0.0.1";
+  const allowRemote = String(process.env.ALLOW_REMOTE || "").trim() === "1";
+  if (!["127.0.0.1", "localhost", "::1", "[::1]"].includes(host) && !allowRemote) {
+    throw new Error("网关默认只允许绑定本机回环地址；如确需局域网访问，请设置 ALLOW_REMOTE=1。");
+  }
   const config = {
     rootDir,
     appRoot,
@@ -66,10 +70,14 @@ export function loadConfig(overrides = {}) {
     updateFetchTimeoutMs: num(overrides.updateFetchTimeoutMs ?? process.env.UPDATE_FETCH_TIMEOUT_MS, 15000),
     updateApplyTimeoutMs: num(overrides.updateApplyTimeoutMs ?? process.env.UPDATE_APPLY_TIMEOUT_MS, 120000),
     resourcesIndexUrl: String(overrides.resourcesIndexUrl ?? process.env.RESOURCES_INDEX_URL ?? "").trim(),
+    resourcesIndexUrlBackup: String(overrides.resourcesIndexUrlBackup ?? process.env.RESOURCES_INDEX_URL_BACKUP ?? "").trim(),
     resourcesFetchTimeoutMs: num(overrides.resourcesFetchTimeoutMs ?? process.env.RESOURCES_FETCH_TIMEOUT_MS, 8000),
     resourceConcurrency: num(overrides.resourceConcurrency ?? process.env.RESOURCE_CONCURRENCY, 2),
     version: "0.1.0",
   };
+  if (config.corsOrigins.includes("*") && !allowRemote) {
+    throw new Error("CORS_ORIGINS 不能使用通配符；请列出本地画布地址，或设置 ALLOW_REMOTE=1。");
+  }
   if (config.comfyWorkflowsDir) config.comfyWorkflowsDir = path.resolve(config.comfyWorkflowsDir);
   if (config.comfyDir) config.comfyDir = path.resolve(config.comfyDir);
   if (config.comfyFrontendDir) config.comfyFrontendDir = path.resolve(config.comfyFrontendDir);

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026.10.27-10",
+  "version": "2026.10.27-11",
   "channel": "stable",
   "updatedAt": "2026-10-27T17:10:00+08:00",
   "packs": [
@@ -323,8 +323,8 @@
       "sha256": "bc77cb2f0220311a158a10e77677f0912fac72d53a66faf78a67d7946b81f5c1",
       "license": "Qwen-Image",
       "sources": [
-        "https://hf-mirror.com/NidAll/Turbo-INT8-ConvRot-for-Qwen-Image-2.1/resolve/main/qwen-image-2.1-turbo-int8-convrot.safetensors",
-        "https://aifasthub.com/NidAll/Turbo-INT8-ConvRot-for-Qwen-Image-2.1/resolve/main/qwen-image-2.1-turbo-int8-convrot.safetensors"
+        "https://aifasthub.com/NidAll/Turbo-INT8-ConvRot-for-Qwen-Image-2.1/resolve/main/qwen-image-2.1-turbo-int8-convrot.safetensors",
+        "https://hf-mirror.com/NidAll/Turbo-INT8-ConvRot-for-Qwen-Image-2.1/resolve/main/qwen-image-2.1-turbo-int8-convrot.safetensors"
       ]
     },
     {
@@ -337,8 +337,8 @@
       "license": "Qwen",
       "note": "本地可能是不同量化版本；同名文件存在时直接复用，不校验大小。",
       "sources": [
-        "https://hf-mirror.com/Stick9190/qwen3vl_8b_int8_convrot/resolve/main/qwen3vl_8b_int8_convrot.safetensors",
-        "https://aifasthub.com/Stick9190/qwen3vl_8b_int8_convrot/resolve/main/qwen3vl_8b_int8_convrot.safetensors"
+        "https://aifasthub.com/Stick9190/qwen3vl_8b_int8_convrot/resolve/main/qwen3vl_8b_int8_convrot.safetensors",
+        "https://hf-mirror.com/Stick9190/qwen3vl_8b_int8_convrot/resolve/main/qwen3vl_8b_int8_convrot.safetensors"
       ]
     },
     {
@@ -369,11 +369,6 @@
       ],
       "sources": [
         {
-          "kind": "bundled-dir",
-          "path": "resources/nodes/unpacked/ComfyUI-qwenmultiangle",
-          "label": "内置目录"
-        },
-        {
           "url": "https://github.com/jtydhr88/ComfyUI-qwenmultiangle/archive/refs/heads/master.zip",
           "label": "上游 GitHub",
           "verify": false
@@ -391,6 +386,7 @@
       "note": "扩图变体使用；公开源 ausboss / bozoyan，权重与本机一致。",
       "sources": [
         "https://www.modelscope.cn/models/ausboss/Qwen-Image-2.1-Outpaint-LoRA/resolve/master/qwen-image-2.1-outpaint-v2.safetensors",
+        "https://aifasthub.com/ausboss/Qwen-Image-2.1-Outpaint-LoRA/resolve/main/qwen-image-2.1-outpaint-v2.safetensors",
         "https://www.modelscope.cn/models/bozoyan/Qwen-Image-2.1-Outpaint-LoRA/resolve/master/qwen-image-2.1-outpaint-v2.safetensors"
       ]
     },
@@ -409,11 +405,6 @@
         "InpaintStitchImproved"
       ],
       "sources": [
-        {
-          "kind": "bundled-dir",
-          "path": "resources/nodes/unpacked/ComfyUI-Inpaint-CropAndStitch",
-          "label": "内置目录"
-        },
         {
           "url": "https://github.com/lquesada/ComfyUI-Inpaint-CropAndStitch/archive/refs/heads/main.zip",
           "label": "上游 GitHub",
@@ -435,11 +426,6 @@
         "DrawMaskOnImage"
       ],
       "sources": [
-        {
-          "kind": "bundled-dir",
-          "path": "resources/nodes/unpacked/comfyui-kjnodes",
-          "label": "内置目录"
-        },
         {
           "url": "https://github.com/kijai/ComfyUI-KJNodes/archive/refs/heads/main.zip",
           "label": "上游 GitHub",
@@ -599,7 +585,11 @@
           "path": "resources/nodes/TE-Speed-MOSS.zip",
           "label": "内置"
         },
-        "https://github.com/tl2012tl/TE-Speed-MOSS/archive/refs/heads/main.zip"
+        {
+          "url": "https://github.com/tl2012tl/TE-Speed-MOSS/archive/refs/heads/main.zip",
+          "label": "上游 GitHub",
+          "verify": false
+        }
       ]
     },
     {

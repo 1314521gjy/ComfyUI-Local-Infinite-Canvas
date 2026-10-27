@@ -70,10 +70,12 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
 
     async function importComfyWorkflows() {
         if (!config.comfyWorkflowsDir || !fs.existsSync(config.comfyWorkflowsDir)) return { imported: 0, ui: 0, samples: [] };
+        const importedComfyNames = new Set();
         for (const entry of registry.list()) {
             const internal = registry.resolve(entry.id);
             const sourcePath = internal?.source?.path;
-            if (sourcePath) importedComfyPaths.add(path.resolve(sourcePath));
+            if (sourcePath) importedComfyPaths.add(path.isAbsolute(sourcePath) ? path.resolve(sourcePath) : path.resolve(config.comfyWorkflowsDir, sourcePath));
+            if (internal?.source?.kind === "comfyui" && internal.source.name) importedComfyNames.add(path.basename(String(internal.source.name)));
         }
         const entries = await fsp.readdir(config.comfyWorkflowsDir);
         let imported = 0;
@@ -81,6 +83,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         const samples = [];
         for (const name of entries) {
             if (!name.toLowerCase().endsWith(".json")) continue;
+            if (importedComfyNames.has(path.basename(name))) continue;
             const file = path.join(config.comfyWorkflowsDir, name);
             const stat = safeStat(file);
             if (!stat?.isFile()) continue;

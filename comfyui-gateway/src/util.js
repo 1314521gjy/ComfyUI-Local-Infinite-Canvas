@@ -51,6 +51,13 @@ export function safeFileName(value) {
   return path.basename(String(value || "file")).replace(/[^\w.-]+/g, "_");
 }
 
+export function uniqueFileName(value, suffix = crypto.randomUUID().slice(0, 8)) {
+  const safe = safeFileName(value || "image.png");
+  const ext = path.extname(safe) || ".png";
+  const stem = path.basename(safe, ext).slice(0, 60) || "image";
+  return safeFileName(`${stem}-${suffix}${ext}`);
+}
+
 export async function readTextFile(file, maxBytes) {
   const stat = await fs.stat(file);
   if (!stat.isFile()) throw new Error(`不是文件：${file}`);

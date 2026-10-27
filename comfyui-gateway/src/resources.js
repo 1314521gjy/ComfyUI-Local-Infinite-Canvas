@@ -204,21 +204,30 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         } catch (error) {
             indexError = `本地索引不可用：${error.message}`;
         }
-        if (config.resourcesIndexUrl) {
-            try {
-                const response = await fetch(config.resourcesIndexUrl, {
-                    signal: AbortSignal.timeout(config.resourcesFetchTimeoutMs || 8000),
-                    headers: { Accept: "application/json" },
-                });
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                const remote = validateIndex(await response.json());
-                index = remote;
-                indexSource = "remote";
-                indexError = "";
-            } catch (error) {
+        const remoteUrls = [config.resourcesIndexUrl, config.resourcesIndexUrlBackup].filter(Boolean);
+        if (remoteUrls.length) {
+            let lastError = null;
+            let remoteLoaded = false;
+            for (const [urlIndex, url] of remoteUrls.entries()) {
+                try {
+                    const response = await fetch(url, {
+                        signal: AbortSignal.timeout(config.resourcesFetchTimeoutMs || 8000),
+                        headers: { Accept: "application/json" },
+                    });
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    index = validateIndex(await response.json());
+                    indexSource = urlIndex === 0 && config.resourcesIndexUrl ? "remote" : "remote-backup";
+                    indexError = "";
+                    remoteLoaded = true;
+                    break;
+                } catch (error) {
+                    lastError = error;
+                }
+            }
+            if (!remoteLoaded) {
                 index = local;
                 indexSource = local ? "local" : "none";
-                indexError = `远端索引不可用：${error.message}`;
+                indexError = `远端索引不可用：${lastError?.message || "未知错误"}`;
             }
         } else {
             index = local;
@@ -310,7 +319,10 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             sha256: resource.sha256 || "",
             license: resource.license || "",
             note: resource.note || "",
-            sources: normalizeSources(resource),
+            sources: (() => {
+                const sources = normalizeSources(resource);
+                return resource.bundleDir ? [{ kind: "bundled-dir", path: resource.bundleDir, label: "内置目录" }, ...sources] : sources;
+            })(),
             requires: resource.requires || [],
             builder: resource.builder || null,
             status,
@@ -811,9 +823,16 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             }
         }
         let lastError = null;
+        let partSource = "";
         for (const source of sources) {
             let deletePart = false;
+            const sourceKey = String(source.url || source.path || source.kind || "");
             try {
+                if (partSource && sourceKey !== partSource && isFile(part)) {
+                    await fsp.unlink(part).catch(() => {});
+                    jobItem.bytes = 0;
+                }
+                partSource = sourceKey;
                 jobItem.status = "downloading";
                 jobItem.source = source.label || (source.url ? new URL(source.url).hostname : "内置");
                 jobItem.bytes = 0;

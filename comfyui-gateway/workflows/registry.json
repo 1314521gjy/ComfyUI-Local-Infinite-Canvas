@@ -1283,11 +1283,11 @@
       "defaults": {},
       "presets": {},
       "importedAt": "2026-10-24T11:41:05.053Z",
+      "label": "ESRGAN 2x 放大",
       "source": {
-        "kind": "path",
-        "path": "E:\\ComfyUI\\ComfyUI\\user\\default\\workflows\\ESRGAN_2x放大.json"
-      },
-      "label": "ESRGAN 2x 放大"
+        "kind": "comfyui",
+        "name": "ESRGAN_2x放大.json"
+      }
     },
     {
       "id": "video-seedvr2-upscale",
@@ -1353,11 +1353,7 @@
           "default": 42
         }
       ],
-      "label": "SeedVR2 视频超分",
-      "source": {
-        "kind": "path",
-        "path": "C:\\Users\\Administrator\\Documents\\Qoder\\2026-10-24\\07842353\\comfyui-gateway\\workflows\\video-seedvr2-upscale.json"
-      }
+      "label": "SeedVR2 视频超分"
     },
     {
       "id": "image-krea2-aesthetics",

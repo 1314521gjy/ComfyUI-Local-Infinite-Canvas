@@ -654,7 +654,8 @@ test("qwen21 all-in-one pack declares both workflows and their full dependencies
     const lora = byId.get("qwen21_outpaint_lora");
     assert.equal(lora.size, 159436576);
     assert.equal(lora.sha256, "3611a5ccae5f790405eeacf1dfb2c89285c1e4f2987b9abc88cd0161a60eca28");
-    assert.equal(lora.sources.length, 2);
+    assert.equal(lora.sources.length, 3);
+    assert.ok(lora.sources[1].includes("aifasthub.com"));
     assert.ok(byId.get("inpaint_cropandstitch").provides.includes("InpaintCropImproved"));
     assert.ok(byId.get("kjnodes").provides.includes("DrawMaskOnImage"));
 });
@@ -695,6 +696,123 @@ test("statically hidden workflows are marked canvas-only in resource status", as
         assert.equal(hidden.modelVisible, false);
         assert.deepEqual(hidden.variantLabels, {});
     } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});
+
+test("a partial download from one mirror is discarded before trying another", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-cross-host-test-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(path.join(comfy, "models", "vae"), { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+
+    const payload = crypto.randomBytes(64 * 1024);
+    const digest = crypto.createHash("sha256").update(payload).digest("hex");
+    const prefix = Buffer.alloc(8 * 1024, 0xaa);
+    let rangeHeader = null;
+    const server = http.createServer((req, res) => {
+        if (req.url === "/bad") {
+            res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Length": payload.length });
+            res.write(prefix, () => res.socket?.destroy());
+            return;
+        }
+        rangeHeader = req.headers.range || "";
+        if (rangeHeader) {
+            const start = Number(/bytes=(\d+)-/.exec(rangeHeader)?.[1] || 0);
+            const body = payload.subarray(start);
+            res.writeHead(206, {
+                "Content-Type": "application/octet-stream",
+                "Content-Length": body.length,
+                "Content-Range": `bytes ${start}-${payload.length - 1}/${payload.length}`,
+            });
+            res.end(body);
+            return;
+        }
+        res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Length": payload.length });
+        res.end(payload);
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = server.address().port;
+    const index = {
+        schema: 1,
+        version: "cross-host-test",
+        packs: [],
+        resources: [
+            {
+                id: "cross-host-file",
+                type: "model",
+                label: "Cross host file",
+                target: "vae/cross-host.bin",
+                size: payload.length,
+                sha256: digest,
+                sources: [`http://127.0.0.1:${port}/bad`, `http://127.0.0.1:${port}/good`],
+            },
+        ],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: { loaderOptions: () => ({}), status: () => ({ comfyReachable: true }), scan: async () => ({}) },
+        logger: null,
+    });
+    try {
+        await manager.init();
+        const job = manager.install({ ids: ["cross-host-file"] });
+        const finished = await waitForJob(manager, job.id);
+        assert.equal(finished.status, "done", JSON.stringify(finished));
+        assert.equal(rangeHeader, "");
+        assert.deepEqual(await fsp.readFile(path.join(comfy, "models", "vae", "cross-host.bin")), payload);
+    } finally {
+        await new Promise((resolve) => server.close(resolve));
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});
+
+test("remote resource index falls back to the backup URL", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-index-backup-test-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(comfy, { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    const server = http.createServer((req, res) => {
+        if (req.url === "/backup.json") {
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ schema: 1, version: "backup-test", packs: [], resources: [] }));
+            return;
+        }
+        res.statusCode = 404;
+        res.end("missing");
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = server.address().port;
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify({ schema: 1, version: "local-test", packs: [], resources: [] }), "utf8");
+    const manager = createResourceManager({
+        config: {
+            rootDir: root,
+            dataDir: data,
+            comfyDir: comfy,
+            comfyWorkflowsDir: "",
+            resourcesIndexUrl: `http://127.0.0.1:${port}/missing.json`,
+            resourcesIndexUrlBackup: `http://127.0.0.1:${port}/backup.json`,
+            resourcesFetchTimeoutMs: 1000,
+            resourceConcurrency: 1,
+        },
+        setup: { loaderOptions: () => ({}), status: () => ({ comfyReachable: true }), scan: async () => ({}) },
+        hardware: { gpuName: "Test", vramTotalMb: 32768, ramTotalBytes: 64 * 1024 ** 3, ramFreeBytes: 64 * 1024 ** 3, detectedAt: new Date().toISOString(), source: "test" },
+        logger: null,
+    });
+    try {
+        await manager.init();
+        const status = manager.status();
+        assert.equal(status.indexVersion, "backup-test");
+        assert.equal(status.indexSource, "remote-backup");
+    } finally {
+        await new Promise((resolve) => server.close(resolve));
         await fsp.rm(root, { recursive: true, force: true });
     }
 });
