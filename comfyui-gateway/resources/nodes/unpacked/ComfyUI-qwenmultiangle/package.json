@@ -1,0 +1,22 @@
+{
+  "name": "comfyui-qwenmultiangle",
+  "version": "0.7.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "three": "^0.170.0",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@comfyorg/comfyui-frontend-types": "^1.43.3",
+    "@types/node": "^22.10.1",
+    "@types/three": "^0.170.0",
+    "@vitejs/plugin-vue": "^5.2.3",
+    "typescript": "^5.7.2",
+    "vite": "^6.3.5"
+  }
+}

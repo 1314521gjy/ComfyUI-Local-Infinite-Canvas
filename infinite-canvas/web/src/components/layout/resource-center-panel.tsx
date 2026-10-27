@@ -64,6 +64,7 @@ const copyByLocale = {
         localBake: "本地烘焙",
         noResources: "此包没有需要下载的资源。",
         downloadProgress: "安装进度",
+        copying: "安装中",
         done: "安装完成",
         failed: "部分资源安装失败",
         notReachable: "ComfyUI 当前未连接，资源状态可能不准确。",
@@ -123,6 +124,7 @@ const copyByLocale = {
         localBake: "Local bake",
         noResources: "This pack has no downloadable resources.",
         downloadProgress: "Install progress",
+        copying: "Installing",
         done: "Install complete",
         failed: "Some resources failed",
         notReachable: "ComfyUI is not reachable; resource status may be stale.",
@@ -503,7 +505,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                 <span className={item.status === "error" ? "shrink-0 text-red-500" : "shrink-0 text-stone-400 dark:text-stone-500"}>
                                     {item.status === "downloading"
                                         ? `${formatBytes(item.bytes)} / ${formatBytes(item.size)}${speeds[item.id] ? ` · ${formatSpeed(speeds[item.id])}` : ""}`
-                                        : item.status === "baking" ? copy.localBake : item.status}
+                                        : item.status === "copying" ? copy.copying : item.status === "baking" ? copy.localBake : item.status}
                                 </span>
                             </div>
                         ))}

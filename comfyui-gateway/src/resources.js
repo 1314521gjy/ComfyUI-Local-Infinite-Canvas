@@ -122,7 +122,7 @@ function normalizeSources(resource) {
     return (Array.isArray(resource.sources) ? resource.sources : [])
         .map((source) => (typeof source === "string" ? { url: source } : source))
         .map((source) => ({ ...source, url: source?.url ? safeUrl(source.url) : "" }))
-        .filter((source) => source.url || (source.kind === "bundled" && source.path));
+        .filter((source) => source.url || ((source.kind === "bundled" || source.kind === "bundled-dir") && source.path));
 }
 
 function execFileText(file, args) {
@@ -757,10 +757,9 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             child.on("error", reject);
             child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(stderr || `解压失败（exit ${code}）`))));
         });
-        const cwd = path.dirname(archive);
-        const destinationRelative = path.relative(cwd, destination);
         try {
-            await run("tar", ["-xf", path.basename(archive), "-C", destinationRelative], { cwd });
+            // archive 用 basename + cwd，避免 Git 的 GNU tar 把 C: 当远程主机；-C 用绝对路径，支持跨盘。
+            await run("tar", ["-xf", path.basename(archive), "-C", destination.replace(/\\/g, "/")], { cwd: path.dirname(archive) });
         } catch (error) {
             const powershell = process.env.SystemRoot ? path.join(process.env.SystemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe") : "powershell.exe";
             const quoted = (value) => `'${String(value).replace(/'/g, "''")}'`;
@@ -797,14 +796,45 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             return;
         }
         const sources = normalizeSources(resource);
-        if (!sources.length) throw new Error("没有配置节点下载源");
+        const bundleDir = resource.bundleDir ? path.resolve(config.rootDir, String(resource.bundleDir)) : "";
+        if (!sources.length && !(bundleDir && isDir(bundleDir))) throw new Error("没有配置节点下载源");
+        if (bundleDir && isDir(bundleDir)) {
+            const installRoot = path.join(root, ".canvas-install", `${resource.id}-${Date.now()}`);
+            const temp = path.join(installRoot, "payload");
+            try {
+                jobItem.status = "copying";
+                jobItem.source = "内置目录";
+                jobItem.bytes = 0;
+                updateJob(jobItem.job);
+                await fsp.cp(bundleDir, temp, { recursive: true });
+                const sourceDir = await findNodeRoot(temp);
+                if (!sourceDir) throw new Error("内置目录里没有找到 __init__.py");
+                await fsp.mkdir(path.dirname(target), { recursive: true });
+                if (!isDir(target)) await fsp.rename(sourceDir, target);
+                lock.installed = lock.installed || {};
+                lock.installed[resource.id] = { version: index?.version || "", target: resource.target, size: resource.size || 0, installedAt: nowIso() };
+                lock.updatedAt = nowIso();
+                await saveLock();
+                jobItem.status = "done";
+                jobItem.bytes = resource.size || 0;
+                await fsp.rm(installRoot, { recursive: true, force: true }).catch(() => {});
+                return;
+            } catch (error) {
+                logger?.warn?.(`内置节点复制失败 ${resource.id}: ${error.message}，尝试下载源`);
+                await fsp.rm(installRoot, { recursive: true, force: true }).catch(() => {});
+            }
+        }
         const tmpRoot = path.join(config.dataDir, "resource-downloads");
         await fsp.mkdir(tmpRoot, { recursive: true });
         const archive = path.join(tmpRoot, `${resource.id}.zip`);
-        const extract = path.join(tmpRoot, `${resource.id}-extract`);
+        // 解压目录必须和 custom_nodes 同盘，rename 才是原子操作；跨盘 rename 在 Windows 会直接失败。
+        const installRoot = path.join(root, ".canvas-install", `${resource.id}-${Date.now()}`);
+        const extract = path.join(installRoot, "extract");
+        await fsp.mkdir(installRoot, { recursive: true });
         let lastError = null;
         for (const source of sources) {
             try {
+                if (source.kind === "bundled-dir") continue;
                 await fsp.rm(archive, { force: true });
                 jobItem.status = "downloading";
                 jobItem.source = source.label || (source.url ? new URL(source.url).hostname : "内置");
@@ -834,18 +864,25 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 const sourceDir = await findNodeRoot(extract);
                 if (!sourceDir) throw new Error("节点包里没有找到 __init__.py");
                 await fsp.mkdir(path.dirname(target), { recursive: true });
+                const backup = path.join(installRoot, "backup");
+                let movedBackup = false;
                 if (isDir(target)) {
-                    const backup = path.join(config.dataDir, "backups", `${resource.id}-${Date.now()}`);
-                    await fsp.mkdir(path.dirname(backup), { recursive: true });
                     await fsp.rename(target, backup);
+                    movedBackup = true;
                 }
-                await fsp.rename(sourceDir, target);
+                try {
+                    await fsp.rename(sourceDir, target);
+                } catch (error) {
+                    if (movedBackup) await fsp.rename(backup, target).catch(() => {});
+                    throw error;
+                }
                 lock.installed = lock.installed || {};
                 lock.installed[resource.id] = { version: index?.version || "", target: resource.target, size: resource.size || 0, installedAt: nowIso() };
                 lock.updatedAt = nowIso();
                 await saveLock();
                 jobItem.status = "done";
                 jobItem.bytes = resource.size || jobItem.bytes;
+                await fsp.rm(installRoot, { recursive: true, force: true }).catch(() => {});
                 return;
             } catch (error) {
                 lastError = error;
@@ -853,6 +890,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 logger?.warn?.(`节点安装失败 ${resource.id} ← ${jobItem.source}: ${error.message}`);
             }
         }
+        await fsp.rm(installRoot, { recursive: true, force: true }).catch(() => {});
         throw lastError || new Error("所有节点下载源均失败");
     }
 

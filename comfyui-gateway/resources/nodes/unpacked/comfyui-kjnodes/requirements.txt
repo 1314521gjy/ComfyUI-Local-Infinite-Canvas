@@ -1,0 +1,5 @@
+pillow>=10.3.0
+color-matcher
+matplotlib
+mss
+opencv-python-headless

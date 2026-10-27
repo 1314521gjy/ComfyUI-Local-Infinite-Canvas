@@ -148,6 +148,45 @@ test("resources can install a custom node zip", async () => {
     }
 });
 
+test("node resources can install from a bundled directory without extracting", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-node-dir-test-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(path.join(comfy, "custom_nodes"), { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(path.join(resources, "nodes", "testnode"), { recursive: true });
+    await fsp.writeFile(path.join(resources, "nodes", "testnode", "__init__.py"), "BUNDLED = True\n", "utf8");
+    const index = {
+        schema: 1,
+        version: "test-node-dir-1",
+        packs: [{ id: "test", resources: ["test-node"] }],
+        resources: [{
+            id: "test-node",
+            type: "node",
+            label: "Test node",
+            target: "custom_nodes/TestNode",
+            bundleDir: "resources/nodes/testnode",
+            sources: [],
+        }],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: { loaderOptions: () => ({}), status: () => ({ comfyReachable: true }), scan: async () => ({}) },
+        logger: null,
+    });
+    try {
+        await manager.init();
+        const job = manager.install({ ids: ["test-node"] });
+        const finished = await waitForJob(manager, job.id);
+        assert.equal(finished.status, "done", JSON.stringify(finished));
+        assert.equal(await fsp.readFile(path.join(comfy, "custom_nodes", "TestNode", "__init__.py"), "utf8"), "BUNDLED = True\n");
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});
+
 test("node backup sources can opt out of the primary zip hash", async () => {
     const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-node-backup-test-"));
     const comfy = path.join(root, "ComfyUI");

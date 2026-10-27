@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 
 function isFile(file) {
@@ -29,11 +30,18 @@ function run(file, args, options = {}) {
     });
 }
 
+async function sha256File(file) {
+    const hash = crypto.createHash("sha256");
+    const stream = fs.createReadStream(file);
+    for await (const chunk of stream) hash.update(chunk);
+    return hash.digest("hex");
+}
+
 async function extractZip(archive, destination) {
     await fsp.rm(destination, { recursive: true, force: true });
     await fsp.mkdir(destination, { recursive: true });
     try {
-        await run("tar", ["-xf", archive, "-C", destination]);
+        await run("tar", ["-xf", path.basename(archive), "-C", destination.replace(/\\/g, "/")], { cwd: path.dirname(archive) });
     } catch (error) {
         const powershell = process.env.SystemRoot ? path.join(process.env.SystemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe") : "powershell.exe";
         const quote = (value) => `'${String(value).replace(/'/g, "''")}'`;
@@ -78,27 +86,49 @@ export async function installBundledNodes({ root, comfyRoot, log = console.log }
         if (parts[0] !== "custom_nodes" || parts.length < 2 || parts.some((part) => part === ".." || part === ".")) continue;
         const target = path.join(comfyRoot, "custom_nodes", ...parts.slice(1));
         if (isDir(target)) continue;
+
+        const bundleDir = resource.bundleDir
+            ? path.resolve(gatewayRoot, String(resource.bundleDir).replace(/^[/\\]+/, ""))
+            : "";
         const bundled = (resource.sources || []).find((source) => source && typeof source === "object" && (source.kind === "bundled" || source.path));
-        if (!bundled) continue;
-        const archive = path.resolve(gatewayRoot, String(bundled.path || "").replace(/^[/\\]+/, ""));
-        if (!isFile(archive)) {
-            log(`[bootstrap] 缺少内置节点包：${resource.id}`, "WARN");
+        const archive = bundled
+            ? path.resolve(gatewayRoot, String(bundled.path || "").replace(/^[/\\]+/, ""))
+            : "";
+        if ((!bundleDir || !isDir(bundleDir)) && (!archive || !isFile(archive))) {
+            log(`[bootstrap] 缺少内置节点文件：${resource.id}`, "WARN");
             continue;
         }
-        const temp = path.join(root, "launcher", ".bootstrap", `${resource.id}-${process.pid}-${Date.now()}`);
+
+        // 复制/解压都在 ComfyUI 同盘完成，最后 rename 到 custom_nodes，避免跨盘失败和半成品目录。
+        const installRoot = path.join(comfyRoot, ".canvas-install", `${resource.id}-${process.pid}-${Date.now()}`);
+        const temp = path.join(installRoot, "payload");
         try {
-            await fsp.mkdir(temp, { recursive: true });
-            await extractZip(archive, temp);
+            let prepared = false;
+            if (bundleDir && isDir(bundleDir)) {
+                await fsp.cp(bundleDir, temp, { recursive: true });
+                prepared = true;
+                log(`[bootstrap] 复制内置目录：${resource.label || resource.id}`);
+            }
+            if (!prepared) {
+                if (!archive || !isFile(archive)) throw new Error("缺少内置节点包");
+                if (resource.size && fs.statSync(archive).size !== Number(resource.size)) throw new Error("内置节点包大小不一致");
+                if (resource.sha256 && (await sha256File(archive)).toLowerCase() !== String(resource.sha256).toLowerCase()) throw new Error("内置节点包 SHA256 校验失败");
+                await extractZip(archive, temp);
+            }
             const sourceDir = await findNodeRoot(temp);
             if (!sourceDir) throw new Error("没有找到 __init__.py");
             await fsp.mkdir(path.dirname(target), { recursive: true });
-            await fsp.cp(sourceDir, target, { recursive: true, force: false, errorOnExist: false });
+            if (isDir(target)) {
+                log(`[bootstrap] 节点目录已存在，跳过：${resource.label || resource.id}`, "WARN");
+                continue;
+            }
+            await fsp.rename(sourceDir, target);
             installed.push(resource.label || resource.id);
             log(`[bootstrap] 已放置内置节点：${resource.label || resource.id}`);
         } catch (error) {
             log(`[bootstrap] 节点放置失败 ${resource.id}：${error.message}`, "WARN");
         } finally {
-            await fsp.rm(temp, { recursive: true, force: true }).catch(() => {});
+            await fsp.rm(installRoot, { recursive: true, force: true }).catch(() => {});
         }
     }
     return installed;

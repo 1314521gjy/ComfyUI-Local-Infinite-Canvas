@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "version": "2026.10.27-6",
+  "version": "2026.10.27-7",
   "channel": "stable",
-  "updatedAt": "2026-10-27T11:15:00+08:00",
+  "updatedAt": "2026-10-27T11:40:00+08:00",
   "packs": [
     {
       "id": "core",
@@ -366,8 +366,8 @@
       "label": "Qwen Multiangle Camera 节点",
       "target": "custom_nodes/ComfyUI-qwenmultiangle",
       "autoInstall": true,
-      "size": 4587520,
-      "sha256": "430263e1baafb7a0b4f4451b95ab251e9c5aae0a96d1c18837604cd7eeb05b78",
+      "bundleDir": "resources/nodes/unpacked/ComfyUI-qwenmultiangle",
+      "size": 4559537,
       "license": "MIT",
       "note": "安装后需重启 ComfyUI；主源内置 zip，备源公开 GitHub 归档。",
       "provides": [
@@ -375,9 +375,9 @@
       ],
       "sources": [
         {
-          "kind": "bundled",
-          "path": "resources/nodes/ComfyUI-qwenmultiangle.zip",
-          "label": "内置"
+          "kind": "bundled-dir",
+          "path": "resources/nodes/unpacked/ComfyUI-qwenmultiangle",
+          "label": "内置目录"
         },
         {
           "url": "https://github.com/jtydhr88/ComfyUI-qwenmultiangle/archive/refs/heads/master.zip",
@@ -406,8 +406,8 @@
       "label": "Inpaint Crop & Stitch（局部重绘节点）",
       "target": "custom_nodes/ComfyUI-Inpaint-CropAndStitch",
       "autoInstall": true,
-      "size": 35574,
-      "sha256": "19c8cb82b1b3ed36a2db794788a46d2095f6f01c456f296243b7883fab0ea26c",
+      "bundleDir": "resources/nodes/unpacked/ComfyUI-Inpaint-CropAndStitch",
+      "size": 161835,
       "license": "GPL-3.0",
       "note": "局部重绘所需；安装后需重启 ComfyUI。",
       "provides": [
@@ -416,9 +416,9 @@
       ],
       "sources": [
         {
-          "kind": "bundled",
-          "path": "resources/nodes/ComfyUI-Inpaint-CropAndStitch.zip",
-          "label": "内置"
+          "kind": "bundled-dir",
+          "path": "resources/nodes/unpacked/ComfyUI-Inpaint-CropAndStitch",
+          "label": "内置目录"
         },
         {
           "url": "https://github.com/lquesada/ComfyUI-Inpaint-CropAndStitch/archive/refs/heads/main.zip",
@@ -433,8 +433,8 @@
       "label": "KJNodes（扩图蒙版节点）",
       "target": "custom_nodes/comfyui-kjnodes",
       "autoInstall": true,
-      "size": 846875,
-      "sha256": "f06aafd1969b5f26f60c2860b095714b23496baaa29ff12e3afbb4d68b52ac39",
+      "bundleDir": "resources/nodes/unpacked/comfyui-kjnodes",
+      "size": 2634717,
       "license": "GPL-3.0",
       "note": "仅扩图的 DrawMaskOnImage 使用；无需额外 pip 依赖；安装后需重启 ComfyUI。",
       "provides": [
@@ -442,9 +442,9 @@
       ],
       "sources": [
         {
-          "kind": "bundled",
-          "path": "resources/nodes/comfyui-kjnodes.zip",
-          "label": "内置"
+          "kind": "bundled-dir",
+          "path": "resources/nodes/unpacked/comfyui-kjnodes",
+          "label": "内置目录"
         },
         {
           "url": "https://github.com/kijai/ComfyUI-KJNodes/archive/refs/heads/main.zip",
