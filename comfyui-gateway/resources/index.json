@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026.10.27-14",
+  "version": "2026.10.27-15",
   "channel": "stable",
   "updatedAt": "2026-10-27T17:10:00+08:00",
   "packs": [
@@ -668,6 +668,7 @@
       "sha256": "4abb14e39c1a59018907581e609f43616ec6810126144ec2b1d2e6f8969628fe",
       "license": "MOSS-Image",
       "sources": [
+        "https://www.modelscope.cn/models/lodestones/MOSS-Image-SFT-8-steps-dmd/resolve/master/lora.safetensors",
         "https://hf-mirror.com/lodestones/MOSS-Image-SFT-8-steps-dmd/resolve/main/lora.safetensors",
         "https://aifasthub.com/lodestones/MOSS-Image-SFT-8-steps-dmd/resolve/main/lora.safetensors"
       ]
@@ -876,9 +877,11 @@
       "label": "H3 Latent Upscaler 3D fp16",
       "target": "latent_upscale_models/minimax_h3_latent_upscaler_3d_fp16.safetensors",
       "size": 690592672,
+      "sha256": "043e5a48e161610ef6c3ea974645220354d06fa618abca15f76d084812eb55c2",
       "license": "Apache-2.0",
-      "note": "SelfLift 高清二采使用；HF 源，国内可用 hf-mirror。",
+      "note": "SelfLift 高清二采使用；魔搭同内容文件（文件名带 3d_conv_v1_fp16），另有 hf-mirror 备源。",
       "sources": [
+        "https://www.modelscope.cn/models/LBH-123-AI/Minimax_h3_latent_Upscaler/resolve/master/minimax_h3_latent_upscaler_3d_conv_v1/minimax_h3_latent_upscaler_3d_conv_v1_fp16.safetensors",
         "https://hf-mirror.com/LBH-123-AI/Minimax_h3_latent_Upscaler/resolve/main/minimax_h3_latent_upscaler_3d_fp16.safetensors",
         "https://huggingface.co/LBH-123-AI/Minimax_h3_latent_Upscaler/resolve/main/minimax_h3_latent_upscaler_3d_fp16.safetensors"
       ]
