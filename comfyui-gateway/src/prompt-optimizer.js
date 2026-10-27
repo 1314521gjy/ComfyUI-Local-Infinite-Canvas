@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { ensureSpeakerTags } from "./speaker-tags.js";
 import { deepClone, sleep, truncate } from "./util.js";
 
 const MODES = new Set([
@@ -288,9 +289,18 @@ async function cloudOptimize({ prompt, mode, duration, referenceNote, language, 
   ].filter(Boolean).join("\n");
   const system = buildCloudH3System(mode, duration, outputLanguage);
   const { content, model, elapsedMs } = await cloudChat({ system, userText, images: cloudImages, cloud, signal });
-  const result = sanitizeH3Prompt(content);
-  if (!result) throw new PromptOptimizeError("云端 API 没有返回提示词", { status: 502, code: "no_prompt_output" });
-  return { prompt: result, mode, duration, provider: "cloud", model, elapsedMs };
+  const sanitized = sanitizeH3Prompt(content);
+  if (!sanitized) throw new PromptOptimizeError("云端 API 没有返回提示词", { status: 502, code: "no_prompt_output" });
+  const speaker = ensureSpeakerTags(sanitized);
+  return {
+    prompt: speaker.prompt,
+    mode,
+    duration,
+    provider: "cloud",
+    model,
+    elapsedMs,
+    speakerTags: { fixed: speaker.fixed, issues: speaker.issues },
+  };
 }
 
 async function cloudOptimizeImage({ prompt, mode, language, imageCount = 0, cloud = {}, signal }) {
@@ -423,13 +433,17 @@ export function createPromptOptimizer({ config, comfy, logger }) {
         });
       }
       logger?.info?.(`prompt optimize ${taskType} images=${images.length} ${promptId} ${Date.now() - started}ms`);
+      const speaker = ensureSpeakerTags(result);
+      if (speaker.fixed) logger?.info?.(`prompt optimize fixed ${speaker.fixed} speaker tag(s)`);
+      if (speaker.issues.length) logger?.info?.(`prompt optimize speaker issues ${speaker.issues.length}`);
       return {
-        prompt: ensureFrameAlignmentPrompt(result, taskType, optimizeSeconds),
+        prompt: ensureFrameAlignmentPrompt(speaker.prompt, taskType, optimizeSeconds),
         mode: taskType,
         duration: optimizeSeconds,
         promptId,
         elapsedMs: Date.now() - started,
         provider: "local",
+        speakerTags: { fixed: speaker.fixed, issues: speaker.issues },
       };
     } finally {
       running = false;
