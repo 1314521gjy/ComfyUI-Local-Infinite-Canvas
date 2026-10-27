@@ -381,6 +381,109 @@ test("a merged pack recommends bf16 on large cards and int8 on small cards", asy
     }
 });
 
+test("zimage pack keeps one default base and exposes int8 as an optional base model", () => {
+    const index = JSON.parse(fs.readFileSync(new URL("../resources/index.json", import.meta.url), "utf8"));
+    const pack = index.packs.find((item) => item.id === "zimage");
+    assert.ok(pack, "zimage pack is missing");
+    assert.equal(pack.autoRecommend, false);
+    assert.equal(pack.optional, true);
+    assert.equal(pack.variants, undefined);
+    assert.equal(pack.workflowDependencies, undefined);
+    assert.deepEqual(pack.workflows, ["image-z-image-turbo"]);
+    assert.deepEqual(pack.resources, [
+        "z_image_turbo_bf16",
+        "qwen_3_4b",
+        "ae",
+        "z_image_turbo_int8_convrot",
+    ]);
+    assert.deepEqual(pack.optionalResources, ["z_image_turbo_int8_convrot"]);
+    assert.equal(index.resources.some((item) => item.id === "z_image_turbo_distill_lora"), false);
+});
+
+test("krea2 pack matches the zimage shape with no bundled LoRAs", () => {
+    const index = JSON.parse(fs.readFileSync(new URL("../resources/index.json", import.meta.url), "utf8"));
+    const pack = index.packs.find((item) => item.id === "krea2");
+    assert.ok(pack, "krea2 pack is missing");
+    assert.equal(pack.autoRecommend, false);
+    assert.equal(pack.optional, true);
+    assert.equal(pack.variants, undefined);
+    assert.equal(pack.workflowDependencies, undefined);
+    assert.deepEqual(pack.workflows, ["image-krea2-turbo"]);
+    assert.deepEqual(pack.resources, [
+        "krea2_turbo_fp8_scaled",
+        "qwen3vl_4b_fp8_scaled",
+        "qwen_image_vae",
+        "krea2_turbo_int8_convrot",
+    ]);
+    assert.deepEqual(pack.optionalResources, ["krea2_turbo_int8_convrot"]);
+    assert.equal(index.resources.some((item) => item.id === "krea2_darkbrush_lora"), false);
+    assert.equal(index.resources.some((item) => item.id === "krea2_retroanime_lora"), false);
+    assert.equal(index.resources.length, 24);
+});
+
+test("a selected pack main model activates the workflow and replaces the default model resource", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-main-model-test-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(path.join(comfy, "models"), { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    const index = {
+        schema: 1,
+        version: "main-model-test",
+        packs: [{ id: "test-pack", label: "Test", resources: ["default-model"], workflows: ["image-test"] }],
+        resources: [
+            {
+                id: "default-model",
+                type: "model",
+                label: "Default model",
+                target: "diffusion_models/default.safetensors",
+                size: 128,
+                sources: ["https://example.com/default.safetensors"],
+            },
+        ],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: {
+            loaderOptions: () => ({ UNETLoader: ["my_finetune.safetensors"] }),
+            status: () => ({ comfyReachable: true }),
+            scan: async () => ({}),
+            workflowStatus: () => ({ available: true, problems: [] }),
+        },
+        registry: {
+            resolve: (id) =>
+                id === "image-test"
+                    ? { id, name: id, workflow: { 1: { class_type: "UNETLoader", inputs: { unet_name: "default.safetensors" } } } }
+                    : null,
+        },
+        mainModels: {
+            fileForPack: () => "my_finetune.safetensors",
+            set: async () => {},
+        },
+        hardware: { gpuName: "Test", vramTotalMb: 32768, ramTotalBytes: 64 * 1024 ** 3, ramFreeBytes: 64 * 1024 ** 3, detectedAt: new Date().toISOString(), source: "test" },
+        logger: null,
+    });
+    try {
+        await manager.init();
+        const status = manager.status();
+        const pack = status.packs[0];
+        assert.equal(pack.mainModel.selected, "my_finetune.safetensors");
+        assert.equal(pack.mainModel.selectedInstalled, true);
+        assert.equal(pack.mainModel.available, true);
+        assert.equal(pack.mainModel.options.some((option) => option.file === "my_finetune.safetensors" && option.source === "local"), true);
+        assert.equal(pack.resources[0].status, "present");
+        assert.equal(pack.resources[0].overridden, true);
+        assert.equal(pack.missing, 0);
+        assert.equal(status.summary.missing, 0);
+        await assert.rejects(() => manager.setMainModel("test-pack", "missing.safetensors"), /尚未安装/);
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});
+
 test("optional alternate model packs can stay eligible without being auto-recommended", async () => {
     const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-auto-recommend-test-"));
     const comfy = path.join(root, "ComfyUI");

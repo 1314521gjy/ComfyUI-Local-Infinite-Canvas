@@ -9,9 +9,11 @@ import express from "express";
 import multer from "multer";
 
 import { buildContext } from "./bindings.js";
+import { imageInputCapacity } from "./base-models.js";
 import { createComfyBridge } from "./comfy-bridge.js";
 import { createComfyClient } from "./comfy-client.js";
 import { createLogger, loadConfig } from "./config.js";
+import { createMainModelStore } from "./main-models.js";
 import { createRegistry } from "./registry.js";
 import { createSessionTracker } from "./sessions.js";
 import { createSetupManager } from "./setup.js";
@@ -201,7 +203,14 @@ export async function createGatewayApp(overrides = {}) {
     logger,
     previewHub,
   });
-  const registry = createRegistry({ dir: config.workflowDir, maxWorkflowBytes: config.maxWorkflowBytes, logger });
+  const mainModels = createMainModelStore({ dataDir: config.dataDir, logger });
+  await mainModels.load();
+  const registry = createRegistry({
+    dir: config.workflowDir,
+    maxWorkflowBytes: config.maxWorkflowBytes,
+    logger,
+    mainModelFile: (id) => mainModels.fileForWorkflow(id),
+  });
   await registry.load();
   const tasks = createTaskStore({
     dataDir: config.dataDir,
@@ -227,8 +236,8 @@ export async function createGatewayApp(overrides = {}) {
   const bridgeStatus = await comfyBridge.ensure();
   if (!bridgeStatus.installed) logger.warn(`ComfyUI 工作流桥接未安装：${bridgeStatus.reason || "未知原因"}`);
   const sessions = createSessionTracker({ staleMs: config.sessionStaleSec * 1000 });
-  const setup = createSetupManager({ config, registry, comfy, logger });
-  const resources = createResourceManager({ config, setup, registry, logger, workflowVisibility });
+  const setup = createSetupManager({ config, registry, comfy, logger, mainModelFile: (id) => mainModels.fileForWorkflow(id) });
+  const resources = createResourceManager({ config, setup, registry, logger, workflowVisibility, mainModels });
   await resources.init();
   let lastOOM = null;
   const activeRequests = new Map();
@@ -322,6 +331,14 @@ export async function createGatewayApp(overrides = {}) {
       res.json(await resources.refresh());
     } catch (error) {
       res.status(500).json({ ok: false, error: { message: error.message } });
+    }
+  });
+
+  app.post("/api/resources/packs/:id/main-model", async (req, res) => {
+    try {
+      res.json({ ok: true, status: await resources.setMainModel(req.params.id, req.body?.file) });
+    } catch (error) {
+      res.status(400).json({ ok: false, error: { message: error.message } });
     }
   });
 
@@ -473,6 +490,7 @@ export async function createGatewayApp(overrides = {}) {
             : model.entry.label || model.entry.name,
           baseModel: model.entry.baseModel || null,
           baseModelLabel: model.entry.baseModelLabel || null,
+          imageInputs: imageInputCapacity(model.entry),
           description: model.entry.description || "",
           variantModes: model.entry.variants ? Object.keys(model.entry.variants) : [],
           variantLabels: model.entry.variantLabels || {},

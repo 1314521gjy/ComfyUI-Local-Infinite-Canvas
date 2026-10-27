@@ -286,14 +286,15 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
         }
         setOptimizeOptionsOpen(false);
         const useCloud = optimizeEngine === "cloud";
+        const references = info && info.imageInputs > 0 ? imageReferences.slice(0, info.imageInputs) : [];
         setOptimizing(true);
         try {
             const result = await requestImagePromptOptimize(config, {
                 prompt: text,
-                mode: "image",
+                mode: references.length ? "image" : "text",
                 language: "zh",
-                images: useCloud ? [] : imageReferences,
-                imageCount: imageReferences.length,
+                images: useCloud ? [] : references,
+                imageCount: references.length,
                 engine: optimizeEngine,
                 cloud: useCloud
                     ? {

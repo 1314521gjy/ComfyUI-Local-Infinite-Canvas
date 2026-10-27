@@ -4,7 +4,7 @@ import { Button, message, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { BaseModelPicker, ModelPicker, WorkflowModelPicker } from "@/components/model-picker";
-import { channelModelOf, defaultConfig, modelOptionName, resolveModelForCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import { channelModelOf, defaultConfig, modelImageInputs, modelOptionName, resolveModelForCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 
 import { useCanvasTheme } from "@/lib/canvas/use-canvas-theme";
 import { isPlainEnterKey } from "@/lib/keyboard-event";
@@ -82,6 +82,10 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     const sourceVideoDurationSeconds = sourceVideoNode?.metadata?.durationMs && sourceVideoNode.metadata.durationMs > 0 ? sourceVideoNode.metadata.durationMs / 1000 : undefined;
     const isH3 = mode === "video" && (workflowId === "video-h3-t2v" || workflowId === "video-h3-frames" || isH3Reference);
     const isImage = mode === "image";
+    const imageInputLimit = modelImageInputs(config, config.model || config.imageModel);
+    const imageModeValue = String(config.imageMode || "").trim();
+    const textOnlyImageMode = isImage && (imageModeValue === "t2i" || (!imageModeValue && workflowId === "image-qwen21"));
+    const usesImageReferences = textOnlyImageMode ? false : imageInputLimit === undefined ? !isH3T2V : imageInputLimit > 0;
     const optimizeStatus = node.metadata?.promptOptimizeStatus;
     const optimizeRunning = optimizeStatus === "running";
     const optimizeResult = node.metadata?.promptOptimizePrompt || "";
@@ -202,12 +206,8 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     };
 
     const optimizeDefaults = () => {
-        const selectedRefs =
-            workflowId === "video-h3-ref2va" || workflowId === "video-h3-character-swap"
-                ? imageReferences.slice(0, 6)
-                : workflowId === "video-h3-t2v"
-                  ? []
-                  : imageReferences.slice(0, 2);
+        const refLimit = imageInputLimit ?? (isH3Reference ? 6 : 2);
+        const selectedRefs = usesImageReferences ? imageReferences.slice(0, Math.max(1, refLimit)) : [];
         const videoCount = Math.min(1, mentionReferences.filter((reference) => reference.kind === "video").length);
         const audioCount = Math.min(2, mentionReferences.filter((reference) => reference.kind === "audio").length);
         const referenceNote =
@@ -274,7 +274,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
         if (!text || optimizeRunning) return;
         commitPrompt(draft);
         setOptimizeOptionsOpen(false);
-        const selectedRefs = imageReferences.slice(0, 8);
+        const selectedRefs = usesImageReferences ? imageReferences.slice(0, Math.max(1, imageInputLimit ?? 8)) : [];
         const useCloud = optimizeEngine === "cloud";
         const controller = new AbortController();
         registerPromptOptimizeJob(node.id, controller);

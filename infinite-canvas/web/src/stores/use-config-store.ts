@@ -21,6 +21,7 @@ export type ChannelModel = {
     baseModelLabel?: string;
     variantModes?: string[];
     variantLabels?: Record<string, string>;
+    imageInputs?: number;
 };
 
 export type ModelChannel = {
@@ -325,6 +326,11 @@ export function baseModelOptions(config: AiConfig, value: string) {
         }));
 }
 
+export function modelImageInputs(config: AiConfig, value: string) {
+    const found = channelModelOf(config, value);
+    return typeof found?.model.imageInputs === "number" ? found.model.imageInputs : undefined;
+}
+
 /** The user script (if any) attached to a model; empty string means use the system default call. */
 export function resolveModelScript(config: AiConfig, value: string) {
     return findChannelModel(config, value)?.model.script?.trim() || "";
@@ -589,7 +595,8 @@ export function normalizeChannelModels(models: Array<string | ChannelModel> | un
         const baseModelLabel = typeof item === "string" ? undefined : item.baseModelLabel?.trim() || undefined;
         const variantModes = typeof item === "string" ? undefined : Array.isArray(item.variantModes) ? item.variantModes.map((mode) => String(mode).trim()).filter(Boolean) : undefined;
         const variantLabels = typeof item === "string" ? undefined : item.variantLabels && typeof item.variantLabels === "object" ? item.variantLabels : undefined;
-        result.push({ name, capability, script, label, workflowId, baseModel, baseModelLabel, variantModes, variantLabels });
+        const imageInputs = typeof item === "string" ? undefined : typeof item.imageInputs === "number" ? item.imageInputs : undefined;
+        result.push({ name, capability, script, label, workflowId, baseModel, baseModelLabel, variantModes, variantLabels, imageInputs });
     }
     return result;
 }

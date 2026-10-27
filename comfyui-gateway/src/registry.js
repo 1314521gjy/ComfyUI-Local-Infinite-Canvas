@@ -3,7 +3,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 
 import { deepClone, isPlainObject, nowIso, readJsonFile, slugify, truncate, writeJsonAtomic } from "./util.js";
-import { baseModelDefault, decorateEntry, listBaseModels, listModelDescriptors, resolveBaseModelVariant } from "./base-models.js";
+import { baseModelDefault, decorateEntry, findUnetLoader, listBaseModels, listModelDescriptors, resolveBaseModelVariant } from "./base-models.js";
 
 const REGISTRY_FILE = "registry.json";
 const TYPE_PREFIX = { image: "image", video: "video", audio: "audio", text: "text" };
@@ -181,7 +181,7 @@ function bindingWarnings(workflow, bindings) {
   return warnings;
 }
 
-export function createRegistry({ dir, maxWorkflowBytes = 5 * 1024 * 1024, logger } = {}) {
+export function createRegistry({ dir, maxWorkflowBytes = 5 * 1024 * 1024, logger, mainModelFile = () => "" } = {}) {
   const registryPath = path.join(dir, REGISTRY_FILE);
   const cache = new Map();
   const byName = new Map();
@@ -329,16 +329,53 @@ export function createRegistry({ dir, maxWorkflowBytes = 5 * 1024 * 1024, logger
     return cache.get(idOrName) || byName.get(idOrName) || [...cache.values()].find((entry) => entry.name.toLowerCase() === String(idOrName).toLowerCase()) || null;
   }
 
+  function decorateWithMainModel(entry, variant, loaderOptions) {
+    const decorated = decorateEntry(entry, variant, loaderOptions);
+    if (variant) return decorated;
+    const file = mainModelFile(entry.id);
+    if (!file) return decorated;
+    const target = findUnetLoader(entry.workflow);
+    if (!target) return decorated;
+    const files = loaderOptions?.["UNETLoader"] || [];
+    if (!files.includes(file)) return decorated;
+    const bindingKey = Object.entries(entry.bindings || {}).find(([, binding]) => binding?.node === target.nodeId && binding?.input === target.input)?.[0];
+    if (bindingKey) {
+      return { ...decorated, baseModelParams: { ...(decorated.baseModelParams || {}), [bindingKey]: file } };
+    }
+    return { ...decorated, mainModelFile: file };
+  }
+
   function listModels(loaderOptions = {}) {
-    return listModelDescriptors([...cache.values()], loaderOptions).map((descriptor) => ({
-      ...descriptor,
-      entry: decorateEntry(descriptor.entry, descriptor.variant, loaderOptions),
-    }));
+    const entries = [...cache.values()];
+    const descriptors = [];
+    for (const descriptor of listModelDescriptors(entries, loaderOptions)) {
+      const file = mainModelFile(descriptor.entry.id);
+      if (descriptor.variant && file && descriptor.variant.file === file) continue;
+      descriptors.push({ ...descriptor, entry: decorateWithMainModel(descriptor.entry, descriptor.variant, loaderOptions) });
+    }
+    for (const entry of entries) {
+      const file = mainModelFile(entry.id);
+      if (!file || !findUnetLoader(entry.workflow)) continue;
+      if (!(loaderOptions?.["UNETLoader"] || []).includes(file)) continue;
+      if (descriptors.some((descriptor) => descriptor.baseId === entry.id && !descriptor.variant)) continue;
+      descriptors.push({
+        modelId: entry.name,
+        baseId: entry.id,
+        entry: decorateWithMainModel(entry, null, loaderOptions),
+        variant: null,
+        defaultFile: baseModelDefault(entry, entry.baseModels),
+      });
+    }
+    return descriptors;
   }
 
   function resolveModel(idOrName, loaderOptions = {}) {
     const direct = resolve(idOrName);
     if (direct) {
+      const override = mainModelFile(direct.id);
+      if (override && (loaderOptions?.["UNETLoader"] || []).includes(override)) {
+        return { entry: decorateWithMainModel(direct, null, loaderOptions), variant: null };
+      }
       const config = direct.baseModels;
       const defaultFile = baseModelDefault(direct, config);
       const files = loaderOptions?.[config?.classType || "UNETLoader"] || [];
@@ -346,7 +383,7 @@ export function createRegistry({ dir, maxWorkflowBytes = 5 * 1024 * 1024, logger
         const variant = listBaseModels(direct, loaderOptions)[0];
         if (variant) return { entry: decorateEntry(direct, variant, loaderOptions), variant };
       }
-      return { entry: decorateEntry(direct, null, loaderOptions), variant: null };
+      return { entry: decorateWithMainModel(direct, null, loaderOptions), variant: null };
     }
     for (const entry of cache.values()) {
       const variant = resolveBaseModelVariant(entry, idOrName, loaderOptions);

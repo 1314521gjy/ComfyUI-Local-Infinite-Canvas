@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   decorateEntry,
   decorateParameters,
+  imageInputCapacity,
   listBaseModels,
   listModelDescriptors,
   resolveBaseModelVariant,
@@ -23,6 +24,14 @@ const entry = {
 const loaderOptions = {
   UNETLoader: ["z-image-turbo.safetensors", "z_image_bf16.safetensors", "krea2_turbo.safetensors"],
 };
+
+test("imageInputCapacity reports how many reference images a workflow consumes", () => {
+  assert.equal(imageInputCapacity({ bindings: { refs: { from: "image", array: true, max: 4 } } }), 4);
+  assert.equal(imageInputCapacity({ bindings: { frames: { from: "image", frameMode: true, max: 2 } } }), 2);
+  assert.equal(imageInputCapacity({ bindings: { image: { from: "image", imageIndex: 0 } } }), 1);
+  assert.equal(imageInputCapacity({ bindings: { prompt: { node: "5", input: "text" } } }), 0);
+  assert.equal(imageInputCapacity({}), 0);
+});
 
 test("listBaseModels filters loader options and keeps stable slugs", () => {
   const variants = listBaseModels(entry, loaderOptions);
@@ -112,4 +121,11 @@ test("video workflows use the vid prefix", () => {
   };
   const models = listModelDescriptors([video], loaderOptions);
   assert.equal(models[1].modelId, "vid-h3-z-image-bf16");
+});
+
+test("descriptors skip a missing default base model and keep installed alternates", () => {
+  const models = listModelDescriptors([entry], { UNETLoader: ["z_image_int8.safetensors"] });
+  assert.deepEqual(models.map((model) => model.modelId), ["image-z-image-turbo__z-image-int8"]);
+  assert.equal(models[0].variant.file, "z_image_int8.safetensors");
+  assert.equal(listModelDescriptors([entry], { UNETLoader: [] }).length, 0);
 });

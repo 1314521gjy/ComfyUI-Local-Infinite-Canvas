@@ -29,6 +29,27 @@ function loaderNodeFor(entry, config) {
   return found[1]?.inputs && input in found[1].inputs ? { nodeId: found[0], input } : null;
 }
 
+export function imageInputCapacity(entry) {
+  let count = 0;
+  for (const binding of Object.values(entry?.bindings || {})) {
+    if (!binding) continue;
+    if (binding.from !== "image" && binding.imageIndex === undefined && !binding.frameMode) continue;
+    if (binding.frameMode) count += Math.max(2, Number(binding.max) || 0);
+    else if (binding.array) count += Math.max(1, Number(binding.max) || 1);
+    else count += 1;
+  }
+  return count;
+}
+
+export function findUnetLoader(workflow) {
+  for (const [nodeId, node] of Object.entries(workflow || {})) {
+    if (node?.class_type !== "UNETLoader") continue;
+    const file = node.inputs?.unet_name;
+    if (typeof file === "string" && file) return { nodeId, input: "unet_name", file };
+  }
+  return null;
+}
+
 export function baseModelDefault(entry, config = entry?.baseModels) {
   if (!config) return "";
   const target = loaderNodeFor(entry, config);

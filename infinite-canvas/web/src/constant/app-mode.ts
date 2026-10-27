@@ -6,18 +6,18 @@ export const LOCAL_GATEWAY_BASE_URL = import.meta.env.VITE_LOCAL_GATEWAY_URL || 
 export const LOCAL_GATEWAY_CHANNEL_ID = "local-gateway";
 
 export const LOCAL_GATEWAY_MODELS = [
-    { name: "image-z-image-turbo", capability: "image" as const },
-    { name: "image-krea2-turbo", capability: "image" as const },
-    { name: "image-qwen21", capability: "image" as const },
-    { name: "image-moss-sft-8step", capability: "image" as const },
-    { name: "image-moss-sft-50step", capability: "image" as const },
-    { name: "video-h3-t2v", capability: "video" as const },
-    { name: "video-h3-frames", capability: "video" as const },
-    { name: "video-h3-ref2va", capability: "video" as const },
-    { name: "video-h3-character-swap", capability: "video" as const },
-    { name: "video-h3-t2v-novdn", capability: "video" as const },
-    { name: "video-h3-frames-novdn", capability: "video" as const },
-    { name: "video-h3-ref2va-novdn", capability: "video" as const },
+    { name: "image-z-image-turbo", capability: "image" as const, imageInputs: 0 },
+    { name: "image-krea2-turbo", capability: "image" as const, imageInputs: 0 },
+    { name: "image-qwen21", capability: "image" as const, imageInputs: 4 },
+    { name: "image-moss-sft-8step", capability: "image" as const, imageInputs: 0 },
+    { name: "image-moss-sft-50step", capability: "image" as const, imageInputs: 0 },
+    { name: "video-h3-t2v", capability: "video" as const, imageInputs: 0 },
+    { name: "video-h3-frames", capability: "video" as const, imageInputs: 2 },
+    { name: "video-h3-ref2va", capability: "video" as const, imageInputs: 6 },
+    { name: "video-h3-character-swap", capability: "video" as const, imageInputs: 6 },
+    { name: "video-h3-t2v-novdn", capability: "video" as const, imageInputs: 0 },
+    { name: "video-h3-frames-novdn", capability: "video" as const, imageInputs: 2 },
+    { name: "video-h3-ref2va-novdn", capability: "video" as const, imageInputs: 6 },
 ];
 
 export const LOCAL_GATEWAY_MODEL_VALUES = LOCAL_GATEWAY_MODELS.map((model) => `${LOCAL_GATEWAY_CHANNEL_ID}::${model.name}`);

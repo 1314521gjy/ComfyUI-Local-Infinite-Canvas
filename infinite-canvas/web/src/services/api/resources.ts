@@ -26,6 +26,29 @@ export type ResourceItem = {
     actualSize: number;
     installed?: { version?: string; installedAt?: string } | null;
     missingRequires: string[];
+    overridden?: boolean;
+    overriddenBy?: string;
+};
+
+export type PackMainModelOption = {
+    file: string;
+    label: string;
+    installed: boolean;
+    source: "pack" | "local";
+    matches?: boolean;
+    resourceId?: string;
+};
+
+export type PackMainModel = {
+    workflowIds: string[];
+    files: string[];
+    defaultFile: string;
+    defaultLabel: string;
+    selected: string;
+    selectedLabel: string;
+    selectedInstalled: boolean;
+    available: boolean;
+    options: PackMainModelOption[];
 };
 
 export type ResourceVariant = {
@@ -78,6 +101,7 @@ export type ResourcePack = {
     resources: ResourceItem[];
     requiredItems: ResourceItem[];
     optionalItems: ResourceItem[];
+    mainModel?: PackMainModel | null;
     workflowDependencies?: WorkflowDependency[];
     total: number;
     present: number;
@@ -163,6 +187,17 @@ export async function refreshResourceStatus(): Promise<ResourceStatus> {
     const data = await readJson(response);
     if (!response.ok || data.ok === false) throw new Error(errorMessage(data, `刷新资源失败（HTTP ${response.status}）`));
     return data as ResourceStatus;
+}
+
+export async function setPackMainModel(packId: string, file: string): Promise<ResourceStatus> {
+    const response = await fetch(`${gatewayRoot}/api/resources/packs/${encodeURIComponent(packId)}/main-model`, {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify({ file }),
+    });
+    const data = await readJson(response);
+    if (!response.ok || data.ok === false) throw new Error(errorMessage(data, `切换主模型失败（HTTP ${response.status}）`));
+    return data.status as ResourceStatus;
 }
 
 export async function installResources(input: { ids?: string[]; packs?: string[] }): Promise<ResourceJob> {

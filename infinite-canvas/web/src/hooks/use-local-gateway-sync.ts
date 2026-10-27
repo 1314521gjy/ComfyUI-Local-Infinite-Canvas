@@ -35,7 +35,7 @@ export function useLocalGatewaySync() {
                 const payload = (await response.json()) as {
                     data?: Array<{
                         id?: string;
-                        metadata?: { type?: string; workflowId?: string; label?: string; baseModel?: string; baseModelLabel?: string; variantModes?: string[]; variantLabels?: Record<string, string> };
+                        metadata?: { type?: string; workflowId?: string; label?: string; baseModel?: string; baseModelLabel?: string; imageInputs?: number; variantModes?: string[]; variantLabels?: Record<string, string> };
                     }>;
                 };
                 const synced = (payload.data || [])
@@ -50,6 +50,7 @@ export function useLocalGatewaySync() {
                             workflowId: meta.workflowId?.trim() || undefined,
                             baseModel: meta.baseModel?.trim() || undefined,
                             baseModelLabel: meta.baseModelLabel?.trim() || undefined,
+                            imageInputs: typeof meta.imageInputs === "number" ? meta.imageInputs : undefined,
                             variantModes: Array.isArray(meta.variantModes) ? meta.variantModes.map(String) : undefined,
                             variantLabels: meta.variantLabels && typeof meta.variantLabels === "object" ? meta.variantLabels : undefined,
                         };
@@ -65,8 +66,8 @@ export function useLocalGatewaySync() {
                             return { ...model, capability: previous?.capability || (model.capability as ModelCapability) };
                         });
                         const signature = (
-                            models: Array<{ name: string; capability: string; label?: string; workflowId?: string; baseModel?: string; baseModelLabel?: string; variantModes?: string[]; variantLabels?: Record<string, string> }>,
-                        ) => JSON.stringify(models.map((model) => [model.name, model.capability, model.label || "", model.workflowId || "", model.baseModel || "", model.baseModelLabel || "", model.variantModes || [], model.variantLabels || {}]));
+                            models: Array<{ name: string; capability: string; label?: string; workflowId?: string; baseModel?: string; baseModelLabel?: string; imageInputs?: number; variantModes?: string[]; variantLabels?: Record<string, string> }>,
+                        ) => JSON.stringify(models.map((model) => [model.name, model.capability, model.label || "", model.workflowId || "", model.baseModel || "", model.baseModelLabel || "", model.imageInputs ?? -1, model.variantModes || [], model.variantLabels || {}]));
                         if (signature(channel.models) !== signature(nextModels)) {
                             const channels = config.channels.map((item) =>
                                 item.id === channel.id ? { ...item, apiKey: item.apiKey || "local", models: nextModels } : item,

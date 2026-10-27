@@ -150,6 +150,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     const hasAudioContent = data.type === CanvasNodeType.Audio && Boolean(data.metadata?.content);
     const isGroup = data.type === CanvasNodeType.Group;
     const isGenerating = !isGroup && !referenceSelectionState && (data.metadata?.status === "loading" || Boolean(data.metadata?.stepProgress && data.metadata.stepProgress.total > 0 && !data.metadata.stepProgress.complete));
+    const showFishWhip = fishSkin && isGenerating && fishWhipEnabled;
     const batchCount = data.type === CanvasNodeType.Image ? data.metadata?.images?.length || 0 : data.type === CanvasNodeType.Text ? data.metadata?.texts?.length || 0 : 0;
     const isBatchRoot = batchCount > 1;
     // Nodes with the interaction/move toggle ignore content pointer events in move mode and allow interaction in interactive mode.
@@ -314,7 +315,7 @@ export const CanvasNode = React.memo(function CanvasNode({
         <div
             data-node-id={data.id}
             data-card-skin={cardSkin}
-            className={`node-element group/node absolute flex select-none flex-col transition-shadow duration-200 ${isGroup ? "z-[5]" : isSelected ? "z-50" : "z-10"} ${referenceSelectionState === "available" ? "cursor-pointer" : referenceSelectionState ? "cursor-not-allowed" : ""}`}
+            className={`node-element group/node absolute flex select-none flex-col transition-shadow duration-200 ${isGroup ? "z-[5]" : showFishWhip ? "z-[80]" : isSelected ? "z-50" : "z-10"} ${referenceSelectionState === "available" ? "cursor-pointer" : referenceSelectionState ? "cursor-not-allowed" : ""}`}
             style={{
                 transform: `translate(${data.position.x}px, ${data.position.y}px)`,
                 width: data.width,
@@ -509,7 +510,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                 {!referenceSelectionState ? <ResizeHandle corner="bottom-right" onMouseDown={handleResizeMouseDown} /> : null}
             </div>
 
-            {fishSkin && isGenerating && fishWhipEnabled ? (
+            {showFishWhip ? (
                 <div
                     className="pointer-events-none absolute z-[66] select-none"
                     style={fishWhipSide === "left" ? { left: -120, bottom: 0, width: 140, height: 210 } : { right: -120, bottom: 0, width: 140, height: 210 }}

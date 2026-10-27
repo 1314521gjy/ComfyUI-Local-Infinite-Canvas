@@ -26,6 +26,16 @@ function resolveForMode(entry, mode) {
   };
 }
 
+function applyMainModelFile(workflow, file) {
+  if (!file) return workflow;
+  const nodeId = Object.keys(workflow || {}).find((id) => {
+    const node = workflow[id];
+    return node?.class_type === "UNETLoader" && typeof node.inputs?.unet_name === "string";
+  });
+  if (!nodeId || workflow[nodeId].inputs.unet_name === file) return workflow;
+  return { ...workflow, [nodeId]: { ...workflow[nodeId], inputs: { ...workflow[nodeId].inputs, unet_name: file } } };
+}
+
 function historyCompleted(history) {
   if (!history) return false;
   if (history.status?.completed === true) return true;
@@ -68,7 +78,7 @@ export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 *
   if (signal?.aborted) throw new GenerationError("生成已取消", { status: 400, code: "cancelled" });
   const resolved = resolveForMode(entry, context.mode);
   const params = resolved.baseModelParams ? { ...resolved.baseModelParams, ...(context.params || {}) } : context.params;
-  const bound = applyBindings(resolved.workflow, resolved, { ...context, params }, { logger });
+  const bound = applyMainModelFile(applyBindings(resolved.workflow, resolved, { ...context, params }, { logger }), resolved.mainModelFile);
   const loraResult = applyLoraChain(bound, params, {
     available: loraCatalog,
     filter: resolved.lora?.filter,

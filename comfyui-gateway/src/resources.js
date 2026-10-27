@@ -8,6 +8,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
 
+import { findUnetLoader } from "./base-models.js";
 import { nowIso, truncate, writeJsonAtomic } from "./util.js";
 
 const MODEL_DIRS = new Set(["diffusion_models", "text_encoders", "vae", "loras", "checkpoints", "upscale_models", "clip_vision"]);
@@ -159,7 +160,7 @@ function validateIndex(index) {
     return index;
 }
 
-export function createResourceManager({ config, setup, registry, logger, workflowVisibility = null, hardware: hardwareOverride = null } = {}) {
+export function createResourceManager({ config, setup, registry, logger, workflowVisibility = null, mainModels = null, hardware: hardwareOverride = null } = {}) {
     const indexPath = path.join(config.rootDir, "resources", "index.json");
     const lockPath = path.join(config.dataDir, "resource-lock.json");
     const jobs = new Map();
@@ -322,9 +323,96 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         };
     }
 
+    function resourceFile(resource) {
+        try {
+            return targetParts(resource.target).file;
+        } catch {
+            return "";
+        }
+    }
+
+    function mainModelInfo(pack, installed) {
+        const workflowIds = [...new Set([...(pack.workflows || []), ...Object.keys(pack.workflowDependencies || {})])];
+        if (!workflowIds.length) return null;
+        const entries = workflowIds.map((id) => registry?.resolve?.(id)).filter(Boolean);
+        const files = [...new Set(entries.map((entry) => findUnetLoader(entry.workflow)?.file).filter(Boolean))];
+        if (!files.length) return null;
+        const selected = mainModels?.fileForPack?.(pack.id) || "";
+        const selectedInstalled = Boolean(selected && installed.has(selected));
+        const filter = entries.map((entry) => entry.baseModels?.filter).find(Boolean) || "";
+        const matchesFamily = (file) => {
+            if (!filter) return true;
+            try {
+                return new RegExp(filter, "i").test(file);
+            } catch {
+                return true;
+            }
+        };
+        const options = new Map();
+        for (const id of pack.resources || []) {
+            const resource = index?.resources?.find((item) => item.id === id);
+            if (!resource || !resourceFile(resource)) continue;
+            let dir = "";
+            try {
+                dir = targetParts(resource.target).dir;
+            } catch {
+                continue;
+            }
+            if (dir !== "diffusion_models") continue;
+            const file = resourceFile(resource);
+            options.set(file, { file, label: resource.label || file, installed: installed.has(file), source: "pack", matches: true, resourceId: resource.id });
+        }
+        for (const file of installed) {
+            if (options.has(file)) continue;
+            options.set(file, { file, label: path.basename(file, path.extname(file)), installed: true, source: "local", matches: matchesFamily(file) });
+        }
+        if (selected && !options.has(selected)) {
+            options.set(selected, { file: selected, label: path.basename(selected, path.extname(selected)), installed: false, source: "local" });
+        }
+        const defaultResource = (pack.resources || [])
+            .map((id) => index?.resources?.find((item) => item.id === id))
+            .find((resource) => resource && resourceFile(resource) === files[0]);
+        return {
+            workflowIds,
+            files,
+            defaultFile: files[0],
+            defaultLabel: files.length > 1 ? "各工作流原底模" : defaultResource?.label || path.basename(files[0], path.extname(files[0])),
+            selected,
+            selectedLabel: options.get(selected)?.label || "",
+            selectedInstalled,
+            options: [...options.values()].sort((a, b) => {
+                if (a.source !== b.source) return a.source === "pack" ? -1 : 1;
+                return a.label.localeCompare(b.label);
+            }),
+        };
+    }
+
     function status() {
         const root = comfyRoot();
-        const resources = (index?.resources || []).map((resource) => resourceStatus(resource, root));
+        const installedModels = new Set(Array.isArray(setup?.loaderOptions?.()?.UNETLoader) ? setup.loaderOptions().UNETLoader : []);
+        const packMainModels = new Map();
+        const overriddenResources = new Map();
+        for (const pack of index?.packs || []) {
+            const info = mainModelInfo(pack, installedModels);
+            if (!info) continue;
+            packMainModels.set(pack.id, info);
+            if (!info.selectedInstalled) continue;
+            for (const resource of index?.resources || []) {
+                let dir = "";
+                try {
+                    dir = targetParts(resource.target).dir;
+                } catch {
+                    continue;
+                }
+                if (dir === "diffusion_models" && info.files.includes(resourceFile(resource))) overriddenResources.set(resource.id, info.selected);
+            }
+        }
+        const resources = (index?.resources || []).map((resource) => {
+            const item = resourceStatus(resource, root);
+            const overriddenBy = overriddenResources.get(item.id);
+            if (overriddenBy) Object.assign(item, { status: "present", present: true, overridden: true, overriddenBy });
+            return item;
+        });
         const byId = new Map(resources.map((resource) => [resource.id, resource]));
         const rawPackById = new Map((index?.packs || []).map((item) => [item.id, item]));
         const packs = (index?.packs || []).map((pack) => {
@@ -406,6 +494,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 resources: items,
                 requiredItems,
                 optionalItems,
+                mainModel: packMainModels.get(pack.id) || null,
                 workflowDependencies,
                 total: requiredItems.length,
                 present: requiredItems.length - requiredMissing.length,
@@ -417,6 +506,11 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 optionalSize: optionalMissing.reduce((sum, item) => sum + (item.size || 0), 0),
             };
         });
+
+        for (const pack of packs) {
+            if (!pack.mainModel) continue;
+            pack.mainModel.available = pack.mainModel.workflowIds.some((id) => setup?.workflowStatus?.(id)?.available);
+        }
 
         const hardwareAvailable = Boolean(hardware?.gpuName && hardware.vramTotalMb > 0);
         const tierRank = { quality: 4, balanced: 3, standard: 2, lite: 1, core: 0 };
@@ -537,6 +631,25 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             },
             lock: { installed: lock.installed || {}, updatedAt: lock.updatedAt || "" },
         };
+    }
+
+    async function setMainModel(packId, file) {
+        const pack = index?.packs?.find((item) => item.id === packId);
+        if (!pack) throw new Error("功能包不存在");
+        if (!mainModels) throw new Error("主模型选择未启用");
+        const installed = new Set(Array.isArray(setup?.loaderOptions?.()?.UNETLoader) ? setup.loaderOptions().UNETLoader : []);
+        const info = mainModelInfo(pack, installed);
+        if (!info) throw new Error("该功能包没有可切换的主模型");
+        const raw = String(file || "").trim();
+        const value = raw === info.defaultFile ? "" : raw;
+        if (value && !installed.has(value)) throw new Error("所选主模型尚未安装");
+        await mainModels.set(pack.id, { file: value, workflows: info.workflowIds });
+        try {
+            await setup?.scan?.();
+        } catch (error) {
+            logger?.warn?.(`切换主模型后扫描失败：${error.message}`);
+        }
+        return status();
     }
 
     function jobSnapshot(job) {
@@ -1100,5 +1213,5 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         return status();
     }
 
-    return { init, status, refresh, install, getJob, cancelJob, comfyRoot, comfyPython, indexPath };
+    return { init, status, refresh, install, setMainModel, getJob, cancelJob, comfyRoot, comfyPython, indexPath };
 }

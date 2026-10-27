@@ -26,7 +26,7 @@ function safeStat(file) {
     }
 }
 
-export function createSetupManager({ config, registry, comfy, logger } = {}) {
+export function createSetupManager({ config, registry, comfy, logger, mainModelFile = () => "" } = {}) {
     const statusFile = path.join(config.dataDir, "setup-status.json");
     const availability = new Map();
     const comfyFileCache = new Map();
@@ -177,6 +177,8 @@ export function createSetupManager({ config, registry, comfy, logger } = {}) {
             if (!loader) continue;
             const value = node.inputs?.[loader.input];
             if (typeof value === "string" && value && !loader.options.has(value)) {
+                const override = mainModelFile(entry?.id);
+                if (override && classType === "UNETLoader" && loader.input === "unet_name" && loader.options.has(override)) continue;
                 if (hasBaseModelAlternative(entry, classType, loader.input, loader.options)) continue;
                 problems.push({ type: "model", message: `缺少模型 ${classType}.${loader.input}=${value}` });
             }

@@ -15,6 +15,29 @@ function entry() {
   };
 }
 
+test("a selected main model replaces the workflow UNET file", async () => {
+  let submitted = null;
+  const runEntry = {
+    name: "runner-main-model",
+    type: "image",
+    workflow: { 1: { class_type: "UNETLoader", inputs: { unet_name: "default.safetensors" } } },
+    bindings: {},
+    defaults: {},
+    presets: {},
+    mainModelFile: "my_custom_model.safetensors",
+  };
+  await runWorkflow({
+    entry: runEntry,
+    context: buildContext({ prompt: "x" }),
+    comfy: fakeComfy((workflow) => {
+      submitted = workflow;
+    }),
+    timeoutMs: 5000,
+    pollIntervalMs: 10,
+  });
+  assert.equal(submitted["1"].inputs.unet_name, "my_custom_model.safetensors");
+});
+
 test("aborting a running workflow interrupts ComfyUI", async () => {
   const controller = new AbortController();
   let interrupted = null;

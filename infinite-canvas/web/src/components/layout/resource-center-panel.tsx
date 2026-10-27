@@ -1,4 +1,4 @@
-import { App, Button, Checkbox, Progress, Tag, Tooltip } from "antd";
+import { App, Button, Checkbox, Progress, Select, Tag, Tooltip } from "antd";
 import { AlertTriangle, CheckCircle2, ChevronDown, Download, HardDriveDownload, RefreshCw, Server, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -10,6 +10,7 @@ import {
     formatBytes,
     installResources,
     refreshResourceStatus,
+    setPackMainModel,
     setWorkflowVisibility,
     type ResourceItem,
     type ResourceJob,
@@ -77,6 +78,14 @@ const copyByLocale = {
         scanFirst: "正在读取资源状态…",
         expand: "展开",
         collapse: "收起",
+        mainModel: "主模型",
+        mainModelDefault: "资源包默认",
+        mainModelPack: "本包模型",
+        mainModelLocal: "本地模型",
+        mainModelOther: "其他本地模型",
+        mainModelMissing: "未安装",
+        mainModelSelected: "已用自选",
+        mainModelActive: "工作流已激活",
     },
     en: {
         title: "Add workflows",
@@ -137,12 +146,21 @@ const copyByLocale = {
         scanFirst: "Loading resources…",
         expand: "Expand",
         collapse: "Collapse",
+        mainModel: "Main model",
+        mainModelDefault: "Pack default",
+        mainModelPack: "Pack models",
+        mainModelLocal: "Local models",
+        mainModelOther: "Other local models",
+        mainModelMissing: "Not installed",
+        mainModelSelected: "Custom",
+        mainModelActive: "Workflow active",
     },
 };
 
 type Copy = typeof copyByLocale.zh;
 
 function statusTag(item: ResourceItem, copy: Copy) {
+    if (item.overridden) return <Tag color="blue">{copy.mainModelSelected}</Tag>;
     if (item.status === "present") return <Tag color="green">{copy.present}</Tag>;
     if (item.status === "blocked") return <Tag color="gold">{copy.blocked}</Tag>;
     return <Tag color="orange">{copy.missing}</Tag>;
@@ -245,6 +263,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
     const [expandedWorkflows, setExpandedWorkflows] = useState<Set<string>>(new Set());
     const [speeds, setSpeeds] = useState<Record<string, number>>({});
     const [stopping, setStopping] = useState(false);
+    const [mainModelSaving, setMainModelSaving] = useState("");
     const pollRef = useRef<number | null>(null);
     const selectedInitialized = useRef(false);
     const speedSamples = useRef<Map<string, { bytes: number; time: number; speed: number }>>(new Map());
@@ -426,6 +445,20 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
         }
     };
 
+    const switchMainModel = async (packId: string, file: string) => {
+        if (mainModelSaving) return;
+        setMainModelSaving(packId);
+        try {
+            const next = await setPackMainModel(packId, file);
+            setStatus(next);
+            window.dispatchEvent(new Event("local-gateway-refresh-models"));
+        } catch (changeError) {
+            message.error(changeError instanceof Error ? changeError.message : String(changeError));
+        } finally {
+            setMainModelSaving("");
+        }
+    };
+
     const toggleExpanded = (id: string) => {
         setExpandedPacks((current) => {
             const next = new Set(current);
@@ -534,6 +567,48 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                     ];
                     const expandable = pack.total > 0 || pack.optionalTotal > 0 || workflowDependencies.length > 0;
                     const optionalLabel = pack.optionalLabel?.trim() || copy.optionalSection;
+                    const mainModel = pack.mainModel;
+                    const mainModelOptions = mainModel
+                        ? [
+                              { value: "", label: `${copy.mainModelDefault} · ${mainModel.defaultLabel}` },
+                              ...(mainModel.options.some((option) => option.source === "pack")
+                                  ? [{
+                                        label: copy.mainModelPack,
+                                        options: mainModel.options
+                                            .filter((option) => option.source === "pack")
+                                            .map((option) => ({
+                                                value: option.file,
+                                                label: option.installed ? option.label : `${option.label} · ${copy.mainModelMissing}`,
+                                                disabled: !option.installed && option.file !== mainModel.selected,
+                                            })),
+                                    }]
+                                  : []),
+                              ...(mainModel.options.some((option) => option.source === "local" && option.matches !== false)
+                                  ? [{
+                                        label: copy.mainModelLocal,
+                                        options: mainModel.options
+                                            .filter((option) => option.source === "local" && option.matches !== false)
+                                            .map((option) => ({
+                                                value: option.file,
+                                                label: option.installed ? option.label : `${option.label} · ${copy.mainModelMissing}`,
+                                                disabled: !option.installed && option.file !== mainModel.selected,
+                                            })),
+                                    }]
+                                  : []),
+                              ...(mainModel.options.some((option) => option.source === "local" && option.matches === false)
+                                  ? [{
+                                        label: copy.mainModelOther,
+                                        options: mainModel.options
+                                            .filter((option) => option.source === "local" && option.matches === false)
+                                            .map((option) => ({
+                                                value: option.file,
+                                                label: option.installed ? option.label : `${option.label} · ${copy.mainModelMissing}`,
+                                                disabled: !option.installed && option.file !== mainModel.selected,
+                                            })),
+                                    }]
+                                  : []),
+                          ]
+                        : [];
                     const headerBody = (
                         <>
                             <div className="flex flex-wrap items-center gap-2">
@@ -573,6 +648,25 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                     </button>
                                 ) : null}
                             </div>
+                            {mainModel ? (
+                                <div className="flex flex-wrap items-center gap-2 border-t border-stone-100 px-3 py-1.5 dark:border-stone-800/70">
+                                    <span className="text-[11px] text-stone-500 dark:text-stone-400">{copy.mainModel}</span>
+                                    <Select
+                                        size="small"
+                                        value={mainModel.selected || ""}
+                                        options={mainModelOptions}
+                                        onChange={(value) => void switchMainModel(pack.id, String(value || ""))}
+                                        loading={mainModelSaving === pack.id}
+                                        disabled={Boolean(job && job.status === "running") || Boolean(mainModelSaving && mainModelSaving !== pack.id)}
+                                        popupMatchSelectWidth={false}
+                                        showSearch
+                                        optionFilterProp="label"
+                                        style={{ minWidth: 220, maxWidth: 360 }}
+                                    />
+                                    {mainModel.selected ? <Tag color="blue" className="m-0">{copy.mainModelSelected}</Tag> : null}
+                                    {mainModel.selected && mainModel.selectedInstalled && mainModel.available ? <Tag color="green" className="m-0">{copy.mainModelActive}</Tag> : null}
+                                </div>
+                            ) : null}
                             {expandable && expanded ? (
                                 <div className="border-t border-stone-100 px-3 pb-3 pt-2 dark:border-stone-800/70">
                                     {workflowDependencies.length ? (
