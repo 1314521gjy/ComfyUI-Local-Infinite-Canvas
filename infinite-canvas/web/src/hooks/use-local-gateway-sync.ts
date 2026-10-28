@@ -71,8 +71,9 @@ export function useLocalGatewaySync() {
                             models: Array<{ name: string; capability: string; label?: string; workflowId?: string; baseModel?: string; baseModelLabel?: string; imageInputs?: number; variantModes?: string[]; variantLabels?: Record<string, string> }>,
                         ) => JSON.stringify(models.map((model) => [model.name, model.capability, model.label || "", model.workflowId || "", model.baseModel || "", model.baseModelLabel || "", model.imageInputs ?? -1, model.variantModes || [], model.variantLabels || {}]));
                         if (signature(channel.models) !== signature(nextModels)) {
+                            // 网关换端口后，浏览器里保存的旧 baseUrl 必须自动跟到运行时地址，否则会一直 Failed to fetch。
                             const channels = config.channels.map((item) =>
-                                item.id === channel.id ? { ...item, apiKey: item.apiKey || "local", models: nextModels } : item,
+                                item.id === channel.id ? { ...item, apiKey: item.apiKey || "local", baseUrl: LOCAL_GATEWAY_BASE_URL, models: nextModels } : item,
                             );
                             const imageOptions = channels.flatMap((item) =>
                                 item.models.filter((model) => model.capability === "image").map((model) => encodeChannelModel(item.id, model.name)),
@@ -97,7 +98,7 @@ export function useLocalGatewaySync() {
                                     imageModel: pickImage(config.imageModel),
                                     videoModel: pick(config.videoModel, videoOptions),
                                     model: pickImage(config.model),
-                                    baseUrl: channel.baseUrl,
+                                    baseUrl: LOCAL_GATEWAY_BASE_URL,
                                     apiKey: channel.apiKey || "local",
                                 },
                             });
@@ -108,7 +109,9 @@ export function useLocalGatewaySync() {
                     const config = state.config;
                     const channel = config.channels.find((item) => isLocalGatewayUrl(item.baseUrl)) || config.channels[0];
                     if (channel && channel.models.length) {
-                        const channels = config.channels.map((item) => (item.id === channel.id ? { ...item, apiKey: item.apiKey || "local", models: [] } : item));
+                        const channels = config.channels.map((item) =>
+                            item.id === channel.id ? { ...item, apiKey: item.apiKey || "local", baseUrl: LOCAL_GATEWAY_BASE_URL, models: [] } : item,
+                        );
                         useConfigStore.setState({
                             config: {
                                 ...config,
@@ -117,7 +120,7 @@ export function useLocalGatewaySync() {
                                 imageModel: "",
                                 videoModel: "",
                                 model: "",
-                                baseUrl: channel.baseUrl,
+                                baseUrl: LOCAL_GATEWAY_BASE_URL,
                                 apiKey: channel.apiKey || "local",
                             },
                         });
