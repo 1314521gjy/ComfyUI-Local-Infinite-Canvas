@@ -134,6 +134,8 @@ export const CanvasNode = React.memo(function CanvasNode({
     const fishWhipSide = useThemeStore((state) => state.fishWhipSide);
     const cardSkin = useEffectiveCardSkin();
     const fishSkin = cardSkin === "fish";
+    const angelSkin = cardSkin === "angel";
+    const artSkin = fishSkin || angelSkin;
     const fishArtSize = Math.round(Math.max(15, Math.min(58, Math.min(data.height * 0.24, data.width * 0.15))));
     const cardBackground = getCardBackground(colorTheme, cardSkin);
     const titleTheme = canvasThemes[colorTheme].node;
@@ -149,7 +151,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     const hasAudioContent = data.type === CanvasNodeType.Audio && Boolean(data.metadata?.content);
     const isGroup = data.type === CanvasNodeType.Group;
     const isGenerating = !isGroup && !referenceSelectionState && (data.metadata?.status === "loading" || Boolean(data.metadata?.stepProgress && data.metadata.stepProgress.total > 0 && !data.metadata.stepProgress.complete));
-    const showFishWhip = fishSkin && isGenerating && fishWhipEnabled;
+    const showFishWhip = artSkin && isGenerating && fishWhipEnabled;
     const batchCount = data.type === CanvasNodeType.Image ? data.metadata?.images?.length || 0 : data.type === CanvasNodeType.Text ? data.metadata?.texts?.length || 0 : 0;
     const isBatchRoot = batchCount > 1;
     // Nodes with the interaction/move toggle ignore content pointer events in move mode and allow interaction in interactive mode.
@@ -379,7 +381,7 @@ export const CanvasNode = React.memo(function CanvasNode({
             <div
                 className="relative h-full w-full overflow-visible rounded-3xl border-2"
                 style={{
-                    background: isGroup ? "transparent" : hasImageContent || hasVideoContent || transparentBg ? "transparent" : fishSkin ? cardBackground : theme.node.fill,
+                    background: isGroup ? "transparent" : hasImageContent || hasVideoContent || transparentBg ? "transparent" : artSkin ? cardBackground : theme.node.fill,
                     borderColor: isGroup ? (isGroupDropTarget || isActive ? selectionBlue : theme.node.stroke) : hasImageContent ? imageBorderColor : isActive ? selectionBlue : isRelated ? theme.node.muted : transparentBg ? "transparent" : theme.node.stroke,
                     borderStyle: isGroup ? "dashed" : "solid",
                     boxShadow: isGroupDropTarget ? `0 0 0 2px ${selectionBlue}66, inset 0 0 0 999px ${selectionBlue}10` : isActive ? `0 0 0 1px ${selectionBlue}55` : isRelated ? `0 0 0 1px ${theme.node.muted}55, 0 18px 48px rgba(0,0,0,.14)` : undefined,
@@ -410,55 +412,112 @@ export const CanvasNode = React.memo(function CanvasNode({
                     setIsEditingContent(true);
                 }}
             >
-                {fishSkin && !isGroup && !hasImageContent && !hasVideoContent && !transparentBg ? (
+                {artSkin && !isGroup && !hasImageContent && !hasVideoContent && !transparentBg ? (
                     <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]" aria-hidden="true">
-                        <div className="absolute left-0 top-0 h-[62%] w-[58%]" style={{ background: "radial-gradient(circle at 0% 0%, rgba(3,15,26,.62), transparent 72%)" }} />
-                        <div className="absolute bottom-[-24%] right-[-14%] h-[86%] w-[58%] rounded-full" style={{ background: "radial-gradient(circle, rgba(74,186,255,.30), transparent 66%)" }} />
-                        <img
-                            src="/skins/lantern-guard-idle.png"
-                            alt=""
-                            draggable={false}
-                            className="absolute select-none opacity-95 drop-shadow-[0_10px_22px_rgba(0,8,20,.55)]"
-                            style={{ height: "78%", width: "auto", maxWidth: "58%", right: "-2%", bottom: "-5%", objectFit: "contain", objectPosition: "bottom right" }}
+                        <div
+                            className="absolute left-0 top-0 h-[62%] w-[58%]"
+                            style={{ background: angelSkin ? "radial-gradient(circle at 0% 0%, rgba(120,90,40,.18), transparent 72%)" : "radial-gradient(circle at 0% 0%, rgba(3,15,26,.62), transparent 72%)" }}
                         />
-                        <div className="absolute flex flex-col" style={{ left: "7%", top: "50%", transform: "translateY(-50%)", width: "54%" }}>
-                            <span
-                                style={{
-                                    fontFamily: '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif',
-                                    fontWeight: 600,
-                                    lineHeight: 1.18,
-                                    letterSpacing: "0.06em",
-                                    fontSize: Math.round(fishArtSize * 0.72),
-                                    color: "#eefbff",
-                                    textShadow: "0 0 16px rgba(150,225,255,.55), 0 2px 8px rgba(2,12,24,.35)",
-                                    whiteSpace: "normal",
-                                }}
-                            >
-                                我将守护你的进程
-                            </span>
-                            <span
-                                style={{
-                                    marginTop: "0.4em",
-                                    fontFamily: '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif',
-                                    fontSize: Math.max(8, Math.round(fishArtSize * 0.22)),
-                                    fontWeight: 500,
-                                    letterSpacing: "0.24em",
-                                    color: "rgba(190,235,255,.72)",
-                                }}
-                            >
-                                PROCESS GUARDIAN
-                            </span>
-                        </div>
-                        <span className="absolute right-[42%] top-[24%] size-1.5 rounded-full bg-cyan-100/25" />
-                        <span className="absolute right-[35%] top-[38%] size-1 rounded-full bg-cyan-100/20" />
-                        <span className="absolute right-[47%] top-[12%] size-1 rounded-full bg-cyan-100/15" />
+                        <div
+                            className="absolute bottom-[-24%] right-[-14%] h-[86%] w-[58%] rounded-full"
+                            style={{ background: angelSkin ? "radial-gradient(circle, rgba(255,220,140,.28), transparent 66%)" : "radial-gradient(circle, rgba(74,186,255,.30), transparent 66%)" }}
+                        />
+                        {fishSkin ? (
+                            <>
+                                <img
+                                    src="/skins/lantern-guard-idle.png"
+                                    alt=""
+                                    draggable={false}
+                                    className="absolute select-none opacity-95 drop-shadow-[0_10px_22px_rgba(0,8,20,.55)]"
+                                    style={{ height: "78%", width: "auto", maxWidth: "58%", right: "-2%", bottom: "-5%", objectFit: "contain", objectPosition: "bottom right" }}
+                                />
+                                <div className="absolute flex flex-col" style={{ left: "7%", top: "50%", transform: "translateY(-50%)", width: "54%" }}>
+                                    <span
+                                        style={{
+                                            fontFamily: '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif',
+                                            fontWeight: 600,
+                                            lineHeight: 1.18,
+                                            letterSpacing: "0.06em",
+                                            fontSize: Math.round(fishArtSize * 0.72),
+                                            color: "#eefbff",
+                                            textShadow: "0 0 16px rgba(150,225,255,.55), 0 2px 8px rgba(2,12,24,.35)",
+                                            whiteSpace: "normal",
+                                        }}
+                                    >
+                                        我将守护你的进程
+                                    </span>
+                                    <span
+                                        style={{
+                                            marginTop: "0.4em",
+                                            fontFamily: '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif',
+                                            fontSize: Math.max(8, Math.round(fishArtSize * 0.22)),
+                                            fontWeight: 500,
+                                            letterSpacing: "0.24em",
+                                            color: "rgba(190,235,255,.72)",
+                                        }}
+                                    >
+                                        PROCESS GUARDIAN
+                                    </span>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <img
+                                    src="/skins/angel-girl-idle.webp"
+                                    alt=""
+                                    draggable={false}
+                                    className="absolute select-none opacity-95 drop-shadow-[0_10px_22px_rgba(0,8,20,.45)]"
+                                    style={{ height: "80%", width: "auto", maxWidth: "64%", right: "-2%", bottom: "-4%", objectFit: "contain", objectPosition: "bottom right" }}
+                                />
+                                <div className="absolute flex flex-col" style={{ left: "6%", top: "50%", transform: "translateY(-50%)", width: "42%" }}>
+                                    <span
+                                        style={{
+                                            fontFamily: '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif',
+                                            fontWeight: 600,
+                                            lineHeight: 1.15,
+                                            letterSpacing: "0.08em",
+                                            fontSize: Math.round(fishArtSize * 0.62),
+                                            color: colorTheme === "dark" ? "#fff6df" : "#4a3720",
+                                            textShadow: colorTheme === "dark" ? "0 0 16px rgba(255,225,150,.45), 0 2px 8px rgba(2,12,24,.35)" : "0 0 14px rgba(255,235,180,.55)",
+                                            whiteSpace: "nowrap",
+                                        }}
+                                    >
+                                        落笔生光
+                                    </span>
+                                    <span
+                                        style={{
+                                            marginTop: "0.45em",
+                                            fontFamily: '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif',
+                                            fontSize: Math.max(8, Math.round(fishArtSize * 0.2)),
+                                            fontWeight: 500,
+                                            letterSpacing: "0.24em",
+                                            color: colorTheme === "dark" ? "rgba(238,215,170,.78)" : "rgba(122,90,46,.78)",
+                                        }}
+                                    >
+                                        WINGED INK
+                                    </span>
+                                </div>
+                            </>
+                        )}
+                        <span className="absolute right-[42%] top-[24%] size-1.5 rounded-full" style={{ background: angelSkin ? "rgba(255,235,180,.35)" : "rgba(207,250,254,.25)" }} />
+                        <span className="absolute right-[35%] top-[38%] size-1 rounded-full" style={{ background: angelSkin ? "rgba(255,235,180,.25)" : "rgba(207,250,254,.20)" }} />
+                        <span className="absolute right-[47%] top-[12%] size-1 rounded-full" style={{ background: angelSkin ? "rgba(255,235,180,.20)" : "rgba(207,250,254,.15)" }} />
+                    </div>
+                ) : null}
+                {angelSkin && isGenerating ? (
+                    <div className="angel-blessing" aria-hidden="true">
+                        <span className="angel-feather f1" />
+                        <span className="angel-feather f2" />
+                        <span className="angel-feather f3" />
+                        <span className="angel-feather f4" />
+                        <span className="angel-feather f5" />
                     </div>
                 ) : null}
                 <div
                     className={`relative flex h-full w-full items-center justify-center rounded-[inherit] ${isBatchRoot ? "overflow-visible" : "overflow-hidden"}`}
                     style={
                         {
-                            background: isGroup ? "transparent" : hasImageContent || hasVideoContent || transparentBg ? "transparent" : fishSkin ? "transparent" : theme.node.fill,
+                            background: isGroup ? "transparent" : hasImageContent || hasVideoContent || transparentBg ? "transparent" : artSkin ? "transparent" : theme.node.fill,
                             pointerEvents: contentInteractive ? undefined : "none",
                         } as React.CSSProperties
                     }
@@ -511,24 +570,38 @@ export const CanvasNode = React.memo(function CanvasNode({
             </div>
 
             {showFishWhip ? (
-                <div
-                    className="pointer-events-none absolute z-[66] select-none"
-                    style={fishWhipSide === "left" ? { left: -150, bottom: 0, width: 170, height: 220 } : { right: -150, bottom: 0, width: 170, height: 220 }}
-                    aria-hidden="true"
-                    data-fish-guard
-                >
+                fishSkin ? (
                     <div
-                        className={`fish-guard-bubble absolute bottom-[210px] ${fishWhipSide === "left" ? "left-0" : "right-0"} w-max max-w-[190px] rounded-2xl border px-2.5 py-1.5 text-[12px] font-semibold leading-none shadow-lg`}
-                        style={{ background: "rgba(7,21,33,.94)", borderColor: "rgba(120,210,255,.35)", color: "#eaf7ff" }}
+                        className="pointer-events-none absolute z-[66] select-none"
+                        style={fishWhipSide === "left" ? { left: -150, bottom: 0, width: 170, height: 220 } : { right: -150, bottom: 0, width: 170, height: 220 }}
+                        aria-hidden="true"
+                        data-fish-guard
                     >
-                        {t("canvas.fishWhip.bubble")}
-                        <span className="absolute -bottom-1 right-4 size-2 rotate-45 border-b border-r" style={{ background: "rgba(7,21,33,.94)", borderColor: "rgba(120,210,255,.35)" }} />
+                        <div
+                            className={`fish-guard-bubble absolute bottom-[210px] ${fishWhipSide === "left" ? "left-0" : "right-0"} w-max max-w-[190px] rounded-2xl border px-2.5 py-1.5 text-[12px] font-semibold leading-none shadow-lg`}
+                            style={{ background: "rgba(7,21,33,.94)", borderColor: "rgba(120,210,255,.35)", color: "#eaf7ff" }}
+                        >
+                            {t("canvas.fishWhip.bubble")}
+                            <span className="absolute -bottom-1 right-4 size-2 rotate-45 border-b border-r" style={{ background: "rgba(7,21,33,.94)", borderColor: "rgba(120,210,255,.35)" }} />
+                        </div>
+                        <div className={`fish-guard-mascot absolute bottom-0 ${fishWhipSide === "left" ? "left-0" : "right-0"} h-[220px] w-[170px]`} data-side={fishWhipSide}>
+                            <img src="/skins/lantern-guard-idle.png" alt="" draggable={false} className="fish-guard-frame fish-guard-frame-idle" />
+                            <img src="/skins/lantern-guard-raise.png" alt="" draggable={false} className="fish-guard-frame fish-guard-frame-raise" />
+                        </div>
                     </div>
-                    <div className={`fish-guard-mascot absolute bottom-0 ${fishWhipSide === "left" ? "left-0" : "right-0"} h-[220px] w-[170px]`} data-side={fishWhipSide}>
-                        <img src="/skins/lantern-guard-idle.png" alt="" draggable={false} className="fish-guard-frame fish-guard-frame-idle" />
-                        <img src="/skins/lantern-guard-raise.png" alt="" draggable={false} className="fish-guard-frame fish-guard-frame-raise" />
+                ) : (
+                    <div
+                        className="pointer-events-none absolute z-[66] select-none"
+                        style={fishWhipSide === "left" ? { left: -185, bottom: 0, width: 210, height: 230 } : { right: -185, bottom: 0, width: 210, height: 230 }}
+                        aria-hidden="true"
+                        data-angel-guard
+                    >
+                        <div className={`angel-mascot absolute bottom-0 ${fishWhipSide === "left" ? "left-0" : "right-0"} h-[230px] w-[210px]`} data-side={fishWhipSide}>
+                            <img src="/skins/angel-girl-idle.webp" alt="" draggable={false} className="angel-frame angel-frame-idle" />
+                            <img src="/skins/angel-girl-write.webp" alt="" draggable={false} className="angel-frame angel-frame-write" />
+                        </div>
                     </div>
-                </div>
+                )
             ) : null}
 
             {!referenceSelectionState && !isGroup ? <ConnectionHandleDot side="left" visible={hovered || isSelected || isConnecting} onMouseDown={(event) => onConnectStart(event, data.id, "target")} /> : null}

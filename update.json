@@ -1,16 +1,16 @@
 {
-  "version": "v0.21.11",
+  "version": "v0.21.12",
   "publishedAt": "2026-10-29",
-  "notes": "原「鲸鱼娘」角色与素材已移除（避免版权风险）；「蓝色大肥鱼」付费皮肤改为原创提灯水母娘，保留原皮肤 ID/激活码，已激活用户无需重激活；新增提灯守护动画与淡淡光晕。",
+  "notes": "新增免费「天使娘」皮肤：扇翅/羽毛笔书写动画，生成时卡片圣光与少量羽毛，光效不遮挡内容；提灯水母娘保持原激活码；鲸鱼娘已删除。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.11.zip",
-    "sha256": "ab007336901c06cb737c3e25a724a8ad176eabe6439f0934a5e4a70e47b84d89",
-    "size": 35522013
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.12.zip",
+    "sha256": "ce0ed015a6bed75354bb468d3a2726c93e4f860edc518651b819511864228786",
+    "size": 36022734
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

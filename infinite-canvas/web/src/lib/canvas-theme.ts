@@ -62,9 +62,9 @@ export const canvasThemes = {
 
 export type CanvasTheme = (typeof canvasThemes)[CanvasColorTheme];
 
-export type CardSkinId = "warm" | "cream" | "mist" | "forest" | "fish";
+export type CardSkinId = "warm" | "cream" | "mist" | "forest" | "angel" | "fish";
 
-export const cardSkinIds: CardSkinId[] = ["warm", "cream", "mist", "forest", "fish"];
+export const cardSkinIds: CardSkinId[] = ["warm", "cream", "mist", "forest", "angel", "fish"];
 
 type CardSkinNodeOverride = Partial<Record<keyof (typeof canvasThemes)["light"]["node"], string>>;
 
@@ -85,6 +85,10 @@ const cardSkinNodeOverrides: Record<CardSkinId, { light: CardSkinNodeOverride; d
     fish: {
         light: { label: "#345a75", fill: "#d7e9f7", panel: "#f2f9ff", stroke: "#a9cce6", placeholder: "#7fa9c7", text: "#0a2236", muted: "#5b7f98", faint: "#8fb2c8" },
         dark: { label: "#a9d6f5", fill: "#0b2438", panel: "#071521", stroke: "#1d4f73", placeholder: "#7fa9c7", text: "#eaf7ff", muted: "#8bb9d8", faint: "#5b87a6" },
+    },
+    angel: {
+        light: { label: "#7a5a2e", fill: "#f7f1e4", panel: "#fffaf0", stroke: "#dcc9a8", placeholder: "#a8987e", text: "#3d3022", muted: "#7d6b52", faint: "#a8987e" },
+        dark: { label: "#e8d3a3", fill: "#151d2c", panel: "#0e1520", stroke: "#3b4a63", placeholder: "#8c9ab0", text: "#f7f2e6", muted: "#b7ad99", faint: "#7f8ba0" },
     },
 };
 
@@ -118,6 +122,9 @@ export function getCanvasTheme(theme: CanvasColorTheme, cardSkin: CardSkinId = "
 export function getCardBackground(theme: CanvasColorTheme, cardSkin: CardSkinId = "warm") {
     if (cardSkin === "fish") {
         return theme === "dark" ? "linear-gradient(145deg, #071521 0%, #0b2438 52%, #103a59 100%)" : "linear-gradient(145deg, #e7f4ff 0%, #d7e9f7 55%, #c7e0f2 100%)";
+    }
+    if (cardSkin === "angel") {
+        return theme === "dark" ? "linear-gradient(145deg, #0e1624 0%, #172238 55%, #2b2418 100%)" : "linear-gradient(145deg, #fffaf0 0%, #f7f0e1 55%, #efe3cc 100%)";
     }
     return canvasThemes[theme].node.fill;
 }

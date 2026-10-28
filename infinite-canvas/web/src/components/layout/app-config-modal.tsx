@@ -115,8 +115,8 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
             setSkinPasswordError("");
             return;
         }
-        if (skinId === "fish") {
-            setFishOptionsOpen(cardSkin === "fish" ? !fishOptionsOpen : true);
+        if (skinId === "fish" || skinId === "angel") {
+            setFishOptionsOpen(cardSkin === skinId ? !fishOptionsOpen : true);
         } else {
             setFishOptionsOpen(false);
         }
@@ -154,7 +154,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     };
 
     useEffect(() => {
-        if (cardSkin === "fish" && unlockedCardSkins.includes("fish")) setFishOptionsOpen(true);
+        if ((cardSkin === "fish" && unlockedCardSkins.includes("fish")) || cardSkin === "angel") setFishOptionsOpen(true);
     }, [cardSkin, unlockedCardSkins]);
 
     const finishConfig = () => {
@@ -474,6 +474,8 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                                     <span className="relative grid h-10 w-16 shrink-0 place-items-center overflow-hidden rounded-md border" style={{ background: palette.fill, borderColor: palette.stroke }}>
                                                         {id === "fish" ? (
                                                             <img src="/skins/lantern-guard-idle.png" alt="" draggable={false} className="size-10 object-contain" />
+                                                        ) : id === "angel" ? (
+                                                            <img src="/skins/angel-girl-idle.webp" alt="" draggable={false} className="size-10 object-contain" />
                                                         ) : (
                                                             <span className="space-y-1">
                                                                 <span className="block h-1 w-8 rounded-full" style={{ background: palette.text, opacity: 0.85 }} />
@@ -490,7 +492,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                                         <span className="flex items-center gap-1.5 text-sm font-medium">
                                                             <span className="truncate">{t(`config.preferences.cardSkins.${id}.label`)}</span>
                                                             {locked ? <span className="shrink-0 rounded-full border border-current px-1.5 py-0.5 text-[9px] font-medium opacity-70">{t("config.preferences.cardSkinLocked")}</span> : null}
-                                                            {id === "fish" && !locked ? (
+                                                            {(id === "fish" || id === "angel") && !locked ? (
                                                                 <ChevronDown className={`ml-auto size-3.5 shrink-0 opacity-45 transition-transform ${selected && fishOptionsOpen ? "rotate-180" : ""}`} />
                                                             ) : null}
                                                         </span>
@@ -500,7 +502,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                             );
                                         })}
                                     </div>
-                                    {cardSkin === "fish" && unlockedCardSkins.includes("fish") && fishOptionsOpen ? (
+                                    {((cardSkin === "fish" && unlockedCardSkins.includes("fish")) || cardSkin === "angel") && fishOptionsOpen ? (
                                         <div className="mt-3 rounded-lg border border-stone-200 bg-stone-50/80 px-3 py-3 dark:border-stone-800 dark:bg-white/5">
                                             <div className="flex items-start justify-between gap-4">
                                                 <div className="min-w-0">

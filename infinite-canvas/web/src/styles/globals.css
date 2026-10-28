@@ -741,6 +741,117 @@
     94%, 100% { opacity: 0; transform: scale(1.015); }
 }
 
+/* 天使娘：圣光从卡片顶部洒下 + 少量羽毛飘落，位于内容层后面。 */
+.angel-blessing {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border-radius: inherit;
+    overflow: hidden;
+    pointer-events: none;
+    opacity: 0;
+    animation: angel-blessing 4.8s ease-in-out infinite;
+}
+
+.angel-blessing::before {
+    content: "";
+    position: absolute;
+    inset: -25% -12% 0;
+    background:
+        radial-gradient(ellipse at 50% -8%, rgba(255, 245, 205, 0.55), transparent 58%),
+        repeating-linear-gradient(100deg, rgba(255, 245, 210, 0.12) 0 2px, transparent 2px 24px);
+    mix-blend-mode: screen;
+    filter: blur(0.2px);
+    animation: angel-rays 7s ease-in-out infinite;
+}
+
+.angel-feather {
+    position: absolute;
+    top: -12%;
+    width: 9px;
+    height: 24px;
+    border-radius: 60% 40% 55% 45% / 70% 40% 60% 30%;
+    background: linear-gradient(160deg, #fffdf6, #efe4c8 70%, #cbb98f);
+    box-shadow: 0 0 5px rgba(255, 245, 210, 0.55);
+    opacity: 0;
+    animation: angel-feather-fall 4.8s ease-in infinite;
+}
+
+.angel-feather::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 12%;
+    bottom: 10%;
+    width: 1px;
+    background: rgba(160, 140, 100, 0.45);
+    transform: rotate(8deg);
+}
+
+.angel-feather.f1 { --r: 12deg; left: 8%; animation-delay: 0.1s; }
+.angel-feather.f2 { --r: -18deg; left: 26%; animation-delay: 1.1s; }
+.angel-feather.f3 { --r: 22deg; left: 48%; animation-delay: 0.5s; }
+.angel-feather.f4 { --r: -8deg; left: 70%; animation-delay: 1.8s; }
+.angel-feather.f5 { --r: 16deg; left: 88%; animation-delay: 2.4s; }
+
+.angel-mascot {
+    will-change: transform;
+    animation: angel-float 4.8s ease-in-out infinite;
+}
+
+.angel-frame {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: bottom center;
+}
+
+.angel-frame-idle {
+    animation: angel-frame-idle 4.8s ease-in-out infinite;
+}
+
+.angel-frame-write {
+    opacity: 0;
+    animation: angel-frame-write 4.8s ease-in-out infinite;
+}
+
+@keyframes angel-blessing {
+    0%, 18% { opacity: 0; }
+    30%, 80% { opacity: 1; }
+    94%, 100% { opacity: 0; }
+}
+
+@keyframes angel-rays {
+    0%, 100% { transform: translateX(-2%) skewX(-3deg); opacity: 0.7; }
+    50% { transform: translateX(2%) skewX(3deg); opacity: 1; }
+}
+
+@keyframes angel-feather-fall {
+    0% { transform: translate3d(0, -20px, 0) rotate(var(--r)); opacity: 0; }
+    10% { opacity: 0.9; }
+    70% { opacity: 0.7; }
+    100% { transform: translate3d(24px, 280px, 0) rotate(calc(var(--r) + 140deg)); opacity: 0; }
+}
+
+@keyframes angel-float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+}
+
+@keyframes angel-frame-idle {
+    0%, 20% { opacity: 1; }
+    32%, 82% { opacity: 0; }
+    94%, 100% { opacity: 1; }
+}
+
+@keyframes angel-frame-write {
+    0%, 20% { opacity: 0; }
+    32%, 82% { opacity: 1; }
+    94%, 100% { opacity: 0; }
+}
+
 @keyframes workflow-active-glow {
     0%, 100% {
         box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.08), 0 0 10px rgba(16, 185, 129, 0.05);
@@ -760,15 +871,23 @@
     .fish-guard-halo,
     .fish-guard-frame-idle,
     .fish-guard-frame-raise,
+    .angel-blessing,
+    .angel-feather,
+    .angel-mascot,
+    .angel-frame-idle,
+    .angel-frame-write,
     .workflow-active {
         animation: none;
     }
 
-    .fish-guard-frame-raise {
+    .fish-guard-frame-raise,
+    .angel-frame-write,
+    .angel-feather {
         display: none;
     }
 
-    .fish-guard-halo {
+    .fish-guard-halo,
+    .angel-blessing {
         opacity: 0.35;
     }
 
