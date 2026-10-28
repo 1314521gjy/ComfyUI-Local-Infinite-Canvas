@@ -1,22 +1,12 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 import { isApiWorkflow, isUiWorkflow } from "./registry.js";
+import { MODEL_LOADER_SPECS as LOADER_SPECS } from "./model-loaders.js";
 import { nowIso, truncate, writeJsonAtomic } from "./util.js";
-
-const LOADER_SPECS = [
-    { classType: "CheckpointLoaderSimple", input: "ckpt_name", key: "checkpoints" },
-    { classType: "UNETLoader", input: "unet_name", key: "unets" },
-    { classType: "UpscaleModelLoader", input: "model_name", key: "upscaleModels" },
-    { classType: "SeedVR2LoadDiTModel", input: "model", key: "seedvr2Dit" },
-    { classType: "SeedVR2LoadVAEModel", input: "model", key: "seedvr2Vae" },
-    { classType: "CLIPLoader", input: "clip_name", key: "clips" },
-    { classType: "VAELoader", input: "vae_name", key: "vaes" },
-    { classType: "LoraLoader", input: "lora_name", key: "loras" },
-    { classType: "LoraLoaderModelOnly", input: "lora_name", key: "lorasModelOnly" },
-    { classType: "ApplyVDNH3Advanced", input: "vdn_checkpoint", key: "vdn" },
-];
 
 function safeStat(file) {
     try {
@@ -26,8 +16,52 @@ function safeStat(file) {
     }
 }
 
+const execFileAsync = promisify(execFile);
+const MODEL_DIR_KEYS = {
+    diffusion_models: ["diffusion_models", "unet"],
+    text_encoders: ["text_encoders", "clip"],
+    vae: ["vae"],
+    vae_approx: ["vae_approx"],
+    loras: ["loras"],
+    checkpoints: ["checkpoints"],
+    upscale_models: ["upscale_models"],
+    latent_upscale_models: ["latent_upscale_models"],
+    vdn: ["vdn"],
+    clip_vision: ["clip_vision"],
+    LLM: ["LLM", "llm"],
+};
+
+function normalizeAliasValue(value) {
+    return String(value || "").replace(/\\/g, "/");
+}
+
+function normalizeBaseName(value) {
+    const normalized = String(value || "").replace(/\\/g, "/");
+    return (normalized.split("/").pop() || "").trim().toLowerCase();
+}
+
+function isModelOption(value) {
+    return typeof value === "string" && Boolean(value.trim()) && !value.trim().startsWith("<");
+}
+
+function modelAliasKey(classType, input, from) {
+    return `${classType}\u0000${input}\u0000${normalizeAliasValue(from)}`;
+}
+
+function readAliasFile(file) {
+    try {
+        const parsed = JSON.parse(fs.readFileSync(file, "utf8").replace(/^\uFEFF/, ""));
+        return parsed?.aliases && typeof parsed.aliases === "object" ? parsed.aliases : {};
+    } catch {
+        return {};
+    }
+}
+
 export function createSetupManager({ config, registry, comfy, logger, mainModelFile = () => "" } = {}) {
     const statusFile = path.join(config.dataDir, "setup-status.json");
+    const aliasFile = path.join(config.dataDir, "model-aliases.json");
+    let aliases = readAliasFile(aliasFile);
+    const autoAliases = new Map();
     const availability = new Map();
     const comfyFileCache = new Map();
     const importedComfyPaths = new Set();
@@ -144,6 +178,160 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         return loaders;
     }
 
+    function loaderOptionsFor(classType) {
+        const list = loaderCatalog?.[classType];
+        return Array.isArray(list) ? list : [];
+    }
+
+    // 同 basename、不同子目录/路径的文件是同一个模型，可自动认；
+    // 同名文件出现多份时不自动选，留给用户确认。
+    function rebuildAutoAliases() {
+        autoAliases.clear();
+        for (const spec of LOADER_SPECS) {
+            const options = loaderOptionsFor(spec.classType);
+            if (!options.length) continue;
+            const byBase = new Map();
+            for (const option of options) {
+                if (!isModelOption(option)) continue;
+                const base = normalizeBaseName(option);
+                const list = byBase.get(base) || [];
+                list.push(option);
+                byBase.set(base, list);
+            }
+            const map = new Map();
+            for (const [base, list] of byBase) {
+                if (list.length === 1) map.set(base, list[0]);
+            }
+            autoAliases.set(spec.classType, map);
+        }
+    }
+
+    function modelRootsForDir(dir) {
+        const roots = [];
+        const seen = new Set();
+        const add = (value) => {
+            if (!value || typeof value !== "string") return;
+            const resolved = path.resolve(value);
+            const key = resolved.toLowerCase();
+            if (seen.has(key)) return;
+            seen.add(key);
+            roots.push(resolved);
+        };
+        for (const key of MODEL_DIR_KEYS[dir] || [dir]) {
+            const list = folderPathCatalog?.[key];
+            if (Array.isArray(list)) for (const entry of list) add(entry);
+        }
+        if (config.comfyDir) {
+            for (const key of MODEL_DIR_KEYS[dir] || [dir]) add(path.join(config.comfyDir, "models", key));
+        }
+        return roots;
+    }
+
+    function findInstalledOption(classType, value) {
+        const normalized = normalizeAliasValue(value);
+        return loaderOptionsFor(classType).find((item) => isModelOption(item) && normalizeAliasValue(item) === normalized) || "";
+    }
+
+    function aliasTargetExists(classType, value) {
+        if (findInstalledOption(classType, value)) return true;
+        const normalized = normalizeAliasValue(value);
+        if (!normalized || path.isAbsolute(normalized) || normalized.split("/").includes("..")) return false;
+        const spec = LOADER_SPECS.find((item) => item.classType === classType);
+        if (!spec) return false;
+        return (spec.dirs || []).some((dir) => modelRootsForDir(dir).some((root) => safeStat(path.join(root, normalized))?.isFile()));
+    }
+
+    function modelAliasFor(classType, input, value) {
+        if (!value) return "";
+        const user = aliases[modelAliasKey(classType, input, value)] || "";
+        if (user) {
+            const actual = findInstalledOption(classType, user);
+            if (actual) return actual;
+            if (aliasTargetExists(classType, user)) return normalizeAliasValue(user);
+        }
+        const auto = autoAliases.get(classType)?.get(normalizeBaseName(value)) || "";
+        if (auto && normalizeAliasValue(auto) !== normalizeAliasValue(value)) return auto;
+        return "";
+    }
+
+    function modelCandidates(classType, value) {
+        const base = normalizeBaseName(value);
+        return loaderOptionsFor(classType)
+            .filter((item) => isModelOption(item) && normalizeAliasValue(item) !== normalizeAliasValue(value))
+            .sort((a, b) => {
+                const aSame = normalizeBaseName(a) === base ? 0 : 1;
+                const bSame = normalizeBaseName(b) === base ? 0 : 1;
+                return aSame - bSame || a.localeCompare(b);
+            });
+    }
+
+    async function setModelAliases(entries = []) {
+        for (const entry of entries) {
+            const classType = String(entry?.classType || "");
+            const input = String(entry?.input || "");
+            const spec = LOADER_SPECS.find((item) => item.classType === classType && item.input === input);
+            if (!spec) throw new Error("不支持的模型输入");
+            const source = String(entry?.from || "").trim();
+            if (!source) throw new Error("缺少原模型名");
+            const target = String(entry?.to || "").trim();
+            const key = modelAliasKey(classType, input, source);
+            if (!target || normalizeAliasValue(target) === normalizeAliasValue(source)) {
+                delete aliases[key];
+                continue;
+            }
+            const actual = findInstalledOption(classType, target);
+            if (actual) {
+                aliases[key] = actual;
+                continue;
+            }
+            if (aliasTargetExists(classType, target)) {
+                aliases[key] = normalizeAliasValue(target);
+                continue;
+            }
+            throw new Error(`所选模型尚未安装或不在 ComfyUI 列表中：${target}`);
+        }
+        await writeJsonAtomic(aliasFile, { version: 1, aliases, updatedAt: nowIso() });
+        await scan();
+        return state;
+    }
+
+    async function setModelAlias(entry) {
+        return setModelAliases([entry]);
+    }
+
+    async function pickModelFile({ dir } = {}) {
+        if (!dir || !MODEL_DIR_KEYS[dir]) throw new Error("不支持的模型目录");
+        const roots = modelRootsForDir(dir).filter((root) => safeStat(root)?.isDirectory());
+        if (!roots.length) throw new Error("未找到 ComfyUI 的模型目录");
+        const initial = roots[0];
+        const quote = (value) => `'${String(value).replace(/'/g, "''")}'`;
+        const script = [
+            "Add-Type -AssemblyName System.Windows.Forms",
+            "$d = New-Object System.Windows.Forms.OpenFileDialog",
+            `$d.InitialDirectory = ${quote(initial)}`,
+            `$d.Filter = ${quote("模型文件|*.safetensors;*.sft;*.ckpt;*.pt;*.pth;*.bin;*.gguf;*.onnx;*.engine|所有文件|*.*")}`,
+            "$d.Multiselect = $false",
+            "if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($d.FileName) }",
+        ].join("; ");
+        const systemRoot = process.env.SystemRoot || "C:\Windows";
+        const powershell = path.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+        const { stdout } = await execFileAsync(powershell, ["-STA", "-NoProfile", "-Command", script], {
+            timeout: 300000,
+            windowsHide: true,
+            maxBuffer: 1024 * 1024,
+        });
+        const selected = String(stdout || "").trim();
+        if (!selected) return null;
+        const absolute = path.resolve(selected);
+        for (const root of roots) {
+            const relative = path.relative(root, absolute);
+            if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
+                return { file: relative.split(path.sep).join("/"), root };
+            }
+        }
+        throw new Error("请选择 ComfyUI 模型目录内的文件");
+    }
+
     function hasBaseModelAlternative(entry, classType, input, options) {
         const config = entry?.baseModels;
         if (!config) return false;
@@ -185,7 +373,15 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 const override = mainModelFile(entry?.id);
                 if (override && classType === "UNETLoader" && loader.input === "unet_name" && loader.options.has(override)) continue;
                 if (hasBaseModelAlternative(entry, classType, loader.input, loader.options)) continue;
-                problems.push({ type: "model", message: `缺少模型 ${classType}.${loader.input}=${value}` });
+                if (modelAliasFor(classType, loader.input, value)) continue;
+                problems.push({
+                    type: "model",
+                    message: `缺少模型 ${classType}.${loader.input}=${value}`,
+                    classType,
+                    input: loader.input,
+                    value,
+                    candidates: modelCandidates(classType, value),
+                });
             }
         }
         return problems;
@@ -209,6 +405,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 nodeClasses = classes;
                 const loaders = collectLoaderOptions(objectInfo);
                 loaderCatalog = Object.fromEntries([...loaders.entries()].map(([classType, loader]) => [classType, [...loader.options].sort()]));
+                rebuildAutoAliases();
                 const loraOptions = loaders.get("LoraLoaderModelOnly")?.options || loaders.get("LoraLoader")?.options || new Set();
                 state.loras = [...loraOptions].sort();
                 const gatewayScan = await registry.scan();
@@ -344,6 +541,11 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         isAvailable,
         workflowStatus,
         hasNodeClass,
+        modelAliasFor,
+        setModelAlias,
+        setModelAliases,
+        pickModelFile,
+        modelCandidates,
         loraNames,
         loaderOptions,
         folderPaths,

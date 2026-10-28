@@ -1,16 +1,16 @@
 {
-  "version": "v0.21.5",
+  "version": "v0.21.6",
   "publishedAt": "2026-10-29",
-  "notes": "自由卡片支持一次编辑工作流里的全部文本框（正向/负面/自定义），修复提示词误绑到负面的问题。",
+  "notes": "资源行可自选替换本地模型（默认打开 ComfyUI 模型目录）；工作流模型匹配支持同名自动识别和手动确认，不静默替换。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.5.zip",
-    "sha256": "df999a3d27878f8bb90ac996a0445c8cbe488fcf013f924ec5b9593207462f2f",
-    "size": 34160141
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.6.zip",
+    "sha256": "151e1ce538face13fe5c6ad67cd6968f95a0db6b93fdd014f457bf4a2bb2a466",
+    "size": 34166764
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

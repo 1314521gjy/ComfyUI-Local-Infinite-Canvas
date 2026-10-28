@@ -2,6 +2,7 @@ import path from "node:path";
 
 import { applyBindings } from "./bindings.js";
 import { applyLoraChain } from "./lora-chain.js";
+import { MODEL_LOADER_SPECS } from "./model-loaders.js";
 import { mimeFromFilename, sleep, truncate } from "./util.js";
 
 export class GenerationError extends Error {
@@ -24,6 +25,23 @@ function resolveForMode(entry, mode) {
     bindings: variant.bindings || entry.bindings,
     defaults: variant.defaults || entry.defaults,
   };
+}
+
+function applyModelAliases(workflow, aliasFor) {
+  if (typeof aliasFor !== "function") return workflow;
+  let next = workflow;
+  for (const spec of MODEL_LOADER_SPECS) {
+    for (const [nodeId, node] of Object.entries(next || {})) {
+      if (node?.class_type !== spec.classType) continue;
+      const value = node.inputs?.[spec.input];
+      if (typeof value !== "string") continue;
+      const target = aliasFor(spec.classType, spec.input, value);
+      if (!target || target === value) continue;
+      if (next === workflow) next = { ...workflow };
+      next[nodeId] = { ...node, inputs: { ...node.inputs, [spec.input]: target } };
+    }
+  }
+  return next;
 }
 
 function applyMainModelFile(workflow, file) {
@@ -74,18 +92,19 @@ function collectOutputFiles(history, { includePreview = false } = {}) {
   return files;
 }
 
-export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 * 1000, pollIntervalMs = 750, signal, requestId, onProgress, logger, loraCatalog, includePreviewOutputs = false }) {
+export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 * 1000, pollIntervalMs = 750, signal, requestId, onProgress, logger, loraCatalog, modelAliasFor = null, includePreviewOutputs = false }) {
   if (signal?.aborted) throw new GenerationError("生成已取消", { status: 400, code: "cancelled" });
   const resolved = resolveForMode(entry, context.mode);
   const params = resolved.baseModelParams ? { ...resolved.baseModelParams, ...(context.params || {}) } : context.params;
-  const bound = applyMainModelFile(applyBindings(resolved.workflow, resolved, { ...context, params }, { logger }), resolved.mainModelFile);
+  const aliasedWorkflow = applyModelAliases(resolved.workflow, modelAliasFor);
+  const bound = applyMainModelFile(applyBindings(aliasedWorkflow, resolved, { ...context, params }, { logger }), resolved.mainModelFile);
   const loraResult = applyLoraChain(bound, params, {
     available: loraCatalog,
     filter: resolved.lora?.filter,
     sourceNode: resolved.lora?.source,
     loaderClass: resolved.lora?.loader || "LoraLoaderModelOnly",
   });
-  const workflow = loraResult.workflow;
+  const workflow = applyModelAliases(loraResult.workflow, modelAliasFor);
   if (loraResult.applied.length) {
     logger?.info?.(`LoRA ${entry.name}: ${loraResult.applied.map((item) => `${path.basename(item.name)}@${item.strength}`).join(" -> ")}`);
   }
@@ -158,7 +177,7 @@ export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 *
   }
 }
 
-export async function runImage({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, requestId, onProgress, logger, loraCatalog, includePreviewOutputs = false }) {
+export async function runImage({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, requestId, onProgress, logger, loraCatalog, modelAliasFor = null, includePreviewOutputs = false }) {
   const count = context.count || 1;
   const all = [];
   let lastPromptId;
@@ -174,6 +193,7 @@ export async function runImage({ entry, context, comfy, timeoutMs, pollIntervalM
       requestId,
       logger,
       loraCatalog,
+      modelAliasFor,
       includePreviewOutputs,
       onProgress: (event) => onProgress?.({ ...event, attempt, attempts: count }),
     });
@@ -183,8 +203,8 @@ export async function runImage({ entry, context, comfy, timeoutMs, pollIntervalM
   return { promptId: lastPromptId, files: all.slice(0, count) };
 }
 
-export async function runVideo({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, requestId, onProgress, logger, loraCatalog, includePreviewOutputs = false }) {
-  const result = await runWorkflow({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, requestId, logger, loraCatalog, includePreviewOutputs, onProgress });
+export async function runVideo({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, requestId, onProgress, logger, loraCatalog, modelAliasFor = null, includePreviewOutputs = false }) {
+  const result = await runWorkflow({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, requestId, logger, loraCatalog, modelAliasFor, includePreviewOutputs, onProgress });
   const video = result.files.find((file) => /^video\//i.test(file.mimeType) || /\.(mp4|webm|mov)$/i.test(file.filename));
   if (!video) {
     throw new GenerationError("视频工作流没有返回视频文件（只拿到了图片/动图）", { status: 502, code: "no_video_output", details: result.files.map((file) => file.filename) });

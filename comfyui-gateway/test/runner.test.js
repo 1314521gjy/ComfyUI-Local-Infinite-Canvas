@@ -38,6 +38,33 @@ test("a selected main model replaces the workflow UNET file", async () => {
   assert.equal(submitted["1"].inputs.unet_name, "my_custom_model.safetensors");
 });
 
+test("model aliases rewrite loader inputs before submit", async () => {
+  let submitted = null;
+  const runEntry = {
+    name: "runner-model-alias",
+    type: "image",
+    workflow: {
+      1: { class_type: "UNETLoader", inputs: { unet_name: "missing_model.safetensors" } },
+      2: { class_type: "CLIPLoader", inputs: { clip_name: "keep.safetensors" } },
+    },
+    bindings: {},
+    defaults: {},
+    presets: {},
+  };
+  await runWorkflow({
+    entry: runEntry,
+    context: buildContext({ prompt: "x" }),
+    comfy: fakeComfy((workflow) => {
+      submitted = workflow;
+    }),
+    timeoutMs: 5000,
+    pollIntervalMs: 10,
+    modelAliasFor: (classType, input, value) => (classType === "UNETLoader" && value === "missing_model.safetensors" ? "local_subdir/model.safetensors" : ""),
+  });
+  assert.equal(submitted["1"].inputs.unet_name, "local_subdir/model.safetensors");
+  assert.equal(submitted["2"].inputs.clip_name, "keep.safetensors");
+});
+
 test("aborting a running workflow interrupts ComfyUI", async () => {
   const controller = new AbortController();
   let interrupted = null;

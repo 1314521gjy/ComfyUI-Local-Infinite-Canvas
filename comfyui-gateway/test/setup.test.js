@@ -44,6 +44,59 @@ function createManager(dataDir, unetFiles, mainModelFile = () => "") {
   });
 }
 
+function createAliasManager(dataDir, unetFiles, workflow) {
+  const custom = { ...entry, workflow, baseModels: undefined };
+  return createSetupManager({
+    config: { dataDir, comfyUrl: "http://127.0.0.1:1", comfyWorkflowsDir: "", maxWorkflowBytes: 1024 * 1024 },
+    registry: {
+      list: () => [{ id: custom.id }],
+      resolve: () => custom,
+      scan: async () => ({ imported: 0 }),
+      reloadIfChanged: () => {},
+    },
+    comfy: {
+      systemStats: async () => ({}),
+      objectInfo: async () => objectInfo(unetFiles),
+    },
+    logger: null,
+    mainModelFile: () => "",
+  });
+}
+
+test("auto-recognizes the same model file in a different subfolder", async () => {
+  const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-alias-auto-"));
+  try {
+    const manager = createAliasManager(dataDir, ["zimage/z_image_turbo_bf16.safetensors"], {
+      1: { class_type: "UNETLoader", inputs: { unet_name: "z_image_turbo_bf16.safetensors" } },
+    });
+    await manager.scan();
+    assert.equal(manager.isAvailable(entry.id), true);
+    assert.equal(manager.modelAliasFor("UNETLoader", "unet_name", "z_image_turbo_bf16.safetensors"), "zimage/z_image_turbo_bf16.safetensors");
+  } finally {
+    await fsp.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("explicit alias only applies after the user chooses an installed candidate", async () => {
+  const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-alias-explicit-"));
+  try {
+    const manager = createAliasManager(dataDir, ["local_other.safetensors"], {
+      1: { class_type: "UNETLoader", inputs: { unet_name: "missing_model.safetensors" } },
+    });
+    await manager.scan();
+    assert.equal(manager.isAvailable(entry.id), false);
+    const problem = manager.workflowStatus(entry.id).problems.find((item) => item.type === "model");
+    assert.ok(problem?.candidates?.includes("local_other.safetensors"));
+    await manager.setModelAlias({ classType: "UNETLoader", input: "unet_name", from: "missing_model.safetensors", to: "local_other.safetensors" });
+    assert.equal(manager.isAvailable(entry.id), true);
+    assert.equal(manager.modelAliasFor("UNETLoader", "unet_name", "missing_model.safetensors"), "local_other.safetensors");
+    const saved = JSON.parse(await fsp.readFile(path.join(dataDir, "model-aliases.json"), "utf8"));
+    assert.equal(saved.aliases["UNETLoader\u0000unet_name\u0000missing_model.safetensors"], "local_other.safetensors");
+  } finally {
+    await fsp.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("workflow stays available when the default base model is absent but a tier variant is installed", async () => {
   const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-base-fallback-"));
   try {

@@ -9,7 +9,10 @@ import {
     fetchResourceStatus,
     formatBytes,
     installResources,
+    pickResourceReplacement,
     refreshResourceStatus,
+    setModelAlias,
+    setResourceReplacement,
     setPackMainModel,
     setWorkflowVisibility,
     type ResourceItem,
@@ -43,6 +46,14 @@ const copyByLocale = {
         workflowSection: "工作流",
         workflowHint: "按工作流安装；资源齐备且已启用后才会出现在模型选择",
         installWorkflow: "安装此工作流",
+        modelAliasPick: "选择本机文件",
+        modelAliasHint: "不同量化/底模可能改变效果，请确认后再选",
+        modelMatchTitle: "模型匹配",
+        modelMatchHint: "只自动认路径/同名文件；量化或底模不同请手动确认",
+        replaceModel: "自选替换",
+        replaceAgain: "更换",
+        restoreDefault: "恢复默认",
+        replacedBy: "已替换为",
         workflowReady: "可用",
         workflowRestart: "待重启",
         workflowEnabled: "启用",
@@ -117,6 +128,14 @@ const copyByLocale = {
         workflowSection: "Workflows",
         workflowHint: "Install by workflow; only complete and enabled workflows appear in the model picker",
         installWorkflow: "Install workflow",
+        modelAliasPick: "Pick a local file",
+        modelAliasHint: "Different quantization/base models can change results; confirm before choosing",
+        modelMatchTitle: "Model matching",
+        modelMatchHint: "Only path/same-name matches are automatic; confirm quantized or different base models",
+        replaceModel: "Choose replacement",
+        replaceAgain: "Change",
+        restoreDefault: "Restore default",
+        replacedBy: "Replaced with",
         workflowReady: "Ready",
         workflowRestart: "Restart needed",
         workflowEnabled: "Enabled",
@@ -190,6 +209,14 @@ function formatSpeed(bytesPerSecond: number) {
     return value > 0 ? `${formatBytes(value)}/s` : "";
 }
 
+const REPLACEABLE_MODEL_DIRS = new Set(["diffusion_models", "text_encoders", "vae", "loras", "checkpoints", "upscale_models", "vdn"]);
+
+function isReplaceableResource(item: ResourceItem) {
+    if (item.type !== "model" && item.type !== "bake") return false;
+    const dir = String(item.target || "").replace(/\\/g, "/").split("/")[0];
+    return REPLACEABLE_MODEL_DIRS.has(dir);
+}
+
 function ResourceCard({
     item,
     copy,
@@ -197,6 +224,9 @@ function ResourceCard({
     optional = false,
     selected = false,
     onToggle,
+    onReplace,
+    onRestore,
+    replacing = false,
 }: {
     item: ResourceItem;
     copy: Copy;
@@ -204,7 +234,11 @@ function ResourceCard({
     optional?: boolean;
     selected?: boolean;
     onToggle?: (checked: boolean) => void;
+    onReplace?: (item: ResourceItem) => void;
+    onRestore?: (item: ResourceItem) => void;
+    replacing?: boolean;
 }) {
+    const canReplace = Boolean(onReplace) && isReplaceableResource(item);
     return (
         <div className="rounded-lg border border-stone-200 bg-white/60 p-2 dark:border-stone-800 dark:bg-white/[.02]">
             <div className="flex items-start gap-2">
@@ -231,14 +265,38 @@ function ResourceCard({
                     </div>
                     {item.matchedBy === "size" && item.matchedFile ? <div className="mt-0.5 text-[10px] leading-4 text-stone-400 dark:text-stone-500">{copy.matchedBySize}: {item.matchedFile}</div> : null}
                     {item.sizeMismatch ? <div className="mt-0.5 text-[10px] leading-4 text-amber-600 dark:text-amber-400">{item.sizeMismatch}</div> : null}
+                    {item.overridden && item.overriddenBy ? <div className="mt-0.5 text-[10px] leading-4 text-blue-600 dark:text-blue-300">{copy.replacedBy}: {item.overriddenBy}</div> : null}
                     {!compact && item.note ? <div className="mt-0.5 text-[10px] leading-4 text-stone-400 dark:text-stone-500">{copy.note}: {item.note}</div> : null}
+                    {canReplace ? (
+                        <div className="mt-1 flex flex-wrap items-center justify-end gap-1">
+                            {item.overridden ? <Button size="small" type="text" disabled={replacing} onClick={() => onRestore?.(item)}>{copy.restoreDefault}</Button> : null}
+                            <Button size="small" type="text" loading={replacing} onClick={() => onReplace?.(item)}>
+                                {item.overridden ? copy.replaceAgain : copy.replaceModel}
+                            </Button>
+                        </div>
+                    ) : null}
                 </div>
             </div>
         </div>
     );
 }
 
-function WorkflowResourceRow({ item, copy, requires = [] }: { item: ResourceItem; copy: Copy; requires?: ResourceItem[] }) {
+function WorkflowResourceRow({
+    item,
+    copy,
+    requires = [],
+    onReplace,
+    onRestore,
+    replacing = false,
+}: {
+    item: ResourceItem;
+    copy: Copy;
+    requires?: ResourceItem[];
+    onReplace?: (item: ResourceItem) => void;
+    onRestore?: (item: ResourceItem) => void;
+    replacing?: boolean;
+}) {
+    const canReplace = Boolean(onReplace) && isReplaceableResource(item);
     return (
         <div className="flex items-start gap-2 rounded-md px-2 py-1.5">
             <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-stone-300 dark:bg-stone-600" />
@@ -256,10 +314,19 @@ function WorkflowResourceRow({ item, copy, requires = [] }: { item: ResourceItem
                 </div>
                 {item.matchedBy === "size" && item.matchedFile ? <div className="mt-0.5 text-[10px] text-stone-400 dark:text-stone-500">{copy.matchedBySize}: {item.matchedFile}</div> : null}
                 {item.sizeMismatch ? <div className="mt-0.5 text-[10px] text-amber-600 dark:text-amber-400">{item.sizeMismatch}</div> : null}
+                {item.overridden && item.overriddenBy ? <div className="mt-0.5 text-[10px] text-blue-600 dark:text-blue-300">{copy.replacedBy}: {item.overriddenBy}</div> : null}
                 {item.type === "bake" && requires.length ? (
                     <div className="mt-0.5 text-[10px] text-amber-600 dark:text-amber-400">{copy.bakeRequires}: {requires.map((entry) => entry.label).join(" + ")}</div>
                 ) : null}
             </div>
+            {canReplace ? (
+                <div className="ml-auto flex shrink-0 flex-col items-end gap-1">
+                    {item.overridden ? <Button size="small" type="text" disabled={replacing} onClick={() => onRestore?.(item)}>{copy.restoreDefault}</Button> : null}
+                    <Button size="small" type="text" loading={replacing} onClick={() => onReplace?.(item)}>
+                        {item.overridden ? copy.replaceAgain : copy.replaceModel}
+                    </Button>
+                </div>
+            ) : null}
         </div>
     );
 }
@@ -285,6 +352,8 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
     const [speeds, setSpeeds] = useState<Record<string, number>>({});
     const [stopping, setStopping] = useState(false);
     const [mainModelSaving, setMainModelSaving] = useState("");
+    const [modelAliasSaving, setModelAliasSaving] = useState("");
+    const [replacementSaving, setReplacementSaving] = useState("");
     const pollRef = useRef<number | null>(null);
     const selectedInitialized = useRef(false);
     const speedSamples = useRef<Map<string, { bytes: number; time: number; speed: number }>>(new Map());
@@ -470,6 +539,47 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
         }
     };
 
+    const chooseModelAlias = async (problem: { classType?: string; input?: string; value?: string }, file: string) => {
+        if (!problem.classType || !problem.input || !problem.value || !file) return;
+        const key = `${problem.classType}:${problem.input}:${problem.value}`;
+        setModelAliasSaving(key);
+        try {
+            await setModelAlias({ classType: problem.classType, input: problem.input, from: problem.value, to: file });
+            await load();
+            window.dispatchEvent(new Event("local-gateway-refresh-models"));
+        } catch (aliasError) {
+            showError(aliasError);
+        } finally {
+            setModelAliasSaving("");
+        }
+    };
+
+    const replaceResource = async (item: ResourceItem) => {
+        setReplacementSaving(item.id);
+        try {
+            const file = await pickResourceReplacement(item.id);
+            if (!file) return;
+            setStatus(await setResourceReplacement(item.id, file));
+            window.dispatchEvent(new Event("local-gateway-refresh-models"));
+        } catch (error) {
+            showError(error);
+        } finally {
+            setReplacementSaving("");
+        }
+    };
+
+    const restoreResource = async (item: ResourceItem) => {
+        setReplacementSaving(item.id);
+        try {
+            setStatus(await setResourceReplacement(item.id, ""));
+            window.dispatchEvent(new Event("local-gateway-refresh-models"));
+        } catch (error) {
+            showError(error);
+        } finally {
+            setReplacementSaving("");
+        }
+    };
+
     const switchMainModel = async (packId: string, file: string) => {
         if (mainModelSaving) return;
         setMainModelSaving(packId);
@@ -595,6 +705,49 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                 </div>
             ) : null}
 
+            {status?.unresolvedWorkflows?.length ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
+                    <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <span className="font-medium">{copy.modelMatchTitle}</span>
+                        <span className="text-[11px] text-stone-500 dark:text-stone-400">{copy.modelMatchHint}</span>
+                    </div>
+                    <div className="space-y-2">
+                        {status.unresolvedWorkflows.map((workflow) => (
+                            <div key={workflow.id} className="rounded-lg border border-stone-200 bg-white/70 p-2 dark:border-stone-700/70 dark:bg-stone-900/40">
+                                <div className="mb-1 truncate text-xs font-medium" title={workflow.label}>
+                                    {workflow.label}
+                                </div>
+                                <div className="space-y-1.5">
+                                    {workflow.problems.map((problem, index) => {
+                                        const key = `${workflow.id}:${problem.classType}:${problem.input}:${problem.value}:${index}`;
+                                        return (
+                                            <div key={key} className="flex flex-wrap items-center gap-2">
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="truncate text-[10px] text-amber-700 dark:text-amber-300" title={problem.message}>
+                                                        {problem.message}
+                                                    </div>
+                                                    <div className="text-[10px] text-stone-400 dark:text-stone-500">{copy.modelAliasHint}</div>
+                                                </div>
+                                                <Select
+                                                    size="small"
+                                                    showSearch
+                                                    optionFilterProp="label"
+                                                    placeholder={copy.modelAliasPick}
+                                                    style={{ minWidth: 220, maxWidth: 340 }}
+                                                    loading={modelAliasSaving.startsWith(`${problem.classType}:${problem.input}:${problem.value}`)}
+                                                    options={(problem.candidates || []).map((value) => ({ value, label: value }))}
+                                                    onChange={(value) => void chooseModelAlias(problem, String(value))}
+                                                />
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            ) : null}
+
             <div className="space-y-4 rounded-2xl bg-stone-100/60 p-2.5 dark:bg-white/[0.03]">
                 {visiblePacks.map((pack) => {
                     const expanded = expandedPacks.has(pack.id);
@@ -700,30 +853,6 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                     </button>
                                 ) : null}
                             </div>
-                            {mainModel ? (
-                                <div
-                                    className={`flex flex-wrap items-center gap-2 border-t border-stone-100 px-3 py-1.5 dark:border-stone-800/70 ${expandable ? "cursor-pointer" : ""}`}
-                                    onClick={expandable ? () => toggleExpanded(pack.id) : undefined}
-                                >
-                                    <span className="text-[11px] text-stone-500 dark:text-stone-400">{copy.mainModel}</span>
-                                    <span className="contents" onClick={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()}>
-                                        <Select
-                                            size="small"
-                                            value={mainModel.selected || ""}
-                                            options={mainModelOptions}
-                                            onChange={(value) => void switchMainModel(pack.id, String(value || ""))}
-                                            loading={mainModelSaving === pack.id}
-                                            disabled={Boolean(job && job.status === "running") || Boolean(mainModelSaving && mainModelSaving !== pack.id)}
-                                            popupMatchSelectWidth={false}
-                                            showSearch
-                                            optionFilterProp="label"
-                                            style={{ minWidth: 220, maxWidth: 360 }}
-                                        />
-                                    </span>
-                                    {mainModel.selected ? <Tag color="blue" className="m-0">{copy.mainModelSelected}</Tag> : null}
-                                    {mainModel.selected && mainModel.selectedInstalled && mainModel.available ? <Tag color="green" className="m-0">{copy.mainModelActive}</Tag> : null}
-                                </div>
-                            ) : null}
                             {expandable && expanded ? (
                                 <div className="border-t border-stone-100 px-3 pb-3 pt-2 dark:border-stone-800/70">
                                     {workflowDependencies.length ? (
@@ -799,6 +928,9 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                                                                 item={item}
                                                                                 copy={copy}
                                                                                 requires={(item.requires || []).map((id) => resourceById.get(id)).filter((entry): entry is ResourceItem => Boolean(entry))}
+                                                                                onReplace={(resource) => void replaceResource(resource)}
+                                                                                onRestore={(resource) => void restoreResource(resource)}
+                                                                                replacing={replacementSaving === item.id}
                                                                             />
                                                                         ))}
                                                                     </div>
@@ -836,6 +968,9 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                                                 optional
                                                                 selected={selectedOptional.has(item.id)}
                                                                 onToggle={(checked) => toggleOptional(item.id, checked)}
+                                                                onReplace={(resource) => void replaceResource(resource)}
+                                                                onRestore={(resource) => void restoreResource(resource)}
+                                                                replacing={replacementSaving === item.id}
                                                             />
                                                         ))}
                                                     </div>
@@ -851,7 +986,17 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                                         <span className="text-stone-400 dark:text-stone-500">{pack.present}/{pack.total}{pack.missingSize ? ` · ${copy.size} ${formatBytes(pack.missingSize)}` : ""}</span>
                                                     </div>
                                                     <div className="space-y-1.5">
-                                                        {pack.requiredItems.map((item) => <ResourceCard key={item.id} item={item} copy={copy} compact={compact} />)}
+                                                        {pack.requiredItems.map((item) => (
+                                                            <ResourceCard
+                                                                key={item.id}
+                                                                item={item}
+                                                                copy={copy}
+                                                                compact={compact}
+                                                                onReplace={(resource) => void replaceResource(resource)}
+                                                                onRestore={(resource) => void restoreResource(resource)}
+                                                                replacing={replacementSaving === item.id}
+                                                            />
+                                                        ))}
                                                     </div>
                                                 </>
                                             ) : null}
@@ -872,6 +1017,9 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                                             optional
                                                             selected={selectedOptional.has(item.id)}
                                                             onToggle={(checked) => toggleOptional(item.id, checked)}
+                                                            onReplace={(resource) => void replaceResource(resource)}
+                                                            onRestore={(resource) => void restoreResource(resource)}
+                                                            replacing={replacementSaving === item.id}
                                                         />
                                                     ))}
                                                 </div>

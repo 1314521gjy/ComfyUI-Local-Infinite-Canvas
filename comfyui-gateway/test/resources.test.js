@@ -100,6 +100,53 @@ test("resources download falls back to the backup source and verifies sha256", a
 });
 
 
+test("resource replacement marks a missing model present and skips download", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-replace-test-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(path.join(comfy, "models", "vae"), { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    const index = {
+        schema: 1,
+        version: "test-replace-1",
+        packs: [{ id: "test", resources: ["test-vae"] }],
+        resources: [{ id: "test-vae", type: "model", label: "Test VAE", target: "vae/test-vae.safetensors" }],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+    let alias = "";
+    const setup = {
+        loaderOptions: () => ({}),
+        status: () => ({ comfyReachable: true }),
+        modelAliasFor: (classType, input, value) => (classType === "VAELoader" && value === "test-vae.safetensors" ? alias : ""),
+        setModelAliases: async (entries) => {
+            alias = entries[0]?.to || "";
+        },
+        pickModelFile: async () => ({ file: "local-vae.safetensors" }),
+        scan: async () => ({}),
+    };
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup,
+        logger: null,
+    });
+    try {
+        await manager.init();
+        assert.equal(manager.status().resources[0].status, "missing");
+        await manager.setResourceReplacement("test-vae", "local-vae.safetensors");
+        const item = manager.status().resources[0];
+        assert.equal(item.status, "present");
+        assert.equal(item.overridden, true);
+        assert.equal(item.overriddenBy, "local-vae.safetensors");
+        const job = manager.install({ ids: ["test-vae"] });
+        assert.equal(job.status, "done");
+        assert.equal(job.items.length, 0);
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});
+
 test("resources can install a custom node zip", async () => {
     const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-node-test-"));
     const comfy = path.join(root, "ComfyUI");

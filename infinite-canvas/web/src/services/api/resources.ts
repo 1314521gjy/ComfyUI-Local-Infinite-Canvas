@@ -76,7 +76,7 @@ export type WorkflowDependency = {
     modelVisible?: boolean;
     variantLabels?: Record<string, string>;
     recommended?: boolean;
-    problems: Array<{ type?: string; message?: string }>;
+    problems: Array<{ type?: string; message?: string; classType?: string; input?: string; value?: string; candidates?: string[] }>;
     resources: ResourceItem[];
     missing: number;
     missingSize: number;
@@ -142,6 +142,11 @@ export type ResourceStatus = {
     comfyRoot?: string;
     comfyPython?: string;
     comfyReachable?: boolean;
+    unresolvedWorkflows?: Array<{
+        id: string;
+        label: string;
+        problems: Array<{ type?: string; message?: string; classType?: string; input?: string; value?: string; candidates?: string[] }>;
+    }>;
     promptCapabilities?: PromptCapabilities;
     modelRoots?: Record<string, string[]>;
     hardware?: { gpuName?: string; vramTotalMb?: number; ramTotalBytes?: number; ramFreeBytes?: number; detectedAt?: string; source?: string } | null;
@@ -238,6 +243,38 @@ export async function fetchResourceJob(id: string): Promise<ResourceJob> {
     const data = await readJson(response);
     if (!response.ok || data.ok === false) throw new Error(errorMessage(data, `读取安装进度失败（HTTP ${response.status}）`));
     return data.job as ResourceJob;
+}
+
+export async function pickResourceReplacement(resourceId: string): Promise<string> {
+    const response = await gatewayFetch(`${gatewayRoot}/api/resources/pick-replacement`, {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify({ resourceId }),
+    });
+    const data = await readJson(response);
+    if (!response.ok || data.ok === false) throw new Error(errorMessage(data, `打开模型目录失败（HTTP ${response.status}）`));
+    return String(data.file || "");
+}
+
+export async function setResourceReplacement(resourceId: string, file: string): Promise<ResourceStatus> {
+    const response = await gatewayFetch(`${gatewayRoot}/api/resources/replacement`, {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify({ resourceId, file }),
+    });
+    const data = await readJson(response);
+    if (!response.ok || data.ok === false) throw new Error(errorMessage(data, `保存模型替换失败（HTTP ${response.status}）`));
+    return data.status as ResourceStatus;
+}
+
+export async function setModelAlias(input: { classType: string; input: string; from: string; to: string }): Promise<void> {
+    const response = await gatewayFetch(`${gatewayRoot}/api/setup/model-alias`, {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+    });
+    const data = await readJson(response);
+    if (!response.ok || data.ok === false) throw new Error(errorMessage(data, `模型匹配保存失败（HTTP ${response.status}）`));
 }
 
 export async function setWorkflowVisibility(id: string, enabled: boolean): Promise<void> {

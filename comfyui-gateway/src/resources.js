@@ -9,6 +9,7 @@ import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
 
 import { findUnetLoader } from "./base-models.js";
+import { MODEL_LOADER_SPECS } from "./model-loaders.js";
 import { nowIso, truncate, writeJsonAtomic } from "./util.js";
 
 const MODEL_DIRS = new Set(["diffusion_models", "text_encoders", "vae", "vae_approx", "loras", "checkpoints", "upscale_models", "latent_upscale_models", "vdn", "clip_vision", "LLM"]);
@@ -677,6 +678,69 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         return size;
     }
 
+    function resourceLoaderSpecs(resource) {
+        let dir = "";
+        try {
+            dir = targetParts(resource.target).dir;
+        } catch {
+            return [];
+        }
+        return MODEL_LOADER_SPECS.filter((spec) => (spec.dirs || []).includes(dir)).map((spec) => ({
+            classType: spec.classType,
+            input: spec.input,
+            from: targetParts(resource.target).file,
+        }));
+    }
+
+    function resourceAliasFor(resource) {
+        for (const spec of resourceLoaderSpecs(resource)) {
+            const to = setup?.modelAliasFor?.(spec.classType, spec.input, spec.from) || "";
+            if (to) return { ...spec, to };
+        }
+        return null;
+    }
+
+    async function pickResourceReplacement(resourceId) {
+        const resource = resourceById(resourceId);
+        if (!resource) throw new Error("资源不存在");
+        if (!["model", "bake"].includes(resource.type || "model")) throw new Error("这个资源不支持替换");
+        let dir = "";
+        try {
+            dir = targetParts(resource.target).dir;
+        } catch {
+            throw new Error("这个资源不支持替换");
+        }
+        return setup.pickModelFile({ dir });
+    }
+
+    async function setResourceReplacement(resourceId, file) {
+        const resource = resourceById(resourceId);
+        if (!resource) throw new Error("资源不存在");
+        if (!["model", "bake"].includes(resource.type || "model")) throw new Error("这个资源不支持替换");
+        const specs = resourceLoaderSpecs(resource);
+        if (!specs.length) throw new Error("这个资源不支持替换");
+        // 底模替换时清掉旧的“按包主模型”选择，避免旧的 UNET 覆盖压过新的资源替换。
+        const dir = targetParts(resource.target).dir;
+        if (dir === "diffusion_models" && mainModels?.setForWorkflow) {
+            const targetFile = targetParts(resource.target).file;
+            for (const pack of index?.packs || []) {
+                if (!(pack.resources || []).includes(resourceId)) continue;
+                const workflowIds = [...new Set([...(pack.workflows || []), ...Object.keys(pack.workflowDependencies || {})])];
+                for (const workflowId of workflowIds) {
+                    const entry = registry?.resolve?.(workflowId);
+                    const defaultFile = findUnetLoader(entry?.workflow)?.file || "";
+                    if (defaultFile && defaultFile.replace(/\\/g, "/") === targetFile) {
+                        await mainModels.setForWorkflow(workflowId, "");
+                    }
+                }
+            }
+        }
+        await setup.setModelAliases(specs.map((spec) => ({ ...spec, to: file })));
+        inventoryCache.clear();
+        extraPathsCache.clear();
+        return status();
+    }
+
     function registeredModel(modelDir, file) {
         const spec = LOADER_BY_DIR[modelDir];
         if (!spec) return false;
@@ -721,15 +785,18 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         const isNode = dir === "custom_nodes" || resource.type === "node";
         const isPip = resource.type === "pip";
         const pip = isPip ? pipStatusFor(resource, root) : null;
-        const match = isPip
-            ? { present: Boolean(pip.present), path: "", rel: "", size: 0, matchedBy: pip.present ? "python" : "", mismatch: "" }
-            : isNode
-              ? (() => {
-                    const target = root ? path.join(root, "custom_nodes", file) : "";
-                    const present = Boolean(target && isDir(target));
-                    return { present, path: present ? target : "", rel: file, size: 0, matchedBy: present ? "path" : "", mismatch: "" };
-                })()
-              : resourceMatch(resource, root);
+        const alias = isPip || isNode ? null : resourceAliasFor(resource);
+        const match = alias
+            ? { present: true, path: "", rel: alias.to, size: 0, matchedBy: "alias", mismatch: "" }
+            : isPip
+              ? { present: Boolean(pip.present), path: "", rel: "", size: 0, matchedBy: pip.present ? "python" : "", mismatch: "" }
+              : isNode
+                ? (() => {
+                      const target = root ? path.join(root, "custom_nodes", file) : "";
+                      const present = Boolean(target && isDir(target));
+                      return { present, path: present ? target : "", rel: file, size: 0, matchedBy: present ? "path" : "", mismatch: "" };
+                  })()
+                : resourceMatch(resource, root);
         const exists = Boolean(match.present);
         let size = Number(match.size) || 0;
         if (!size && match.path) {
@@ -780,6 +847,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             actualSize: size,
             installed,
             missingRequires,
+            ...(alias ? { overridden: true, overriddenBy: alias.to, matchedFile: alias.to } : {}),
             ...(isPip ? { pythonRuntime: pip.python || "", pipVersion: pip.version || "", pipReason: pip.reason || "" } : {}),
         };
     }
@@ -848,6 +916,26 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 if (a.source !== b.source) return a.source === "pack" ? -1 : 1;
                 return a.label.localeCompare(b.label);
             }),
+        };
+    }
+
+    function workflowMainModelInfo(pack, workflowId, installed) {
+        const base = mainModelInfo(pack, installed);
+        if (!base || !base.workflowIds.includes(workflowId)) return null;
+        const entry = registry?.resolve?.(workflowId);
+        const file = findUnetLoader(entry?.workflow)?.file || "";
+        if (!file) return null;
+        const raw = mainModels?.fileForWorkflow?.(workflowId) || "";
+        const selected = raw === file ? "" : raw;
+        const defaultResource = (index?.resources || []).find((resource) => resourceFile(resource) === file);
+        return {
+            workflowId,
+            defaultFile: file,
+            defaultLabel: defaultResource?.label || path.basename(file, path.extname(file)),
+            selected,
+            selectedLabel: base.options.find((option) => option.file === selected)?.label || "",
+            selectedInstalled: Boolean(selected && installed.has(selected)),
+            options: base.options.filter((option) => option.file !== file),
         };
     }
 
@@ -976,6 +1064,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                     variantLabels: entry?.variantLabels || {},
                     problems: availability.problems || [],
                     recommended: false,
+                    mainModel: workflowMainModelInfo(pack, workflowId, installedModels),
                     resources: dependencyItems,
                     missing: missingItems.length,
                     missingSize: missingItems.reduce((sum, item) => sum + (item.size || 0), 0),
@@ -1171,6 +1260,19 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 return map;
             })(),
             comfyReachable: Boolean(setup?.status?.().comfyReachable),
+            unresolvedWorkflows: (() => {
+                const state = setup?.status?.();
+                return (state?.workflows || [])
+                    .filter((workflow) => !workflow.available)
+                    .map((workflow) => ({
+                        id: workflow.id,
+                        label: workflow.name || workflow.id,
+                        problems: (workflow.problems || []).filter(
+                            (problem) => problem.type === "model" && problem.classType && problem.input && problem.value && Array.isArray(problem.candidates) && problem.candidates.length,
+                        ),
+                    }))
+                    .filter((workflow) => workflow.problems.length);
+            })(),
             promptCapabilities: promptCapabilities(resources),
             hardware: hardware || null,
             recommendationAvailable: hardwareAvailable && recommendedPacks.length > 0,
@@ -1355,11 +1457,11 @@ export function createResourceManager({ config, setup, registry, logger, workflo
     async function downloadResource(resource, jobItem, signal) {
         const root = comfyRoot();
         if (!root) throw new Error("未找到 ComfyUI 安装目录");
-        const existing = resourceMatch(resource, root);
-        if (existing.present) {
+        const existing = resourceStatus(resource, root);
+        if (existing.status === "present") {
             jobItem.status = "skipped";
             jobItem.skipped = true;
-            jobItem.bytes = existing.size || (existing.path ? fs.statSync(existing.path).size : 0);
+            jobItem.bytes = existing.actualSize || 0;
             jobItem.size = jobItem.size || jobItem.bytes;
             return;
         }
@@ -2048,5 +2150,5 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         return status();
     }
 
-    return { init, status, refresh, install, setMainModel, getJob, cancelJob, comfyRoot, comfyPython, indexPath };
+    return { init, status, refresh, install, setMainModel, setResourceReplacement, pickResourceReplacement, getJob, cancelJob, comfyRoot, comfyPython, indexPath };
 }

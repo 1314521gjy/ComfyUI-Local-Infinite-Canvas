@@ -373,8 +373,35 @@ export async function createGatewayApp(overrides = {}) {
     res.json({ ok: true, status: setup.status(), comfyUrl: config.comfyUrl });
   });
 
+  app.post("/api/setup/model-alias", async (req, res) => {
+    try {
+      const status = await setup.setModelAlias(req.body || {});
+      res.json({ ok: true, status });
+    } catch (error) {
+      res.status(error?.status || 400).json({ ok: false, error: { message: error?.message || String(error) } });
+    }
+  });
+
   app.get("/api/resources/status", (_req, res) => {
     res.json(resources.status());
+  });
+
+  app.post("/api/resources/pick-replacement", async (req, res) => {
+    try {
+      const file = await resources.pickResourceReplacement(String(req.body?.resourceId || ""));
+      res.json({ ok: true, file });
+    } catch (error) {
+      res.status(error?.status || 400).json({ ok: false, error: { message: error?.message || String(error) } });
+    }
+  });
+
+  app.post("/api/resources/replacement", async (req, res) => {
+    try {
+      const status = await resources.setResourceReplacement(String(req.body?.resourceId || ""), String(req.body?.file || ""));
+      res.json({ ok: true, status });
+    } catch (error) {
+      res.status(error?.status || 400).json({ ok: false, error: { message: error?.message || String(error) } });
+    }
   });
 
   app.post("/api/resources/install", (req, res) => {
@@ -766,6 +793,7 @@ export async function createGatewayApp(overrides = {}) {
         pollIntervalMs: config.pollIntervalMs,
         signal: abort.signal,
         requestId: req.id,
+        modelAliasFor: setup.modelAliasFor,
         includePreviewOutputs: true,
         logger,
       });
@@ -836,6 +864,7 @@ export async function createGatewayApp(overrides = {}) {
         pollIntervalMs: config.pollIntervalMs,
         signal,
         requestId: req.id,
+        modelAliasFor: setup.modelAliasFor,
         includePreviewOutputs: true,
         onProgress: progress,
         logger,
@@ -886,6 +915,7 @@ export async function createGatewayApp(overrides = {}) {
         requestId: req.id,
         logger,
         loraCatalog: setup.loraNames(),
+        modelAliasFor: setup.modelAliasFor,
       });
     } catch (error) {
       if (abort.signal.aborted) {
@@ -941,6 +971,7 @@ export async function createGatewayApp(overrides = {}) {
         requestId: req.id,
         logger,
         loraCatalog: setup.loraNames(),
+        modelAliasFor: setup.modelAliasFor,
       });
     } catch (error) {
       if (abort.signal.aborted) {
@@ -1022,6 +1053,7 @@ export async function createGatewayApp(overrides = {}) {
         requestId: req.id,
         logger,
         loraCatalog: setup.loraNames(),
+        modelAliasFor: setup.modelAliasFor,
       });
     } catch (error) {
       if (abort.signal.aborted) {
@@ -1183,6 +1215,7 @@ export async function createGatewayApp(overrides = {}) {
         pollIntervalMs: config.pollIntervalMs,
         signal,
         requestId: req.id,
+        modelAliasFor: setup.modelAliasFor,
         onProgress: progress,
         logger,
       });
@@ -1336,6 +1369,7 @@ export async function createGatewayApp(overrides = {}) {
         onProgress: progress,
         logger,
         loraCatalog: setup.loraNames(),
+        modelAliasFor: setup.modelAliasFor,
       });
       let file = result.files[0];
       if (interpolation !== "off") {
