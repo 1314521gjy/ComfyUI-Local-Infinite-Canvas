@@ -33,6 +33,10 @@ export type ResourceItem = {
     overridden?: boolean;
     overriddenBy?: string;
     wheelVersions?: string[];
+    pythonRuntime?: string;
+    pythonVersion?: string;
+    pipName?: string;
+    pipWheelMissing?: boolean;
 };
 
 export type PackMainModelOption = {

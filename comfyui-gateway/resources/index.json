@@ -1327,15 +1327,16 @@
       "label": "llama-cpp-python 运行库",
       "target": "LLM/llama_cpp_python",
       "module": "llama_cpp",
+      "pipName": "llama-cpp-python",
       "size": 299142055,
       "license": "MIT",
       "note": "按 ComfyUI 的 Python 版本自动选择预编译包；3.12 走魔搭镜像，其他版本从 GitHub 下载。",
       "wheels": {
-        "3.10": "https://github.com/JamePeng/llama-cpp-python/releases/download/v0.3.46-cu128-win-20260808/llama_cpp_python-0.3.46%2Bcu128-cp310-cp310-win_amd64.whl",
-        "3.11": "https://github.com/JamePeng/llama-cpp-python/releases/download/v0.3.46-cu128-win-20260808/llama_cpp_python-0.3.46%2Bcu128-cp311-cp311-win_amd64.whl",
+        "3.10": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/wheels/llama_cpp_python-0.3.46%2Bcu128-cp310-cp310-win_amd64.whl",
+        "3.11": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/wheels/llama_cpp_python-0.3.46%2Bcu128-cp311-cp311-win_amd64.whl",
         "3.12": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/wheels/llama_cpp_python-0.3.46%2Bcu128-cp312-cp312-win_amd64.whl",
-        "3.13": "https://github.com/JamePeng/llama-cpp-python/releases/download/v0.3.46-cu128-win-20260808/llama_cpp_python-0.3.46%2Bcu128-cp313-cp313-win_amd64.whl",
-        "3.14": "https://github.com/JamePeng/llama-cpp-python/releases/download/v0.3.46-cu128-win-20260808/llama_cpp_python-0.3.46%2Bcu128-cp314-cp314-win_amd64.whl"
+        "3.13": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/wheels/llama_cpp_python-0.3.46%2Bcu128-cp313-cp313-win_amd64.whl",
+        "3.14": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/wheels/llama_cpp_python-0.3.46%2Bcu128-cp314-cp314-win_amd64.whl"
       },
       "sources": []
     },

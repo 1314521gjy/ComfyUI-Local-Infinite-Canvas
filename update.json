@@ -1,7 +1,7 @@
 {
   "version": "v0.21.9",
   "publishedAt": "2026-10-29",
-  "notes": "资源自选替换改为系统文件选择窗口（默认 ComfyUI 模型目录，可跨盘/映射盘，中文文件名正常）；应用内新增常驻升级提醒；本地运行库按 Python 版本自动匹配。",
+  "notes": "资源自选替换改为系统文件选择窗口（默认 ComfyUI 模型目录，可跨盘/映射盘，中文文件名正常）；应用内新增常驻升级提醒；本地运行库按 Python 版本自动匹配，3.10–3.14 预编译包全部走魔搭。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
@@ -9,8 +9,8 @@
   },
   "patch": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.9.zip",
-    "sha256": "9600f6fc9c9a45dd6ed04558a043274b0d5cee1e1334e9bdadcb4060b0c373f6",
-    "size": 34173406
+    "sha256": "e07e6c426d800120b3b3edaf2d3f6a0fde7cf5c378c1f836c548fcb95109d785",
+    "size": 34173980
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

@@ -631,6 +631,25 @@ export function createResourceManager({ config, setup, registry, logger, workflo
     }
 
     const pipCheckCache = new Map();
+    const pythonVersionCache = new Map();
+
+    function pythonVersionFor(python) {
+        if (!python) return "";
+        const cached = pythonVersionCache.get(python);
+        if (cached && Date.now() - cached.at < 600000) return cached.version;
+        let version = "";
+        try {
+            version = String(execFileSync(python, ["-c", "import sys;print(f'{sys.version_info.major}.{sys.version_info.minor}')"], {
+                timeout: 10000,
+                windowsHide: true,
+                encoding: "utf8",
+            })).trim();
+        } catch {
+            version = "";
+        }
+        pythonVersionCache.set(python, { at: Date.now(), version });
+        return version;
+    }
 
     function pipImportStatus(python, module, { fresh = false } = {}) {
         if (!python || !module) return { present: false, version: "", reason: "未找到 ComfyUI 的 Python" };
@@ -689,6 +708,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         }
         const registered = dir !== "custom_nodes" ? exists : false;
         const isBake = resource.type === "bake";
+        const wheelVersions = isPip ? Object.keys(resource.wheels || {}) : [];
+        const pythonVersion = isPip ? pythonVersionFor(pip?.python || "") : "";
         const missingRequires = isBake ? (resource.requires || []).filter((id) => {
             const dependency = index?.resources?.find((item) => item.id === id);
             if (!dependency) return true;
@@ -729,7 +750,17 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             installed,
             missingRequires,
             ...(alias ? { overridden: true, overriddenBy: alias.to, matchedFile: alias.to } : {}),
-            ...(isPip ? { pythonRuntime: pip.python || "", pipVersion: pip.version || "", pipReason: pip.reason || "", wheelVersions: Object.keys(resource.wheels || {}) } : {}),
+            ...(isPip
+                ? {
+                      pythonRuntime: pip.python || "",
+                      pythonVersion,
+                      pipVersion: pip.version || "",
+                      pipReason: pip.reason || "",
+                      pipName: String(resource.pipName || resource.module || ""),
+                      wheelVersions,
+                      pipWheelMissing: Boolean(pythonVersion && wheelVersions.length && !wheelVersions.includes(pythonVersion)),
+                  }
+                : {}),
         };
     }
 
@@ -1671,9 +1702,10 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         const wheels = resource.wheels && typeof resource.wheels === "object" ? resource.wheels : {};
         const wheel = String(wheels[version] || resource.wheel || "").trim();
         if (!wheel) {
+            const pipName = String(resource.pipName || module).trim();
             throw new Error(
                 `当前 ComfyUI 使用 Python ${version || "未知版本"}，没有匹配的预编译运行库（支持 ${Object.keys(wheels).join(" / ") || "无"}）。` +
-                    `请手动安装 ${module} 后重试。`,
+                    `请手动安装后重试：\"${python}\" -m pip install ${pipName}`,
             );
         }
         jobItem.status = "installing";
