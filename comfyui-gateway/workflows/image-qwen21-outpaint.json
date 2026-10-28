@@ -99,7 +99,7 @@
         "8",
         0
       ],
-      "prompt": "extend the scene naturally",
+      "prompt": "",
       "negative_prompt": "artifacts, low quality, blurry, deformed, watermark",
       "vae": [
         "9",

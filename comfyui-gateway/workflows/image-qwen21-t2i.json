@@ -47,7 +47,7 @@
         "2",
         0
       ],
-      "prompt": "a cute cat",
+      "prompt": "",
       "negative_prompt": "artifacts, low quality, blurry, deformed, watermark",
       "vae": [
         "3",

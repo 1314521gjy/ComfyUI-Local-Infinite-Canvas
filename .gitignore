@@ -32,3 +32,6 @@ tmp-*
 # bundled model files: shipped inside the distribution package, too large for git
 comfyui-gateway/resources/bundled/
 comfyui-gateway/resources/loras/*.safetensors
+
+# 极速草稿为本地实验，不进发布
+comfyui-gateway/workflows/h3-fast-draft.json
