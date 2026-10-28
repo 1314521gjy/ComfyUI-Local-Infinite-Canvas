@@ -1,5 +1,5 @@
-import { App, Button, Checkbox, Input, Progress, Select, Tag, Tooltip } from "antd";
-import { AlertTriangle, ChevronDown, Download, FolderPlus, HardDriveDownload, RefreshCw, Server, Trash2, XCircle } from "lucide-react";
+import { App, Button, Checkbox, Progress, Select, Tag, Tooltip } from "antd";
+import { AlertTriangle, ChevronDown, Download, HardDriveDownload, RefreshCw, Server, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -10,7 +10,6 @@ import {
     formatBytes,
     installResources,
     refreshResourceStatus,
-    setModelRoots,
     setPackMainModel,
     setWorkflowVisibility,
     type ResourceItem,
@@ -76,13 +75,6 @@ const copyByLocale = {
         indexError: "资源索引读取失败，当前使用内置清单。",
         selectHint: "选择需要安装的功能包；已具备的资源会自动跳过。",
         target: "目标",
-        modelDirsTitle: "模型目录",
-        modelDirsHint: "模型不在 ComfyUI 里时，可添加自定义根目录；下面按 diffusion_models、vae、loras 等子目录扫描并优先安装到这里。需要 ComfyUI 也能访问该目录（目录映射或 extra_model_paths.yaml），否则生成时会缺模型。",
-        modelDirsPlaceholder: "例如 D:\\ComfyUI-Models",
-        modelDirsAdd: "添加",
-        modelDirsEmpty: "未添加自定义目录，默认使用 ComfyUI 的模型目录。",
-        modelDirsSaved: "模型目录已保存",
-        modelDirsRemove: "移除",
         license: "许可",
         note: "说明",
         emptyMissing: "所有必下资源都已具备。",
@@ -154,13 +146,6 @@ const copyByLocale = {
         indexError: "Failed to load the resource index; using the bundled manifest.",
         selectHint: "Select the packs to install; existing resources are skipped.",
         target: "Target",
-        modelDirsTitle: "Model folders",
-        modelDirsHint: "Add a custom root when models live outside ComfyUI. Subfolders such as diffusion_models, vae and loras are scanned and preferred for installs. ComfyUI must also see this folder (directory mapping or extra_model_paths.yaml), or generation will miss the models.",
-        modelDirsPlaceholder: "e.g. D:\\ComfyUI-Models",
-        modelDirsAdd: "Add",
-        modelDirsEmpty: "No custom folder; using ComfyUI's own model folders.",
-        modelDirsSaved: "Model folders saved",
-        modelDirsRemove: "Remove",
         license: "License",
         note: "Note",
         emptyMissing: "All required resources are ready.",
@@ -284,8 +269,6 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
     const [speeds, setSpeeds] = useState<Record<string, number>>({});
     const [stopping, setStopping] = useState(false);
     const [mainModelSaving, setMainModelSaving] = useState("");
-    const [modelRootInput, setModelRootInput] = useState("");
-    const [savingModelRoots, setSavingModelRoots] = useState(false);
     const pollRef = useRef<number | null>(null);
     const selectedInitialized = useRef(false);
     const speedSamples = useRef<Map<string, { bytes: number; time: number; speed: number }>>(new Map());
@@ -485,30 +468,6 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
         }
     };
 
-    const saveModelRoots = async (roots: string[]) => {
-        if (savingModelRoots) return;
-        setSavingModelRoots(true);
-        try {
-            setStatus(await setModelRoots(roots));
-            message.success(copy.modelDirsSaved);
-        } catch (rootError) {
-            message.error(rootError instanceof Error ? rootError.message : String(rootError));
-        } finally {
-            setSavingModelRoots(false);
-        }
-    };
-
-    const addModelRoot = () => {
-        const value = modelRootInput.trim();
-        if (!value) return;
-        setModelRootInput("");
-        void saveModelRoots([...(status?.customModelRoots || []), value]);
-    };
-
-    const removeModelRoot = (root: string) => {
-        void saveModelRoots((status?.customModelRoots || []).filter((entry) => entry !== root));
-    };
-
     const toggleExpanded = (id: string) => {
         setExpandedPacks((current) => {
             const next = new Set(current);
@@ -562,38 +521,6 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                 {status?.comfyRoot && !status.comfyReachable ? <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400"><AlertTriangle className="size-3.5" />{copy.notReachable}</div> : null}
                 {status?.indexError ? <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400"><AlertTriangle className="size-3.5" />{copy.indexError}</div> : null}
                 {hardwareName && !recommendationAvailable ? <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400"><AlertTriangle className="size-3.5" />{copy.noCompatible}</div> : null}
-            </div>
-
-            <div className="rounded-xl border border-stone-200 bg-stone-50/70 p-3 dark:border-stone-800 dark:bg-white/[.03]">
-                <div className="flex items-center gap-2 text-sm font-semibold">
-                    <FolderPlus className="size-4" />
-                    {copy.modelDirsTitle}
-                </div>
-                <div className="mt-1 text-[11px] leading-5 text-stone-500 dark:text-stone-400">{copy.modelDirsHint}</div>
-                {status?.customModelRoots?.length ? (
-                    <div className="mt-2 space-y-1">
-                        {status.customModelRoots.map((root) => (
-                            <div key={root} className="flex items-center justify-between gap-2 rounded-md border border-stone-200 bg-white px-2 py-1 text-[11px] dark:border-stone-700 dark:bg-stone-900">
-                                <span className="min-w-0 truncate">{root}</span>
-                                <Tooltip title={copy.modelDirsRemove}>
-                                    <Button size="small" type="text" danger icon={<Trash2 className="size-3.5" />} disabled={savingModelRoots} onClick={() => removeModelRoot(root)} />
-                                </Tooltip>
-                            </div>
-                        ))}
-                    </div>
-                ) : (
-                    <div className="mt-2 text-[11px] text-stone-400 dark:text-stone-500">{copy.modelDirsEmpty}</div>
-                )}
-                <div className="mt-2 flex items-center gap-2">
-                    <Input
-                        size="small"
-                        value={modelRootInput}
-                        placeholder={copy.modelDirsPlaceholder}
-                        onChange={(event) => setModelRootInput(event.target.value)}
-                        onPressEnter={addModelRoot}
-                    />
-                    <Button size="small" loading={savingModelRoots} disabled={!modelRootInput.trim()} onClick={addModelRoot}>{copy.modelDirsAdd}</Button>
-                </div>
             </div>
 
             {error ? <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300"><XCircle className="size-3.5 shrink-0" />{error}</div> : null}

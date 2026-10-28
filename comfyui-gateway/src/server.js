@@ -380,14 +380,6 @@ export async function createGatewayApp(overrides = {}) {
     }
   });
 
-  app.post("/api/resources/model-dirs", async (req, res) => {
-    try {
-      res.json({ ok: true, status: await resources.setModelRoots(req.body?.roots) });
-    } catch (error) {
-      res.status(400).json({ ok: false, error: { message: error.message } });
-    }
-  });
-
   app.post("/api/resources/packs/:id/main-model", async (req, res) => {
     try {
       res.json({ ok: true, status: await resources.setMainModel(req.params.id, req.body?.file) });

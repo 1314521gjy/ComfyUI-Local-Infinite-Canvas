@@ -123,7 +123,6 @@ export type ResourceStatus = {
     comfyRoot?: string;
     comfyPython?: string;
     comfyReachable?: boolean;
-    customModelRoots?: string[];
     modelRoots?: Record<string, string[]>;
     hardware?: { gpuName?: string; vramTotalMb?: number; ramTotalBytes?: number; ramFreeBytes?: number; detectedAt?: string; source?: string } | null;
     recommendationAvailable?: boolean;
@@ -190,17 +189,6 @@ export async function refreshResourceStatus(): Promise<ResourceStatus> {
     const data = await readJson(response);
     if (!response.ok || data.ok === false) throw new Error(errorMessage(data, `刷新资源失败（HTTP ${response.status}）`));
     return data as ResourceStatus;
-}
-
-export async function setModelRoots(roots: string[]): Promise<ResourceStatus> {
-    const response = await fetch(`${gatewayRoot}/api/resources/model-dirs`, {
-        method: "POST",
-        headers: { Accept: "application/json", "Content-Type": "application/json" },
-        body: JSON.stringify({ roots }),
-    });
-    const data = await readJson(response);
-    if (!response.ok || data.ok === false) throw new Error(errorMessage(data, `保存模型目录失败（HTTP ${response.status}）`));
-    return data.status as ResourceStatus;
 }
 
 export async function setPackMainModel(packId: string, file: string): Promise<ResourceStatus> {
