@@ -1,5 +1,5 @@
-import { App, Button, Checkbox, Modal, Progress, Select, Tag, Tooltip } from "antd";
-import { AlertTriangle, ChevronDown, Download, File, FolderOpen, HardDriveDownload, RefreshCw, Server, XCircle } from "lucide-react";
+import { App, Button, Checkbox, Progress, Select, Tag, Tooltip } from "antd";
+import { AlertTriangle, ChevronDown, Download, HardDriveDownload, RefreshCw, Server, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -9,7 +9,7 @@ import {
     fetchResourceStatus,
     formatBytes,
     installResources,
-    browseResourceDir,
+    pickResourceReplacement,
     refreshResourceStatus,
     setResourceReplacement,
     setPackMainModel,
@@ -18,7 +18,6 @@ import {
     type ResourceJob,
     type ResourcePack,
     type ResourceStatus,
-    type ModelBrowserResult,
 } from "@/services/api/resources";
 import { isGatewayDown } from "@/services/api/gateway-status";
 
@@ -55,13 +54,10 @@ const copyByLocale = {
         modelAliasPickInstalled: "选择已安装模型",
         replaceModel: "自选替换",
         pickHint: "请在弹出的文件选择框中选择模型文件（默认已打开 ComfyUI 对应模型目录）",
+        picking: "已打开文件选择窗口",
         replaceAgain: "更换",
         restoreDefault: "恢复默认",
-        browseCurrent: "当前目录",
-        browseParent: "上一级",
-        browseHint: "点击文件即可替换；只显示模型文件",
-        browseEmpty: "这个目录里没有可替换的模型文件",
-        browseCancel: "取消",
+        replaced: "已使用所选模型",
         replacedBy: "已替换为",
         workflowReady: "可用",
         workflowRestart: "待重启",
@@ -146,13 +142,10 @@ const copyByLocale = {
         modelAliasPickInstalled: "Choose installed model",
         replaceModel: "Choose replacement",
         pickHint: "Pick a model file in the dialog (it opens at the matching ComfyUI model folder)",
+        picking: "File dialog opened",
         replaceAgain: "Change",
         restoreDefault: "Restore default",
-        browseCurrent: "Current folder",
-        browseParent: "Up",
-        browseHint: "Click a file to replace; only model files are shown",
-        browseEmpty: "No model files in this folder",
-        browseCancel: "Cancel",
+        replaced: "Replaced with the selected model",
         replacedBy: "Replaced with",
         workflowReady: "Ready",
         workflowRestart: "Restart needed",
@@ -371,10 +364,6 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
     const [stopping, setStopping] = useState(false);
     const [mainModelSaving, setMainModelSaving] = useState("");
     const [replacementSaving, setReplacementSaving] = useState("");
-    const [browserItem, setBrowserItem] = useState<ResourceItem | null>(null);
-    const [browserData, setBrowserData] = useState<ModelBrowserResult | null>(null);
-    const [browserLoading, setBrowserLoading] = useState(false);
-    const [browserError, setBrowserError] = useState("");
     const pollRef = useRef<number | null>(null);
     const selectedInitialized = useRef(false);
     const speedSamples = useRef<Map<string, { bytes: number; time: number; speed: number }>>(new Map());
@@ -560,37 +549,16 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
         }
     };
 
-    const loadBrowser = async (item: ResourceItem, path: string) => {
-        setBrowserLoading(true);
-        setBrowserError("");
+    const replaceResource = async (item: ResourceItem) => {
+        if (replacementSaving) return;
+        setReplacementSaving(item.id);
+        message.info(copy.picking);
         try {
-            setBrowserData(await browseResourceDir(item.id, path));
-        } catch (error) {
-            setBrowserData(null);
-            setBrowserError(error instanceof Error ? error.message : String(error));
-        } finally {
-            setBrowserLoading(false);
-        }
-    };
-
-    const replaceResource = (item: ResourceItem) => {
-        setBrowserItem(item);
-        void loadBrowser(item, "");
-    };
-
-    const closeResourceBrowser = () => {
-        setBrowserItem(null);
-        setBrowserData(null);
-        setBrowserError("");
-    };
-
-    const chooseBrowserFile = async (entry: { path: string }) => {
-        if (!browserItem) return;
-        setReplacementSaving(browserItem.id);
-        try {
-            setStatus(await setResourceReplacement(browserItem.id, entry.path));
+            const file = await pickResourceReplacement(item.id);
+            if (!file) return;
+            setStatus(await setResourceReplacement(item.id, file));
             window.dispatchEvent(new Event("local-gateway-refresh-models"));
-            closeResourceBrowser();
+            message.success(copy.replaced);
         } catch (error) {
             showError(error);
         } finally {
@@ -1030,54 +998,6 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
             </div>
 
             {footer}
-
-            <Modal
-                title={`${copy.replaceModel} · ${browserItem?.label || ""}`}
-                open={Boolean(browserItem)}
-                onCancel={closeResourceBrowser}
-                footer={null}
-                width={640}
-                zIndex={1200}
-                destroyOnHidden
-            >
-                <div className="space-y-2">
-                    <div className="truncate text-[11px] text-stone-400 dark:text-stone-500">{browserData?.root || ""}</div>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="min-w-0 truncate text-xs font-medium">
-                            {copy.browseCurrent}：{browserData?.current || "/"}
-                        </div>
-                        <div className="flex shrink-0 gap-1">
-                            {browserData && browserData.parent !== null ? (
-                                <Button size="small" onClick={() => void loadBrowser(browserItem!, browserData.parent || "")}>{copy.browseParent}</Button>
-                            ) : null}
-                            <Button size="small" onClick={closeResourceBrowser}>{copy.browseCancel}</Button>
-                        </div>
-                    </div>
-                    <div className="text-[10px] text-stone-400 dark:text-stone-500">{copy.browseHint}</div>
-                    {browserError ? <div className="rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-[11px] text-red-600 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">{browserError}</div> : null}
-                    <div className="max-h-80 overflow-y-auto rounded-lg border border-stone-200 dark:border-stone-700">
-                        {browserLoading ? (
-                            <div className="flex items-center justify-center gap-2 p-4 text-xs text-stone-500"><RefreshCw className="size-3.5 animate-spin" />{copy.scanFirst}</div>
-                        ) : browserData?.entries.length ? (
-                            browserData.entries.map((entry) => (
-                                <button
-                                    key={entry.path}
-                                    type="button"
-                                    disabled={Boolean(replacementSaving && browserItem && replacementSaving === browserItem.id)}
-                                    className="flex w-full items-center gap-2 border-b border-stone-100 px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-stone-50 disabled:opacity-50 dark:border-stone-800 dark:hover:bg-white/5"
-                                    onClick={() => (entry.isDir ? void loadBrowser(browserItem!, entry.path) : void chooseBrowserFile(entry))}
-                                >
-                                    {entry.isDir ? <FolderOpen className="size-4 shrink-0 text-amber-500" /> : <File className="size-4 shrink-0 text-stone-400" />}
-                                    <span className="min-w-0 flex-1 truncate text-xs text-stone-700 dark:text-stone-200">{entry.name}</span>
-                                    {!entry.isDir ? <span className="shrink-0 text-[10px] text-stone-400">{formatBytes(entry.size)}</span> : null}
-                                </button>
-                            ))
-                        ) : (
-                            <div className="p-4 text-center text-xs text-stone-400 dark:text-stone-500">{copy.browseEmpty}</div>
-                        )}
-                    </div>
-                </div>
-            </Modal>
         </div>
     );
 }

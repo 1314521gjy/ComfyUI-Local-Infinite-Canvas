@@ -134,6 +134,7 @@ test("resource replacement marks a missing model present and skips download", as
     try {
         await manager.init();
         assert.equal(manager.status().resources[0].status, "missing");
+        assert.equal(await manager.pickResourceReplacement("test-vae"), "local-vae.safetensors");
         await manager.setResourceReplacement("test-vae", "local-vae.safetensors");
         const item = manager.status().resources[0];
         assert.equal(item.status, "present");

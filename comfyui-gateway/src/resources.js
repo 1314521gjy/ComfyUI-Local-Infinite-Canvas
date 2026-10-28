@@ -10,25 +10,11 @@ import { Transform } from "node:stream";
 
 import { findUnetLoader } from "./base-models.js";
 import { MODEL_LOADER_SPECS } from "./model-loaders.js";
+import { collectModelRoots, clearExtraModelPathsCache } from "./model-paths.js";
 import { nowIso, truncate, writeJsonAtomic } from "./util.js";
 
 const MODEL_DIRS = new Set(["diffusion_models", "text_encoders", "vae", "vae_approx", "loras", "checkpoints", "upscale_models", "latent_upscale_models", "vdn", "clip_vision", "LLM"]);
 const WEIGHT_FILE_EXTENSIONS = /\.(safetensors|sft|ckpt|pt|pth|bin|gguf|onnx|data|engine)$/i;
-// ComfyUI /internal/folder_paths 的键名和资源索引目录不完全同名，需要做别名。
-const FOLDER_PATH_KEYS = {
-    diffusion_models: ["diffusion_models", "unet"],
-    text_encoders: ["text_encoders", "clip"],
-    vae: ["vae"],
-    vae_approx: ["vae_approx"],
-    loras: ["loras"],
-    checkpoints: ["checkpoints"],
-    upscale_models: ["upscale_models"],
-    latent_upscale_models: ["latent_upscale_models"],
-    clip_vision: ["clip_vision"],
-    vdn: ["vdn"],
-    // ComfyUI 同时暴露 "LLM" 和 "llm" 两种键（大小写取决于版本）。
-    LLM: ["LLM", "llm"],
-};
 const LOADER_BY_DIR = {
     diffusion_models: { classType: "UNETLoader", input: "unet_name" },
     text_encoders: { classType: "CLIPLoader", input: "clip_name" },
@@ -131,61 +117,6 @@ function resolveComfyRoot(config) {
         if (isFile(path.join(dir, "main.py")) || isDir(path.join(dir, "custom_nodes")) || isDir(path.join(dir, "models"))) return dir;
     }
     return "";
-}
-
-function parseExtraModelPaths(file) {
-    let text = "";
-    try {
-        text = fs.readFileSync(file, "utf8");
-    } catch {
-        return {};
-    }
-    const result = {};
-    const baseDir = path.dirname(file);
-    let section = null;
-    let basePath = "";
-    let multilineKey = "";
-    const resolvePath = (value) => {
-        const raw = String(value || "").trim().replace(/^"|"$/g, "");
-        if (!raw) return "";
-        return path.isAbsolute(raw) ? raw : path.resolve(basePath || baseDir, raw);
-    };
-    for (const line of text.split(/\r?\n/)) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith("#")) continue;
-        const indent = line.length - line.trimStart().length;
-        if (indent === 0 && /^[^:]+:\s*$/.test(trimmed)) {
-            section = trimmed.replace(/:\s*$/, "");
-            basePath = "";
-            multilineKey = "";
-            continue;
-        }
-        if (!section) continue;
-        const match = trimmed.match(/^([\w.-]+):\s*(.*)$/);
-        if (match && !trimmed.startsWith("-")) {
-            const key = match[1];
-            const value = match[2].trim();
-            multilineKey = "";
-            if (key === "base_path") {
-                basePath = resolvePath(value);
-                continue;
-            }
-            if (key === "is_default") continue;
-            if (value === "|" || value === ">") {
-                if (!result[key]) result[key] = [];
-                multilineKey = key;
-                continue;
-            }
-            if (!result[key]) result[key] = [];
-            if (value) result[key].push(resolvePath(value));
-            continue;
-        }
-        if (multilineKey && indent > 0) {
-            const resolved = resolvePath(trimmed);
-            if (resolved) result[multilineKey].push(resolved);
-        }
-    }
-    return result;
 }
 
 function pythonFromBat(bat) {
@@ -334,7 +265,6 @@ export function createResourceManager({ config, setup, registry, logger, workflo
     const lockPath = path.join(config.dataDir, "resource-lock.json");
     const jobs = new Map();
     const inventoryCache = new Map();
-    const extraPathsCache = new Map();
     let index = null;
     let hardware = hardwareOverride;
     let indexSource = "local";
@@ -363,58 +293,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         }
     }
 
-    function extraModelPaths(root) {
-        if (!root) return {};
-        const cached = extraPathsCache.get(root);
-        if (cached && Date.now() - cached.at < 10000) return cached.paths;
-        const files = [...new Set([
-            path.join(root, "extra_model_paths.yaml"),
-            path.join(path.dirname(root), "extra_model_paths.yaml"),
-            config.comfyDir ? path.join(config.comfyDir, "extra_model_paths.yaml") : "",
-        ].filter(Boolean).map((file) => path.resolve(file)))];
-        const merged = {};
-        for (const file of files) {
-            if (!isFile(file)) continue;
-            const parsed = parseExtraModelPaths(file);
-            for (const [key, values] of Object.entries(parsed)) {
-                if (!Array.isArray(values) || !values.length) continue;
-                merged[key] = [...new Set([...(merged[key] || []), ...values])];
-            }
-        }
-        extraPathsCache.set(root, { at: Date.now(), paths: merged });
-        return merged;
-    }
-
     function modelRoots(dir, root = comfyRoot()) {
-        const roots = [];
-        const seen = new Set();
-        const add = (value) => {
-            if (!value || typeof value !== "string") return;
-            let resolved;
-            try {
-                resolved = path.resolve(value);
-            } catch {
-                return;
-            }
-            const key = resolved.toLowerCase();
-            if (seen.has(key)) return;
-            seen.add(key);
-            roots.push(resolved);
-        };
-        const folderPaths = setup?.folderPaths?.() || {};
-        for (const key of FOLDER_PATH_KEYS[dir] || [dir]) {
-            const list = Array.isArray(folderPaths[key]) ? folderPaths[key] : [];
-            for (const entry of list) add(entry);
-        }
-        if (root) {
-            const extra = extraModelPaths(root);
-            for (const key of FOLDER_PATH_KEYS[dir] || [dir]) {
-                const list = Array.isArray(extra[key]) ? extra[key] : [];
-                for (const entry of list) add(entry);
-            }
-            add(path.join(root, "models", dir));
-        }
-        return roots;
+        return collectModelRoots({ dir, folderPaths: setup?.folderPaths?.() || {}, comfyDir: config.comfyDir, comfyRoot: root });
     }
 
     function modelFileCandidates(resource, root = comfyRoot()) {
@@ -710,15 +590,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         } catch {
             throw new Error("这个资源不支持替换");
         }
-        return setup.pickModelFile({ dir });
-    }
-
-    async function browseResourceDir(resourceId, relative = "") {
-        const resource = resourceById(resourceId);
-        if (!resource) throw new Error("资源不存在");
-        if (!["model", "bake"].includes(resource.type || "model")) throw new Error("这个资源不支持替换");
-        const dir = targetParts(resource.target).dir;
-        return setup.browseModelDir({ dir, path: relative });
+        const picked = await setup.pickModelFile({ dir });
+        return picked?.file || "";
     }
 
     async function setResourceReplacement(resourceId, file) {
@@ -745,7 +618,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         }
         await setup.setModelAliases(specs.map((spec) => ({ ...spec, to: file })));
         inventoryCache.clear();
-        extraPathsCache.clear();
+        clearExtraModelPathsCache();
         return status();
     }
 
@@ -2005,7 +1878,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             }
         }
         inventoryCache.clear();
-        extraPathsCache.clear();
+        clearExtraModelPathsCache();
         if (job.status === "running") {
             const failed = job.items.filter((item) => item.status === "error").length;
             const hinted = job.items.some((item) => item.status === "error" && item.hint);
@@ -2106,7 +1979,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
 
     async function refresh() {
         inventoryCache.clear();
-        extraPathsCache.clear();
+        clearExtraModelPathsCache();
         if (!hardwareOverride) hardware = await probeHardware();
         await loadIndex();
         try {
@@ -2145,5 +2018,5 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         return status();
     }
 
-    return { init, status, refresh, install, setMainModel, setResourceReplacement, pickResourceReplacement, browseResourceDir, getJob, cancelJob, comfyRoot, comfyPython, indexPath };
+    return { init, status, refresh, install, setMainModel, setResourceReplacement, pickResourceReplacement, getJob, cancelJob, comfyRoot, comfyPython, indexPath };
 }

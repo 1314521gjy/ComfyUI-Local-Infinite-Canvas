@@ -240,23 +240,9 @@ export async function fetchResourceJob(id: string): Promise<ResourceJob> {
     return data.job as ResourceJob;
 }
 
-export type ModelBrowserEntry = { name: string; path: string; isDir: boolean; size: number };
-export type ModelBrowserResult = { root: string; current: string; parent: string | null; entries: ModelBrowserEntry[] };
-
-export async function browseResourceDir(resourceId: string, path = ""): Promise<ModelBrowserResult> {
-    const response = await gatewayFetch(`${gatewayRoot}/api/resources/browse`, {
-        method: "POST",
-        headers: { Accept: "application/json", "Content-Type": "application/json" },
-        body: JSON.stringify({ resourceId, path }),
-    });
-    const data = await readJson(response);
-    if (!response.ok || data.ok === false) throw new Error(errorMessage(data, `读取模型目录失败（HTTP ${response.status}）`));
-    return { root: String(data.root || ""), current: String(data.current || ""), parent: data.parent ?? null, entries: Array.isArray(data.entries) ? data.entries : [] };
-}
-
 export async function pickResourceReplacement(resourceId: string): Promise<string> {
     const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 180000);
+    const timer = window.setTimeout(() => controller.abort(), 300000);
     try {
         const response = await gatewayFetch(`${gatewayRoot}/api/resources/pick-replacement`, {
             method: "POST",
@@ -265,10 +251,10 @@ export async function pickResourceReplacement(resourceId: string): Promise<strin
             signal: controller.signal,
         });
         const data = await readJson(response);
-        if (!response.ok || data.ok === false) throw new Error(errorMessage(data, `打开模型目录失败（HTTP ${response.status}）`));
+        if (!response.ok || data.ok === false) throw new Error(errorMessage(data, `打开文件选择窗口失败（HTTP ${response.status}）`));
         return String(data.file || "");
     } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") throw new Error("打开文件选择框超时，请重试");
+        if (error instanceof DOMException && error.name === "AbortError") throw new Error("文件选择窗口等待超时，请重试");
         throw error;
     } finally {
         window.clearTimeout(timer);

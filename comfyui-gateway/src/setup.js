@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 
 import { isApiWorkflow, isUiWorkflow } from "./registry.js";
 import { MODEL_LOADER_SPECS as LOADER_SPECS } from "./model-loaders.js";
+import { MODEL_DIR_KEYS, collectModelRoots, modelRelativePath } from "./model-paths.js";
 import { nowIso, truncate, writeJsonAtomic } from "./util.js";
 
 function safeStat(file) {
@@ -17,19 +18,6 @@ function safeStat(file) {
 }
 
 const execFileAsync = promisify(execFile);
-const MODEL_DIR_KEYS = {
-    diffusion_models: ["diffusion_models", "unet"],
-    text_encoders: ["text_encoders", "clip"],
-    vae: ["vae"],
-    vae_approx: ["vae_approx"],
-    loras: ["loras"],
-    checkpoints: ["checkpoints"],
-    upscale_models: ["upscale_models"],
-    latent_upscale_models: ["latent_upscale_models"],
-    vdn: ["vdn"],
-    clip_vision: ["clip_vision"],
-    LLM: ["LLM", "llm"],
-};
 
 function normalizeAliasValue(value) {
     return String(value || "").replace(/\\/g, "/");
@@ -207,24 +195,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
     }
 
     function modelRootsForDir(dir) {
-        const roots = [];
-        const seen = new Set();
-        const add = (value) => {
-            if (!value || typeof value !== "string") return;
-            const resolved = path.resolve(value);
-            const key = resolved.toLowerCase();
-            if (seen.has(key)) return;
-            seen.add(key);
-            roots.push(resolved);
-        };
-        for (const key of MODEL_DIR_KEYS[dir] || [dir]) {
-            const list = folderPathCatalog?.[key];
-            if (Array.isArray(list)) for (const entry of list) add(entry);
-        }
-        if (config.comfyDir) {
-            for (const key of MODEL_DIR_KEYS[dir] || [dir]) add(path.join(config.comfyDir, "models", key));
-        }
-        return roots;
+        return collectModelRoots({ dir, folderPaths: folderPathCatalog, comfyDir: config.comfyDir });
     }
 
     function findInstalledOption(classType, value) {
@@ -299,86 +270,90 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         return setModelAliases([entry]);
     }
 
-    const BROWSE_MODEL_EXTENSIONS = /\.(safetensors|sft|ckpt|pt|pth|bin|gguf|onnx|engine)$/i;
+    const MODEL_FILE_EXTENSIONS = /\.(safetensors|sft|ckpt|pt|pth|bin|gguf|onnx|engine)$/i;
 
-    async function browseModelDir({ dir, path: relative = "" } = {}) {
-        if (!dir || !MODEL_DIR_KEYS[dir]) throw new Error("不支持的模型目录");
-        const roots = modelRootsForDir(dir).filter((root) => safeStat(root)?.isDirectory());
-        if (!roots.length) throw new Error("未找到 ComfyUI 的模型目录");
-        // ComfyUI 常把 models/unet 放在 diffusion_models 前面但为空；优先选真正有内容的目录。
-        let root = roots[0];
-        for (const candidate of roots) {
+    // ComfyUI 常把 models/unet 放在 diffusion_models 前面但为空；优先选真正有内容的目录。
+    function preferredModelRoot(roots) {
+        for (const root of roots) {
             try {
-                const names = fs.readdirSync(candidate, { withFileTypes: true });
-                if (names.some((entry) => !entry.name.startsWith(".") && (entry.isDirectory() || BROWSE_MODEL_EXTENSIONS.test(entry.name)))) {
-                    root = candidate;
-                    break;
-                }
+                const names = fs.readdirSync(root, { withFileTypes: true });
+                if (names.some((entry) => !entry.name.startsWith(".") && (entry.isDirectory() || MODEL_FILE_EXTENSIONS.test(entry.name)))) return root;
             } catch {
-                // 试下一个根目录。
+                // 读不到就试下一个根目录。
             }
         }
-        let rel = String(relative || "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
-        if (rel.split("/").includes("..")) throw new Error("目录路径不合法");
-        let current = root;
-        if (rel) {
-            current = path.resolve(root, rel);
-            const check = path.relative(root, current);
-            if (check.startsWith("..") || path.isAbsolute(check)) throw new Error("目录路径不合法");
-        }
-        const stat = safeStat(current);
-        if (!stat) throw new Error("目录不存在");
-        if (!stat.isDirectory()) {
-            rel = path.posix.dirname(rel);
-            current = path.resolve(root, rel === "." ? "" : rel);
-        }
-        const entries = fs
-            .readdirSync(current, { withFileTypes: true })
-            .filter((entry) => !entry.name.startsWith("."))
-            .map((entry) => {
-                const full = path.join(current, entry.name);
-                if (entry.isDirectory()) {
-                    return { name: entry.name, path: path.posix.join(rel, entry.name), isDir: true, size: 0 };
-                }
-                if (!entry.isFile() || !BROWSE_MODEL_EXTENSIONS.test(entry.name)) return null;
-                let size = 0;
-                try {
-                    size = fs.statSync(full).size;
-                } catch {
-                    size = 0;
-                }
-                return { name: entry.name, path: path.posix.join(rel, entry.name), isDir: false, size };
-            })
-            .filter(Boolean)
-            .sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1));
-        const parent = rel ? path.posix.dirname(rel) === "." ? "" : path.posix.dirname(rel) : null;
-        return { root, current: rel, parent, entries };
+        return roots[0];
     }
 
     async function pickModelFile({ dir } = {}) {
         if (!dir || !MODEL_DIR_KEYS[dir]) throw new Error("不支持的模型目录");
         const roots = modelRootsForDir(dir).filter((root) => safeStat(root)?.isDirectory());
         if (!roots.length) throw new Error("未找到 ComfyUI 的模型目录");
-        const initial = roots[0];
+        const initial = preferredModelRoot(roots);
         const quote = (value) => `'${String(value).replace(/'/g, "''")}'`;
+        const foregroundType = [
+            'Add-Type @"',
+            "using System;",
+            "using System.Runtime.InteropServices;",
+            "public class Win32Foreground {",
+            '  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();',
+            '  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);',
+            '  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr ProcessId);',
+            '  [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);',
+            '  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);',
+            '  [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);',
+            '  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);',
+            "  public static void Force(IntPtr hWnd) {",
+            "    if (hWnd == IntPtr.Zero) return;",
+            "    IntPtr fg = GetForegroundWindow();",
+            "    uint fgThread = GetWindowThreadProcessId(fg, IntPtr.Zero);",
+            "    uint myThread = GetWindowThreadProcessId(hWnd, IntPtr.Zero);",
+            "    bool attached = false;",
+            "    if (fgThread != myThread) attached = AttachThreadInput(fgThread, myThread, true);",
+            "    ShowWindow(hWnd, 9);",
+            "    BringWindowToTop(hWnd);",
+            "    SetForegroundWindow(hWnd);",
+            "    if (attached) AttachThreadInput(fgThread, myThread, false);",
+            "  }",
+            "}",
+            '"@',
+        ].join("\n");
         const script = [
             "Add-Type -AssemblyName System.Windows.Forms",
+            "Add-Type -AssemblyName System.Drawing",
+            foregroundType,
             "$d = New-Object System.Windows.Forms.OpenFileDialog",
+            "$d.Title = '选择模型文件'",
             `$d.InitialDirectory = ${quote(initial)}`,
-            `$d.Filter = ${quote("Models|*.safetensors;*.sft;*.ckpt;*.pt;*.pth;*.bin;*.gguf;*.onnx;*.engine|All files|*.*")}`,
+            `$d.Filter = ${quote("模型文件|*.safetensors;*.sft;*.ckpt;*.pt;*.pth;*.bin;*.gguf;*.onnx;*.engine|所有文件|*.*")}`,
             "$d.Multiselect = $false",
+            "$d.CheckFileExists = $true",
+            "$d.CheckPathExists = $true",
+            "$d.DereferenceLinks = $true",
+            "$d.RestoreDirectory = $true",
+            // 用置顶的极小宿主窗口，保证文件框从浏览器后面弹到最前面；
+            // 网关是后台进程，拿不到前台权，还要 AttachThreadInput 强拉一次。
             "$owner = New-Object System.Windows.Forms.Form",
-            "$owner.Text = 'Select model file'",
             "$owner.TopMost = $true",
             "$owner.ShowInTaskbar = $false",
-            "$owner.WindowState = [System.Windows.Forms.FormWindowState]::Minimized",
+            "$owner.FormBorderStyle = 'None'",
+            "$owner.StartPosition = 'Manual'",
+            "$owner.Location = New-Object System.Drawing.Point(-3000, -3000)",
+            "$owner.Size = New-Object System.Drawing.Size(1, 1)",
             "$owner.Show()",
             "$owner.Activate()",
+            "$script:tries = 0",
+            "$timer = New-Object System.Windows.Forms.Timer",
+            "$timer.Interval = 250",
+            "$timer.Add_Tick({ $script:tries++; $h = [Win32Foreground]::FindWindow('#32770', '选择模型文件'); if ($h -ne [IntPtr]::Zero) { [Win32Foreground]::Force($h); $timer.Stop() } elseif ($script:tries -gt 40) { $timer.Stop() } })",
+            "$timer.Start()",
             "$result = $d.ShowDialog($owner)",
+            "$timer.Stop()",
             "$owner.Close()",
-            "if ($result -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($d.FileName) }",
+            // 控制台输出编码会按系统代码页走，中文路径会被读成 "?"；改用 UTF-8 Base64 回传。
+            "if ($result -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write([Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($d.FileName))) }",
         ].join("; ");
-        const systemRoot = process.env.SystemRoot || "C:\Windows";
+        const systemRoot = process.env.SystemRoot || "C:\\Windows";
         const powershell = path.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
         // -EncodedCommand 用 UTF-16LE，避免含中文的模型路径在不同控制台编码下丢失。
         const encoded = Buffer.from(script, "utf16le").toString("base64");
@@ -387,16 +362,14 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
             windowsHide: true,
             maxBuffer: 1024 * 1024,
         });
-        const selected = String(stdout || "").trim();
+        const encodedPath = String(stdout || "").trim();
+        const selected = encodedPath ? Buffer.from(encodedPath, "base64").toString("utf8") : "";
         if (!selected) return null;
-        const absolute = path.resolve(selected);
-        for (const root of roots) {
-            const relative = path.relative(root, absolute);
-            if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
-                return { file: relative.split(path.sep).join("/"), root };
-            }
+        const picked = modelRelativePath(roots, selected);
+        if (!picked) {
+            throw new Error(`所选文件不在 ComfyUI 的模型目录中，ComfyUI 看不到它。当前可用目录：${roots.join("、")}`);
         }
-        throw new Error("请选择 ComfyUI 模型目录内的文件");
+        return picked;
     }
 
     function hasBaseModelAlternative(entry, classType, input, options) {
@@ -612,7 +585,6 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         setModelAlias,
         setModelAliases,
         pickModelFile,
-        browseModelDir,
         modelCandidates,
         loraNames,
         loaderOptions,
