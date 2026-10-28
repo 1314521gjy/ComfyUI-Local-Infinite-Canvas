@@ -32,6 +32,7 @@ export type ApplyUpdateResult = {
     changedFiles?: string[];
     installRequired?: boolean;
     restartRequired?: boolean;
+    restarting?: boolean;
     summary?: string;
     message?: string;
     commands?: string[];

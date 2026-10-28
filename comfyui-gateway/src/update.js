@@ -438,7 +438,7 @@ export async function applyUpdate(config, { dryRun = false } = {}) {
         changedFiles: result.files,
         restartRequired: true,
         restarting,
-        message: restarting ? "更新完成，网关正在重启…" : "更新完成，请重启 start-local.bat",
+        message: restarting ? "更新完成，网关正在重启，页面将自动刷新…" : "更新完成，请重启 start-local.bat",
       };
     }
     if (check.dirty) throw updateError(check.applyReason || "工作区有未提交的修改", "dirty_worktree");

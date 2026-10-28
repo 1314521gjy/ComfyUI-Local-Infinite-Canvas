@@ -70,7 +70,13 @@ function probeVideoFrames(file) {
 function corsMiddleware(config) {
   return (req, res, next) => {
     const origin = req.headers.origin;
-    const allowed = config.corsOrigins.includes("*") || (origin && config.corsOrigins.includes(origin));
+    let localOrigin = false;
+    try {
+      localOrigin = Boolean(origin) && ["127.0.0.1", "localhost", "::1", "[::1]"].includes(new URL(origin).hostname);
+    } catch {
+      localOrigin = false;
+    }
+    const allowed = config.corsOrigins.includes("*") || localOrigin || (origin && config.corsOrigins.includes(origin));
     if (allowed) {
       res.setHeader("Access-Control-Allow-Origin", config.corsOrigins.includes("*") ? "*" : origin);
       res.setHeader("Vary", "Origin");

@@ -1,15 +1,15 @@
 {
-  "version": "v0.21.2",
+  "version": "v0.21.3",
   "publishedAt": "2026-10-29",
-  "notes": "应用内更新支持文件夹安装（代码补丁校验+回滚，保留 data/模型）；模型扫描支持子目录/改名/同名不同版本，ComfyUI 未启动时读取 extra_model_paths.yaml。",
+  "notes": "动态网关：启动器自动注入实际网关地址，前端不再写死端口；本机任意画布端口自动放行。更新成功后页面自动刷新。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.2.zip",
-    "sha256": "7bd6357e37c326b1de49f409a27616e391e98f4f9be97ae65cc53143afa42fea",
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.3.zip",
+    "sha256": "b5c82fb99f72c991042024f84ec21628b2486312ae2556e2ca974e06853d2313",
     "size": 5816320
   }
 }

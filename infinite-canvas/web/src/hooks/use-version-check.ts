@@ -78,6 +78,9 @@ export function useVersionCheck() {
             const result = await requestApplyUpdate(false);
             setApplyResult(result);
             message.success(result.message || t("version.applySuccess"));
+            if (result.restarting) {
+                window.setTimeout(() => window.location.reload(), 6000);
+            }
             await checkLatest(true);
             return result;
         } catch (error) {

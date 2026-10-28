@@ -1,7 +1,7 @@
 import axios from "axios";
 
 import i18n from "@/i18n";
-import { LOCAL_GATEWAY_BASE_URL } from "@/constant/app-mode";
+import { LOCAL_GATEWAY_BASE_URL, isLocalGatewayUrl } from "@/constant/app-mode";
 import { buildApiUrl, channelModelOf, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
 import { normalizePluginImages, runModelPlugin } from "./model-plugin";
 import { nanoid } from "nanoid";
@@ -111,8 +111,13 @@ const IMAGE_OUTPUT_FORMAT = "png";
 const IMAGE_REQUEST_TIMEOUT_MS = 10 * 60_000;
 
 export function localGatewayRoot(baseUrl: string) {
-    const url = baseUrl.trim().replace(/\/+$/, "");
-    return /^https?:\/\/(?:127\.0\.0\.1|localhost):8190(?:\/|$)/i.test(url) ? url.replace(/\/v1$/i, "") : "";
+    const url = String(baseUrl || "").trim().replace(/\/+$/, "");
+    if (!isLocalGatewayUrl(url)) return "";
+    try {
+        return new URL(url).origin;
+    } catch {
+        return "";
+    }
 }
 
 // 本地网关的显式取消：不依赖浏览器关闭 XHR 连接的时机。

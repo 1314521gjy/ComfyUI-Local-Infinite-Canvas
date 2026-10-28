@@ -423,6 +423,29 @@ async function sendFile(req, res, filePath, statusCode = 200, cacheControl = "no
   stream.pipe(res);
 }
 
+function writeRuntimeConfig(cfg, gatewayUrl) {
+  const file = path.join(cfg.canvasDist, "config.js");
+  let runtime = {};
+  try {
+    const text = fs.readFileSync(file, "utf8");
+    const match = text.match(/window\.__RUNTIME_CONFIG__\s*=\s*(\{[\s\S]*?\})\s*;?/);
+    if (match) runtime = JSON.parse(match[1]);
+  } catch {
+    runtime = {};
+  }
+  let origin = "";
+  try {
+    origin = new URL(gatewayUrl).origin;
+  } catch {
+    origin = cfg.gatewayUrl;
+  }
+  runtime.LOCAL_GATEWAY_HOST = "127.0.0.1";
+  runtime.LOCAL_GATEWAY_PORT = String(cfg.gatewayPort);
+  runtime.LOCAL_GATEWAY_URL = `${origin}/v1`;
+  fs.writeFileSync(file, `window.__RUNTIME_CONFIG__ = ${JSON.stringify(runtime)};\n`, "utf8");
+  log(`运行时网关配置已写入：${runtime.LOCAL_GATEWAY_URL}`);
+}
+
 function createCanvasServer(cfg) {
   const distDir = path.resolve(cfg.canvasDist);
   const indexPath = path.join(distDir, "index.html");
@@ -1070,6 +1093,11 @@ async function main() {
       log(`[dry-run] 将在 http://127.0.0.1:${cfg.canvasPort} 托管 ${cfg.canvasDist}（SPA fallback → index.html，仅绑 127.0.0.1）`);
       canvasResult = { url: cfg.canvasUrl, mode: "planned" };
     } else {
+      try {
+        writeRuntimeConfig(cfg, gatewayResult.url);
+      } catch (error) {
+        log(`写入运行时网关配置失败：${error.message}`, "WARN");
+      }
       const server = createCanvasServer(cfg);
       const listenError = await new Promise((resolve) => {
         server.once("error", (err) => resolve(err));
