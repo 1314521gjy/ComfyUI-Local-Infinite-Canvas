@@ -504,7 +504,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                                 extraOptions={[
                                     { value: "caption:qwen35", label: `反推 · Qwen3.5-9B${captionQwenReady ? "" : `（${t("canvas.promptPanel.captionNotInstalled")}）`}`, disabled: !captionQwenReady },
                                     { value: "caption:florence", label: `反推 · Florence-2 PromptGen${captionFlorenceReady ? "" : `（${t("canvas.promptPanel.captionNotInstalled")}）`}`, disabled: !captionFlorenceReady },
-                                    ...(optimizeCloudReady ? [{ value: "caption:cloud", label: `反推 · ${t("canvas.promptPanel.optimizeEngineCloud")}（${config.promptCloudModel}）` }] : []),
+                                    { value: "caption:cloud", label: `反推 · ${t("canvas.promptPanel.optimizeEngineCloud")}${optimizeCloudReady ? `（${config.promptCloudModel}）` : `（${t("canvas.promptPanel.captionCloudNotConfigured")}）`}` },
                                 ]}
                                 onMissingConfig={() => openConfigDialog(true)}
                                 className="max-w-[190px]"
@@ -557,6 +557,14 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                     </span>
                     <button type="button" className="shrink-0 underline underline-offset-2" onClick={() => openConfigDialog(false, "resources")}>
                         {t("canvas.promptPanel.captionInstall")}
+                    </button>
+                </div>
+            ) : null}
+            {mode === "text" && captionEngine === "cloud" && !optimizeCloudReady ? (
+                <div className="mt-1.5 flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                    <span className="min-w-0 truncate">{t("canvas.promptPanel.captionCloudMissing")}</span>
+                    <button type="button" className="shrink-0 underline underline-offset-2" onClick={() => openConfigDialog(false, "cloud-api")}>
+                        {t("canvas.promptPanel.optimizeOpenSettings")}
                     </button>
                 </div>
             ) : null}
