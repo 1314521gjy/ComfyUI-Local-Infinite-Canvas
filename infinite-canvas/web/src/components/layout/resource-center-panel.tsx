@@ -844,18 +844,18 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                         </>
                                     ) : (
                                         <>
-                                            <div className="mb-1.5 flex items-center justify-between text-[11px]">
-                                                <span className="font-medium text-stone-600 dark:text-stone-300">{copy.requiredSection}</span>
-                                                <span className="text-stone-400 dark:text-stone-500">{pack.present}/{pack.total}{pack.missingSize ? ` · ${copy.size} ${formatBytes(pack.missingSize)}` : ""}</span>
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                {pack.requiredItems.length ? (
-                                                    pack.requiredItems.map((item) => <ResourceCard key={item.id} item={item} copy={copy} compact={compact} />)
-                                                ) : (
-                                                    <div className="text-[11px] text-stone-400 dark:text-stone-500">{copy.noResources}</div>
-                                                )}
-                                            </div>
-                                            <div className="mt-3 mb-1.5 flex items-center justify-between text-[11px]">
+                                            {pack.requiredItems.length ? (
+                                                <>
+                                                    <div className="mb-1.5 flex items-center justify-between text-[11px]">
+                                                        <span className="font-medium text-stone-600 dark:text-stone-300">{copy.requiredSection}</span>
+                                                        <span className="text-stone-400 dark:text-stone-500">{pack.present}/{pack.total}{pack.missingSize ? ` · ${copy.size} ${formatBytes(pack.missingSize)}` : ""}</span>
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        {pack.requiredItems.map((item) => <ResourceCard key={item.id} item={item} copy={copy} compact={compact} />)}
+                                                    </div>
+                                                </>
+                                            ) : null}
+                                            <div className={`${pack.requiredItems.length ? "mt-3" : ""} mb-1.5 flex items-center justify-between text-[11px]`}>
                                                 <span className="font-medium text-stone-600 dark:text-stone-300">{optionalLabel}</span>
                                                 <span className="text-stone-400 dark:text-stone-500">
                                                     {pack.optionalTotal ? `${copy.optionalMissingLabel} ${pack.optionalMissing}${pack.optionalSize ? ` · ${formatBytes(pack.optionalSize)}` : ""}` : copy.optionalHint}

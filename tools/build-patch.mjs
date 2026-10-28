@@ -57,6 +57,8 @@ const EXCLUDE = [
     /^launcher\/.*\.log$/i,
     /^launcher\/.*\.bak.*$/i,
     /^\u521b\u5efa\u684c\u9762\u5feb\u6377\u65b9\u5f0f\.vbs$/,
+    // 运行时配置由启动器按实际端口生成，补丁不能覆盖。
+    /^infinite-canvas\/web\/dist\/config\.js$/i,
     /node_modules(\/|$)/i,
     /resources\/bundled(\/|$)/i,
     /__pycache__(\/|$)/i,
