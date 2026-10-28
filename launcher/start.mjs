@@ -359,6 +359,7 @@ function spawnGateway(cfg, comfyUrl, workflowsDir) {
   child.stderr.on("data", (d) => forwardLines(d, "gateway"));
   child.on("error", (err) => log(`启动网关失败：${err.message}`, "ERROR"));
   child.on("exit", (code, signal) => {
+    if (state.gatewayChild === child) state.gatewayChild = null;
     if (!shuttingDown) log(`网关子进程退出（code=${code}, signal=${signal}）`, "WARN");
   });
   return child;
@@ -676,11 +677,31 @@ function startSessionWatchdog(cfg, gatewayUrl) {
   );
   let seen = false;
   let note = "";
+  let gatewayStartedAt = "";
+  let lastTickAt = Date.now();
+  let holdUntil = 0;
   const tick = async () => {
     if (shuttingDown) return;
+    const now = Date.now();
+    const gap = now - lastTickAt;
+    lastTickAt = now;
+    // 系统休眠/时钟跳变后，先等画布重新心跳，别把“刚醒”当成“已关闭”。
+    if (gap > 60000) {
+      holdUntil = now + 120000;
+      log(`检测到 ${Math.round(gap / 1000)}s 的时钟跳变（休眠/挂起），等待画布重新心跳后再判定。`);
+      return;
+    }
+    if (now < holdUntil) return;
     const res = await httpGet(`${gatewayUrl}/api/session/status`, 2500);
     if (!res.ok || !res.json || typeof res.json !== "object") return;
     const status = res.json;
+    const startedAt = String(status.startedAt || "");
+    if (startedAt && gatewayStartedAt && startedAt !== gatewayStartedAt) {
+      seen = false;
+      note = "";
+      log("网关已重启，等待画布重新心跳后再启用自动退出。");
+    }
+    if (startedAt) gatewayStartedAt = startedAt;
     if (status.seen) seen = true;
     if (!seen) return;
     const sessions = Number(status.count) || 0;
@@ -700,8 +721,14 @@ function startSessionWatchdog(cfg, gatewayUrl) {
       return;
     }
     const idleMs = Number(status.idleMs) || 0;
+    // 显式关闭（页面 pagehide/sendBeacon）走 15s 宽限；
+    // 心跳缺失（后台标签被节流/冻结、浏览器崩溃）只当异常兜底，等 10 分钟再收。
+    const explicitCloseAt = Number(status.closedAt) || 0;
+    const explicitRecent = explicitCloseAt > 0 && now - explicitCloseAt < 10 * 60 * 1000;
+    // 心跳丢失（后台标签被节流/冻结、浏览器休眠）不当成关闭；只有页面显式关闭才停后台。
+    if (!explicitRecent) return;
     if (idleMs < cfg.canvasIdleGraceSec * 1000) return;
-    await shutdown(0, `画布已关闭（空闲 ${Math.round(idleMs / 1000)}s，无进行中任务），停止后台。`, {
+    await shutdown(0, `画布已关闭（显式关闭信号，空闲 ${Math.round(idleMs / 1000)}s，无进行中任务），停止后台。`, {
       stopAdoptedComfy: cfg.stopAdoptedComfyOnCanvasClose,
     });
   };
@@ -815,6 +842,20 @@ async function startControlServer(cfg) {
       const pathname = new URL(req.url, "http://127.0.0.1").pathname;
       if (req.method === "GET" && pathname === "/health") {
         res.end(JSON.stringify({ ok: true, restarting: state.restarting }));
+        return;
+      }
+      if (req.method === "POST" && pathname === "/restart-gateway") {
+        if (!state.gatewayChild) {
+          res.statusCode = 409;
+          res.end(JSON.stringify({ ok: false, error: "网关不是本启动器启动的，无法原地重启" }));
+          return;
+        }
+        const previous = state.gatewayChild;
+        state.gatewayChild = null;
+        killOurChild(previous, "网关");
+        await delay(600);
+        state.gatewayChild = spawnGateway(cfg, state.gatewayComfyUrl || cfg.comfyUrl, state.gatewayWorkflowsDir || "");
+        res.end(JSON.stringify({ ok: true, pid: state.gatewayChild.pid }));
         return;
       }
       if (req.method === "POST" && pathname === "/restart-comfy") {
@@ -986,7 +1027,9 @@ async function main() {
     } else {
       log(`启动网关：${path.join(cfg.gatewayDir, "src", "server.js")}（PORT=${cfg.gatewayPort}，COMFY_URL=${comfyUrl}）`);
       try {
-        state.gatewayChild = spawnGateway(cfg, comfyUrl, workflowsDir);
+        state.gatewayComfyUrl = comfyUrl;
+      state.gatewayWorkflowsDir = workflowsDir;
+      state.gatewayChild = spawnGateway(cfg, comfyUrl, workflowsDir);
       } catch (err) {
         log(err.message, "ERROR");
         log("网关无法启动，画布即便打开也无法生成内容；请修复后重试。", "ERROR");
