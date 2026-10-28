@@ -974,9 +974,6 @@ export async function requestPromptOptimize(
     if (params.cloud?.baseUrl) formData.set("cloudBaseUrl", params.cloud.baseUrl);
     if (params.cloud?.apiKey) formData.set("cloudApiKey", params.cloud.apiKey);
     if (params.cloud?.model) formData.set("cloudModel", params.cloud.model);
-    if (params.cloud?.baseUrl) formData.set("cloudBaseUrl", params.cloud.baseUrl);
-    if (params.cloud?.apiKey) formData.set("cloudApiKey", params.cloud.apiKey);
-    if (params.cloud?.model) formData.set("cloudModel", params.cloud.model);
     const images = params.images || [];
     const files = await Promise.all(images.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
     files.forEach((file, index) => formData.append(index === 0 ? "image" : `image${index + 1}`, file));
@@ -1043,6 +1040,9 @@ export async function requestImageCaption(config: AiConfig, params: { images: Re
     if (params.language) formData.set("language", params.language);
     if (params.instruction) formData.set("instruction", params.instruction);
     if (params.engine) formData.set("engine", params.engine);
+    if (params.cloud?.baseUrl) formData.set("cloudBaseUrl", params.cloud.baseUrl);
+    if (params.cloud?.apiKey) formData.set("cloudApiKey", params.cloud.apiKey);
+    if (params.cloud?.model) formData.set("cloudModel", params.cloud.model);
     const file = await dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) });
     formData.append("image", file);
     try {
