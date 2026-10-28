@@ -380,6 +380,14 @@ export async function createGatewayApp(overrides = {}) {
     }
   });
 
+  app.post("/api/resources/model-dirs", async (req, res) => {
+    try {
+      res.json({ ok: true, status: await resources.setModelRoots(req.body?.roots) });
+    } catch (error) {
+      res.status(400).json({ ok: false, error: { message: error.message } });
+    }
+  });
+
   app.post("/api/resources/packs/:id/main-model", async (req, res) => {
     try {
       res.json({ ok: true, status: await resources.setMainModel(req.params.id, req.body?.file) });
@@ -1212,6 +1220,7 @@ export async function createGatewayApp(overrides = {}) {
     let videoMode = String(body.mode || "").trim();
     if (entry.id === "video-h3-t2v") videoMode = "text";
     else if (entry.id === "video-h3-frames") videoMode = "frames";
+    else if (entry.id === "video-h3-fast") videoMode = videoMode === "text" ? "text" : "frames";
     else if (entry.id === "video-h3-ref2va") videoMode = "reference";
     let requiredImageCount = Object.values(entry.bindings || {}).reduce((max, binding) => {
       if (!binding) return max;
@@ -1226,7 +1235,12 @@ export async function createGatewayApp(overrides = {}) {
         throw new HttpError("H3 文生视频不接收图片/视频/音频；首尾帧请选 H3 首尾帧，多参请选 H3 多参", { status: 400, code: "unsupported_video_media" });
       }
       requiredImageCount = 0;
-    } else if (entry.id === "video-h3-frames") {
+    } else if (entry.id === "video-h3-fast" && videoMode === "text") {
+      if (files.length || videoFiles.length || audioFiles.length) {
+        throw new HttpError("H3 极速草稿的文生模式不接收图片/视频/音频；要首帧请切到首尾帧", { status: 400, code: "unsupported_video_media" });
+      }
+      requiredImageCount = 0;
+    } else if (entry.id === "video-h3-frames" || entry.id === "video-h3-fast") {
       if (videoFiles.length || audioFiles.length) {
         throw new HttpError("H3 首尾帧只接收 1–2 张图片；音频/视频请选 H3 多参", { status: 400, code: "unsupported_video_media" });
       }
@@ -1235,10 +1249,10 @@ export async function createGatewayApp(overrides = {}) {
         throw new HttpError("frameMode 必须是 first、last 或 both", { status: 400, code: "invalid_frame_mode" });
       }
       params.frameMode = frameMode;
-      requiredImageCount = frameMode === "both" ? 2 : 1;
+      requiredImageCount = frameMode === "both" ? 2 : entry.id === "video-h3-fast" ? 0 : 1;
     }
     if (files.length < requiredImageCount) {
-      const hint = entry.id === "video-h3-ref2va" ? "（H3 多参支持 1–6 图 / 0–2 音频 / 0–1 视频，至少一种媒体）" : entry.id === "video-h3-frames" ? "（首尾帧支持首帧、尾帧或首尾帧；首尾帧模式需要 2 张图）" : "";
+      const hint = entry.id === "video-h3-ref2va" ? "（H3 多参支持 1–6 图 / 0–2 音频 / 0–1 视频，至少一种媒体）" : (entry.id === "video-h3-frames" || entry.id === "video-h3-fast") ? "（首尾帧支持首帧、尾帧或首尾帧；首尾帧模式需要 2 张图）" : "";
       throw new HttpError(`工作流 ${entry.name} 需要至少 ${requiredImageCount} 张参考图${hint}`, { status: 400, code: "missing_reference_image" });
     }
     if (entry.minMedia && files.length + videoFiles.length + audioFiles.length < Number(entry.minMedia)) {

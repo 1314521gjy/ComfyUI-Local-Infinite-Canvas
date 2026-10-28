@@ -273,7 +273,9 @@ export function buildTrtCompileHint({ python, compiler, input, output, device = 
 export function createResourceManager({ config, setup, registry, logger, workflowVisibility = null, mainModels = null, hardware: hardwareOverride = null } = {}) {
     const indexPath = path.join(config.rootDir, "resources", "index.json");
     const lockPath = path.join(config.dataDir, "resource-lock.json");
+    const modelDirsPath = path.join(config.dataDir, "model-dirs.json");
     const jobs = new Map();
+    let customModelRoots = [];
     let index = null;
     let hardware = hardwareOverride;
     let indexSource = "local";
@@ -318,6 +320,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             seen.add(key);
             roots.push(resolved);
         };
+        for (const custom of customModelRoots) add(path.join(custom, dir));
         const folderPaths = setup?.folderPaths?.() || {};
         for (const key of FOLDER_PATH_KEYS[dir] || [dir]) {
             const list = Array.isArray(folderPaths[key]) ? folderPaths[key] : [];
@@ -343,6 +346,12 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         const { dir, file } = targetParts(resource.target);
         if (!root) throw new Error("未找到 ComfyUI 安装目录");
         if (dir === "custom_nodes") return path.join(root, "custom_nodes", file);
+        for (const custom of customModelRoots) {
+            if (!isDir(custom) || !canWrite(custom)) continue;
+            const dirPath = path.join(custom, dir);
+            if (isDir(dirPath) && !canWrite(dirPath)) continue;
+            return path.join(dirPath, file);
+        }
         const writable = modelRoots(dir, root).find((entry) => isDir(entry) && canWrite(entry));
         return path.join(writable || path.join(root, "models", dir), file);
     }
@@ -354,6 +363,39 @@ export function createResourceManager({ config, setup, registry, logger, workflo
 
     async function saveLock() {
         await writeJsonAtomic(lockPath, lock);
+    }
+
+    async function loadModelRoots() {
+        const data = readJson(modelDirsPath);
+        const roots = Array.isArray(data?.roots) ? data.roots : [];
+        customModelRoots = roots.map((value) => String(value || "").trim()).filter((value) => value && path.isAbsolute(value));
+    }
+
+    function normalizeModelRoots(input) {
+        if (!Array.isArray(input)) throw new Error("模型目录格式不正确");
+        const roots = [];
+        const seen = new Set();
+        for (const value of input) {
+            const raw = String(value || "").trim();
+            if (!raw) continue;
+            if (!path.isAbsolute(raw)) throw new Error(`模型目录必须是绝对路径：${raw}`);
+            const resolved = path.resolve(raw);
+            if (path.parse(resolved).root === resolved) throw new Error("不能直接使用盘符根目录");
+            if (!isDir(resolved)) throw new Error(`模型目录不存在：${resolved}`);
+            const key = resolved.toLowerCase();
+            if (seen.has(key)) continue;
+            seen.add(key);
+            roots.push(resolved);
+            if (roots.length > 8) throw new Error("最多添加 8 个模型目录");
+        }
+        return roots;
+    }
+
+    async function setModelRoots(input) {
+        const roots = normalizeModelRoots(input);
+        customModelRoots = roots;
+        await writeJsonAtomic(modelDirsPath, { version: 1, roots, updatedAt: nowIso() });
+        return status();
     }
 
     async function loadIndex() {
@@ -814,6 +856,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             channel: index?.channel || "",
             comfyRoot: root,
             comfyPython: comfyPython(root),
+            customModelRoots: [...customModelRoots],
             modelRoots: (() => {
                 const map = {};
                 for (const dir of MODEL_DIRS) {
@@ -1479,6 +1522,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
 
     async function init() {
         if (!hardwareOverride) hardware = await probeHardware();
+        await loadModelRoots();
         await loadLock();
         await loadIndex();
         try {
@@ -1489,5 +1533,5 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         return status();
     }
 
-    return { init, status, refresh, install, setMainModel, getJob, cancelJob, comfyRoot, comfyPython, indexPath };
+    return { init, status, refresh, install, setMainModel, setModelRoots, getJob, cancelJob, comfyRoot, comfyPython, indexPath };
 }
