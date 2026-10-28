@@ -2,8 +2,8 @@
   "version": "v0.21.0",
   "publishedAt": "2026-10-28",
   "notes": "资源改为按工作流下载（节点随包自动安装）；H3 ONNX/观澜 LoRA/预览 VAE 随包；TRT engine 自动编译；文本卡片支持云端反推；跨站写拦截与云端地址校验；资源统计口径修正。",
-  "repository": "https://github.com/1314521gjy/ComfyUI-Local-Infinite-Canvas",
-  "downloadUrl": "https://github.com/1314521gjy/ComfyUI-Local-Infinite-Canvas/archive/refs/heads/main.zip",
+  "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
+  "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   }
