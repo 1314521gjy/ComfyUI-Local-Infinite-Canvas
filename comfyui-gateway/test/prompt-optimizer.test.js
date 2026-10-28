@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 
 import { createPromptOptimizer } from "../src/prompt-optimizer.js";
 
+process.env.ALLOW_PRIVATE_CLOUD = "1";
+
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const REF_OUTPUT = `思考过程:
 这里不应该出现在结果里。
@@ -334,5 +336,23 @@ test("cloud caption sends the image as image_url and returns the prompt", async 
         assert.match(result.prompt, /古装/);
     } finally {
         await new Promise((resolve) => server.close(resolve));
+    }
+});
+
+test("cloud chat rejects private base urls by default", async () => {
+    const previous = process.env.ALLOW_PRIVATE_CLOUD;
+    delete process.env.ALLOW_PRIVATE_CLOUD;
+    try {
+        const optimizer = createPromptOptimizer({ config: { rootDir }, comfy: null, logger: null });
+        await assert.rejects(
+            () => optimizer.captionImage({
+                cloudImages: ["data:image/png;base64,AAAA"],
+                engine: "cloud",
+                cloud: { baseUrl: "http://127.0.0.1:9/v1", apiKey: "k", model: "m" },
+            }),
+            /内网|本机/,
+        );
+    } finally {
+        process.env.ALLOW_PRIVATE_CLOUD = previous;
     }
 });

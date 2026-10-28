@@ -477,6 +477,14 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                     installIds: [...installIds].filter((id) => byId.get(id)?.status !== "present"),
                 };
             });
+            const workflowMissingMap = new Map();
+            for (const workflow of workflowDependencies) {
+                for (const item of workflow.resources) {
+                    if (item.status !== "present") workflowMissingMap.set(item.id, item);
+                }
+            }
+            const workflowMissing = workflowMissingMap;
+            const workflowMissingSize = [...workflowMissingMap.values()].reduce((sum, item) => sum + (item.size || 0), 0);
             const variants = (rawPackById.get(pack.id)?.variants || []).map((variant) => {
                 const optionalIds = new Set(pack.optionalResources || []);
                 const derived = [...new Set((variant.workflows || []).flatMap((workflowId) => (pack.workflowDependencies || {})[workflowId] || []))]
@@ -615,19 +623,31 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 pack.requiredIds = requiredItems.map((item) => item.id);
                 pack.total = requiredItems.length;
                 pack.present = requiredItems.length - requiredMissing.length;
-                pack.missing = requiredMissing.length;
-                pack.missingSize = requiredMissing.reduce((sum, item) => sum + (item.size || 0), 0);
                 for (const workflow of pack.workflowDependencies) {
                     workflow.recommended = variant.workflows.includes(workflow.id);
                 }
             }
         }
 
+        const workflowResourceIds = new Set();
+        for (const pack of packs) {
+            for (const workflow of pack.workflowDependencies || []) {
+                for (const item of workflow.resources) {
+                    workflowResourceIds.add(item.id);
+                    for (const dep of item.requires || []) workflowResourceIds.add(dep);
+                }
+            }
+        }
+        for (const pack of packs) {
+            if (pack.workflowDependencies?.length) continue;
+            for (const item of pack.resources || []) workflowResourceIds.add(item.id);
+        }
+        const workflowResources = resources.filter((item) => workflowResourceIds.has(item.id));
+        const workflowMissing = workflowResources.filter((item) => item.status !== "present");
         const recommendedPacks = packs.filter((pack) => pack.recommended);
         const recommendedIds = new Set(recommendedPacks.flatMap((pack) => pack.requiredIds || pack.resourceIds));
         const recommendedResources = resources.filter((resource) => recommendedIds.has(resource.id));
         const recommendedMissing = recommendedResources.filter((resource) => resource.status !== "present");
-        const missingResources = resources.filter((resource) => resource.status !== "present");
         return {
             ok: true,
             loadedAt,
@@ -644,10 +664,11 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             resources,
             summary: {
                 packs: packs.filter((pack) => !pack.planned).length,
-                resources: resources.length,
-                present: resources.length - missingResources.length,
-                missing: missingResources.length,
-                missingSize: missingResources.reduce((sum, item) => sum + (item.size || 0), 0),
+                resources: workflowResources.length,
+                present: workflowResources.length - workflowMissing.length,
+                missing: workflowMissing.length,
+                missingSize: workflowMissing.reduce((sum, item) => sum + (item.size || 0), 0),
+                allResources: resources.length,
                 recommendedPacks: recommendedPacks.length,
                 recommendedResources: recommendedResources.length,
                 recommendedPresent: recommendedResources.length - recommendedMissing.length,

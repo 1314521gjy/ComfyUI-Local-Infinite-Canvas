@@ -231,3 +231,12 @@ test("CORS preflight allows the canvas origin", async () => {
   assert.equal(response.status, 204);
   assert.equal(response.headers.get("access-control-allow-origin"), "http://localhost:3000");
 });
+
+test("cross-site writes are rejected but local origins pass", async () => {
+    const blocked = await jsonFetch(`${baseUrl}/api/resources/refresh`, { method: "POST", headers: { Origin: "https://evil.example" } });
+    assert.equal(blocked.response.status, 403);
+    const blockedSite = await jsonFetch(`${baseUrl}/api/resources/refresh`, { method: "POST", headers: { "Sec-Fetch-Site": "cross-site" } });
+    assert.equal(blockedSite.response.status, 403);
+    const allowed = await jsonFetch(`${baseUrl}/api/resources/refresh`, { method: "POST", headers: { Origin: "http://127.0.0.1:3000" } });
+    assert.notEqual(allowed.response.status, 403);
+});

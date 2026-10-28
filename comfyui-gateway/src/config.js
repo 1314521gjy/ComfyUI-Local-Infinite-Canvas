@@ -73,6 +73,8 @@ export function loadConfig(overrides = {}) {
     resourcesIndexUrlBackup: String(overrides.resourcesIndexUrlBackup ?? process.env.RESOURCES_INDEX_URL_BACKUP ?? "").trim(),
     resourcesFetchTimeoutMs: num(overrides.resourcesFetchTimeoutMs ?? process.env.RESOURCES_FETCH_TIMEOUT_MS, 8000),
     resourceConcurrency: num(overrides.resourceConcurrency ?? process.env.RESOURCE_CONCURRENCY, 2),
+    allowRemote,
+    gatewayToken: String(process.env.GATEWAY_TOKEN || "").trim(),
     version: "0.1.0",
   };
   if (config.corsOrigins.includes("*") && !allowRemote) {

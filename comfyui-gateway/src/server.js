@@ -288,6 +288,36 @@ export async function createGatewayApp(overrides = {}) {
     next();
   });
   app.use(corsMiddleware(config));
+  const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+  const localOriginHosts = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+  const isAllowedOrigin = (origin) => {
+    if (!origin) return true;
+    try {
+      if (localOriginHosts.has(new URL(origin).hostname)) return true;
+    } catch {
+      return false;
+    }
+    return config.corsOrigins.includes(origin) || config.corsOrigins.includes("*") || origin === config.publicBaseUrl;
+  };
+  app.use((req, res, next) => {
+    // 远程模式：管理接口要求令牌（/health 与生成接口不拦）
+    if (config.allowRemote && config.gatewayToken && (req.path.startsWith("/api/") || req.path === "/admin")) {
+      if (String(req.headers["x-gateway-token"] || "") !== config.gatewayToken) {
+        res.status(401).json({ ok: false, error: { message: "缺少有效的网关令牌" } });
+        return;
+      }
+    }
+    // 跨站请求防护：浏览器发起的写操作必须来自本地或 CORS 白名单
+    if (!SAFE_METHODS.has(req.method)) {
+      const origin = String(req.headers.origin || "");
+      const site = String(req.headers["sec-fetch-site"] || "");
+      if (site === "cross-site" || !isAllowedOrigin(origin)) {
+        res.status(403).json({ ok: false, error: { message: "跨站请求被拒绝" } });
+        return;
+      }
+    }
+    next();
+  });
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ extended: true, limit: "50mb" }));
   const upload = multer({

@@ -174,7 +174,6 @@ function statusTag(item: ResourceItem, copy: Copy) {
 
 function packState(pack: ResourcePack, copy: Copy) {
     if (pack.planned) return <Tag>{copy.planned}</Tag>;
-    if (!pack.total) return <Tag color="green">{copy.ready}</Tag>;
     if (!pack.missing) return <Tag color="green">{copy.ready}</Tag>;
     return <Tag color="orange">{copy.missing} {pack.missing}</Tag>;
 }
@@ -403,10 +402,10 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
 
     const recommendationAvailable = Boolean(status?.recommendationAvailable);
     const hardwareName = status?.hardware?.gpuName || "";
-    const recommendedPresent = recommendationAvailable ? status?.summary.recommendedPresent || 0 : status?.summary.present || 0;
-    const recommendedTotal = recommendationAvailable ? status?.summary.recommendedResources || 0 : status?.summary.resources || 0;
-    const recommendedMissing = recommendationAvailable ? status?.summary.recommendedMissing || 0 : status?.summary.missing || 0;
-    const recommendedMissingSize = recommendationAvailable ? status?.summary.recommendedMissingSize || 0 : status?.summary.missingSize || 0;
+    const recommendedPresent = status?.summary.present || 0;
+    const recommendedTotal = status?.summary.resources || 0;
+    const recommendedMissing = status?.summary.missing || 0;
+    const recommendedMissingSize = status?.summary.missingSize || 0;
     const visiblePacks = status?.packs || [];
 
     const installIds = useMemo(() => {
