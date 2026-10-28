@@ -14,6 +14,7 @@ export function startLocalSession() {
     const id = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     let timer: number | undefined;
     let active = false;
+    let hiddenSince = document.visibilityState === "hidden" ? Date.now() : 0;
 
     const post = (path: string, keepalive = false) =>
         fetch(sessionUrl(path), {
@@ -30,14 +31,21 @@ export function startLocalSession() {
         timer = window.setInterval(() => void post("/api/session/heartbeat"), HEARTBEAT_MS);
     };
 
-    const close = () => {
+    // 浏览器休眠/丢弃后台标签页也会触发 pagehide；后台停留超过 60s 时不当作关闭，
+    // 否则挂机一会儿就会被误停后台。
+    const close = (event?: PageTransitionEvent) => {
         if (!active) return;
+        if (event?.persisted) return;
+        if (hiddenSince && Date.now() - hiddenSince > 60000) return;
         active = false;
         if (timer !== undefined) window.clearInterval(timer);
         timer = undefined;
         void post("/api/session/close", true);
     };
 
+    document.addEventListener("visibilitychange", () => {
+        hiddenSince = document.visibilityState === "hidden" ? Date.now() : 0;
+    });
     window.addEventListener("pagehide", close);
     window.addEventListener("pageshow", (event) => {
         if (event.persisted) open();
