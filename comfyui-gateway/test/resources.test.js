@@ -973,3 +973,115 @@ test("resources use ComfyUI folder paths for detection and install targets", asy
         await fsp.rm(root, { recursive: true, force: true });
     }
 });
+
+test("resource matching handles subfolders, renamed files and size mismatches", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-match-test-"));
+    const comfy = path.join(root, "ComfyUI");
+    const extra = path.join(root, "models-extra");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(path.join(comfy, "models", "vae"), { recursive: true });
+    await fsp.mkdir(path.join(extra, "vae", "sub"), { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    await fsp.writeFile(path.join(comfy, "main.py"), "", "utf8");
+    await fsp.writeFile(path.join(extra, "vae", "sub", "demo.safetensors"), Buffer.alloc(1024));
+    await fsp.writeFile(path.join(extra, "vae", "renamed.safetensors"), Buffer.alloc(2048));
+    await fsp.writeFile(path.join(extra, "vae", "wrong.safetensors"), Buffer.alloc(100));
+
+    const index = {
+        schema: 1,
+        version: "test-match",
+        packs: [{ id: "test", label: "Test", resources: ["subdir-demo", "renamed-demo", "wrong-size", "loader-only"] }],
+        resources: [
+            { id: "subdir-demo", type: "model", label: "Subdir", target: "vae/demo.safetensors", size: 1024 },
+            { id: "renamed-demo", type: "model", label: "Renamed", target: "vae/original.safetensors", size: 2048 },
+            { id: "wrong-size", type: "model", label: "Wrong", target: "vae/wrong.safetensors", size: 4096 },
+            { id: "loader-only", type: "model", label: "Loader only", target: "vae/loader-only.safetensors", size: 0 },
+        ],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+
+    const manager = createResourceManager({
+        config: {
+            rootDir: root,
+            dataDir: data,
+            comfyDir: comfy,
+            comfyWorkflowsDir: "",
+            resourcesIndexUrl: "",
+            resourcesFetchTimeoutMs: 1000,
+            resourceConcurrency: 1,
+        },
+        setup: {
+            loaderOptions: () => ({ VAELoader: ["loader-only.safetensors"] }),
+            folderPaths: () => ({ vae: [path.join(extra, "vae")] }),
+            status: () => ({ comfyReachable: true }),
+            scan: async () => ({}),
+        },
+        logger: null,
+    });
+
+    try {
+        await manager.init();
+        const byId = new Map(manager.status().resources.map((item) => [item.id, item]));
+        assert.equal(byId.get("subdir-demo").status, "present");
+        assert.equal(byId.get("subdir-demo").matchedBy, "name");
+        assert.equal(byId.get("renamed-demo").status, "present");
+        assert.equal(byId.get("renamed-demo").matchedBy, "size");
+        assert.equal(byId.get("wrong-size").status, "present");
+        assert.match(byId.get("wrong-size").sizeMismatch, /大小不一致/);
+        assert.equal(byId.get("loader-only").status, "present");
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});
+
+test("extra_model_paths.yaml is used when ComfyUI folder paths are unavailable", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-yaml-test-"));
+    const comfy = path.join(root, "ComfyUI");
+    const extra = path.join(root, "other-drive");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(path.join(comfy, "models", "vae"), { recursive: true });
+    await fsp.mkdir(path.join(extra, "vae"), { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    await fsp.writeFile(path.join(comfy, "main.py"), "", "utf8");
+    await fsp.writeFile(path.join(extra, "vae", "from-yaml.safetensors"), Buffer.alloc(777));
+    await fsp.writeFile(
+        path.join(comfy, "extra_model_paths.yaml"),
+        ["other:", `  base_path: ${extra.split("\\").join("/")}`, "  vae: vae/", ""].join("\n"),
+        "utf8",
+    );
+    const index = {
+        schema: 1,
+        version: "test-yaml",
+        packs: [{ id: "test", label: "Test", resources: ["yaml-vae"] }],
+        resources: [{ id: "yaml-vae", type: "model", label: "YAML VAE", target: "vae/from-yaml.safetensors", size: 777 }],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+
+    const manager = createResourceManager({
+        config: {
+            rootDir: root,
+            dataDir: data,
+            comfyDir: comfy,
+            comfyWorkflowsDir: "",
+            resourcesIndexUrl: "",
+            resourcesFetchTimeoutMs: 1000,
+            resourceConcurrency: 1,
+        },
+        setup: { loaderOptions: () => ({}), folderPaths: () => ({}), status: () => ({ comfyReachable: false }), scan: async () => ({}) },
+        logger: null,
+    });
+
+    try {
+        await manager.init();
+        const status = manager.status();
+        assert.equal(status.resources[0].status, "present");
+        const expectedRoot = path.join(extra, "vae").toLowerCase();
+        assert.ok(status.modelRoots.vae.some((entry) => entry.toLowerCase() === expectedRoot));
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});

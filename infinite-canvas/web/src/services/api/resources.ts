@@ -23,6 +23,9 @@ export type ResourceItem = {
     present: boolean;
     registered: boolean;
     exists: boolean;
+    matchedFile?: string;
+    matchedBy?: string;
+    sizeMismatch?: string;
     actualSize: number;
     installed?: { version?: string; installedAt?: string } | null;
     missingRequires: string[];

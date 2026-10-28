@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
@@ -52,6 +53,75 @@ test("archive install reports an update but refuses to apply it", async () => {
     assert.match(result.applyReason, /Git/);
     await assert.rejects(() => applyUpdate(configFor(root)), (error) => error.code === "not_git_install");
   } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+
+test("archive install applies a verified code patch and preserves local data", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "gateway-update-patch-"));
+  const payload = path.join(root, "payload");
+  const patchFile = path.join(root, "patch.zip");
+  const write = (rel, content) => {
+    const file = path.join(payload, rel);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, content);
+  };
+  write("VERSION", "v0.20.1\n");
+  write("comfyui-gateway/src/new.js", "export const updated = true;\n");
+  write("data/keep.txt", "overwritten-by-patch");
+  write("comfyui-gateway/node_modules/marker", "overwritten-by-patch");
+  write("launcher/config.json", '{"bad":true}');
+  execFileSync("tar", ["-a", "-c", "-f", "patch.zip", "-C", "payload", "."], { cwd: root, stdio: "ignore" });
+  const bytes = fs.readFileSync(patchFile);
+  const sha = (await import("node:crypto")).createHash("sha256").update(bytes).digest("hex");
+
+  fs.mkdirSync(path.join(root, "data"), { recursive: true });
+  fs.writeFileSync(path.join(root, "data", "keep.txt"), "keep");
+  fs.mkdirSync(path.join(root, "comfyui-gateway", "node_modules"), { recursive: true });
+  fs.writeFileSync(path.join(root, "comfyui-gateway", "node_modules", "marker"), "deps");
+  fs.mkdirSync(path.join(root, "launcher"), { recursive: true });
+  fs.writeFileSync(path.join(root, "launcher", "config.json"), "{}");
+  writeVersion(root, "v0.20.0");
+
+  const server = http.createServer((req, res) => {
+    if (req.url === "/update.json") {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        version: "v0.20.1",
+        notes: "patch test",
+        patch: { url: `http://127.0.0.1:${server.address().port}/patch.zip`, sha256: sha, size: bytes.length },
+      }));
+      return;
+    }
+    if (req.url === "/patch.zip") {
+      res.setHeader("content-type", "application/zip");
+      res.end(bytes);
+      return;
+    }
+    res.statusCode = 404;
+    res.end("not found");
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const config = {
+    ...configFor(root),
+    updateManifestUrl: `http://127.0.0.1:${server.address().port}/update.json`,
+  };
+  try {
+    const check = await checkForUpdate(config, { fetchRemote: true });
+    assert.equal(check.updateAvailable, true);
+    assert.equal(check.installType, "archive");
+    assert.equal(check.canApply, true);
+    const result = await applyUpdate(config);
+    assert.equal(result.ok, true);
+    assert.equal(result.dryRun, false);
+    assert.equal(fs.readFileSync(path.join(root, "VERSION"), "utf8").trim(), "v0.20.1");
+    assert.equal(fs.existsSync(path.join(root, "comfyui-gateway", "src", "new.js")), true);
+    assert.equal(fs.readFileSync(path.join(root, "data", "keep.txt"), "utf8"), "keep");
+    assert.equal(fs.readFileSync(path.join(root, "comfyui-gateway", "node_modules", "marker"), "utf8"), "deps");
+    assert.equal(fs.readFileSync(path.join(root, "launcher", "config.json"), "utf8"), "{}");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
     fs.rmSync(root, { recursive: true, force: true });
   }
 });

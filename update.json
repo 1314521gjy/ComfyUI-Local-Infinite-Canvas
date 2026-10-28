@@ -1,10 +1,15 @@
 {
-  "version": "v0.21.1",
+  "version": "v0.21.2",
   "publishedAt": "2026-10-29",
-  "notes": "ComfyUI 模型目录改为读取 /internal/folder_paths，自动识别 extra_model_paths 和目录映射；图片反推云端 API 接线修复（不再报未配置），反推结果按云端/本地显示正确引擎；画布后台标签休眠不再误停后台；TRT engine 编译改为原子落盘，取消时结束整个编译进程树。",
+  "notes": "应用内更新支持文件夹安装（代码补丁校验+回滚，保留 data/模型）；模型扫描支持子目录/改名/同名不同版本，ComfyUI 未启动时读取 extra_model_paths.yaml。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
+  },
+  "patch": {
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.2.zip",
+    "sha256": "7bd6357e37c326b1de49f409a27616e391e98f4f9be97ae65cc53143afa42fea",
+    "size": 5816320
   }
 }

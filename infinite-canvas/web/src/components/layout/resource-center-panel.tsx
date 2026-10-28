@@ -75,6 +75,7 @@ const copyByLocale = {
         indexError: "资源索引读取失败，当前使用内置清单。",
         selectHint: "选择需要安装的功能包；已具备的资源会自动跳过。",
         target: "目标",
+        matchedBySize: "按文件体积匹配",
         license: "许可",
         note: "说明",
         emptyMissing: "所有必下资源都已具备。",
@@ -146,6 +147,7 @@ const copyByLocale = {
         indexError: "Failed to load the resource index; using the bundled manifest.",
         selectHint: "Select the packs to install; existing resources are skipped.",
         target: "Target",
+        matchedBySize: "Matched by file size",
         license: "License",
         note: "Note",
         emptyMissing: "All required resources are ready.",
@@ -222,6 +224,8 @@ function ResourceCard({
                         <span>{formatBytes(item.size)}</span>
                         {!compact && item.license ? <span>{copy.license}: {item.license}</span> : null}
                     </div>
+                    {item.matchedBy === "size" && item.matchedFile ? <div className="mt-0.5 text-[10px] leading-4 text-stone-400 dark:text-stone-500">{copy.matchedBySize}: {item.matchedFile}</div> : null}
+                    {item.sizeMismatch ? <div className="mt-0.5 text-[10px] leading-4 text-amber-600 dark:text-amber-400">{item.sizeMismatch}</div> : null}
                     {!compact && item.note ? <div className="mt-0.5 text-[10px] leading-4 text-stone-400 dark:text-stone-500">{copy.note}: {item.note}</div> : null}
                 </div>
             </div>
@@ -245,6 +249,8 @@ function WorkflowResourceRow({ item, copy, requires = [] }: { item: ResourceItem
                     <span>{copy.sources} {item.sources.length}</span>
                     <span>{formatBytes(item.size)}</span>
                 </div>
+                {item.matchedBy === "size" && item.matchedFile ? <div className="mt-0.5 text-[10px] text-stone-400 dark:text-stone-500">{copy.matchedBySize}: {item.matchedFile}</div> : null}
+                {item.sizeMismatch ? <div className="mt-0.5 text-[10px] text-amber-600 dark:text-amber-400">{item.sizeMismatch}</div> : null}
                 {item.type === "bake" && requires.length ? (
                     <div className="mt-0.5 text-[10px] text-amber-600 dark:text-amber-400">{copy.bakeRequires}: {requires.map((entry) => entry.label).join(" + ")}</div>
                 ) : null}

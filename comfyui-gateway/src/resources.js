@@ -12,6 +12,7 @@ import { findUnetLoader } from "./base-models.js";
 import { nowIso, truncate, writeJsonAtomic } from "./util.js";
 
 const MODEL_DIRS = new Set(["diffusion_models", "text_encoders", "vae", "vae_approx", "loras", "checkpoints", "upscale_models", "latent_upscale_models", "vdn", "clip_vision"]);
+const WEIGHT_FILE_EXTENSIONS = /\.(safetensors|sft|ckpt|pt|pth|bin|gguf|onnx|data|engine)$/i;
 // ComfyUI /internal/folder_paths 的键名和资源索引目录不完全同名，需要做别名。
 const FOLDER_PATH_KEYS = {
     diffusion_models: ["diffusion_models", "unet"],
@@ -127,6 +128,61 @@ function resolveComfyRoot(config) {
         if (isFile(path.join(dir, "main.py")) || isDir(path.join(dir, "custom_nodes")) || isDir(path.join(dir, "models"))) return dir;
     }
     return "";
+}
+
+function parseExtraModelPaths(file) {
+    let text = "";
+    try {
+        text = fs.readFileSync(file, "utf8");
+    } catch {
+        return {};
+    }
+    const result = {};
+    const baseDir = path.dirname(file);
+    let section = null;
+    let basePath = "";
+    let multilineKey = "";
+    const resolvePath = (value) => {
+        const raw = String(value || "").trim().replace(/^"|"$/g, "");
+        if (!raw) return "";
+        return path.isAbsolute(raw) ? raw : path.resolve(basePath || baseDir, raw);
+    };
+    for (const line of text.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) continue;
+        const indent = line.length - line.trimStart().length;
+        if (indent === 0 && /^[^:]+:\s*$/.test(trimmed)) {
+            section = trimmed.replace(/:\s*$/, "");
+            basePath = "";
+            multilineKey = "";
+            continue;
+        }
+        if (!section) continue;
+        const match = trimmed.match(/^([\w.-]+):\s*(.*)$/);
+        if (match && !trimmed.startsWith("-")) {
+            const key = match[1];
+            const value = match[2].trim();
+            multilineKey = "";
+            if (key === "base_path") {
+                basePath = resolvePath(value);
+                continue;
+            }
+            if (key === "is_default") continue;
+            if (value === "|" || value === ">") {
+                if (!result[key]) result[key] = [];
+                multilineKey = key;
+                continue;
+            }
+            if (!result[key]) result[key] = [];
+            if (value) result[key].push(resolvePath(value));
+            continue;
+        }
+        if (multilineKey && indent > 0) {
+            const resolved = resolvePath(trimmed);
+            if (resolved) result[multilineKey].push(resolved);
+        }
+    }
+    return result;
 }
 
 function pythonFromBat(bat) {
@@ -274,6 +330,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
     const indexPath = path.join(config.rootDir, "resources", "index.json");
     const lockPath = path.join(config.dataDir, "resource-lock.json");
     const jobs = new Map();
+    const inventoryCache = new Map();
+    const extraPathsCache = new Map();
     let index = null;
     let hardware = hardwareOverride;
     let indexSource = "local";
@@ -302,6 +360,28 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         }
     }
 
+    function extraModelPaths(root) {
+        if (!root) return {};
+        const cached = extraPathsCache.get(root);
+        if (cached && Date.now() - cached.at < 10000) return cached.paths;
+        const files = [...new Set([
+            path.join(root, "extra_model_paths.yaml"),
+            path.join(path.dirname(root), "extra_model_paths.yaml"),
+            config.comfyDir ? path.join(config.comfyDir, "extra_model_paths.yaml") : "",
+        ].filter(Boolean).map((file) => path.resolve(file)))];
+        const merged = {};
+        for (const file of files) {
+            if (!isFile(file)) continue;
+            const parsed = parseExtraModelPaths(file);
+            for (const [key, values] of Object.entries(parsed)) {
+                if (!Array.isArray(values) || !values.length) continue;
+                merged[key] = [...new Set([...(merged[key] || []), ...values])];
+            }
+        }
+        extraPathsCache.set(root, { at: Date.now(), paths: merged });
+        return merged;
+    }
+
     function modelRoots(dir, root = comfyRoot()) {
         const roots = [];
         const seen = new Set();
@@ -323,7 +403,14 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             const list = Array.isArray(folderPaths[key]) ? folderPaths[key] : [];
             for (const entry of list) add(entry);
         }
-        if (root) add(path.join(root, "models", dir));
+        if (root) {
+            const extra = extraModelPaths(root);
+            for (const key of FOLDER_PATH_KEYS[dir] || [dir]) {
+                const list = Array.isArray(extra[key]) ? extra[key] : [];
+                for (const entry of list) add(entry);
+            }
+            add(path.join(root, "models", dir));
+        }
         return roots;
     }
 
@@ -333,8 +420,150 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         return modelRoots(dir, root).map((entry) => path.join(entry, file));
     }
 
+    function normalizeRelName(value) {
+        return String(value || "").replace(/\\/g, "/").replace(/^\.?\//, "").trim().toLowerCase();
+    }
+
+    // ComfyUI 的 loader 只给相对文件名；用户可能放在子目录或重命名。这里把
+    // “文件系统里的相对路径 + loader 列表”合成一份清单，按路径/文件名/体积匹配。
+    function inventoryFor(dir, root) {
+        const roots = modelRoots(dir, root);
+        const key = `${dir}|${roots.join("|").toLowerCase()}`;
+        const cached = inventoryCache.get(key);
+        if (cached && Date.now() - cached.at < 5000) return cached.items;
+        const items = [];
+        const byRel = new Map();
+        const addItem = (rel, absPath, size, fromLoader) => {
+            const normalized = normalizeRelName(rel);
+            if (!normalized) return;
+            const existing = byRel.get(normalized);
+            if (existing) {
+                if (absPath && !existing.abs) {
+                    existing.abs = absPath;
+                    existing.size = size;
+                }
+                return;
+            }
+            const item = { rel: normalized, abs: absPath || "", size: Number(size) || 0, fromLoader: Boolean(fromLoader) };
+            byRel.set(normalized, item);
+            items.push(item);
+        };
+        for (const base of roots) {
+            if (!isDir(base)) continue;
+            const stack = [{ dir: base, depth: 0 }];
+            const visited = new Set();
+            const started = Date.now();
+            while (stack.length && Date.now() - started < 2500) {
+                const current = stack.pop();
+                let real = "";
+                try {
+                    real = fs.realpathSync(current.dir).toLowerCase();
+                } catch {
+                    continue;
+                }
+                if (visited.has(real)) continue;
+                visited.add(real);
+                let entries = [];
+                try {
+                    entries = fs.readdirSync(current.dir, { withFileTypes: true });
+                } catch {
+                    continue;
+                }
+                for (const entry of entries) {
+                    if (entry.name.startsWith(".")) continue;
+                    const full = path.join(current.dir, entry.name);
+                    if (entry.isDirectory()) {
+                        if (current.depth < 5) stack.push({ dir: full, depth: current.depth + 1 });
+                        continue;
+                    }
+                    if (!entry.isFile() || !WEIGHT_FILE_EXTENSIONS.test(entry.name)) continue;
+                    let size = 0;
+                    try {
+                        size = fs.statSync(full).size;
+                    } catch {
+                        size = 0;
+                    }
+                    addItem(path.relative(base, full), full, size, false);
+                }
+            }
+        }
+        const spec = LOADER_BY_DIR[dir];
+        const options = spec ? setup?.loaderOptions?.()?.[spec.classType] : null;
+        if (Array.isArray(options)) {
+            for (const name of options) {
+                if (typeof name === "string") addItem(name, "", 0, true);
+            }
+        }
+        inventoryCache.set(key, { at: Date.now(), items });
+        return items;
+    }
+
+    function resourceMatch(resource, root = comfyRoot()) {
+        const { dir, file } = targetParts(resource.target);
+        if (!root) return { present: false, path: "", rel: "", size: 0, matchedBy: "", mismatch: "" };
+        if (dir === "custom_nodes") {
+            const target = path.join(root, "custom_nodes", file);
+            return { present: isDir(target), path: isDir(target) ? target : "", rel: file, size: 0, matchedBy: "path", mismatch: "" };
+        }
+        const wanted = normalizeRelName(file);
+        const wantedBase = wanted.split("/").pop() || wanted;
+        const expectedSize = Number(resource.size) || 0;
+        const sameSize = (item) => !expectedSize || !item.size || item.size === expectedSize;
+        let directMismatch = "";
+        for (const candidate of modelFileCandidates(resource, root)) {
+            if (!isFile(candidate)) continue;
+            let candidateSize = 0;
+            try {
+                candidateSize = fs.statSync(candidate).size;
+            } catch {
+                candidateSize = 0;
+            }
+            if (sameSize({ size: candidateSize })) {
+                return { present: true, path: candidate, rel: path.relative(root, candidate), size: candidateSize, matchedBy: "path", mismatch: "" };
+            }
+            if (expectedSize && candidateSize) {
+                directMismatch = `本机同名文件大小不一致（${candidateSize} / 资源包 ${expectedSize}）`;
+            }
+        }
+        const inventory = inventoryFor(dir, root);
+        const exact = inventory.filter((item) => item.rel === wanted);
+        const byBase = inventory.filter((item) => (item.rel.split("/").pop() || item.rel) === wantedBase);
+        const choose = (items) => items.find((item) => sameSize(item)) || null;
+        let found = choose(exact) || choose(byBase);
+        let matchedBy = found ? (found.rel === wanted ? "path" : "name") : "";
+        let mismatch = "";
+        if (!found) {
+            const nameCandidate = exact[0] || byBase[0];
+            if (nameCandidate) {
+                found = nameCandidate;
+                matchedBy = nameCandidate.rel === wanted ? "path" : "name";
+                if (expectedSize && nameCandidate.size && nameCandidate.size !== expectedSize) {
+                    mismatch = `本机同名文件大小不一致（${nameCandidate.size} / 资源包 ${expectedSize}），可能不是同一版本`;
+                }
+            }
+        }
+        if (!found && expectedSize > 0) {
+            const bySize = inventory.filter((item) => item.size === expectedSize && item.size > 0);
+            if (bySize.length === 1) {
+                found = bySize[0];
+                matchedBy = "size";
+            }
+        }
+        if (found) {
+            return { present: true, path: found.abs, rel: found.rel, size: found.size, matchedBy, mismatch: mismatch || directMismatch };
+        }
+        return {
+            present: false,
+            path: "",
+            rel: "",
+            size: 0,
+            matchedBy: "",
+            mismatch: directMismatch,
+        };
+    }
+
     function existingPath(resource, root = comfyRoot()) {
-        return modelFileCandidates(resource, root).find(isFile) || "";
+        return resourceMatch(resource, root).path;
     }
 
     // 安装落点：优先 ComfyUI 实际在用、且可写的模型目录（含 extra_model_paths / 目录映射），
@@ -448,32 +677,35 @@ export function createResourceManager({ config, setup, registry, logger, workflo
     function resourceStatus(resource, root) {
         const { dir, file } = targetParts(resource.target);
         const isNode = dir === "custom_nodes" || resource.type === "node";
-        const nodeTarget = isNode && root ? path.join(root, "custom_nodes", file) : "";
-        const found = !root
-            ? ""
-            : isNode
-              ? (isDir(nodeTarget) ? nodeTarget : "")
-              : existingPath(resource, root);
-        const exists = Boolean(found);
-        let size = 0;
-        try {
-            size = exists ? fs.statSync(found).size : 0;
-        } catch {
-            size = 0;
+        const match = isNode
+            ? (() => {
+                  const target = root ? path.join(root, "custom_nodes", file) : "";
+                  const present = Boolean(target && isDir(target));
+                  return { present, path: present ? target : "", rel: file, size: 0, matchedBy: present ? "path" : "", mismatch: "" };
+              })()
+            : resourceMatch(resource, root);
+        const exists = Boolean(match.present);
+        let size = Number(match.size) || 0;
+        if (!size && match.path) {
+            try {
+                size = fs.statSync(match.path).size;
+            } catch {
+                size = 0;
+            }
         }
-        const registered = dir !== "custom_nodes" ? registeredModel(dir, file) : false;
+        const registered = dir !== "custom_nodes" ? exists : false;
         const isBake = resource.type === "bake";
         const missingRequires = isBake ? (resource.requires || []).filter((id) => {
             const dependency = index?.resources?.find((item) => item.id === id);
             if (!dependency) return true;
             if (!root) return true;
-            return !existingPath(dependency, root);
+            return !resourceMatch(dependency, root).present;
         }) : [];
         const status = isBake
             ? (exists ? "present" : missingRequires.length ? "blocked" : "missing")
             : isNode
               ? exists ? "present" : "missing"
-              : exists || registered
+              : exists
                 ? "present"
                 : "missing";
         const installed = lock.installed?.[resource.id] || null;
@@ -496,6 +728,9 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             present: status === "present",
             registered,
             exists,
+            matchedFile: match.rel || "",
+            matchedBy: match.matchedBy || "",
+            sizeMismatch: match.mismatch || "",
             actualSize: size,
             installed,
             missingRequires,
@@ -1006,11 +1241,11 @@ export function createResourceManager({ config, setup, registry, logger, workflo
     async function downloadResource(resource, jobItem, signal) {
         const root = comfyRoot();
         if (!root) throw new Error("未找到 ComfyUI 安装目录");
-        const existing = existingPath(resource, root);
-        if (existing) {
+        const existing = resourceMatch(resource, root);
+        if (existing.present) {
             jobItem.status = "skipped";
             jobItem.skipped = true;
-            jobItem.bytes = fs.statSync(existing).size;
+            jobItem.bytes = existing.size || (existing.path ? fs.statSync(existing.path).size : 0);
             jobItem.size = jobItem.size || jobItem.bytes;
             return;
         }
@@ -1363,6 +1598,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 updateJob(job);
             }
         }
+        inventoryCache.clear();
+        extraPathsCache.clear();
         if (job.status === "running") {
             const failed = job.items.filter((item) => item.status === "error").length;
             const hinted = job.items.some((item) => item.status === "error" && item.hint);
@@ -1451,6 +1688,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
     }
 
     async function refresh() {
+        inventoryCache.clear();
+        extraPathsCache.clear();
         if (!hardwareOverride) hardware = await probeHardware();
         await loadIndex();
         try {
