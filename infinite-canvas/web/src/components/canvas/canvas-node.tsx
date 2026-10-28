@@ -585,8 +585,8 @@ export const CanvasNode = React.memo(function CanvasNode({
                             <span className="absolute -bottom-1 right-4 size-2 rotate-45 border-b border-r" style={{ background: "rgba(7,21,33,.94)", borderColor: "rgba(120,210,255,.35)" }} />
                         </div>
                         <div className={`fish-guard-mascot absolute bottom-0 ${fishWhipSide === "left" ? "left-0" : "right-0"} h-[220px] w-[170px]`} data-side={fishWhipSide}>
-                            <img src="/skins/lantern-guard-idle.png" alt="" draggable={false} className="fish-guard-frame fish-guard-frame-idle" />
-                            <img src="/skins/lantern-guard-raise.png" alt="" draggable={false} className="fish-guard-frame fish-guard-frame-raise" />
+                            <img src="/skins/lantern-guard-idle.png" alt="" draggable={false} className="fish-guard-frame fish-guard-frame-idle" style={{ transform: fishWhipSide === "left" ? "scaleX(-1)" : "none" }} />
+                            <img src="/skins/lantern-guard-raise.png" alt="" draggable={false} className="fish-guard-frame fish-guard-frame-raise" style={{ transform: fishWhipSide === "left" ? "scaleX(-1)" : "none" }} />
                         </div>
                     </div>
                 ) : (
@@ -597,8 +597,8 @@ export const CanvasNode = React.memo(function CanvasNode({
                         data-angel-guard
                     >
                         <div className={`angel-mascot absolute bottom-0 ${fishWhipSide === "left" ? "left-0" : "right-0"} h-[230px] w-[210px]`} data-side={fishWhipSide}>
-                            <img src="/skins/angel-girl-idle.webp" alt="" draggable={false} className="angel-frame angel-frame-idle" />
-                            <img src="/skins/angel-girl-write.webp" alt="" draggable={false} className="angel-frame angel-frame-write" />
+                            <img src="/skins/angel-girl-idle.webp" alt="" draggable={false} className="angel-frame angel-frame-idle" style={{ transform: fishWhipSide === "left" ? "scaleX(-1)" : "none" }} />
+                            <img src="/skins/angel-girl-write.webp" alt="" draggable={false} className="angel-frame angel-frame-write" style={{ transform: fishWhipSide === "left" ? "scaleX(-1)" : "none" }} />
                         </div>
                     </div>
                 )

@@ -1,16 +1,16 @@
 {
-  "version": "v0.21.13",
+  "version": "v0.21.14",
   "publishedAt": "2026-10-29",
-  "notes": "天使娘台词改为「圣光与你同在」；水母娘/天使娘生成动画在卡片左侧时镜像、始终面向卡片；免费皮肤与激活码逻辑不变。",
+  "notes": "修正水母娘/天使娘的左右镜像：左侧镜像、右侧正常；天使娘台词「圣光与你同在」，水母娘保持原激活码。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.13.zip",
-    "sha256": "5523d36aea27f425c47b0cbdd5f9c641a59bbf6bf94b359743b6e893375a9ab9",
-    "size": 36022880
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.14.zip",
+    "sha256": "ef9af14af14492590e8b41fd2cdaca4d00c0af026c17a48066889c43beb74324",
+    "size": 36023063
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
