@@ -39,6 +39,28 @@ function isDir(dir) {
     }
 }
 
+// Windows 下 child.kill() 只结束包装脚本，编译器孙进程会继续占 GPU；
+// 取消时必须整棵进程树一起结束。
+function killChildTree(child) {
+    if (!child || !child.pid) return;
+    if (process.platform === "win32") {
+        const killer = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
+        killer.on("error", () => {
+            try {
+                child.kill();
+            } catch {
+                // 子进程已退出。
+            }
+        });
+        return;
+    }
+    try {
+        child.kill();
+    } catch {
+        // 子进程已退出。
+    }
+}
+
 function readJson(file) {
     try {
         return JSON.parse(fs.readFileSync(file, "utf8").replace(/^\uFEFF/, ""));
@@ -1070,6 +1092,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         if (!python) throw new Error("未找到 ComfyUI 的 Python");
         const target = targetPath(resource, root);
         const h3Trt = resource.builder?.kind === "h3-trt-vae";
+        // TRT 编译先写 .part，成功后再改名；避免取消或磁盘写满留下被当成已装的半成品 engine
+        const bakeOutput = h3Trt ? `${target}.part` : target;
         let args;
         let trtInput = "";
         let trtCompiler = "";
@@ -1084,7 +1108,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             if (!isFile(compiler)) throw new Error("缺少 ComfyUI-H3VAE_TRT/compile.py，请先安装 H3 TRT VAE 节点");
             trtInput = input;
             trtCompiler = compiler;
-            args = [script, "--compiler", compiler, "--input", input, "--output", target, "--device", String(resource.builder?.device ?? 0)];
+            args = [script, "--compiler", compiler, "--input", input, "--output", bakeOutput, "--device", String(resource.builder?.device ?? 0)];
         } else {
             const script = path.join(config.rootDir, "scripts", "bake-moss-preset.py");
             if (!isFile(script)) throw new Error("缺少烘焙脚本 scripts/bake-moss-preset.py");
@@ -1099,6 +1123,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         jobItem.status = "baking";
         jobItem.source = h3Trt ? "本机编译 TRT Engine" : "本地烘焙";
         await fsp.mkdir(path.dirname(target), { recursive: true });
+        if (h3Trt) await fsp.rm(bakeOutput, { force: true }).catch(() => {});
         try {
             await new Promise((resolve, reject) => {
                 const child = spawn(python, args, { cwd: config.rootDir, windowsHide: true });
@@ -1113,11 +1138,13 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 child.on("exit", (code) => {
                     jobItem.child = null;
                     if (signal?.aborted) return reject(new Error("已取消"));
-                    if (code !== 0 || !isFile(target)) return reject(new Error(`烘焙失败（exit ${code}）${stderr ? `：${truncate(stderr, 500)}` : ""}`));
+                    if (code !== 0 || !isFile(bakeOutput)) return reject(new Error(`烘焙失败（exit ${code}）${stderr ? `：${truncate(stderr, 500)}` : ""}`));
                     resolve();
                 });
             });
+            if (h3Trt) await fsp.rename(bakeOutput, target);
         } catch (error) {
+            if (h3Trt) await fsp.rm(bakeOutput, { force: true }).catch(() => {});
             if (h3Trt && !signal?.aborted) {
                 error.hint = buildTrtCompileHint({ python, compiler: trtCompiler, input: trtInput, output: target, device: resource.builder?.device ?? 0 });
             }
@@ -1272,13 +1299,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         job.message = "已取消";
         for (const controller of job.controllers.values()) controller.abort(new Error("用户取消"));
         for (const item of job.items) {
-            if (item.child) {
-                try {
-                    item.child.kill();
-                } catch {
-                    // 忽略子进程已退出。
-                }
-            }
+            if (item.child) killChildTree(item.child);
             if (["queued", "downloading", "verifying", "baking"].includes(item.status)) item.status = "error", item.error = "已取消";
         }
         updateJob(job);
