@@ -395,6 +395,15 @@ export async function createGatewayApp(overrides = {}) {
     }
   });
 
+  app.post("/api/resources/browse", async (req, res) => {
+    try {
+      const result = await resources.browseResourceDir(String(req.body?.resourceId || ""), String(req.body?.path || ""));
+      res.json({ ok: true, ...result });
+    } catch (error) {
+      res.status(error?.status || 400).json({ ok: false, error: { message: error?.message || String(error) } });
+    }
+  });
+
   app.post("/api/resources/replacement", async (req, res) => {
     try {
       const status = await resources.setResourceReplacement(String(req.body?.resourceId || ""), String(req.body?.file || ""));

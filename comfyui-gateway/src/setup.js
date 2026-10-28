@@ -299,6 +299,62 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         return setModelAliases([entry]);
     }
 
+    const BROWSE_MODEL_EXTENSIONS = /\.(safetensors|sft|ckpt|pt|pth|bin|gguf|onnx|engine)$/i;
+
+    async function browseModelDir({ dir, path: relative = "" } = {}) {
+        if (!dir || !MODEL_DIR_KEYS[dir]) throw new Error("不支持的模型目录");
+        const roots = modelRootsForDir(dir).filter((root) => safeStat(root)?.isDirectory());
+        if (!roots.length) throw new Error("未找到 ComfyUI 的模型目录");
+        // ComfyUI 常把 models/unet 放在 diffusion_models 前面但为空；优先选真正有内容的目录。
+        let root = roots[0];
+        for (const candidate of roots) {
+            try {
+                const names = fs.readdirSync(candidate, { withFileTypes: true });
+                if (names.some((entry) => !entry.name.startsWith(".") && (entry.isDirectory() || BROWSE_MODEL_EXTENSIONS.test(entry.name)))) {
+                    root = candidate;
+                    break;
+                }
+            } catch {
+                // 试下一个根目录。
+            }
+        }
+        let rel = String(relative || "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+        if (rel.split("/").includes("..")) throw new Error("目录路径不合法");
+        let current = root;
+        if (rel) {
+            current = path.resolve(root, rel);
+            const check = path.relative(root, current);
+            if (check.startsWith("..") || path.isAbsolute(check)) throw new Error("目录路径不合法");
+        }
+        const stat = safeStat(current);
+        if (!stat) throw new Error("目录不存在");
+        if (!stat.isDirectory()) {
+            rel = path.posix.dirname(rel);
+            current = path.resolve(root, rel === "." ? "" : rel);
+        }
+        const entries = fs
+            .readdirSync(current, { withFileTypes: true })
+            .filter((entry) => !entry.name.startsWith("."))
+            .map((entry) => {
+                const full = path.join(current, entry.name);
+                if (entry.isDirectory()) {
+                    return { name: entry.name, path: path.posix.join(rel, entry.name), isDir: true, size: 0 };
+                }
+                if (!entry.isFile() || !BROWSE_MODEL_EXTENSIONS.test(entry.name)) return null;
+                let size = 0;
+                try {
+                    size = fs.statSync(full).size;
+                } catch {
+                    size = 0;
+                }
+                return { name: entry.name, path: path.posix.join(rel, entry.name), isDir: false, size };
+            })
+            .filter(Boolean)
+            .sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1));
+        const parent = rel ? path.posix.dirname(rel) === "." ? "" : path.posix.dirname(rel) : null;
+        return { root, current: rel, parent, entries };
+    }
+
     async function pickModelFile({ dir } = {}) {
         if (!dir || !MODEL_DIR_KEYS[dir]) throw new Error("不支持的模型目录");
         const roots = modelRootsForDir(dir).filter((root) => safeStat(root)?.isDirectory());
@@ -311,7 +367,16 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
             `$d.InitialDirectory = ${quote(initial)}`,
             `$d.Filter = ${quote("Models|*.safetensors;*.sft;*.ckpt;*.pt;*.pth;*.bin;*.gguf;*.onnx;*.engine|All files|*.*")}`,
             "$d.Multiselect = $false",
-            "if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($d.FileName) }",
+            "$owner = New-Object System.Windows.Forms.Form",
+            "$owner.Text = 'Select model file'",
+            "$owner.TopMost = $true",
+            "$owner.ShowInTaskbar = $false",
+            "$owner.WindowState = [System.Windows.Forms.FormWindowState]::Minimized",
+            "$owner.Show()",
+            "$owner.Activate()",
+            "$result = $d.ShowDialog($owner)",
+            "$owner.Close()",
+            "if ($result -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($d.FileName) }",
         ].join("; ");
         const systemRoot = process.env.SystemRoot || "C:\Windows";
         const powershell = path.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
@@ -547,6 +612,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         setModelAlias,
         setModelAliases,
         pickModelFile,
+        browseModelDir,
         modelCandidates,
         loraNames,
         loaderOptions,

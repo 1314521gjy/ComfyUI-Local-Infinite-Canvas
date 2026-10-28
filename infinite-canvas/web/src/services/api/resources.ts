@@ -142,11 +142,6 @@ export type ResourceStatus = {
     comfyRoot?: string;
     comfyPython?: string;
     comfyReachable?: boolean;
-    unresolvedWorkflows?: Array<{
-        id: string;
-        label: string;
-        problems: Array<{ type?: string; message?: string; classType?: string; input?: string; value?: string; candidates?: string[] }>;
-    }>;
     promptCapabilities?: PromptCapabilities;
     modelRoots?: Record<string, string[]>;
     hardware?: { gpuName?: string; vramTotalMb?: number; ramTotalBytes?: number; ramFreeBytes?: number; detectedAt?: string; source?: string } | null;
@@ -245,15 +240,39 @@ export async function fetchResourceJob(id: string): Promise<ResourceJob> {
     return data.job as ResourceJob;
 }
 
-export async function pickResourceReplacement(resourceId: string): Promise<string> {
-    const response = await gatewayFetch(`${gatewayRoot}/api/resources/pick-replacement`, {
+export type ModelBrowserEntry = { name: string; path: string; isDir: boolean; size: number };
+export type ModelBrowserResult = { root: string; current: string; parent: string | null; entries: ModelBrowserEntry[] };
+
+export async function browseResourceDir(resourceId: string, path = ""): Promise<ModelBrowserResult> {
+    const response = await gatewayFetch(`${gatewayRoot}/api/resources/browse`, {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json" },
-        body: JSON.stringify({ resourceId }),
+        body: JSON.stringify({ resourceId, path }),
     });
     const data = await readJson(response);
-    if (!response.ok || data.ok === false) throw new Error(errorMessage(data, `打开模型目录失败（HTTP ${response.status}）`));
-    return String(data.file || "");
+    if (!response.ok || data.ok === false) throw new Error(errorMessage(data, `读取模型目录失败（HTTP ${response.status}）`));
+    return { root: String(data.root || ""), current: String(data.current || ""), parent: data.parent ?? null, entries: Array.isArray(data.entries) ? data.entries : [] };
+}
+
+export async function pickResourceReplacement(resourceId: string): Promise<string> {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 180000);
+    try {
+        const response = await gatewayFetch(`${gatewayRoot}/api/resources/pick-replacement`, {
+            method: "POST",
+            headers: { Accept: "application/json", "Content-Type": "application/json" },
+            body: JSON.stringify({ resourceId }),
+            signal: controller.signal,
+        });
+        const data = await readJson(response);
+        if (!response.ok || data.ok === false) throw new Error(errorMessage(data, `打开模型目录失败（HTTP ${response.status}）`));
+        return String(data.file || "");
+    } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") throw new Error("打开文件选择框超时，请重试");
+        throw error;
+    } finally {
+        window.clearTimeout(timer);
+    }
 }
 
 export async function setResourceReplacement(resourceId: string, file: string): Promise<ResourceStatus> {
@@ -265,16 +284,6 @@ export async function setResourceReplacement(resourceId: string, file: string): 
     const data = await readJson(response);
     if (!response.ok || data.ok === false) throw new Error(errorMessage(data, `保存模型替换失败（HTTP ${response.status}）`));
     return data.status as ResourceStatus;
-}
-
-export async function setModelAlias(input: { classType: string; input: string; from: string; to: string }): Promise<void> {
-    const response = await gatewayFetch(`${gatewayRoot}/api/setup/model-alias`, {
-        method: "POST",
-        headers: { Accept: "application/json", "Content-Type": "application/json" },
-        body: JSON.stringify(input),
-    });
-    const data = await readJson(response);
-    if (!response.ok || data.ok === false) throw new Error(errorMessage(data, `模型匹配保存失败（HTTP ${response.status}）`));
 }
 
 export async function setWorkflowVisibility(id: string, enabled: boolean): Promise<void> {

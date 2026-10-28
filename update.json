@@ -1,16 +1,16 @@
 {
-  "version": "v0.21.6",
+  "version": "v0.21.7",
   "publishedAt": "2026-10-29",
-  "notes": "资源行可自选替换本地模型（默认打开 ComfyUI 模型目录）；工作流模型匹配支持同名自动识别和手动确认，不静默替换。",
+  "notes": "资源自选替换改为应用内模型目录浏览器，默认 ComfyUI 模型目录，不再弹系统框/不会一直转圈；移除顶部重复的模型匹配区。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.6.zip",
-    "sha256": "c2e85b2b554adf43484b8ee3eace267966fa301953a792e0e8de8bf07615d595",
-    "size": 34166870
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.7.zip",
+    "sha256": "f270fc74febc469a70a5787a863a2d3c36442e6d1b1736ce36179b98ff8accc4",
+    "size": 34168497
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

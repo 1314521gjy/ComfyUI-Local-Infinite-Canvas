@@ -713,6 +713,14 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         return setup.pickModelFile({ dir });
     }
 
+    async function browseResourceDir(resourceId, relative = "") {
+        const resource = resourceById(resourceId);
+        if (!resource) throw new Error("资源不存在");
+        if (!["model", "bake"].includes(resource.type || "model")) throw new Error("这个资源不支持替换");
+        const dir = targetParts(resource.target).dir;
+        return setup.browseModelDir({ dir, path: relative });
+    }
+
     async function setResourceReplacement(resourceId, file) {
         const resource = resourceById(resourceId);
         if (!resource) throw new Error("资源不存在");
@@ -1260,19 +1268,6 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 return map;
             })(),
             comfyReachable: Boolean(setup?.status?.().comfyReachable),
-            unresolvedWorkflows: (() => {
-                const state = setup?.status?.();
-                return (state?.workflows || [])
-                    .filter((workflow) => !workflow.available)
-                    .map((workflow) => ({
-                        id: workflow.id,
-                        label: workflow.name || workflow.id,
-                        problems: (workflow.problems || []).filter(
-                            (problem) => problem.type === "model" && problem.classType && problem.input && problem.value && Array.isArray(problem.candidates) && problem.candidates.length,
-                        ),
-                    }))
-                    .filter((workflow) => workflow.problems.length);
-            })(),
             promptCapabilities: promptCapabilities(resources),
             hardware: hardware || null,
             recommendationAvailable: hardwareAvailable && recommendedPacks.length > 0,
@@ -2150,5 +2145,5 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         return status();
     }
 
-    return { init, status, refresh, install, setMainModel, setResourceReplacement, pickResourceReplacement, getJob, cancelJob, comfyRoot, comfyPython, indexPath };
+    return { init, status, refresh, install, setMainModel, setResourceReplacement, pickResourceReplacement, browseResourceDir, getJob, cancelJob, comfyRoot, comfyPython, indexPath };
 }
