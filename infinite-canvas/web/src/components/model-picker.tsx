@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/u
 import { cn } from "@/lib/utils";
 import {
     baseModelOptions,
+    channelModelOf,
     modelOptionLabel,
     modelOptionName,
     selectableModelsByCapability,
@@ -16,7 +17,7 @@ import {
     type ModelCapability,
 } from "@/stores/use-config-store";
 
-type ModelPickerExtraOption = { value: string; label: string };
+type ModelPickerExtraOption = { value: string; label: string; disabled?: boolean };
 
 type ModelPickerProps = {
     config: AiConfig;
@@ -90,7 +91,7 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
                     options.map((model) => {
                         const extra = extraOptions.find((option) => option.value === model);
                         return (
-                            <SelectItem key={model} value={model} textValue={optionLabel(model)}>
+                            <SelectItem key={model} value={model} textValue={optionLabel(model)} disabled={extra?.disabled}>
                                 {extra ? (
                                     <span className="flex min-w-0 items-center gap-2">
                                         <ScanText className="size-4 shrink-0 opacity-70" />
@@ -157,7 +158,13 @@ type LevelPickerProps = {
 
 /** 一级下拉：只选工作流；变体归到其所属工作流下。 */
 export function WorkflowModelPicker({ config, value, onChange, capability, className, fullWidth = false, placeholder, onMissingConfig }: LevelPickerProps & { capability?: ModelCapability }) {
-    const options = useMemo<LevelOption[]>(() => workflowModelOptions(config, capability).map((model) => ({ value: model, label: modelOptionLabel(config, model) })), [config, capability]);
+    const options = useMemo<LevelOption[]>(
+        () =>
+            workflowModelOptions(config, capability)
+                .filter((model) => channelModelOf(config, model)?.model.workflowId !== "video-h3-fast")
+                .map((model) => ({ value: model, label: modelOptionLabel(config, model) })),
+        [config, capability],
+    );
     const selected = useMemo(() => workflowModelValue(config, value) || value, [config, value]);
     return <LevelSelect value={selected} options={options} onChange={onChange} className={className} fullWidth={fullWidth} placeholder={placeholder || i18n.t("settingsPanels.model.select")} onMissingConfig={onMissingConfig} icon="workflow" width="w-72" />;
 }

@@ -446,6 +446,70 @@ function writeRuntimeConfig(cfg, gatewayUrl) {
   log(`运行时网关配置已写入：${runtime.LOCAL_GATEWAY_URL}`);
 }
 
+// 旧版页面把网关写死在 8190。网关换端口后，旧标签页会一直 Failed to fetch；
+// 只要 8190 空闲就起一个透明转发，旧页面无需刷新也能继续用。
+const LEGACY_GATEWAY_PORT = 8190;
+
+export function createLegacyProxyServer(targetUrl) {
+  let target;
+  try {
+    target = new URL(targetUrl);
+  } catch {
+    return null;
+  }
+  const targetPort = Number(target.port) || 80;
+  const server = http.createServer((req, res) => {
+    const headers = { ...req.headers, host: `127.0.0.1:${targetPort}` };
+    const proxyReq = http.request(
+      {
+        hostname: "127.0.0.1",
+        port: targetPort,
+        path: req.url,
+        method: req.method,
+        headers,
+      },
+      (proxyRes) => {
+        res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
+        proxyRes.pipe(res);
+      },
+    );
+    proxyReq.on("error", (error) => {
+      if (!res.headersSent) {
+        res.writeHead(502, { "content-type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ ok: false, error: { message: `本地网关暂不可用：${error.message}` } }));
+      } else {
+        res.destroy();
+      }
+    });
+    req.on("aborted", () => proxyReq.destroy());
+    req.pipe(proxyReq);
+  });
+  server.on("clientError", (_error, socket) => {
+    if (socket.writable) socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
+  });
+  return server;
+}
+
+async function startLegacyGatewayProxy(cfg, gatewayUrl) {
+  if (cfg.gatewayPort === LEGACY_GATEWAY_PORT) return null;
+  const server = createLegacyProxyServer(gatewayUrl);
+  if (!server) return null;
+  const error = await new Promise((resolve) => {
+    server.once("error", resolve);
+    server.listen(LEGACY_GATEWAY_PORT, "127.0.0.1", () => resolve(null));
+  });
+  if (error) {
+    if (error.code === "EADDRINUSE") {
+      log(`旧端口 ${LEGACY_GATEWAY_PORT} 已被占用，跳过兼容转发（新页面不受影响）`, "WARN");
+    } else {
+      log(`旧端口 ${LEGACY_GATEWAY_PORT} 兼容转发启动失败：${error.message}`, "WARN");
+    }
+    return null;
+  }
+  log(`旧端口兼容转发已启用：http://127.0.0.1:${LEGACY_GATEWAY_PORT} → ${gatewayUrl}（旧标签页可直接恢复）`);
+  return server;
+}
+
 function createCanvasServer(cfg) {
   const distDir = path.resolve(cfg.canvasDist);
   const indexPath = path.join(distDir, "index.html");
@@ -547,6 +611,7 @@ const state = {
   adoptedComfyUrl: null,
   comfyUrl: null,
   gatewayChild: null,
+  legacyProxy: null,
   canvasServer: null,
   controlServer: null,
   sessionTimer: null,
@@ -670,6 +735,14 @@ async function shutdown(exitCode = 0, reason = "", { stopAdoptedComfy = false } 
     state.controlServer.closeAllConnections?.();
     state.controlServer.close();
     state.controlServer = null;
+  }
+  if (state.legacyProxy) {
+    const proxy = state.legacyProxy;
+    await new Promise((resolve) => {
+      proxy.close(() => resolve());
+      proxy.closeAllConnections?.();
+    });
+    state.legacyProxy = null;
   }
   if (state.canvasServer) {
     const server = state.canvasServer;
@@ -1080,6 +1153,12 @@ async function main() {
     }
   }
 
+  if (!DRY_RUN) {
+    state.legacyProxy = await startLegacyGatewayProxy(cfg, gatewayResult.url);
+  } else if (cfg.gatewayPort !== LEGACY_GATEWAY_PORT) {
+    log(`[dry-run] 将在 127.0.0.1:${LEGACY_GATEWAY_PORT} 启动旧端口兼容转发 → ${gatewayResult.url}`);
+  }
+
   /* 4. 画布静态服务 */
   let canvasResult = canvas;
   if (!canvas) {
@@ -1158,11 +1237,14 @@ async function main() {
   await shutdown(0);
 }
 
-main().catch(async (err) => {
-  log(`启动器异常：${err?.stack || err}`, "ERROR");
-  try {
-    await shutdown(1);
-  } catch {
-    process.exit(1);
-  }
-});
+const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invokedDirectly) {
+  main().catch(async (err) => {
+    log(`启动器异常：${err?.stack || err}`, "ERROR");
+    try {
+      await shutdown(1);
+    } catch {
+      process.exit(1);
+    }
+  });
+}

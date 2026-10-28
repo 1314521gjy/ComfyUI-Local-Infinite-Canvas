@@ -336,12 +336,14 @@ export async function createGatewayApp(overrides = {}) {
 
   app.get("/health", async (_req, res) => {
     const reachable = await Promise.race([comfy.isReachable(), sleep(1500).then(() => false)]);
+    const setupStatus = setup.status();
     res.json({
       status: "ok",
       version: config.version,
       comfy: { url: config.comfyUrl, reachable },
-      workflows: { count: registry.list().length },
-      setup: { phase: setup.status().phase, counts: setup.status().counts },
+      // 与设置页一致：hidden 的辅助工作流不计入可用性统计。
+      workflows: { count: setupStatus.counts?.total || registry.list().length },
+      setup: { phase: setupStatus.phase, counts: setupStatus.counts },
       tasks: { count: tasks.list().length, retentionDays: config.taskRetentionDays, maxStoredTasks: config.maxStoredTasks },
       uptimeSeconds: Math.round(process.uptime()),
     });

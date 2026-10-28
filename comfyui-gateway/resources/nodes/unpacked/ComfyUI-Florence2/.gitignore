@@ -1,0 +1,10 @@
+.DS_Store
+*pyc
+.vscode
+__pycache__
+*.egg-info
+*.bak
+checkpoints
+results
+backup
+tests/

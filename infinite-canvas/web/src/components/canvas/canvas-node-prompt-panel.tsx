@@ -21,6 +21,7 @@ import { CanvasNodeReferenceBar } from "./canvas-node-reference-bar";
 import { PromptOptimizeOptions } from "./prompt-optimize-options";
 import { abortCaptionJob, hasCaptionJob, registerCaptionJob, releaseCaptionJob } from "@/lib/canvas/caption-jobs";
 import { abortPromptOptimizeJob, hasPromptOptimizeJob, registerPromptOptimizeJob, releasePromptOptimizeJob } from "@/lib/canvas/prompt-optimize-jobs";
+import { usePromptCapabilities } from "@/hooks/use-prompt-capabilities";
 
 export type CanvasNodeGenerationMode = CanvasGenerationMode;
 
@@ -48,6 +49,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     const globalConfig = useEffectiveConfig();
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const updateConfig = useConfigStore((state) => state.updateConfig);
+    const { capabilities, engineAvailable } = usePromptCapabilities();
     const theme = useCanvasTheme();
     const mode = modeOverride ?? defaultMode(node.type);
     const config = buildNodeConfig(globalConfig, node, mode);
@@ -115,7 +117,11 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     const captionResult = mode === "text" ? node.metadata?.captionPrompt || "" : "";
     const captionError = mode === "text" ? node.metadata?.captionError || "" : "";
     const captionEngineUsed = node.metadata?.captionEngineUsed || captionEngine || "qwen35";
-    const canCaption = mode === "text" && Boolean(captionEngine) && (captionEngine !== "cloud" || optimizeCloudReady) && imageReferences.length > 0 && !isRunning && !captionRunning;
+    const captionQwenReady = engineAvailable("qwen");
+    const captionFlorenceReady = engineAvailable("florence");
+    const captionLocalCapability = captionEngine === "qwen35" ? capabilities?.engines.qwen : captionEngine === "florence" ? capabilities?.engines.florence : null;
+    const captionLocalReady = captionEngine === "cloud" ? true : captionEngine === "qwen35" ? captionQwenReady : captionEngine === "florence" ? captionFlorenceReady : true;
+    const canCaption = mode === "text" && Boolean(captionEngine) && captionLocalReady && (captionEngine !== "cloud" || optimizeCloudReady) && imageReferences.length > 0 && !isRunning && !captionRunning;
     const hasMediaReferences = mentionReferences.some((reference) => reference.kind !== "text");
     const textVideoHasReferences = isH3T2V && hasMediaReferences;
     const frameMode: "first" | "last" | "both" =
@@ -496,8 +502,8 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                                 }}
                                 capability="text"
                                 extraOptions={[
-                                    { value: "caption:qwen35", label: "反推 · Qwen3.5-9B" },
-                                    { value: "caption:florence", label: "反推 · Florence-2 PromptGen" },
+                                    { value: "caption:qwen35", label: `反推 · Qwen3.5-9B${captionQwenReady ? "" : `（${t("canvas.promptPanel.captionNotInstalled")}）`}`, disabled: !captionQwenReady },
+                                    { value: "caption:florence", label: `反推 · Florence-2 PromptGen${captionFlorenceReady ? "" : `（${t("canvas.promptPanel.captionNotInstalled")}）`}`, disabled: !captionFlorenceReady },
                                     ...(optimizeCloudReady ? [{ value: "caption:cloud", label: `反推 · ${t("canvas.promptPanel.optimizeEngineCloud")}（${config.promptCloudModel}）` }] : []),
                                 ]}
                                 onMissingConfig={() => openConfigDialog(true)}
@@ -544,6 +550,16 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                     </span>
                 </Button>
             </div>
+            {mode === "text" && captionEngine && captionEngine !== "cloud" && captionLocalCapability && !captionLocalCapability.available ? (
+                <div className="mt-1.5 flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                    <span className="min-w-0 truncate" title={captionLocalCapability.reasons.join("；")}>
+                        {t("canvas.promptPanel.captionLocalMissing")}
+                    </span>
+                    <button type="button" className="shrink-0 underline underline-offset-2" onClick={() => openConfigDialog(false, "resources")}>
+                        {t("canvas.promptPanel.captionInstall")}
+                    </button>
+                </div>
+            ) : null}
             {(isH3 || isImage) && optimizeOptionsOpen ? (
                 <PromptOptimizeOptions
                     className="mt-2"
@@ -552,9 +568,11 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                     language={optimizeLanguage}
                     cloudReady={optimizeCloudReady}
                     cloudModel={config.promptCloudModel}
+                    localReady={isImage ? engineAvailable("imagePe") : engineAvailable("teMan")}
                     onEngineChange={(engine) => updateConfig("promptApiEngine", engine)}
                     onLanguageChange={(language) => updateConfig("promptOptimizeLanguage", language)}
                     onOpenSettings={() => openConfigDialog(true, "cloud-api")}
+                    onOpenLocalSettings={() => openConfigDialog(false, "resources")}
                     onStart={() => (isH3 ? void optimizePrompt() : void optimizeImagePrompt())}
                     onClose={() => setOptimizeOptionsOpen(false)}
                 />

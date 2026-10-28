@@ -148,6 +148,127 @@ test("resources can install a custom node zip", async () => {
     }
 });
 
+test("directory models install from a zip into the LLM model root", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-dir-test-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(path.join(comfy, "models", "LLM"), { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    const source = path.join(root, "source");
+    await fsp.mkdir(path.join(source, "Florence-test"), { recursive: true });
+    await fsp.writeFile(path.join(source, "Florence-test", "config.json"), '{}\n', "utf8");
+    await fsp.writeFile(path.join(source, "Florence-test", "model.safetensors"), "weights", "utf8");
+    const zipped = spawnSync("tar", ["-a", "-c", "-f", "model.zip", "-C", "source", "Florence-test"], { cwd: root, encoding: "utf8" });
+    assert.equal(zipped.status, 0, zipped.stderr);
+    const payload = await fsp.readFile(path.join(root, "model.zip"));
+    const server = http.createServer((_req, res) => {
+        res.setHeader("Content-Type", "application/zip");
+        res.setHeader("Content-Length", payload.length);
+        res.end(payload);
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = server.address().port;
+    const index = {
+        schema: 1,
+        version: "test-dir-1",
+        packs: [{ id: "test", resources: ["test-dir"] }],
+        resources: [{ id: "test-dir", type: "dir", label: "Test dir model", target: "LLM/Florence-test", size: payload.length, sources: [`http://127.0.0.1:${port}/model.zip`] }],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: { loaderOptions: () => ({}), status: () => ({ comfyReachable: true }), scan: async () => ({}) },
+        logger: null,
+    });
+    try {
+        await manager.init();
+        assert.equal(manager.status().resources[0].status, "missing");
+        const job = manager.install({ ids: ["test-dir"] });
+        const finished = await waitForJob(manager, job.id);
+        assert.equal(finished.status, "done", JSON.stringify(finished));
+        assert.equal(fs.existsSync(path.join(comfy, "models", "LLM", "Florence-test", "config.json")), true);
+        assert.equal(manager.status().resources[0].status, "present");
+    } finally {
+        await new Promise((resolve) => server.close(resolve));
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});
+
+test("pip resources report missing when the ComfyUI Python cannot import the module", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-pip-test-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(comfy, { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    const index = {
+        schema: 1,
+        version: "test-pip-1",
+        packs: [{ id: "test", resources: ["test-pip"] }],
+        resources: [{ id: "test-pip", type: "pip", label: "Test runtime", target: "LLM/test-runtime", module: "definitely_missing_module", wheels: { "3.12": "https://example.test/w.whl" } }],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: { loaderOptions: () => ({}), status: () => ({ comfyReachable: true }), scan: async () => ({}) },
+        logger: null,
+    });
+    try {
+        await manager.init();
+        const item = manager.status().resources[0];
+        assert.equal(item.status, "missing");
+        assert.match(item.pipReason, /Python|definitely_missing_module/);
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});
+
+test("prompt capabilities explain missing local reverse dependencies", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-prompt-caps-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(comfy, { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    const index = {
+        schema: 1,
+        version: "test-caps-1",
+        packs: [],
+        resources: [
+            { id: "prompt_qwen_gguf", type: "model", target: "LLM/qwen.gguf" },
+            { id: "prompt_qwen_mmproj", type: "model", target: "LLM/mmproj.gguf" },
+            { id: "prompt_llama_node", type: "node", target: "custom_nodes/llama" },
+            { id: "prompt_te_man", type: "node", target: "custom_nodes/TE_MAN" },
+            { id: "prompt_llama_python", type: "pip", target: "LLM/runtime", module: "definitely_missing_module" },
+            { id: "prompt_florence_node", type: "node", target: "custom_nodes/florence" },
+            { id: "prompt_florence_model", type: "dir", target: "LLM/florence" },
+            { id: "qwen3.5_9b_int8_convrot", type: "model", target: "text_encoders/te.safetensors" },
+        ],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: { loaderOptions: () => ({}), status: () => ({ comfyReachable: true }), hasNodeClass: () => false, scan: async () => ({}) },
+        logger: null,
+    });
+    try {
+        await manager.init();
+        const caps = manager.status().promptCapabilities;
+        assert.equal(caps.comfyReachable, true);
+        assert.equal(caps.engines.qwen.available, false);
+        assert.ok(caps.engines.qwen.missingResources.some((item) => item.id === "prompt_qwen_gguf"));
+        assert.ok(caps.engines.qwen.missingNodes.includes("llama_cpp_model_loader"));
+        assert.equal(caps.engines.florence.available, false);
+        assert.equal(caps.engines.teMan.available, false);
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});
+
 test("node resources can install from a bundled directory without extracting", async () => {
     const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-node-dir-test-"));
     const comfy = path.join(root, "ComfyUI");
@@ -424,7 +545,7 @@ test("krea2 pack matches the zimage shape with no bundled LoRAs", () => {
     assert.ok(!pack.workflowDependencies["image-krea2-turbo"].includes("krea2_turbo_int8_convrot"));
     assert.equal(index.resources.some((item) => item.id === "krea2_darkbrush_lora"), false);
     assert.equal(index.resources.some((item) => item.id === "krea2_retroanime_lora"), false);
-    assert.equal(index.resources.length, 52);
+    assert.equal(index.resources.length, 59);
 });
 
 test("h3 pack lists the shared models, VDN/noVDN variants and character swap", () => {

@@ -1,4 +1,5 @@
 import { LOCAL_GATEWAY_BASE_URL } from "@/constant/app-mode";
+import { gatewayFetch } from "@/services/api/gateway-status";
 
 const gatewayRoot = LOCAL_GATEWAY_BASE_URL.replace(/\/v1\/?$/, "");
 
@@ -116,6 +117,21 @@ export type ResourcePack = {
     optionalSize: number;
 };
 
+export type PromptEngineCapability = {
+    id: string;
+    label: string;
+    available: boolean;
+    missingResources: Array<{ id: string; label: string }>;
+    missingNodes: string[];
+    reasons: string[];
+};
+
+export type PromptCapabilities = {
+    packId: string;
+    comfyReachable: boolean;
+    engines: Record<string, PromptEngineCapability>;
+};
+
 export type ResourceStatus = {
     ok: boolean;
     loadedAt?: string;
@@ -126,6 +142,7 @@ export type ResourceStatus = {
     comfyRoot?: string;
     comfyPython?: string;
     comfyReachable?: boolean;
+    promptCapabilities?: PromptCapabilities;
     modelRoots?: Record<string, string[]>;
     hardware?: { gpuName?: string; vramTotalMb?: number; ramTotalBytes?: number; ramFreeBytes?: number; detectedAt?: string; source?: string } | null;
     recommendationAvailable?: boolean;
@@ -181,21 +198,21 @@ function errorMessage(data: Record<string, any>, fallback: string) {
 }
 
 export async function fetchResourceStatus(): Promise<ResourceStatus> {
-    const response = await fetch(`${gatewayRoot}/api/resources/status`, { headers: { Accept: "application/json" } });
+    const response = await gatewayFetch(`${gatewayRoot}/api/resources/status`, { headers: { Accept: "application/json" } });
     const data = await readJson(response);
     if (!response.ok || data.ok === false) throw new Error(errorMessage(data, `读取资源状态失败（HTTP ${response.status}）`));
     return data as ResourceStatus;
 }
 
 export async function refreshResourceStatus(): Promise<ResourceStatus> {
-    const response = await fetch(`${gatewayRoot}/api/resources/refresh`, { method: "POST", headers: { Accept: "application/json" } });
+    const response = await gatewayFetch(`${gatewayRoot}/api/resources/refresh`, { method: "POST", headers: { Accept: "application/json" } });
     const data = await readJson(response);
     if (!response.ok || data.ok === false) throw new Error(errorMessage(data, `刷新资源失败（HTTP ${response.status}）`));
     return data as ResourceStatus;
 }
 
 export async function setPackMainModel(packId: string, file: string): Promise<ResourceStatus> {
-    const response = await fetch(`${gatewayRoot}/api/resources/packs/${encodeURIComponent(packId)}/main-model`, {
+    const response = await gatewayFetch(`${gatewayRoot}/api/resources/packs/${encodeURIComponent(packId)}/main-model`, {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json" },
         body: JSON.stringify({ file }),
@@ -206,7 +223,7 @@ export async function setPackMainModel(packId: string, file: string): Promise<Re
 }
 
 export async function installResources(input: { ids?: string[]; packs?: string[] }): Promise<ResourceJob> {
-    const response = await fetch(`${gatewayRoot}/api/resources/install`, {
+    const response = await gatewayFetch(`${gatewayRoot}/api/resources/install`, {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json" },
         body: JSON.stringify(input),
@@ -217,14 +234,14 @@ export async function installResources(input: { ids?: string[]; packs?: string[]
 }
 
 export async function fetchResourceJob(id: string): Promise<ResourceJob> {
-    const response = await fetch(`${gatewayRoot}/api/resources/jobs/${encodeURIComponent(id)}`, { headers: { Accept: "application/json" } });
+    const response = await gatewayFetch(`${gatewayRoot}/api/resources/jobs/${encodeURIComponent(id)}`, { headers: { Accept: "application/json" } });
     const data = await readJson(response);
     if (!response.ok || data.ok === false) throw new Error(errorMessage(data, `读取安装进度失败（HTTP ${response.status}）`));
     return data.job as ResourceJob;
 }
 
 export async function setWorkflowVisibility(id: string, enabled: boolean): Promise<void> {
-    const response = await fetch(`${gatewayRoot}/api/workflows/${encodeURIComponent(id)}/visibility`, {
+    const response = await gatewayFetch(`${gatewayRoot}/api/workflows/${encodeURIComponent(id)}/visibility`, {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json" },
         body: JSON.stringify({ enabled }),
@@ -234,7 +251,7 @@ export async function setWorkflowVisibility(id: string, enabled: boolean): Promi
 }
 
 export async function cancelResourceJob(id: string): Promise<ResourceJob> {
-    const response = await fetch(`${gatewayRoot}/api/resources/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST", headers: { Accept: "application/json" } });
+    const response = await gatewayFetch(`${gatewayRoot}/api/resources/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST", headers: { Accept: "application/json" } });
     const data = await readJson(response);
     if (!response.ok || data.ok === false) throw new Error(errorMessage(data, `取消安装失败（HTTP ${response.status}）`));
     return data.job as ResourceJob;

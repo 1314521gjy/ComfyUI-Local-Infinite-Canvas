@@ -69,6 +69,7 @@ test("archive install applies a verified code patch and preserves local data", a
   };
   write("VERSION", "v0.20.1\n");
   write("comfyui-gateway/src/new.js", "export const updated = true;\n");
+  write("PATCH-DELETE.txt", "comfyui-gateway/src/old.js\n");
   write("data/keep.txt", "overwritten-by-patch");
   write("comfyui-gateway/node_modules/marker", "overwritten-by-patch");
   write("launcher/config.json", '{"bad":true}');
@@ -82,6 +83,8 @@ test("archive install applies a verified code patch and preserves local data", a
   fs.writeFileSync(path.join(root, "comfyui-gateway", "node_modules", "marker"), "deps");
   fs.mkdirSync(path.join(root, "launcher"), { recursive: true });
   fs.writeFileSync(path.join(root, "launcher", "config.json"), "{}");
+  fs.mkdirSync(path.join(root, "comfyui-gateway", "src"), { recursive: true });
+  fs.writeFileSync(path.join(root, "comfyui-gateway", "src", "old.js"), "export const retired = true;\n");
   writeVersion(root, "v0.20.0");
 
   const server = http.createServer((req, res) => {
@@ -120,6 +123,9 @@ test("archive install applies a verified code patch and preserves local data", a
     assert.equal(fs.readFileSync(path.join(root, "data", "keep.txt"), "utf8"), "keep");
     assert.equal(fs.readFileSync(path.join(root, "comfyui-gateway", "node_modules", "marker"), "utf8"), "deps");
     assert.equal(fs.readFileSync(path.join(root, "launcher", "config.json"), "utf8"), "{}");
+    assert.equal(fs.existsSync(path.join(root, "comfyui-gateway", "src", "old.js")), false);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(root, "update.json"), "utf8")).version, "v0.20.1");
+    assert.equal(result.launcherChanged, false);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(root, { recursive: true, force: true });

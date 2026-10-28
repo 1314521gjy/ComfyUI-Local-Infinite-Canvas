@@ -10,7 +10,16 @@ import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
 import { imageToDataUrl } from "@/services/image-storage";
 import { imageSizePresets, inferMediaScale } from "@/lib/media-size";
 import { publishStepProgress } from "@/services/api/step-progress";
+import { noteGatewayError } from "@/services/api/gateway-status";
 import type { ReferenceImage } from "@/types/image";
+
+// 本地网关断线时把错误汇总给统一重连提示，避免每个节点各弹一条。
+axios.interceptors.response.use(undefined, (error) => {
+    const url = String(error?.config?.url || "");
+    const base = String(error?.config?.baseURL || "");
+    if ((url && isLocalGatewayUrl(url)) || (base && isLocalGatewayUrl(base))) noteGatewayError(error, url || base);
+    return Promise.reject(error);
+});
 
 const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiErrors.${key}`, options);
 

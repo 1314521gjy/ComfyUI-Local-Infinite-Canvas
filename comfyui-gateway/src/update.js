@@ -58,12 +58,15 @@ const PATCH_PROTECTED = [
   "data",
   "models",
   "node",
+  "update.json",
   "launcher/config.json",
   "launcher/launcher.log",
   "comfyui-gateway/data",
   "comfyui-gateway/node_modules",
   "comfyui-gateway/resources/bundled",
 ];
+
+const PATCH_DELETE_LIST = "PATCH-DELETE.txt";
 
 function isProtectedPath(relative) {
   const normalized = String(relative || "").replace(/\\/g, "/").replace(/^\/+/, "");
@@ -249,6 +252,29 @@ async function fetchManifestUrl(config) {
   throw new Error(`更新清单不可用（${errors.join("；")}）`);
 }
 
+async function readPatchDeleteList(root) {
+  try {
+    const text = await fsp.readFile(path.join(root, PATCH_DELETE_LIST), "utf8");
+    return text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#"))
+      .map((line) => line.replace(/\\/g, "/").replace(/^\/+/, ""));
+  } catch {
+    return [];
+  }
+}
+
+async function syncLocalManifest(config) {
+  if (!config.updateManifestUrl) return;
+  try {
+    const manifest = await fetchManifestUrl(config);
+    await fsp.writeFile(config.updateManifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  } catch {
+    // 本地清单只用于离线展示；下载失败不应让已完成的更新回滚。
+  }
+}
+
 async function applyArchivePatch(config, { patch, version, dryRun = false }) {
   if (!patch?.url || !patch?.sha256) throw updateError("更新清单缺少代码补丁", "patch_missing");
   const staging = path.join(config.appRoot, ".update", version);
@@ -264,21 +290,38 @@ async function applyArchivePatch(config, { patch, version, dryRun = false }) {
     if (digest.toLowerCase() !== String(patch.sha256).toLowerCase()) throw updateError("补丁 SHA256 校验失败", "patch_hash_mismatch");
     await extractPatch(archive, payload);
 
+    let payloadRoot = payload;
     let files = await listFiles(payload);
     if (!files.some((file) => file.rel === "VERSION" || file.rel === "comfyui-gateway")) {
       const entries = await fsp.readdir(payload, { withFileTypes: true }).catch(() => []);
       const dirs = entries.filter((entry) => entry.isDirectory());
       if (dirs.length === 1) {
-        files = await listFiles(path.join(payload, dirs[0].name));
+        payloadRoot = path.join(payload, dirs[0].name);
+        files = await listFiles(payloadRoot);
       }
     }
-    const candidates = files.filter((file) => !isProtectedPath(file.rel));
-    if (!candidates.length) throw updateError("补丁内没有可更新的文件", "patch_empty");
-    if (dryRun) return { files: candidates.map((file) => file.rel) };
+    const deleteList = await readPatchDeleteList(payloadRoot);
+    const deleteSet = new Set(deleteList.map((rel) => rel.toLowerCase()));
+    const candidates = files.filter(
+      (file) => !isProtectedPath(file.rel) && file.rel !== PATCH_DELETE_LIST && !deleteSet.has(file.rel.toLowerCase()),
+    );
+    if (!candidates.length && !deleteList.length) throw updateError("补丁内没有可更新的文件", "patch_empty");
+    if (dryRun) return { files: candidates.map((file) => file.rel), deleted: deleteList };
 
     const written = [];
     const backups = [];
     try {
+      for (const relative of deleteList) {
+        if (isProtectedPath(relative)) continue;
+        const target = path.resolve(config.appRoot, relative);
+        if (!target.startsWith(`${path.resolve(config.appRoot)}${path.sep}`)) throw updateError(`补丁路径非法：${relative}`, "patch_path_invalid");
+        if (!fs.existsSync(target)) continue;
+        const backup = path.join(backupDir, relative);
+        await fsp.mkdir(path.dirname(backup), { recursive: true });
+        await fsp.copyFile(target, backup);
+        backups.push({ target, backup });
+        await fsp.rm(target, { force: true });
+      }
       for (const file of candidates) {
         const target = path.resolve(config.appRoot, file.rel);
         if (!target.startsWith(`${path.resolve(config.appRoot)}${path.sep}`)) throw updateError(`补丁路径非法：${file.rel}`, "patch_path_invalid");
@@ -302,8 +345,9 @@ async function applyArchivePatch(config, { patch, version, dryRun = false }) {
       }
       throw updateError(`补丁应用失败，已回滚：${error.message}`, "patch_apply_failed");
     }
+    await syncLocalManifest(config);
     await fsp.rm(staging, { recursive: true, force: true }).catch(() => {});
-    return { files: candidates.map((file) => file.rel), changedFiles: candidates.length };
+    return { files: candidates.map((file) => file.rel), deleted: deleteList, changedFiles: candidates.length };
   } finally {
     await fsp.rm(payload, { recursive: true, force: true }).catch(() => {});
   }
@@ -430,15 +474,20 @@ export async function applyUpdate(config, { dryRun = false } = {}) {
         return { ok: true, dryRun: true, currentVersion: check.currentVersion, latestVersion: check.latestVersion, files: result.files };
       }
       const restarting = scheduleGatewayRestart(config);
+      const launcherChanged = result.files.some((file) => file.startsWith("launcher/"));
       return {
         ok: true,
         dryRun: false,
         currentVersion: check.currentVersion,
         latestVersion: check.latestVersion,
         changedFiles: result.files,
+        deletedFiles: result.deleted || [],
+        launcherChanged,
         restartRequired: true,
         restarting,
-        message: restarting ? "更新完成，网关正在重启，页面将自动刷新…" : "更新完成，请重启 start-local.bat",
+        message: restarting
+          ? "更新完成，网关正在重启，页面将自动刷新…"
+          : "更新完成，请关闭工作台窗口后重新双击 start-local.bat",
       };
     }
     if (check.dirty) throw updateError(check.applyReason || "工作区有未提交的修改", "dirty_worktree");

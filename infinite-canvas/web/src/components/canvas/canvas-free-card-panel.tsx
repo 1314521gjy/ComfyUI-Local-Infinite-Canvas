@@ -12,6 +12,7 @@ import { useCanvasTheme } from "@/lib/canvas/use-canvas-theme";
 import { getGroupResourceNodes } from "@/lib/canvas/canvas-resource-references";
 import { normalizePixelSize } from "@/lib/media-size";
 import { requestImagePromptOptimize } from "@/services/api/image";
+import { usePromptCapabilities } from "@/hooks/use-prompt-capabilities";
 import {
     archiveFreeWorkflow,
     fetchFreeWorkflow,
@@ -83,6 +84,7 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
     const config = useEffectiveConfig();
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
+    const { engineAvailable } = usePromptCapabilities();
     const info = node.metadata?.freeCard;
     const [sources, setSources] = useState<FreeWorkflowSource[]>([]);
     const [sourcesLoading, setSourcesLoading] = useState(false);
@@ -458,10 +460,12 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
                                         language={optimizeLanguage}
                                         cloudReady={optimizeCloudReady}
                                         cloudModel={config.promptCloudModel}
+                                        localReady={engineAvailable("imagePe")}
                                         disabled={optimizing}
                                         onEngineChange={(engine) => updateConfig("promptApiEngine", engine)}
                                         onLanguageChange={(language) => updateConfig("promptOptimizeLanguage", language)}
                                         onOpenSettings={() => openConfigDialog(true, "cloud-api")}
+                                        onOpenLocalSettings={() => openConfigDialog(false, "resources")}
                                         onStart={() => void optimizePrompt()}
                                         onClose={() => setOptimizeOptionsOpen(false)}
                                     />

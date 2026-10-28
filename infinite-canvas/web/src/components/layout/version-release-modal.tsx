@@ -82,9 +82,14 @@ export function VersionReleaseModal({ className, style }: VersionReleaseModalPro
                         <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="text-sm font-semibold text-stone-900 dark:text-stone-100">{t("version.updateAvailable", { version: updateInfo.latestVersion })}</div>
                             <div className="flex items-center gap-2">
-                                {updateInfo.downloadUrl ? (
+                                {!updateInfo.canApply && updateInfo.downloadUrl ? (
                                     <a className="text-xs text-stone-600 underline underline-offset-2 dark:text-stone-300" href={updateInfo.downloadUrl} target="_blank" rel="noreferrer">
-                                        {t("version.download")}
+                                        {t("version.downloadBridge")}
+                                    </a>
+                                ) : null}
+                                {updateInfo.canApply && updateInfo.repository ? (
+                                    <a className="text-xs text-stone-600 underline underline-offset-2 dark:text-stone-300" href={updateInfo.repository} target="_blank" rel="noreferrer">
+                                        {t("version.downloadFull")}
                                     </a>
                                 ) : null}
                                 {updateInfo.canApply ? (
@@ -102,6 +107,7 @@ export function VersionReleaseModal({ className, style }: VersionReleaseModalPro
                 {applyResult?.ok ? (
                     <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-3 text-xs leading-5 text-stone-700 dark:border-green-900/60 dark:bg-green-950/30 dark:text-stone-200">
                         <div>{applyResult.message || t("version.applySuccess")}</div>
+                        {applyResult.launcherChanged ? <div>{t("version.launcherChanged")}</div> : null}
                         {applyResult.installRequired ? <div>{t("version.installRequired")}</div> : null}
                     </div>
                 ) : null}

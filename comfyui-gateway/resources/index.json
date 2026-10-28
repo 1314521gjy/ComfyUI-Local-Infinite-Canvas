@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "version": "2026.10.27-21",
+  "version": "2026.10.29-22",
   "channel": "stable",
-  "updatedAt": "2026-10-27T17:10:00+08:00",
+  "updatedAt": "2026-10-29",
   "packs": [
     {
       "id": "core",
@@ -440,6 +440,30 @@
           "h3_tiny_vae"
         ]
       }
+    },
+    {
+      "id": "prompt-local",
+      "label": "本地反推 / 本地提示词",
+      "description": "本地图片反推（Qwen3.5-9B / Florence-2）和本地提示词优化；不安装也能继续用云端反推。",
+      "optional": true,
+      "autoRecommend": false,
+      "resources": [
+        "prompt_llama_python",
+        "prompt_qwen_gguf",
+        "prompt_qwen_mmproj",
+        "prompt_florence_model"
+      ],
+      "workflows": [],
+      "optionalResources": [
+        "prompt_llama_python",
+        "prompt_qwen_gguf",
+        "prompt_qwen_mmproj",
+        "prompt_florence_model"
+      ],
+      "optionalLabel": "本地反推 / 本地提示词",
+      "workflowDependencies": {},
+      "family": "prompt",
+      "tier": "core"
     }
   ],
   "resources": [
@@ -1234,6 +1258,124 @@
           "path": "resources/vae_approx/taeh3.safetensors",
           "label": "随包"
         }
+      ]
+    },
+    {
+      "id": "prompt_llama_node",
+      "type": "node",
+      "label": "ComfyUI-llama-cpp_vllm 节点",
+      "target": "custom_nodes/ComfyUI-llama-cpp_vllm",
+      "autoInstall": true,
+      "bundleDir": "resources/nodes/unpacked/ComfyUI-llama-cpp_vllm",
+      "size": 507114,
+      "license": "MIT",
+      "note": "Qwen 本地反推所需；装完重启 ComfyUI。",
+      "provides": [
+        "llama_cpp_model_loader",
+        "llama_cpp_instruct_adv"
+      ],
+      "sources": [
+        {
+          "url": "https://github.com/lihaoyun6/ComfyUI-llama-cpp_vlm/archive/refs/heads/main.zip",
+          "label": "上游 GitHub",
+          "verify": false
+        }
+      ]
+    },
+    {
+      "id": "prompt_florence_node",
+      "type": "node",
+      "label": "ComfyUI-Florence2 节点",
+      "target": "custom_nodes/ComfyUI-Florence2",
+      "autoInstall": true,
+      "bundleDir": "resources/nodes/unpacked/ComfyUI-Florence2",
+      "size": 108099,
+      "license": "MIT",
+      "note": "Florence-2 本地反推所需；装完重启 ComfyUI。",
+      "provides": [
+        "DownloadAndLoadFlorence2Model",
+        "Florence2Run"
+      ],
+      "sources": [
+        {
+          "url": "https://github.com/kijai/ComfyUI-Florence2/archive/refs/heads/main.zip",
+          "label": "上游 GitHub",
+          "verify": false
+        }
+      ]
+    },
+    {
+      "id": "prompt_te_man",
+      "type": "node",
+      "label": "TE_MAN 本地提示词节点",
+      "target": "custom_nodes/TE_MAN",
+      "autoInstall": true,
+      "bundleDir": "resources/nodes/unpacked/TE_MAN",
+      "size": 74263373,
+      "license": "作者授权（原 LICENSE 禁止再分发）",
+      "note": "本地提示词优化 / H3 本地模板 / 反推文本输出节点；作者已授权随工作台分发。",
+      "provides": [
+        "TE_text_display",
+        "TE_H3_Prompt_Enhancer",
+        "TE_Qwen_Image_2_1_Prompt_Enhancer"
+      ],
+      "sources": []
+    },
+    {
+      "id": "prompt_llama_python",
+      "type": "pip",
+      "label": "llama-cpp-python 运行库",
+      "target": "LLM/llama_cpp_python",
+      "module": "llama_cpp",
+      "size": 299142055,
+      "license": "MIT",
+      "note": "按 ComfyUI 的 Python 版本自动选择预编译包；3.12 走魔搭镜像，其他版本从 GitHub 下载。",
+      "wheels": {
+        "3.10": "https://github.com/JamePeng/llama-cpp-python/releases/download/v0.3.46-cu128-win-20260808/llama_cpp_python-0.3.46%2Bcu128-cp310-cp310-win_amd64.whl",
+        "3.11": "https://github.com/JamePeng/llama-cpp-python/releases/download/v0.3.46-cu128-win-20260808/llama_cpp_python-0.3.46%2Bcu128-cp311-cp311-win_amd64.whl",
+        "3.12": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/wheels/llama_cpp_python-0.3.46%2Bcu128-cp312-cp312-win_amd64.whl",
+        "3.13": "https://github.com/JamePeng/llama-cpp-python/releases/download/v0.3.46-cu128-win-20260808/llama_cpp_python-0.3.46%2Bcu128-cp313-cp313-win_amd64.whl",
+        "3.14": "https://github.com/JamePeng/llama-cpp-python/releases/download/v0.3.46-cu128-win-20260808/llama_cpp_python-0.3.46%2Bcu128-cp314-cp314-win_amd64.whl"
+      },
+      "sources": []
+    },
+    {
+      "id": "prompt_qwen_gguf",
+      "type": "model",
+      "label": "Qwen3.5-9B 反推模型（Q4_K_M）",
+      "target": "LLM/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf",
+      "size": 5627044224,
+      "sha256": "2ca636d9e81d3d23ca9b60c234fe185d30ec082eeba69ce770fdb0c76559a4f5",
+      "license": "Apache-2.0（Qwen3.5-9B 底模）",
+      "note": "本地图片反推；约 5.3GB。",
+      "sources": [
+        "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/models/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf"
+      ]
+    },
+    {
+      "id": "prompt_qwen_mmproj",
+      "type": "model",
+      "label": "Qwen3.5-9B 视觉投影（mmproj）",
+      "target": "LLM/mmproj-Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-BF16.gguf",
+      "size": 921704448,
+      "sha256": "05f662501f8bd45607b079723a3e238a4e888fd085a10a53f4057a0e250f6934",
+      "license": "Apache-2.0（Qwen3.5-9B 底模）",
+      "note": "Qwen 看图反推必需；约 880MB。",
+      "sources": [
+        "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/models/mmproj-Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-BF16.gguf"
+      ]
+    },
+    {
+      "id": "prompt_florence_model",
+      "type": "dir",
+      "label": "Florence-2 PromptGen v2.0 模型",
+      "target": "LLM/Florence-2-large-PromptGen-v2.0",
+      "size": 2998189737,
+      "sha256": "9b13bf6f3421eb39386df450bd62448b48144c3d1d7a8befeb899fada70c08d2",
+      "license": "MIT",
+      "note": "下载约 2.8GB，解压后约 3.1GB；比 Qwen 快、显存占用低。",
+      "sources": [
+        "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/models/Florence-2-large-PromptGen-v2.0.zip"
       ]
     }
   ]

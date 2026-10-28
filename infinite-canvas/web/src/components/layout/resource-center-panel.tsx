@@ -17,6 +17,7 @@ import {
     type ResourcePack,
     type ResourceStatus,
 } from "@/services/api/resources";
+import { isGatewayDown } from "@/services/api/gateway-status";
 
 const copyByLocale = {
     zh: {
@@ -66,6 +67,7 @@ const copyByLocale = {
         noResources: "此包没有需要下载的资源。",
         downloadProgress: "安装进度",
         copying: "安装中",
+        installing: "安装运行库",
         done: "安装完成",
         failed: "部分资源安装失败",
         compileFailed: "本机编译失败",
@@ -138,6 +140,7 @@ const copyByLocale = {
         noResources: "This pack has no downloadable resources.",
         downloadProgress: "Install progress",
         copying: "Installing",
+        installing: "Installing runtime",
         done: "Install complete",
         failed: "Some resources failed",
         compileFailed: "Local compile failed",
@@ -261,6 +264,11 @@ function WorkflowResourceRow({ item, copy, requires = [] }: { item: ResourceItem
 
 export function ResourceCenterPanel({ compact = false, footer }: { compact?: boolean; footer?: React.ReactNode }) {
     const { message } = App.useApp();
+    // 网关断线由统一横幅提示，这里不再逐条弹错。
+    const showError = (error: unknown) => {
+        if (isGatewayDown()) return;
+        message.error(error instanceof Error ? error.message : String(error));
+    };
     const { i18n } = useTranslation();
     const copy = i18n.language.startsWith("zh") ? copyByLocale.zh : copyByLocale.en;
     const [status, setStatus] = useState<ResourceStatus | null>(null);
@@ -380,7 +388,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
             const next = await installResources(input);
             watchJob(next);
         } catch (installError) {
-            message.error(installError instanceof Error ? installError.message : String(installError));
+            showError(installError);
         }
     };
 
@@ -391,7 +399,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
             const next = await cancelResourceJob(job.id);
             setJob(next);
         } catch (stopError) {
-            message.error(stopError instanceof Error ? stopError.message : String(stopError));
+            showError(stopError);
         } finally {
             setStopping(false);
         }
@@ -456,7 +464,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
             } : current);
             window.dispatchEvent(new Event("local-gateway-refresh-models"));
         } catch (toggleError) {
-            message.error(toggleError instanceof Error ? toggleError.message : String(toggleError));
+            showError(toggleError);
         }
     };
 
@@ -468,7 +476,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
             setStatus(next);
             window.dispatchEvent(new Event("local-gateway-refresh-models"));
         } catch (changeError) {
-            message.error(changeError instanceof Error ? changeError.message : String(changeError));
+            showError(changeError);
         } finally {
             setMainModelSaving("");
         }
@@ -554,7 +562,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                     <span className={item.status === "error" ? "shrink-0 text-red-500" : "shrink-0 text-stone-400 dark:text-stone-500"}>
                                         {item.status === "downloading"
                                             ? `${formatBytes(item.bytes)} / ${formatBytes(item.size)}${speeds[item.id] ? ` · ${formatSpeed(speeds[item.id])}` : ""}`
-                                            : item.status === "copying" ? copy.copying : item.status === "baking" ? copy.localBake : item.status}
+                                            : item.status === "copying" ? copy.copying : item.status === "installing" ? copy.installing : item.status === "baking" ? copy.localBake : item.status}
                                     </span>
                                 </div>
                                 {item.status === "error" && item.error ? (

@@ -33,6 +33,6 @@
 
 ## 第三方与模型
 
-ComfyUI 本体、模型权重、LoRA、第三方自定义节点、FFmpeg 等不随本仓库分发，分别适用其各自许可证。详见 `THIRD_PARTY_NOTICES.md`。
+ComfyUI 本体、模型权重、LoRA、FFmpeg 等不随本仓库分发。少量用于本地反推/本地提示词的第三方节点（Florence2、llama-cpp_vllm、TE_MAN）随工作台分发；Qwen/Florence 权重由资源卡按需下载。分别适用其各自许可证，详见 `THIRD_PARTY_NOTICES.md`。
 
 本项目与 basketikun、ComfyUI、MiniMax、阿里云通义千问、MOSS、字节跳动 SeedVR2 等项目的维护方无隶属关系；相关名称仅用于说明兼容性或技术来源。

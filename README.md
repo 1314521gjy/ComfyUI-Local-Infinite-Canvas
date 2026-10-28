@@ -12,6 +12,7 @@
 - 视频：MiniMax-H3 文生、首尾帧、多参三个入口，共用文戏均衡工作流；支持采样预览、LoRA 卡、首尾帧/多参考素材。
 - 放大：ESRGAN 快速放大、SeedVR2 图片超分、SeedVR2 视频超分（1.5×/2×，保留原音频）。
 - 本地插件卡：LoRA 强度卡、ComfyUI 参数卡；提示词优化（H3 结构化 / 生图单段描述）。
+- 本地反推 / 本地提示词：Qwen3.5-9B（GGUF + 视觉投影）和 Florence-2 PromptGen v2.0 可在「设置 → 添加工作流」按需安装；不装也能用云端反推。
 - 系统面板：显存/内存/GPU/ComfyUI 状态、清理显存、一键重启 ComfyUI。
 - `LOCAL_ONLY` 本地模式：隐藏云端渠道、Agent、WebDAV、提示词库等非本地入口。
 
@@ -83,9 +84,10 @@ start-local.bat
 ## 更新
 
 - 版本弹窗的「检查更新」由网关 `/api/update/check` 提供，读取项目根目录的 `update.json`；Git 克隆安装会从 `origin/main` 获取最新清单（点击检查时执行 `git fetch`）。
-- 如果当前目录是 Git 克隆且工作区没有已跟踪修改，「应用更新」会执行 `git pull --ff-only`。它不会修改 `launcher/config.json`、`comfyui-gateway/data/`、ComfyUI、模型或用户输出；更新后需要重启 `start-local.bat`。如果 `package-lock.json` 有变化，先在 `comfyui-gateway` 运行 `npm install`。
-- 下载 zip 安装的用户当前可以查看更新并手动下载；自动替换发布包的更新器在后续版本加入。`update.json` 同时提供版本、说明和下载地址。
-- 发布新版本：同时更新根目录 `VERSION`、`update.json`、`CHANGELOG.md`，重新构建 `infinite-canvas/web`，并提交 `web/dist`。
+- **文件夹安装**：点击「应用更新」会在软件内下载并校验代码补丁，只替换程序文件；`data/`、模型、`node_modules`、`resources/bundled` 和 `launcher/config.json` 不会被覆盖。更新完成后网关自动重启，新页面自动刷新。
+- **Git 克隆**：工作区没有已跟踪修改时执行 `git pull --ff-only`；`package-lock.json` 有变化时先在 `comfyui-gateway` 运行 `npm install`。
+- **v0.21.0–v0.21.2 旧版本**：这些版本里没有新的更新器。请从发布页下载 `update-bridge.zip`，解压后双击 `update.bat`，脚本会自动找到工作台并升级到最新版；之后即可使用应用内更新。不会把用户送到网页手动替换文件。
+- 发布新版本：同时更新根目录 `VERSION`、`update.json`、`CHANGELOG.md`，重新构建 `infinite-canvas/web`，提交 `web/dist`，并生成 `patches/vX.zip` 与 `update.json.patch`。
 
 ## 国内镜像
 

@@ -11,7 +11,7 @@ import { Transform } from "node:stream";
 import { findUnetLoader } from "./base-models.js";
 import { nowIso, truncate, writeJsonAtomic } from "./util.js";
 
-const MODEL_DIRS = new Set(["diffusion_models", "text_encoders", "vae", "vae_approx", "loras", "checkpoints", "upscale_models", "latent_upscale_models", "vdn", "clip_vision"]);
+const MODEL_DIRS = new Set(["diffusion_models", "text_encoders", "vae", "vae_approx", "loras", "checkpoints", "upscale_models", "latent_upscale_models", "vdn", "clip_vision", "LLM"]);
 const WEIGHT_FILE_EXTENSIONS = /\.(safetensors|sft|ckpt|pt|pth|bin|gguf|onnx|data|engine)$/i;
 // ComfyUI /internal/folder_paths 的键名和资源索引目录不完全同名，需要做别名。
 const FOLDER_PATH_KEYS = {
@@ -25,6 +25,8 @@ const FOLDER_PATH_KEYS = {
     latent_upscale_models: ["latent_upscale_models"],
     clip_vision: ["clip_vision"],
     vdn: ["vdn"],
+    // ComfyUI 同时暴露 "LLM" 和 "llm" 两种键（大小写取决于版本）。
+    LLM: ["LLM", "llm"],
 };
 const LOADER_BY_DIR = {
     diffusion_models: { classType: "UNETLoader", input: "unet_name" },
@@ -501,6 +503,15 @@ export function createResourceManager({ config, setup, registry, logger, workflo
     function resourceMatch(resource, root = comfyRoot()) {
         const { dir, file } = targetParts(resource.target);
         if (!root) return { present: false, path: "", rel: "", size: 0, matchedBy: "", mismatch: "" };
+        if (resource.type === "dir") {
+            for (const base of modelRoots(dir, root)) {
+                const candidate = path.join(base, file);
+                if (isDir(candidate) && (isFile(path.join(candidate, "config.json")) || isFile(path.join(candidate, "model.safetensors")))) {
+                    return { present: true, path: candidate, rel: path.relative(root, candidate), size: 0, matchedBy: "path", mismatch: "" };
+                }
+            }
+            return { present: false, path: "", rel: "", size: 0, matchedBy: "", mismatch: "" };
+        }
         if (dir === "custom_nodes") {
             const target = path.join(root, "custom_nodes", file);
             return { present: isDir(target), path: isDir(target) ? target : "", rel: file, size: 0, matchedBy: "path", mismatch: "" };
@@ -674,16 +685,51 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         return list.includes(file);
     }
 
+    const pipCheckCache = new Map();
+
+    function pipImportStatus(python, module, { fresh = false } = {}) {
+        if (!python || !module) return { present: false, version: "", reason: "未找到 ComfyUI 的 Python" };
+        const key = `${python}|${module}`.toLowerCase();
+        const cached = pipCheckCache.get(key);
+        if (!fresh && cached && Date.now() - cached.at < (cached.present ? 600000 : 60000)) return cached;
+        try {
+            const stdout = execFileSync(python, ["-c", `import ${module} as _m; print(getattr(_m, "__version__", ""))`], {
+                timeout: 15000,
+                windowsHide: true,
+                encoding: "utf8",
+            });
+            // import 时第三方库可能往 stdout 打日志，版本号取最后一行。
+            const lines = String(stdout || "").trim().split(/\r?\n/).filter(Boolean);
+            const result = { present: true, version: lines.pop() || "", reason: "", at: Date.now() };
+            pipCheckCache.set(key, result);
+            return result;
+        } catch {
+            const result = { present: false, version: "", reason: `Python 环境缺少 ${module}`, at: Date.now() };
+            pipCheckCache.set(key, result);
+            return result;
+        }
+    }
+
+    function pipStatusFor(resource, root) {
+        const python = comfyPythonForBake(root);
+        const module = String(resource.module || resource.importName || "").trim();
+        return { python, ...pipImportStatus(python, module) };
+    }
+
     function resourceStatus(resource, root) {
         const { dir, file } = targetParts(resource.target);
         const isNode = dir === "custom_nodes" || resource.type === "node";
-        const match = isNode
-            ? (() => {
-                  const target = root ? path.join(root, "custom_nodes", file) : "";
-                  const present = Boolean(target && isDir(target));
-                  return { present, path: present ? target : "", rel: file, size: 0, matchedBy: present ? "path" : "", mismatch: "" };
-              })()
-            : resourceMatch(resource, root);
+        const isPip = resource.type === "pip";
+        const pip = isPip ? pipStatusFor(resource, root) : null;
+        const match = isPip
+            ? { present: Boolean(pip.present), path: "", rel: "", size: 0, matchedBy: pip.present ? "python" : "", mismatch: "" }
+            : isNode
+              ? (() => {
+                    const target = root ? path.join(root, "custom_nodes", file) : "";
+                    const present = Boolean(target && isDir(target));
+                    return { present, path: present ? target : "", rel: file, size: 0, matchedBy: present ? "path" : "", mismatch: "" };
+                })()
+              : resourceMatch(resource, root);
         const exists = Boolean(match.present);
         let size = Number(match.size) || 0;
         if (!size && match.path) {
@@ -734,6 +780,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             actualSize: size,
             installed,
             missingRequires,
+            ...(isPip ? { pythonRuntime: pip.python || "", pipVersion: pip.version || "", pipReason: pip.reason || "" } : {}),
         };
     }
 
@@ -802,6 +849,72 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 return a.label.localeCompare(b.label);
             }),
         };
+    }
+
+    const PROMPT_ENGINES = [
+        {
+            id: "qwen",
+            label: "Qwen3.5-9B",
+            resourceIds: ["prompt_qwen_gguf", "prompt_qwen_mmproj", "prompt_llama_node", "prompt_te_man", "prompt_llama_python"],
+            nodeClasses: ["llama_cpp_model_loader", "llama_cpp_instruct_adv", "TE_text_display"],
+        },
+        {
+            id: "florence",
+            label: "Florence-2 PromptGen",
+            resourceIds: ["prompt_florence_node", "prompt_florence_model", "prompt_te_man"],
+            nodeClasses: ["DownloadAndLoadFlorence2Model", "Florence2Run", "TE_text_display"],
+        },
+        {
+            id: "teMan",
+            label: "本地提示词优化",
+            resourceIds: ["prompt_te_man"],
+            nodeClasses: ["TE_H3_Prompt_Enhancer", "TE_Qwen_Image_2_1_Prompt_Enhancer"],
+        },
+        {
+            id: "imagePe",
+            label: "本地生图提示词优化",
+            resourceIds: ["prompt_te_man", "qwen3.5_9b_int8_convrot"],
+            nodeClasses: ["TE_Qwen_Image_2_1_Prompt_Enhancer"],
+        },
+    ];
+
+    function promptCapabilities(resources) {
+        const byId = new Map((resources || []).map((item) => [item.id, item]));
+        const reachable = Boolean(setup?.status?.().comfyReachable);
+        const engines = {};
+        for (const spec of PROMPT_ENGINES) {
+            const missingResources = [];
+            const missingNodes = [];
+            const reasons = [];
+            for (const id of spec.resourceIds) {
+                const item = byId.get(id);
+                if (!item) {
+                    missingResources.push({ id, label: id });
+                    reasons.push(`资源索引缺少 ${id}`);
+                    continue;
+                }
+                if (item.status !== "present") {
+                    missingResources.push({ id, label: item.label });
+                    reasons.push(item.pipReason || `缺少 ${item.label}`);
+                }
+            }
+            for (const classType of spec.nodeClasses) {
+                if (!setup?.hasNodeClass?.(classType)) {
+                    missingNodes.push(classType);
+                    reasons.push(`缺少节点 ${classType}`);
+                }
+            }
+            if (!reachable) reasons.unshift("ComfyUI 未连接");
+            engines[spec.id] = {
+                id: spec.id,
+                label: spec.label,
+                available: reachable && missingResources.length === 0 && missingNodes.length === 0,
+                missingResources,
+                missingNodes,
+                reasons,
+            };
+        }
+        return { packId: "prompt-local", comfyReachable: reachable, engines };
     }
 
     function status() {
@@ -1058,6 +1171,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 return map;
             })(),
             comfyReachable: Boolean(setup?.status?.().comfyReachable),
+            promptCapabilities: promptCapabilities(resources),
             hardware: hardware || null,
             recommendationAvailable: hardwareAvailable && recommendedPacks.length > 0,
             packs,
@@ -1367,6 +1481,9 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         }
         const sources = normalizeSources(resource);
         const bundleDir = resource.bundleDir ? path.resolve(config.rootDir, String(resource.bundleDir)) : "";
+        if (bundleDir && !bundleDir.startsWith(`${path.resolve(config.rootDir)}${path.sep}`)) {
+            throw new Error(`节点内置目录越界：${resource.bundleDir}`);
+        }
         if (!sources.length && !(bundleDir && isDir(bundleDir))) throw new Error("没有配置节点下载源");
         if (bundleDir && isDir(bundleDir)) {
             const installRoot = path.join(root, ".canvas-install", `${resource.id}-${Date.now()}`);
@@ -1464,6 +1581,160 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         throw lastError || new Error("所有节点下载源均失败");
     }
 
+    async function findConfigDir(directory, depth = 0) {
+        if (depth > 2) return "";
+        if (isFile(path.join(directory, "config.json"))) return directory;
+        const entries = await fsp.readdir(directory, { withFileTypes: true }).catch(() => []);
+        for (const entry of entries) {
+            if (!entry.isDirectory()) continue;
+            const found = await findConfigDir(path.join(directory, entry.name), depth + 1);
+            if (found) return found;
+        }
+        return "";
+    }
+
+    // 目录型模型（如 Florence-2）以 zip 分发，解压后整体落到 models/LLM/<目录名>。
+    async function installDirectoryResource(resource, jobItem, signal) {
+        const root = comfyRoot();
+        if (!root) throw new Error("未找到 ComfyUI 安装目录");
+        const existing = resourceMatch(resource, root);
+        if (existing.present) {
+            jobItem.status = "skipped";
+            jobItem.skipped = true;
+            return;
+        }
+        const target = targetPath(resource, root);
+        const installRoot = path.join(root, ".canvas-install", `${resource.id}-${Date.now()}`);
+        const archive = path.join(installRoot, "payload.zip");
+        const extract = path.join(installRoot, "extract");
+        await fsp.mkdir(installRoot, { recursive: true });
+        const sources = normalizeSources(resource);
+        if (!sources.length) throw new Error("没有配置下载源");
+        let lastError = null;
+        for (const source of sources) {
+            try {
+                await fsp.rm(archive, { force: true });
+                jobItem.status = "downloading";
+                jobItem.source = source.label || (source.url ? new URL(source.url).hostname : "内置");
+                jobItem.bytes = 0;
+                if (source.kind === "bundled" || source.path) {
+                    await copyBundledSource(source, archive, jobItem, signal);
+                } else {
+                    await downloadSource(source.url, archive, jobItem, signal, (bytes) => {
+                        jobItem.bytes = bytes;
+                        updateJob(jobItem.job);
+                    });
+                }
+                jobItem.status = "verifying";
+                if (source.verify !== false) {
+                    const expectedSize = Number(source.size ?? resource.size) || 0;
+                    const expectedSha = String(source.sha256 ?? resource.sha256 ?? "");
+                    if (expectedSize) {
+                        const size = (await fsp.stat(archive)).size;
+                        if (size !== expectedSize) throw new Error(`模型包大小不一致（${size}/${expectedSize}）`);
+                    }
+                    if (expectedSha) {
+                        const digest = await sha256File(archive, signal);
+                        if (digest.toLowerCase() !== expectedSha.toLowerCase()) throw new Error("模型包 SHA256 校验失败");
+                    }
+                }
+                await extractArchive(archive, extract);
+                const sourceDir = await findConfigDir(extract);
+                if (!sourceDir) throw new Error("模型包里没有找到 config.json");
+                await fsp.mkdir(path.dirname(target), { recursive: true });
+                const backup = path.join(installRoot, "backup");
+                let movedBackup = false;
+                if (isDir(target)) {
+                    await fsp.rename(target, backup);
+                    movedBackup = true;
+                }
+                try {
+                    await fsp.rename(sourceDir, target);
+                } catch (error) {
+                    if (movedBackup) await fsp.rename(backup, target).catch(() => {});
+                    throw error;
+                }
+                lock.installed = lock.installed || {};
+                lock.installed[resource.id] = { version: index?.version || "", target: resource.target, size: resource.size || 0, installedAt: nowIso() };
+                lock.updatedAt = nowIso();
+                await saveLock();
+                jobItem.status = "done";
+                jobItem.bytes = resource.size || jobItem.bytes;
+                await fsp.rm(installRoot, { recursive: true, force: true }).catch(() => {});
+                return;
+            } catch (error) {
+                lastError = error;
+                if (signal?.aborted) throw new Error("已取消");
+                logger?.warn?.(`目录模型安装失败 ${resource.id} ← ${jobItem.source}: ${error.message}`);
+            }
+        }
+        await fsp.rm(installRoot, { recursive: true, force: true }).catch(() => {});
+        throw lastError || new Error("所有下载源均失败");
+    }
+
+    async function installPipResource(resource, jobItem, signal) {
+        const root = comfyRoot();
+        const python = comfyPythonForBake(root);
+        if (!python) throw new Error("未找到 ComfyUI 的 Python，无法安装运行库；请先确认 ComfyUI 能正常启动");
+        const module = String(resource.module || resource.importName || "").trim();
+        if (!module) throw new Error("运行库资源缺少 module 字段");
+        const imported = pipImportStatus(python, module, { fresh: true });
+        if (imported.present) {
+            jobItem.status = "skipped";
+            jobItem.skipped = true;
+            return;
+        }
+        let version = "";
+        try {
+            version = String(execFileSync(python, ["-c", "import sys;print(f'{sys.version_info.major}.{sys.version_info.minor}')"], {
+                timeout: 15000,
+                windowsHide: true,
+                encoding: "utf8",
+            })).trim();
+        } catch {
+            version = "";
+        }
+        const wheels = resource.wheels && typeof resource.wheels === "object" ? resource.wheels : {};
+        const wheel = String(wheels[version] || resource.wheel || "").trim();
+        if (!wheel) {
+            throw new Error(
+                `当前 ComfyUI 使用 Python ${version || "未知版本"}，没有匹配的预编译运行库（支持 ${Object.keys(wheels).join(" / ") || "无"}）。` +
+                    `请手动安装 ${module} 后重试。`,
+            );
+        }
+        jobItem.status = "installing";
+        jobItem.source = "Python 运行库";
+        await new Promise((resolve, reject) => {
+            const child = spawn(python, ["-m", "pip", "install", "--disable-pip-version-check", "--no-input", wheel], {
+                windowsHide: true,
+                env: { ...process.env, PIP_DISABLE_PIP_VERSION_CHECK: "1" },
+            });
+            jobItem.child = child;
+            let output = "";
+            const onData = (data) => {
+                output += String(data);
+                if (output.length > 4000) output = output.slice(-4000);
+                logger?.info?.(`[pip] ${String(data).trim()}`);
+            };
+            child.stdout.on("data", onData);
+            child.stderr.on("data", onData);
+            child.on("error", reject);
+            child.on("exit", (code) => {
+                jobItem.child = null;
+                if (signal?.aborted) return reject(new Error("已取消"));
+                if (code !== 0) return reject(new Error(`运行库安装失败（exit ${code}）${output ? `：${truncate(output, 400)}` : ""}`));
+                resolve();
+            });
+        });
+        pipCheckCache.delete(`${python}|${module}`.toLowerCase());
+        lock.installed = lock.installed || {};
+        lock.installed[resource.id] = { version: index?.version || "", target: resource.target, size: resource.size || 0, installedAt: nowIso() };
+        lock.updatedAt = nowIso();
+        await saveLock();
+        jobItem.status = "done";
+        jobItem.bytes = jobItem.size;
+    }
+
     async function runBake(resource, jobItem, signal) {
         const root = comfyRoot();
         if (!root) throw new Error("未找到 ComfyUI 安装目录");
@@ -1539,8 +1810,10 @@ export function createResourceManager({ config, setup, registry, logger, workflo
 
     async function runJob(job) {
         const jobsToRun = job.items.filter((item) => item.status === "queued");
-        const downloads = jobsToRun.filter((item) => item.type !== "bake" && item.type !== "node");
+        const downloads = jobsToRun.filter((item) => !["bake", "node", "dir", "pip"].includes(item.type));
         const nodeJobs = jobsToRun.filter((item) => item.type === "node");
+        const dirJobs = jobsToRun.filter((item) => item.type === "dir");
+        const pipJobs = jobsToRun.filter((item) => item.type === "pip");
         const bakes = jobsToRun.filter((item) => item.type === "bake");
         const limit = Math.max(1, Number(config.resourceConcurrency) || 2);
         const queue = [...downloads];
@@ -1576,6 +1849,38 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 item.status = "error";
                 item.error = truncate(error.message || String(error), 500);
                 logger?.warn?.(`节点安装失败 ${item.id}: ${item.error}`);
+            } finally {
+                job.controllers.delete(item.id);
+                updateJob(job);
+            }
+        }
+        for (const item of pipJobs) {
+            if (job.status !== "running") break;
+            const controller = new AbortController();
+            item.job = job;
+            job.controllers.set(item.id, controller);
+            try {
+                await installPipResource(resourceById(item.id), item, controller.signal);
+            } catch (error) {
+                item.status = "error";
+                item.error = truncate(error.message || String(error), 500);
+                logger?.warn?.(`运行库安装失败 ${item.id}: ${item.error}`);
+            } finally {
+                job.controllers.delete(item.id);
+                updateJob(job);
+            }
+        }
+        for (const item of dirJobs) {
+            if (job.status !== "running") break;
+            const controller = new AbortController();
+            item.job = job;
+            job.controllers.set(item.id, controller);
+            try {
+                await installDirectoryResource(resourceById(item.id), item, controller.signal);
+            } catch (error) {
+                item.status = "error";
+                item.error = truncate(error.message || String(error), 500);
+                logger?.warn?.(`目录模型安装失败 ${item.id}: ${item.error}`);
             } finally {
                 job.controllers.delete(item.id);
                 updateJob(job);
@@ -1619,8 +1924,14 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         }
     }
 
+    let activeJob = null;
+
     function install({ ids = [], packs = [] } = {}) {
         if (!index) throw new Error("资源索引尚未加载");
+        // 双标签/双击同时安装会互相覆盖 .part 和锁文件，这里只允许一个安装任务。
+        if (activeJob && activeJob.status === "running") {
+            throw new Error(`已有安装任务在进行中（${activeJob.items.filter((item) => item.status !== "done").length} 项未完成），请等待完成或先终止`);
+        }
         const selected = selectResources({ ids, packs });
         const root = comfyRoot();
         const missing = [];
@@ -1659,11 +1970,16 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             updateJob(job);
             return jobSnapshot(job);
         }
-        void runJob(job).catch((error) => {
-            job.status = "error";
-            job.error = truncate(error.message || String(error), 500);
-            updateJob(job);
-        });
+        activeJob = job;
+        void runJob(job)
+            .catch((error) => {
+                job.status = "error";
+                job.error = truncate(error.message || String(error), 500);
+                updateJob(job);
+            })
+            .finally(() => {
+                if (activeJob === job) activeJob = null;
+            });
         return jobSnapshot(job);
     }
 

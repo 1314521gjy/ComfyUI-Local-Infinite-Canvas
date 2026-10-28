@@ -3,6 +3,7 @@ import { App } from "antd";
 import { useTranslation } from "react-i18next";
 import { APP_VERSION } from "@/constant/env";
 import { requestApplyUpdate, requestUpdateCheck, type ApplyUpdateResult, type UpdateCheckResult } from "@/services/api/update";
+import { isGatewayDown } from "@/services/api/gateway-status";
 import type { ReleaseInfo } from "@/lib/release";
 
 function readLocalReleases(): ReleaseInfo[] {
@@ -46,7 +47,7 @@ export function useVersionCheck() {
                 }
                 return result;
             } catch (error) {
-                if (showMessage) message.error(error instanceof Error ? error.message : t("version.updateFailed"));
+                if (showMessage && !isGatewayDown()) message.error(error instanceof Error ? error.message : t("version.updateFailed"));
                 return null;
             } finally {
                 setChecking(false);
@@ -84,7 +85,7 @@ export function useVersionCheck() {
             await checkLatest(true);
             return result;
         } catch (error) {
-            message.error(error instanceof Error ? error.message : t("version.applyFailed"));
+            if (!isGatewayDown()) message.error(error instanceof Error ? error.message : t("version.applyFailed"));
             throw error;
         } finally {
             setApplying(false);

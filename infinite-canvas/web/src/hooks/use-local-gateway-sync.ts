@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 
 import { isLocalGatewayUrl, LOCAL_GATEWAY_BASE_URL, LOCAL_ONLY } from "@/constant/app-mode";
+import { markGatewayUp, noteGatewayError } from "@/services/api/gateway-status";
 import { encodeChannelModel, guessCapability, modelOptionsFromChannels, useConfigStore, type ModelCapability } from "@/stores/use-config-store";
 
 const SYNC_INTERVAL_MS = 8000;
@@ -32,6 +33,7 @@ export function useLocalGatewaySync() {
                 });
                 window.clearTimeout(timeout);
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                markGatewayUp();
                 const payload = (await response.json()) as {
                     data?: Array<{
                         id?: string;
@@ -121,8 +123,9 @@ export function useLocalGatewaySync() {
                         });
                     }
                 }
-            } catch {
-                // 网关还没起来时静默重试，画布保持可用。
+            } catch (error) {
+                // 网关还没起来时静默重试，画布保持可用；断线状态由统一横幅提示。
+                noteGatewayError(error, `${LOCAL_GATEWAY_BASE_URL.replace(/\/+$/, "")}/models`);
             }
             if (!stopped) timer = window.setTimeout(sync, SYNC_INTERVAL_MS);
         };

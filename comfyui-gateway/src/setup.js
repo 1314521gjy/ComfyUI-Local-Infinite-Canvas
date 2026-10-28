@@ -51,6 +51,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
     let debounceTimer = null;
     let loaderCatalog = {};
     let folderPathCatalog = {};
+    let nodeClasses = new Set();
 
     async function persist() {
         try {
@@ -205,6 +206,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 folderPathCatalog = typeof comfy.folderPaths === "function" ? await comfy.folderPaths() : {};
                 state.comfyReachable = true;
                 const classes = new Set(Object.keys(objectInfo || {}));
+                nodeClasses = classes;
                 const loaders = collectLoaderOptions(objectInfo);
                 loaderCatalog = Object.fromEntries([...loaders.entries()].map(([classType, loader]) => [classType, [...loader.options].sort()]));
                 const loraOptions = loaders.get("LoraLoaderModelOnly")?.options || loaders.get("LoraLoader")?.options || new Set();
@@ -212,7 +214,8 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 const gatewayScan = await registry.scan();
                 const comfyScan = await importComfyWorkflows();
                 registry.reloadIfChanged?.();
-                const entries = registry.list().map((entry) => registry.resolve(entry.id)).filter(Boolean);
+                // hidden 工作流（如被画布复用的放大工具）不参与可用性统计，避免虚增“不可用”数量。
+                const entries = registry.list().map((entry) => registry.resolve(entry.id)).filter((entry) => entry && !entry.hidden);
                 const workflows = [];
                 const missingModels = new Set();
                 const missingNodes = new Set();
@@ -329,6 +332,10 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         return folderPathCatalog;
     }
 
+    function hasNodeClass(name) {
+        return nodeClasses.has(name);
+    }
+
     return {
         state,
         scan,
@@ -336,6 +343,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         stop,
         isAvailable,
         workflowStatus,
+        hasNodeClass,
         loraNames,
         loaderOptions,
         folderPaths,

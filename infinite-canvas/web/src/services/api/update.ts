@@ -1,4 +1,5 @@
 import { LOCAL_GATEWAY_BASE_URL } from "@/constant/app-mode";
+import { gatewayFetch } from "@/services/api/gateway-status";
 
 const gatewayRoot = LOCAL_GATEWAY_BASE_URL.replace(/\/v1\/?$/, "");
 
@@ -30,6 +31,8 @@ export type ApplyUpdateResult = {
     beforeHead?: string;
     afterHead?: string;
     changedFiles?: string[];
+    deletedFiles?: string[];
+    launcherChanged?: boolean;
     installRequired?: boolean;
     restartRequired?: boolean;
     restarting?: boolean;
@@ -47,7 +50,7 @@ function errorMessage(data: Record<string, any>, fallback: string) {
 }
 
 export async function requestUpdateCheck(fetchRemote = false): Promise<UpdateCheckResult> {
-    const response = await fetch(`${gatewayRoot}/api/update/check?fetch=${fetchRemote ? 1 : 0}`, {
+    const response = await gatewayFetch(`${gatewayRoot}/api/update/check?fetch=${fetchRemote ? 1 : 0}`, {
         headers: { Accept: "application/json" },
     });
     const data = await readJson(response);
@@ -56,7 +59,7 @@ export async function requestUpdateCheck(fetchRemote = false): Promise<UpdateChe
 }
 
 export async function requestApplyUpdate(dryRun = false): Promise<ApplyUpdateResult> {
-    const response = await fetch(`${gatewayRoot}/api/update/apply`, {
+    const response = await gatewayFetch(`${gatewayRoot}/api/update/apply`, {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json" },
         body: JSON.stringify({ dryRun }),

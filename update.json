@@ -1,15 +1,20 @@
 {
-  "version": "v0.21.3",
+  "version": "v0.21.4",
   "publishedAt": "2026-10-29",
-  "notes": "动态网关：启动器自动注入实际网关地址，前端不再写死端口；本机任意画布端口自动放行。更新成功后页面自动刷新。",
+  "notes": "本地反推资源包、旧版一键升级桥接、旧标签页自动转发与统一重连；更新不再跳转魔搭。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
-  "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
+  "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.3.zip",
-    "sha256": "b5c82fb99f72c991042024f84ec21628b2486312ae2556e2ca974e06853d2313",
-    "size": 5816320
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.4.zip",
+    "sha256": "7c3f4c1140b200ee1bd7e15c02056fde316fd792aefcafabc3fe54c6293dcc14",
+    "size": 34157435
+  },
+  "bridge": {
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
+    "sha256": "3af0a796f657c39c9ceb51610f31a7b55406b0418f2faf67072853ea9d88bb2a",
+    "size": 5735
   }
 }

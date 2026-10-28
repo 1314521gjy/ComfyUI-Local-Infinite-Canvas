@@ -12,12 +12,14 @@ type PromptOptimizeOptionsProps = {
     language: PromptOptimizeLanguage;
     cloudReady: boolean;
     cloudModel?: string;
+    localReady?: boolean;
     title?: string;
     disabled?: boolean;
     className?: string;
     onEngineChange: (engine: PromptOptimizeEngine) => void;
     onLanguageChange: (language: PromptOptimizeLanguage) => void;
     onOpenSettings: () => void;
+    onOpenLocalSettings?: () => void;
     onStart: () => void;
     onClose: () => void;
 };
@@ -27,12 +29,14 @@ export function PromptOptimizeOptions({
     language,
     cloudReady,
     cloudModel,
+    localReady = true,
     title,
     disabled = false,
     className = "",
     onEngineChange,
     onLanguageChange,
     onOpenSettings,
+    onOpenLocalSettings,
     onStart,
     onClose,
 }: PromptOptimizeOptionsProps) {
@@ -79,6 +83,14 @@ export function PromptOptimizeOptions({
                         ) : null}
                     </div>
                 ) : null}
+                {engine === "local" && !localReady ? (
+                    <div className="mt-2 flex items-center justify-between gap-2 text-[11px] opacity-70">
+                        <span className="min-w-0 truncate">{t("canvas.promptPanel.optimizeLocalMissing")}</span>
+                        <Button size="small" className="shrink-0" onClick={onOpenLocalSettings || onOpenSettings}>
+                            {t("canvas.promptPanel.captionInstall")}
+                        </Button>
+                    </div>
+                ) : null}
             </div>
             <div>
                 <div className="mb-1 text-[11px] opacity-70">{t("canvas.promptPanel.optimizeLanguage")}</div>
@@ -95,7 +107,7 @@ export function PromptOptimizeOptions({
                 <Button size="small" onClick={onClose}>
                     {t("canvas.promptPanel.optimizeClose")}
                 </Button>
-                <Button size="small" type="primary" disabled={disabled || (engine === "cloud" && !cloudReady)} onClick={onStart}>
+                <Button size="small" type="primary" disabled={disabled || (engine === "cloud" && !cloudReady) || (engine === "local" && !localReady)} onClick={onStart}>
                     {t("canvas.promptPanel.optimizeStart")}
                 </Button>
             </div>

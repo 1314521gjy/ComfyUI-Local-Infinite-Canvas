@@ -9,6 +9,22 @@
 - **Node.js / Express / Multer / React / Ant Design / Vite / Zustand / TanStack Query** 等 npm 依赖 — 按各自许可证分发；完整依赖树见 `comfyui-gateway/package.json`、`infinite-canvas/web/package.json` 及对应 lockfile。
 - **FFmpeg** — 由 ComfyUI 节点或本机环境提供；按 FFmpeg 的许可证使用。
 
+## 随包分发的第三方节点
+
+以下节点允许随工作台一起分发，安装时复制到 ComfyUI 的 `custom_nodes`：
+
+- **ComfyUI-Florence2** — MIT；上游 https://github.com/kijai/ComfyUI-Florence2 。
+- **ComfyUI-llama-cpp_vllm** — MIT；上游 https://github.com/lihaoyun6/ComfyUI-llama-cpp_vlm 。
+- **llama-cpp-python 预编译包** — MIT；Windows 预编译来源 https://github.com/JamePeng/llama-cpp-python ，未改动二进制。
+- **TE_MAN** — 原作者 LICENSE 原文写明未经书面授权禁止再分发；本项目依据用户提供的作者授权（2026-10-29）随包分发。若权利人提出异议，将立即移除相关文件。
+
+## 可选下载的本地反推模型
+
+以下模型不进入主安装包，由资源卡按需从 ModelScope 数据集 `shensanshu/ComfyUI-Local-Infinite-Canvas-Models` 下载：
+
+- **Qwen3.5-9B-Uncensored-HauhauCS-Aggressive（Q4_K_M + mmproj）** — 基于 Qwen3.5-9B，按底模 Apache-2.0 分发；如上游权利人提出限制，将移除下载。
+- **Florence-2-large-PromptGen-v2.0** — MIT（模型卡标注），来源 MiaoshouAI。
+
 ## 模型与自定义节点
 
 以下内容不随本仓库分发，需自行从合法渠道获取并遵守模型/节点许可证：

@@ -1,4 +1,5 @@
 import { LOCAL_GATEWAY_BASE_URL, LOCAL_ONLY } from "@/constant/app-mode";
+import { noteGatewayError } from "@/services/api/gateway-status";
 
 const HEARTBEAT_MS = 5000;
 let started = false;
@@ -16,13 +17,16 @@ export function startLocalSession() {
     let active = false;
     let hiddenSince = document.visibilityState === "hidden" ? Date.now() : 0;
 
-    const post = (path: string, keepalive = false) =>
+    const post = (path: string, keepalive = false, report = true) =>
         fetch(sessionUrl(path), {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ id }),
             keepalive,
-        }).catch(() => undefined);
+        }).catch((error) => {
+            if (report) noteGatewayError(error, sessionUrl(path));
+            return undefined;
+        });
 
     const open = () => {
         if (active) return;
@@ -40,7 +44,7 @@ export function startLocalSession() {
         active = false;
         if (timer !== undefined) window.clearInterval(timer);
         timer = undefined;
-        void post("/api/session/close", true);
+        void post("/api/session/close", true, false);
     };
 
     document.addEventListener("visibilitychange", () => {
