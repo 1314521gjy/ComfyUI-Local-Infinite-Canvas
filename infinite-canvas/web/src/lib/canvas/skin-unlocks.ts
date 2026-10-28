@@ -9,9 +9,9 @@ type SkinPasswordRecord = {
 // Passwords are not stored; only a PBKDF2-SHA256 verifier is kept here.
 const lockedSkinPasswords: Partial<Record<CardSkinId, SkinPasswordRecord>> = {
     fish: {
-        salt: "7f3a9c1e5b2d4806a1c9e7f4b3d2508c",
+        salt: "cd2abb4f6ee36b8d0dd1a5801b48a678",
         iterations: 210000,
-        hash: "c327f6c8853571f60e400fdf90b945bcf554fb1dd22d61e008627756ad86db3a",
+        hash: "ed9c341bc3ace760dbf2b0da99de913ed8961ee610683885ea4ea15867bd9952",
     },
 };
 
