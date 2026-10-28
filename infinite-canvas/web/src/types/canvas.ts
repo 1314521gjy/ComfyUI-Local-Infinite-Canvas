@@ -33,6 +33,7 @@ export type CanvasFreeCardInfo = {
     sourceFormat: "ui" | "api";
     outputType: "image" | "video" | "other";
     prompt: boolean;
+    textInputs?: Array<{ node: string; input: string; label: string; default: string; role: string }>;
     imageInputs: number;
     size?: { width: number; height: number } | null;
     aspectRatio?: string | null;
@@ -145,6 +146,7 @@ export type CanvasNodeMetadata = {
     seedFixed?: string;
     aspectRatio?: string;
     freeCard?: CanvasFreeCardInfo;
+    freeCardTextValues?: Record<string, string>;
     freeWorkflowId?: string;
     groupId?: string;
     interactive?: boolean; // Plugin node interaction/move state; see CanvasNodeDefinition.interactionToggle.

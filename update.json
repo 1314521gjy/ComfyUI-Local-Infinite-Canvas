@@ -1,16 +1,16 @@
 {
-  "version": "v0.21.4",
+  "version": "v0.21.5",
   "publishedAt": "2026-10-29",
-  "notes": "本地反推资源包、旧版一键升级桥接、旧标签页自动转发与统一重连；更新不再跳转魔搭。",
+  "notes": "自由卡片支持一次编辑工作流里的全部文本框（正向/负面/自定义），修复提示词误绑到负面的问题。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.4.zip",
-    "sha256": "15a5710ef7f7cae20ddf17787eec7f012e0bd30935c2dbe1c3446198a8dcea84",
-    "size": 34157124
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.5.zip",
+    "sha256": "df999a3d27878f8bb90ac996a0445c8cbe488fcf013f924ec5b9593207462f2f",
+    "size": 34160141
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

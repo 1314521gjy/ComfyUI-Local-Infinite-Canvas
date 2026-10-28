@@ -23,9 +23,22 @@ function imageValue(uploaded) {
   return uploaded.subfolder ? `${uploaded.subfolder}/${uploaded.name}` : uploaded.name;
 }
 
-export function applyFreeInputs(workflow, bindings, { prompt, uploadedImages = [], size, count, seed, seedFixed, ratio } = {}) {
+export function applyFreeInputs(workflow, bindings, { prompt, texts = [], uploadedImages = [], size, count, seed, seedFixed, ratio } = {}) {
   const next = deepClone(workflow || {});
-  if (bindings.prompt) {
+  // 只允许写回扫描时识别出的文本输入，避免通过接口改到模型名/文件名等字段。
+  const allowed = new Set((bindings.textInputs || []).map((item) => `${item.node}\u0000${item.input}`));
+  const textWrites = new Map();
+  for (const item of Array.isArray(texts) ? texts : []) {
+    const key = `${item?.node}\u0000${item?.input}`;
+    if (!allowed.has(key)) continue;
+    textWrites.set(key, String(item?.value ?? ""));
+  }
+  for (const [key, value] of textWrites) {
+    const [nodeId, input] = key.split("\u0000");
+    const node = next[nodeId];
+    if (node?.inputs) node.inputs[input] = value;
+  }
+  if (bindings.prompt && !textWrites.has(`${bindings.prompt.node}\u0000${bindings.prompt.input}`)) {
     const node = next[bindings.prompt.node];
     if (node?.inputs) node.inputs[bindings.prompt.input] = String(prompt || "");
   }
@@ -314,8 +327,24 @@ export function createFreeWorkflowStore({ dataDir, comfyWorkflowsDir = "", comfy
     return entry;
   }
 
+  // 旧卡片保存的是旧版 bindings（没有 textInputs），首次访问时重新识别并落盘。
+  async function ensureBindings(entry) {
+    if (!entry || Array.isArray(entry.bindings?.textInputs)) return entry;
+    try {
+      const bindings = detectFreeBindings(entry.workflow, await getObjectInfo());
+      entry.bindings = bindings;
+      entry.warnings = [...new Set([...(entry.warnings || []), ...(bindings.warnings || [])])];
+      entry.updatedAt = nowIso();
+      await persist();
+    } catch (error) {
+      logger?.warn?.(`升级自由卡片文本输入失败 ${entry.id}: ${error.message}`);
+    }
+    return entry;
+  }
+
   async function publicEntry(entry) {
     if (!entry) return null;
+    await ensureBindings(entry);
     const source = await sourceState(entry);
     return {
       id: entry.id,
@@ -345,5 +374,5 @@ export function createFreeWorkflowStore({ dataDir, comfyWorkflowsDir = "", comfy
     return result;
   }
 
-  return { load, listSources, importSource, sync, setArchived, get, remove, rename, publicEntry, list, applyFreeInputs, readRawWorkflow, sourceState };
+  return { load, listSources, importSource, sync, setArchived, get, remove, rename, publicEntry, list, applyFreeInputs, readRawWorkflow, sourceState, ensureBindings };
 }

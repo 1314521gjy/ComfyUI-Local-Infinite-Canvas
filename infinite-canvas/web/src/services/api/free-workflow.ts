@@ -24,6 +24,14 @@ export type FreeWorkflowPreset = {
     seedFixed?: string;
 };
 
+export type FreeWorkflowTextInput = {
+    node: string;
+    input: string;
+    label: string;
+    default: string;
+    role: string;
+};
+
 export type FreeWorkflowSummary = {
     id: string;
     name: string;
@@ -37,6 +45,7 @@ export type FreeWorkflowSummary = {
     sourceChanged: boolean;
     sourceMissing?: boolean;
     prompt: boolean;
+    textInputs?: FreeWorkflowTextInput[];
     imageInputs: number;
     size: { width: number; height: number } | null;
     aspectRatio?: string | null;
@@ -50,6 +59,7 @@ export type FreeWorkflowSummary = {
 
 export type FreeWorkflowRequest = {
     prompt: string;
+    texts?: Array<{ node: string; input: string; value: string }>;
     size?: string;
     ratio?: string;
     count?: number;
@@ -158,6 +168,7 @@ export async function freeWorkflowComfyUrl(config: AiConfig, id: string): Promis
 async function buildFormData(config: AiConfig, request: FreeWorkflowRequest) {
     const formData = new FormData();
     formData.set("prompt", request.prompt);
+    if (request.texts?.length) formData.set("texts", JSON.stringify(request.texts));
     if (request.size) formData.set("size", request.size);
     if (request.ratio) formData.set("ratio", request.ratio);
     if (request.count) formData.set("n", String(request.count));

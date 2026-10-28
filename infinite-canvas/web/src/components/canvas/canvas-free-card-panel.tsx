@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { App, Button, Popover, Select } from "antd";
 import { Archive, ExternalLink, RefreshCw, Settings2, Sparkles, Square, ArrowUp } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -33,7 +33,7 @@ type CanvasFreeCardPanelProps = {
     connectedNodes: CanvasNodeData[];
     isRunning: boolean;
     onChange: (patch: Partial<CanvasNodeData["metadata"]>) => void;
-    onGenerate: (nodeId: string, prompt: string) => void;
+    onGenerate: (nodeId: string, prompt: string, texts?: Array<{ node: string; input: string; value: string }>) => void;
     onStop: (nodeId: string) => void;
     onDisconnectReference: (fromNodeId: string, toNodeId: string) => void;
     onStartReferenceSelection: (nodeId: string) => void;
@@ -54,6 +54,7 @@ export function freeCardInfoFromSummary(summary: FreeWorkflowSummary): CanvasFre
         sourceFormat: summary.sourceFormat,
         outputType: summary.outputType === "video" ? "video" : summary.outputType === "image" ? "image" : "other",
         prompt: summary.prompt,
+        textInputs: summary.textInputs || [],
         imageInputs: summary.imageInputs,
         size: summary.size,
         aspectRatio: summary.aspectRatio,
@@ -91,6 +92,8 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
     const [sourcesError, setSourcesError] = useState("");
     const [summary, setSummary] = useState<FreeWorkflowSummary | null>(null);
     const [prompt, setPrompt] = useState(node.metadata?.prompt || "");
+    const [textValues, setTextValues] = useState<Record<string, string>>(node.metadata?.freeCardTextValues || {});
+    const promptInitRef = useRef("");
     const [importing, setImporting] = useState(false);
     const [syncing, setSyncing] = useState(false);
     const [archiving, setArchiving] = useState(false);
@@ -104,6 +107,10 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
     useEffect(() => {
         setPrompt(node.metadata?.prompt || "");
     }, [node.id, node.metadata?.prompt]);
+
+    useEffect(() => {
+        setTextValues(node.metadata?.freeCardTextValues || {});
+    }, [node.id, node.metadata?.freeCardTextValues]);
 
     const loadSources = useCallback(async () => {
         setSourcesLoading(true);
@@ -147,6 +154,25 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
         const normalized = summary.outputType === "video" ? "video" : summary.outputType === "image" ? "image" : "other";
         if (info.outputType !== normalized) onChange({ freeCard: { ...info, outputType: normalized } });
     }, [summary, info, onChange]);
+
+    const textInputs = useMemo(() => (summary?.textInputs?.length ? summary.textInputs : info?.textInputs || []), [summary?.textInputs, info?.textInputs]);
+    const primaryText = textInputs[0];
+    const extraTexts = textInputs.slice(1);
+    const textKey = (item: { node: string; input: string }) => `${item.node}:${item.input}`;
+
+    // 新导入/首次打开时，把主文本框填成工作流自带文本；之后保留用户输入。
+    useEffect(() => {
+        const id = info?.id || "";
+        if (!id || !textInputs.length || promptInitRef.current === id) return;
+        promptInitRef.current = id;
+        if (!node.metadata?.prompt) {
+            const initial = textInputs[0]?.default || "";
+            if (initial) {
+                setPrompt(initial);
+                onChange({ prompt: initial, composerContent: initial });
+            }
+        }
+    }, [info?.id, node.metadata?.prompt, onChange, textInputs]);
 
     const imageConnectedNodes = useMemo(() => connectedNodes.filter((item) => item.type === CanvasNodeType.Image || item.type === CanvasNodeType.Group), [connectedNodes]);
     const imageReferences = useMemo(() => {
@@ -195,6 +221,10 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
             patch.count = next.count ?? 1;
             patch.seed = next.seed || "";
             patch.seedFixed = current.seedFixed || "false";
+            const initialPrompt = next.textInputs?.[0]?.default || "";
+            patch.prompt = initialPrompt;
+            patch.composerContent = initialPrompt;
+            patch.freeCardTextValues = {};
         } else {
             if (!current.size && next.size) patch.size = `${next.size.width}x${next.size.height}`;
             if (!current.aspectRatio && card.aspectRatio) patch.aspectRatio = card.aspectRatio;
@@ -320,6 +350,20 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
         if (prompt !== (node.metadata?.prompt || "")) onChange({ prompt, composerContent: prompt });
     };
 
+    const commitTextValue = (key: string, value: string) => {
+        onChange({ freeCardTextValues: { ...(node.metadata?.freeCardTextValues || {}), ...textValues, [key]: value } });
+    };
+
+    const buildFreeTexts = () =>
+        textInputs
+            .map((item, index) => {
+                if (index === 0) return { node: item.node, input: item.input, value: prompt };
+                const key = textKey(item);
+                if (!(key in textValues)) return null;
+                return { node: item.node, input: item.input, value: textValues[key] };
+            })
+            .filter((item): item is { node: string; input: string; value: string } => Boolean(item));
+
     const generate = () => {
         if (!info) {
             message.warning(t("canvas.freeCard.selectFirst"));
@@ -333,8 +377,10 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
             message.warning(t("canvas.freeCard.needPrompt"));
             return;
         }
+        const texts = buildFreeTexts();
         commitPrompt();
-        onGenerate(node.id, prompt.trim());
+        if (texts.length) onChange({ freeCardTextValues: { ...(node.metadata?.freeCardTextValues || {}), ...textValues } });
+        onGenerate(node.id, prompt.trim(), texts.length ? texts : undefined);
     };
 
     const sourceOptions = useMemo(
@@ -434,11 +480,12 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
                             </div>
                         ) : null}
 
-                        {info.prompt ? (
+                        {info.prompt || textInputs.length ? (
                             <div className="space-y-2">
                                 <div className="flex items-center justify-between gap-2">
                                     <span className="text-xs font-medium" style={{ color: theme.node.muted }}>
-                                        {t("canvas.freeCard.prompt")}
+                                        {primaryText?.label || t("canvas.freeCard.prompt")}
+                                        {primaryText ? <span className="ml-1 text-[10px] opacity-50">#{primaryText.node}</span> : null}
                                     </span>
                                     <Button size="small" type="text" icon={<Sparkles className="size-3.5" />} loading={optimizing} onClick={() => setOptimizeOptionsOpen((open) => !open)}>
                                         {optimizing ? t("canvas.freeCard.optimizing") : t("canvas.freeCard.optimize")}
@@ -452,6 +499,27 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
                                     onChange={(event) => setPrompt(event.target.value)}
                                     onBlur={commitPrompt}
                                 />
+                                {extraTexts.map((item) => {
+                                    const key = textKey(item);
+                                    const value = textValues[key] ?? item.default;
+                                    return (
+                                        <div key={key} className="space-y-1">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="text-xs font-medium" style={{ color: theme.node.muted }}>
+                                                    {item.label}
+                                                </span>
+                                                <span className="text-[10px] opacity-50">#{item.node}</span>
+                                            </div>
+                                            <textarea
+                                                className="min-h-16 w-full resize-y rounded-xl border bg-transparent px-3 py-2 text-sm outline-none"
+                                                style={{ borderColor: theme.node.stroke, color: theme.node.text }}
+                                                value={value}
+                                                onChange={(event) => setTextValues((prev) => ({ ...prev, [key]: event.target.value }))}
+                                                onBlur={(event) => commitTextValue(key, event.target.value)}
+                                            />
+                                        </div>
+                                    );
+                                })}
                                 {optimizeOptionsOpen ? (
                                     <PromptOptimizeOptions
                                         className="mt-2"

@@ -108,6 +108,26 @@ function abortOnDisconnect(req, res, register) {
   };
 }
 
+function parseFreeTexts(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string" || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function freeEffectivePrompt(entry, texts, prompt) {
+  const binding = entry?.bindings?.prompt;
+  if (!binding) return String(prompt || "");
+  const match = (Array.isArray(texts) ? texts : []).find(
+    (item) => String(item?.node ?? "") === String(binding.node) && String(item?.input ?? "") === String(binding.input),
+  );
+  return String(match?.value ?? prompt ?? "");
+}
+
 function parseParams(value) {
   if (value && typeof value === "object" && !Array.isArray(value)) return value;
   if (value === undefined || value === null || value === "") return {};
@@ -712,18 +732,22 @@ export async function createGatewayApp(overrides = {}) {
 
   app.post("/v1/free-workflows/:id/images", upload.any(), async (req, res) => {
     const entry = requireFreeWorkflow(req.params.id);
+    await freeWorkflows.ensureBindings(entry);
     if (entry.bindings?.outputType !== "image") {
       throw new HttpError("这个自由卡片不是图片工作流", { status: 400, code: "free_workflow_not_image" });
     }
     const body = req.body || {};
     const prompt = String(body.prompt || "");
-    if (entry.bindings?.prompt && !prompt.trim()) {
+    const texts = parseFreeTexts(body.texts);
+    const effectivePrompt = freeEffectivePrompt(entry, texts, prompt);
+    if (entry.bindings?.prompt && !effectivePrompt.trim()) {
       throw new HttpError("这个工作流需要正向提示词", { status: 400, code: "missing_prompt" });
     }
     const uploadedImages = await uploadImages(comfy, orderedPromptImages(req.files || []));
     const parsedSize = parseSize(body.size);
     const workflow = applyFreeInputs(entry.workflow, entry.bindings, {
-      prompt,
+      prompt: effectivePrompt,
+      texts,
       uploadedImages,
       size: parsedSize ? { width: parsedSize.width, height: parsedSize.height } : undefined,
       count: body.n ?? body.count,
@@ -736,7 +760,7 @@ export async function createGatewayApp(overrides = {}) {
     try {
       result = await runWorkflow({
         entry: { name: entry.name, type: "image", workflow, bindings: {}, defaults: {}, presets: {} },
-        context: buildContext({ prompt, count: 1 }),
+        context: buildContext({ prompt: effectivePrompt, count: 1 }),
         comfy,
         timeoutMs: config.requestTimeoutMs,
         pollIntervalMs: config.pollIntervalMs,
@@ -772,18 +796,22 @@ export async function createGatewayApp(overrides = {}) {
 
   app.post("/v1/free-workflows/:id/videos", upload.any(), async (req, res) => {
     const entry = requireFreeWorkflow(req.params.id);
+    await freeWorkflows.ensureBindings(entry);
     if (entry.bindings?.outputType !== "video") {
       throw new HttpError("这个自由卡片不是视频工作流", { status: 400, code: "free_workflow_not_video" });
     }
     const body = req.body || {};
     const prompt = String(body.prompt || "");
-    if (entry.bindings?.prompt && !prompt.trim()) {
+    const texts = parseFreeTexts(body.texts);
+    const effectivePrompt = freeEffectivePrompt(entry, texts, prompt);
+    if (entry.bindings?.prompt && !effectivePrompt.trim()) {
       throw new HttpError("这个工作流需要正向提示词", { status: 400, code: "missing_prompt" });
     }
     const uploadedImages = await uploadImages(comfy, orderedPromptImages(req.files || []));
     const parsedSize = parseSize(body.size);
     const workflow = applyFreeInputs(entry.workflow, entry.bindings, {
-      prompt,
+      prompt: effectivePrompt,
+      texts,
       uploadedImages,
       size: parsedSize ? { width: parsedSize.width, height: parsedSize.height } : undefined,
       count: body.n ?? body.count,
@@ -794,7 +822,7 @@ export async function createGatewayApp(overrides = {}) {
     const task = tasks.create({
       model: entry.name,
       request: {
-        prompt,
+        prompt: effectivePrompt,
         size: body.size,
         images: uploadedImages.map((image) => image.name),
       },
@@ -802,7 +830,7 @@ export async function createGatewayApp(overrides = {}) {
     tasks.enqueue(task, async (_task, progress, signal) => {
       const result = await runVideo({
         entry: { name: entry.name, type: "video", workflow, bindings: {}, defaults: {}, presets: {} },
-        context: buildContext({ prompt, count: 1 }),
+        context: buildContext({ prompt: effectivePrompt, count: 1 }),
         comfy,
         timeoutMs: config.videoTimeoutMs,
         pollIntervalMs: config.pollIntervalMs,

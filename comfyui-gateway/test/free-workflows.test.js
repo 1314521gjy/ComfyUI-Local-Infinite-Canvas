@@ -150,6 +150,38 @@ test("binding detection finds prompt, size, batch, seed, image and output type",
   assert.equal(bindings.seeds[0].default, 42);
 });
 
+test("binding detection exposes every text input and prefers the positive primitive", () => {
+  const info = {
+    ...objectInfo,
+    PrimitiveStringMultiline: { input: { required: { value: ["STRING", { multiline: true }] } } },
+  };
+  const workflow = {
+    10: { class_type: "PrimitiveStringMultiline", inputs: { value: "positive text" }, _meta: { title: "提示词" } },
+    11: { class_type: "CLIPTextEncode", inputs: { text: ["10", 0], clip: ["20", 0] } },
+    12: { class_type: "CLIPTextEncode", inputs: { text: "negative text", clip: ["20", 0] }, _meta: { title: "负面提示词" } },
+    13: { class_type: "KSampler", inputs: { seed: 1, model: ["20", 0], positive: ["11", 0], negative: ["12", 0] } },
+    14: { class_type: "SaveImage", inputs: { images: ["13", 0], filename_prefix: "out" } },
+    20: { class_type: "UNETLoader", inputs: { unet_name: "safe.safetensors" } },
+  };
+  const bindings = detectFreeBindings(workflow, info);
+  assert.deepEqual(bindings.prompt, { node: "10", input: "value" });
+  assert.deepEqual(bindings.textInputs.map((item) => [item.node, item.input, item.label, item.role]), [
+    ["10", "value", "提示词", "positive"],
+    ["12", "text", "负面提示词", "negative"],
+  ]);
+  const patched = applyFreeInputs(workflow, bindings, {
+    prompt: "new positive",
+    texts: [
+      { node: "10", input: "value", value: "new positive" },
+      { node: "12", input: "text", value: "new negative" },
+      { node: "20", input: "unet_name", value: "evil.safetensors" },
+    ],
+  });
+  assert.equal(patched[10].inputs.value, "new positive");
+  assert.equal(patched[12].inputs.text, "new negative");
+  assert.equal(patched[20].inputs.unet_name, "safe.safetensors");
+});
+
 test("free inputs patch the workflow and randomize seed when not fixed", () => {
   const workflow = { 1: { class_type: "CLIPTextEncode", inputs: { text: "old" } }, 2: { class_type: "EmptyLatentImage", inputs: { width: 512, height: 512, batch_size: 1 } }, 3: { class_type: "KSampler", inputs: { seed: 42 } } };
   const bindings = {
