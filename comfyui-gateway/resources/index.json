@@ -1330,7 +1330,7 @@
       "pipName": "llama-cpp-python",
       "size": 299142055,
       "license": "MIT",
-      "note": "按 ComfyUI 的 Python 版本自动选择预编译包；3.12 走魔搭镜像，其他版本从 GitHub 下载。",
+      "note": "按 ComfyUI 的 Python 版本自动选择预编译包（3.10–3.14），全部走魔搭镜像。",
       "wheels": {
         "3.10": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/wheels/llama_cpp_python-0.3.46%2Bcu128-cp310-cp310-win_amd64.whl",
         "3.11": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/wheels/llama_cpp_python-0.3.46%2Bcu128-cp311-cp311-win_amd64.whl",
