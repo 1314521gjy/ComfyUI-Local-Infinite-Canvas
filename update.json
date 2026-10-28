@@ -9,8 +9,8 @@
   },
   "patch": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.8.zip",
-    "sha256": "153fd3da3b18519c0e25512f43ac76af8ece994faa33a1aca6cacaa7493ecb88",
-    "size": 34172222
+    "sha256": "56f7979987d7d9efe60d4618e1b2d1a6b428a7d4e43152f96511f8eaafe5aad7",
+    "size": 34172535
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
