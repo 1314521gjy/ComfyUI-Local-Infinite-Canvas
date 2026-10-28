@@ -79,6 +79,7 @@ const copyByLocale = {
         ready: "已齐全",
         size: "下载体积",
         sources: "下载源",
+        autoMatch: "按本机 Python 自动匹配",
         localBake: "本地烘焙",
         noResources: "此包没有需要下载的资源。",
         downloadProgress: "安装进度",
@@ -167,6 +168,7 @@ const copyByLocale = {
         ready: "Ready",
         size: "Download size",
         sources: "Sources",
+        autoMatch: "Auto-matched to local Python",
         localBake: "Local bake",
         noResources: "This pack has no downloadable resources.",
         downloadProgress: "Install progress",
@@ -201,6 +203,14 @@ const copyByLocale = {
 };
 
 type Copy = typeof copyByLocale.zh;
+
+function sourceSummary(item: ResourceItem, copy: Copy) {
+    if (item.type === "pip") {
+        const versions = item.wheelVersions || [];
+        return versions.length ? `${copy.autoMatch} (${versions[0]}–${versions[versions.length - 1]})` : copy.autoMatch;
+    }
+    return `${copy.sources} ${item.sources.length}`;
+}
 
 function statusTag(item: ResourceItem, copy: Copy) {
     if (item.overridden) return <Tag color="blue">{copy.mainModelSelected}</Tag>;
@@ -270,7 +280,7 @@ function ResourceCard({
                     </div>
                     <div className="mt-0.5 truncate text-[10px] text-stone-400 dark:text-stone-500">{item.target}</div>
                     <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-stone-400 dark:text-stone-500">
-                        <span>{copy.sources} {item.sources.length}</span>
+                        <span>{sourceSummary(item, copy)}</span>
                         <span>{formatBytes(item.size)}</span>
                         {!compact && item.license ? <span>{copy.license}: {item.license}</span> : null}
                     </div>
@@ -320,7 +330,7 @@ function WorkflowResourceRow({
                 </div>
                 <div className="mt-0.5 truncate text-[10px] text-stone-400 dark:text-stone-500">{item.target}</div>
                 <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-stone-400 dark:text-stone-500">
-                    <span>{copy.sources} {item.sources.length}</span>
+                    <span>{sourceSummary(item, copy)}</span>
                     <span>{formatBytes(item.size)}</span>
                 </div>
                 {item.matchedBy === "size" && item.matchedFile ? <div className="mt-0.5 text-[10px] text-stone-400 dark:text-stone-500">{copy.matchedBySize}: {item.matchedFile}</div> : null}

@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { useEffect } from "react";
 import { GithubOutlined } from "@ant-design/icons";
 import { App, Button, Modal, Tag, Timeline } from "antd";
 import type { TFunction } from "i18next";
@@ -30,6 +31,12 @@ export function VersionReleaseModal({ className, style }: VersionReleaseModalPro
     const { modal } = App.useApp();
     const { open, setOpen, openReleaseModal, latestVersion, releases, checking, hasNewVersion, checkLatestRelease, updateInfo, applyResult, applying, applyUpdate } =
         useVersionCheck();
+
+    useEffect(() => {
+        const handler = () => openReleaseModal();
+        window.addEventListener("open-version-release", handler);
+        return () => window.removeEventListener("open-version-release", handler);
+    }, [openReleaseModal]);
 
     const confirmApply = () => {
         modal.confirm({

@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 
 import { ClientRootInit } from "@/components/layout/client-root-init";
 import { GatewayReconnectBanner } from "@/components/layout/gateway-reconnect-banner";
+import { UpdateAvailableBanner } from "@/components/layout/update-available-banner";
 import type { AppLocale } from "@/i18n";
 import { getAntThemeConfig } from "@/lib/app-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -50,6 +51,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
                     <QueryClientProvider client={queryClient}>
                         <ClientRootInit>{children}</ClientRootInit>
                         <GatewayReconnectBanner />
+                        <UpdateAvailableBanner />
                     </QueryClientProvider>
                 </App>
             </ProConfigProvider>

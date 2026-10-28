@@ -32,6 +32,7 @@ export type ResourceItem = {
     missingRequires: string[];
     overridden?: boolean;
     overriddenBy?: string;
+    wheelVersions?: string[];
 };
 
 export type PackMainModelOption = {

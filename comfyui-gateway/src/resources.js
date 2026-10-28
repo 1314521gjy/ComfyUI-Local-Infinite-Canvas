@@ -729,7 +729,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             installed,
             missingRequires,
             ...(alias ? { overridden: true, overriddenBy: alias.to, matchedFile: alias.to } : {}),
-            ...(isPip ? { pythonRuntime: pip.python || "", pipVersion: pip.version || "", pipReason: pip.reason || "" } : {}),
+            ...(isPip ? { pythonRuntime: pip.python || "", pipVersion: pip.version || "", pipReason: pip.reason || "", wheelVersions: Object.keys(resource.wheels || {}) } : {}),
         };
     }
 
