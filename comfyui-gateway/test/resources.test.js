@@ -901,3 +901,75 @@ test("packs only declare downloadable weights; nodes ship with the app", () => {
         assert.ok(index.resources.find((item) => item.id === id), `node ${id} must stay in the index for the launcher`);
     }
 });
+
+test("resources use ComfyUI folder paths for detection and install targets", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-extrapath-test-"));
+    const comfy = path.join(root, "ComfyUI");
+    const extra = path.join(root, "models-extra");
+    const extraVae = path.join(extra, "vae");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(path.join(comfy, "models", "vae"), { recursive: true });
+    await fsp.mkdir(extraVae, { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    await fsp.writeFile(path.join(comfy, "main.py"), "", "utf8");
+    await fsp.writeFile(path.join(extraVae, "already.safetensors"), "x", "utf8");
+
+    const payload = crypto.randomBytes(1024);
+    await fsp.writeFile(path.join(resources, "payload.bin"), payload);
+    const index = {
+        schema: 1,
+        version: "test-extrapath",
+        packs: [{ id: "test", label: "Test", resources: ["existing-file", "new-file"] }],
+        resources: [
+            { id: "existing-file", type: "model", label: "Existing", target: "vae/already.safetensors", size: 1 },
+            {
+                id: "new-file",
+                type: "model",
+                label: "New",
+                target: "vae/new.bin",
+                size: payload.length,
+                sources: [{ kind: "bundled", path: "resources/payload.bin" }],
+            },
+        ],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+
+    const manager = createResourceManager({
+        config: {
+            rootDir: root,
+            dataDir: data,
+            comfyDir: comfy,
+            comfyWorkflowsDir: "",
+            resourcesIndexUrl: "",
+            resourcesFetchTimeoutMs: 1000,
+            resourceConcurrency: 1,
+        },
+        setup: {
+            loaderOptions: () => ({}),
+            folderPaths: () => ({ vae: [extraVae] }),
+            status: () => ({ comfyReachable: true }),
+            scan: async () => ({}),
+        },
+        logger: null,
+    });
+
+    try {
+        await manager.init();
+        const before = manager.status();
+        const existing = before.resources.find((item) => item.id === "existing-file");
+        const missing = before.resources.find((item) => item.id === "new-file");
+        assert.equal(existing.status, "present");
+        assert.equal(missing.status, "missing");
+        assert.ok(before.modelRoots.vae.includes(extraVae));
+
+        const job = manager.install({ ids: ["new-file"] });
+        const finished = await waitForJob(manager, job.id);
+        assert.equal(finished.status, "done", JSON.stringify(finished));
+        assert.deepEqual(await fsp.readFile(path.join(extraVae, "new.bin")), payload);
+        assert.equal(fs.existsSync(path.join(comfy, "models", "vae", "new.bin")), false);
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});

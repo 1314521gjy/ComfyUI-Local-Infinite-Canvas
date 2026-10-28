@@ -532,6 +532,11 @@ export function createMockComfyServer(options = {}) {
         return;
       }
 
+      if (method === 'GET' && pathname === '/internal/folder_paths') {
+        json(res, 200, {});
+        return;
+      }
+
       if (method === 'POST' && pathname === '/prompt') {
         await handlePrompt(req, res);
         return;

@@ -50,6 +50,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
     let poller = null;
     let debounceTimer = null;
     let loaderCatalog = {};
+    let folderPathCatalog = {};
 
     async function persist() {
         try {
@@ -201,6 +202,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
             try {
                 const stats = await comfy.systemStats();
                 const objectInfo = await comfy.objectInfo();
+                folderPathCatalog = typeof comfy.folderPaths === "function" ? await comfy.folderPaths() : {};
                 state.comfyReachable = true;
                 const classes = new Set(Object.keys(objectInfo || {}));
                 const loaders = collectLoaderOptions(objectInfo);
@@ -323,6 +325,10 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         return loaderCatalog;
     }
 
+    function folderPaths() {
+        return folderPathCatalog;
+    }
+
     return {
         state,
         scan,
@@ -332,6 +338,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         workflowStatus,
         loraNames,
         loaderOptions,
+        folderPaths,
         status: () => ({ ...state, scanning: Boolean(scanPromise) }),
     };
 }

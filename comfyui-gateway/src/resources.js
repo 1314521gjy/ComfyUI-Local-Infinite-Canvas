@@ -3,7 +3,7 @@ import os from "node:os";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
-import { execFile, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
@@ -12,6 +12,19 @@ import { findUnetLoader } from "./base-models.js";
 import { nowIso, truncate, writeJsonAtomic } from "./util.js";
 
 const MODEL_DIRS = new Set(["diffusion_models", "text_encoders", "vae", "vae_approx", "loras", "checkpoints", "upscale_models", "latent_upscale_models", "vdn", "clip_vision"]);
+// ComfyUI /internal/folder_paths 的键名和资源索引目录不完全同名，需要做别名。
+const FOLDER_PATH_KEYS = {
+    diffusion_models: ["diffusion_models", "unet"],
+    text_encoders: ["text_encoders", "clip"],
+    vae: ["vae"],
+    vae_approx: ["vae_approx"],
+    loras: ["loras"],
+    checkpoints: ["checkpoints"],
+    upscale_models: ["upscale_models"],
+    latent_upscale_models: ["latent_upscale_models"],
+    clip_vision: ["clip_vision"],
+    vdn: ["vdn"],
+};
 const LOADER_BY_DIR = {
     diffusion_models: { classType: "UNETLoader", input: "unet_name" },
     text_encoders: { classType: "CLIPLoader", input: "clip_name" },
@@ -116,20 +129,85 @@ function resolveComfyRoot(config) {
     return "";
 }
 
-function resolveComfyPython(config, root) {
+function pythonFromBat(bat) {
+    try {
+        const text = fs.readFileSync(bat, "utf8");
+        const match = text.match(/(?:^|[\s"'])((?:[A-Za-z]:)?[^"'\r\n]*?python(?:w)?\.exe)\b/i);
+        if (!match) return "";
+        const token = match[1].trim().replace(/^"|"$/g, "");
+        return path.isAbsolute(token) ? token : path.resolve(path.dirname(bat), token);
+    } catch {
+        return "";
+    }
+}
+
+const processPythonCache = new Map();
+
+// 从监听 ComfyUI 端口的进程反查它真实的 Python，兼容非便携版/conda/自定义启动脚本。
+function pythonFromRunningComfy(config) {
+    if (process.platform !== "win32") return "";
+    let port = 8188;
+    try {
+        const url = new URL(config.comfyUrl || "http://127.0.0.1:8188");
+        port = Number(url.port) || (url.protocol === "https:" ? 443 : 80);
+    } catch {
+        port = 8188;
+    }
+    const cached = processPythonCache.get(port);
+    if (cached && Date.now() - cached.at < 30000) return cached.value;
+    const systemRoot = process.env.SystemRoot || "C:\\Windows";
+    const powershell = path.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+    const script = [
+        `$conn = Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1`,
+        "if ($conn) {",
+        "  $proc = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $conn.OwningProcess)",
+        "  if ($proc) { $proc.ExecutablePath }",
+        "}",
+    ].join("\n");
+    let found = "";
+    try {
+        const output = execFileSync(powershell, ["-NoProfile", "-Command", script], {
+            timeout: 4000,
+            windowsHide: true,
+            encoding: "utf8",
+            maxBuffer: 64 * 1024,
+        });
+        const first = String(output || "").split(/\r?\n/).map((line) => line.trim()).find(Boolean) || "";
+        if (first && /python(?:w)?\.exe$/i.test(first) && isFile(first)) found = first;
+    } catch {
+        found = "";
+    }
+    processPythonCache.set(port, { value: found, at: Date.now() });
+    return found;
+}
+
+function resolveComfyPython(config, root, { probeProcess = false } = {}) {
     const candidates = [];
-    if (root) {
-        candidates.push(path.join(path.dirname(root), "python_embeded", "python.exe"));
-        candidates.push(path.join(path.dirname(root), "python_embeded", "python.exe"));
-        candidates.push(path.join(root, "python_embeded", "python.exe"));
-        candidates.push(path.join(root, "venv", "Scripts", "python.exe"));
-        candidates.push(path.join(root, ".venv", "Scripts", "python.exe"));
+    const add = (value) => {
+        if (value) candidates.push(value);
+    };
+    add(process.env.COMFY_PYTHON);
+    const roots = [root, config.comfyDir].filter(Boolean);
+    for (const base of roots) {
+        add(path.join(base, "python.exe"));
+        add(path.join(base, "python_embeded", "python.exe"));
+        add(path.join(base, "python_embedded", "python.exe"));
+        add(path.join(base, "venv", "Scripts", "python.exe"));
+        add(path.join(base, ".venv", "Scripts", "python.exe"));
+        add(path.join(base, "Scripts", "python.exe"));
+        add(pythonFromBat(path.join(base, "run_nvidia_gpu.bat")));
+        try {
+            const envs = path.join(base, "envs");
+            for (const name of fs.readdirSync(envs)) add(path.join(envs, name, "python.exe"));
+        } catch {
+            // 没有 conda envs 目录。
+        }
     }
-    if (config.comfyDir) {
-        candidates.push(path.join(config.comfyDir, "python_embeded", "python.exe"));
-        candidates.push(path.join(config.comfyDir, "venv", "Scripts", "python.exe"));
-    }
-    return candidates.find(isFile) || "";
+    if (root) add(pythonFromBat(path.join(path.dirname(root), "run_nvidia_gpu.bat")));
+    const staticMatch = candidates.find(isFile);
+    if (staticMatch) return staticMatch;
+    if (!probeProcess) return "";
+    return pythonFromRunningComfy(config);
 }
 
 function safeUrl(value) {
@@ -211,11 +289,62 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         return resolveComfyPython(config, root);
     }
 
+    function comfyPythonForBake(root = comfyRoot()) {
+        return resolveComfyPython(config, root, { probeProcess: true });
+    }
+
+    function canWrite(dir) {
+        try {
+            fs.accessSync(dir, fs.constants.W_OK);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    function modelRoots(dir, root = comfyRoot()) {
+        const roots = [];
+        const seen = new Set();
+        const add = (value) => {
+            if (!value || typeof value !== "string") return;
+            let resolved;
+            try {
+                resolved = path.resolve(value);
+            } catch {
+                return;
+            }
+            const key = resolved.toLowerCase();
+            if (seen.has(key)) return;
+            seen.add(key);
+            roots.push(resolved);
+        };
+        const folderPaths = setup?.folderPaths?.() || {};
+        for (const key of FOLDER_PATH_KEYS[dir] || [dir]) {
+            const list = Array.isArray(folderPaths[key]) ? folderPaths[key] : [];
+            for (const entry of list) add(entry);
+        }
+        if (root) add(path.join(root, "models", dir));
+        return roots;
+    }
+
+    function modelFileCandidates(resource, root = comfyRoot()) {
+        const { dir, file } = targetParts(resource.target);
+        if (dir === "custom_nodes") return root ? [path.join(root, "custom_nodes", file)] : [];
+        return modelRoots(dir, root).map((entry) => path.join(entry, file));
+    }
+
+    function existingPath(resource, root = comfyRoot()) {
+        return modelFileCandidates(resource, root).find(isFile) || "";
+    }
+
+    // 安装落点：优先 ComfyUI 实际在用、且可写的模型目录（含 extra_model_paths / 目录映射），
+    // 都不可写时退回 <ComfyUI>/models/<类型>。
     function targetPath(resource, root = comfyRoot()) {
         const { dir, file } = targetParts(resource.target);
         if (!root) throw new Error("未找到 ComfyUI 安装目录");
         if (dir === "custom_nodes") return path.join(root, "custom_nodes", file);
-        return path.join(root, "models", dir, file);
+        const writable = modelRoots(dir, root).find((entry) => isDir(entry) && canWrite(entry));
+        return path.join(writable || path.join(root, "models", dir), file);
     }
 
     async function loadLock() {
@@ -318,12 +447,17 @@ export function createResourceManager({ config, setup, registry, logger, workflo
 
     function resourceStatus(resource, root) {
         const { dir, file } = targetParts(resource.target);
-        const target = root ? targetPath(resource, root) : "";
         const isNode = dir === "custom_nodes" || resource.type === "node";
-        const exists = Boolean(target && (isNode ? isDir(target) : isFile(target)));
+        const nodeTarget = isNode && root ? path.join(root, "custom_nodes", file) : "";
+        const found = !root
+            ? ""
+            : isNode
+              ? (isDir(nodeTarget) ? nodeTarget : "")
+              : existingPath(resource, root);
+        const exists = Boolean(found);
         let size = 0;
         try {
-            size = exists ? fs.statSync(target).size : 0;
+            size = exists ? fs.statSync(found).size : 0;
         } catch {
             size = 0;
         }
@@ -332,7 +466,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         const missingRequires = isBake ? (resource.requires || []).filter((id) => {
             const dependency = index?.resources?.find((item) => item.id === id);
             if (!dependency) return true;
-            return !isFile(targetPath(dependency, root));
+            if (!root) return true;
+            return !existingPath(dependency, root);
         }) : [];
         const status = isBake
             ? (exists ? "present" : missingRequires.length ? "blocked" : "missing")
@@ -679,6 +814,14 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             channel: index?.channel || "",
             comfyRoot: root,
             comfyPython: comfyPython(root),
+            modelRoots: (() => {
+                const map = {};
+                for (const dir of MODEL_DIRS) {
+                    const roots = modelRoots(dir, root).filter(isDir);
+                    if (roots.length) map[dir] = roots;
+                }
+                return map;
+            })(),
             comfyReachable: Boolean(setup?.status?.().comfyReachable),
             hardware: hardware || null,
             recommendationAvailable: hardwareAvailable && recommendedPacks.length > 0,
@@ -863,14 +1006,15 @@ export function createResourceManager({ config, setup, registry, logger, workflo
     async function downloadResource(resource, jobItem, signal) {
         const root = comfyRoot();
         if (!root) throw new Error("未找到 ComfyUI 安装目录");
-        const target = targetPath(resource, root);
-        if (isFile(target)) {
+        const existing = existingPath(resource, root);
+        if (existing) {
             jobItem.status = "skipped";
             jobItem.skipped = true;
-            jobItem.bytes = fs.statSync(target).size;
+            jobItem.bytes = fs.statSync(existing).size;
             jobItem.size = jobItem.size || jobItem.bytes;
             return;
         }
+        const target = targetPath(resource, root);
         const part = `${target}.part`;
         await fsp.mkdir(path.dirname(target), { recursive: true });
         const sources = normalizeSources(resource);
@@ -1088,7 +1232,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
     async function runBake(resource, jobItem, signal) {
         const root = comfyRoot();
         if (!root) throw new Error("未找到 ComfyUI 安装目录");
-        const python = comfyPython(root);
+        const python = comfyPythonForBake(root);
         if (!python) throw new Error("未找到 ComfyUI 的 Python");
         const target = targetPath(resource, root);
         const h3Trt = resource.builder?.kind === "h3-trt-vae";
@@ -1102,8 +1246,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             if (!isFile(script)) throw new Error("缺少编译脚本 scripts/build-h3-trt-vae.py");
             const inputResource = resourceById(resource.builder?.input || resource.requires?.[0]);
             if (!inputResource) throw new Error("TRT 编译缺少 ONNX 输入资源");
-            const input = targetPath(inputResource, root);
-            if (!isFile(input)) throw new Error("TRT 编译依赖的 ONNX 尚未就绪");
+            const input = existingPath(inputResource, root);
+            if (!input) throw new Error("TRT 编译依赖的 ONNX 尚未就绪");
             const compiler = path.join(root, "custom_nodes", "ComfyUI-H3VAE_TRT", "compile.py");
             if (!isFile(compiler)) throw new Error("缺少 ComfyUI-H3VAE_TRT/compile.py，请先安装 H3 TRT VAE 节点");
             trtInput = input;
@@ -1115,9 +1259,9 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             const baseResource = resourceById(resource.requires?.[0]);
             const sftResource = resourceById(resource.requires?.[1]);
             if (!baseResource || !sftResource) throw new Error("烘焙缺少 Base/SFT 依赖");
-            const basePath = targetPath(baseResource, root);
-            const sftPath = targetPath(sftResource, root);
-            if (!isFile(basePath) || !isFile(sftPath)) throw new Error("烘焙依赖的 Base/SFT 尚未就绪");
+            const basePath = existingPath(baseResource, root);
+            const sftPath = existingPath(sftResource, root);
+            if (!basePath || !sftPath) throw new Error("烘焙依赖的 Base/SFT 尚未就绪");
             args = [script, "--base", basePath, "--sft", sftPath, "--out", target, "--preset", resource.builder?.preset || "Balanced", "--strength", String(resource.builder?.strength ?? 1)];
         }
         jobItem.status = "baking";

@@ -184,6 +184,17 @@ export function createComfyClient({ baseUrl, timeoutMs = 10 * 60 * 1000, retryAt
 
   const objectInfo = () => request("/object_info", { timeout: 30000 });
   const systemStats = () => request("/system_stats", { timeout: 3000 });
+  // ComfyUI 会把 extra_model_paths.yaml / 目录映射后的真实路径都列出来；
+  // 老版本没有这个接口时返回空对象，由调用方回退到 models/<类型>。
+  const folderPaths = async () => {
+    try {
+      const data = await request("/internal/folder_paths", { timeout: 5000 });
+      return data && typeof data === "object" ? data : {};
+    } catch (error) {
+      logger?.warn?.(`读取 ComfyUI 模型目录失败：${error.message}`);
+      return {};
+    }
+  };
   const queue = () => request("/queue", { timeout: 5000 });
 
   async function isReachable() {
@@ -195,5 +206,5 @@ export function createComfyClient({ baseUrl, timeoutMs = 10 * 60 * 1000, retryAt
     }
   }
 
-  return { baseUrl: base, request, submit, history, view, uploadImage, interrupt, cancel, freeMemory, objectInfo, systemStats, queue, isReachable };
+  return { baseUrl: base, request, submit, history, view, uploadImage, interrupt, cancel, freeMemory, objectInfo, systemStats, folderPaths, queue, isReachable };
 }
