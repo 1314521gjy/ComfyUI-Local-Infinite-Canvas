@@ -1547,6 +1547,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                         if (digest.toLowerCase() !== expectedSha.toLowerCase()) throw new Error("节点包 SHA256 校验失败");
                     }
                 }
+                jobItem.status = "extracting";
+                updateJob(jobItem.job);
                 await extractArchive(archive, extract);
                 const sourceDir = await findNodeRoot(extract);
                 if (!sourceDir) throw new Error("节点包里没有找到 __init__.py");
@@ -1638,6 +1640,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                         if (digest.toLowerCase() !== expectedSha.toLowerCase()) throw new Error("模型包 SHA256 校验失败");
                     }
                 }
+                jobItem.status = "extracting";
+                updateJob(jobItem.job);
                 await extractArchive(archive, extract);
                 const sourceDir = await findConfigDir(extract);
                 if (!sourceDir) throw new Error("模型包里没有找到 config.json");

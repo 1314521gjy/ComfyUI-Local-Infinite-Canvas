@@ -68,6 +68,7 @@ const copyByLocale = {
         downloadProgress: "安装进度",
         copying: "安装中",
         installing: "安装运行库",
+        extracting: "解压中",
         done: "安装完成",
         failed: "部分资源安装失败",
         compileFailed: "本机编译失败",
@@ -141,6 +142,7 @@ const copyByLocale = {
         downloadProgress: "Install progress",
         copying: "Installing",
         installing: "Installing runtime",
+        extracting: "Extracting",
         done: "Install complete",
         failed: "Some resources failed",
         compileFailed: "Local compile failed",
@@ -562,7 +564,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                     <span className={item.status === "error" ? "shrink-0 text-red-500" : "shrink-0 text-stone-400 dark:text-stone-500"}>
                                         {item.status === "downloading"
                                             ? `${formatBytes(item.bytes)} / ${formatBytes(item.size)}${speeds[item.id] ? ` · ${formatSpeed(speeds[item.id])}` : ""}`
-                                            : item.status === "copying" ? copy.copying : item.status === "installing" ? copy.installing : item.status === "baking" ? copy.localBake : item.status}
+                                            : item.status === "copying" ? copy.copying : item.status === "installing" ? copy.installing : item.status === "extracting" ? copy.extracting : item.status === "baking" ? copy.localBake : item.status}
                                     </span>
                                 </div>
                                 {item.status === "error" && item.error ? (
