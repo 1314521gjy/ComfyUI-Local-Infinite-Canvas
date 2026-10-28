@@ -229,6 +229,9 @@ export async function createGatewayApp(overrides = {}) {
   if (!bridgeStatus.installed) logger.warn(`ComfyUI 工作流桥接未安装：${bridgeStatus.reason || "未知原因"}`);
   const sessions = createSessionTracker({ staleMs: config.sessionStaleSec * 1000 });
   const setup = createSetupManager({ config, registry, comfy, logger, mainModelFile: (id) => mainModels.fileForWorkflow(id) });
+  if (config.allowRemote && !config.gatewayToken) {
+    logger.warn("ALLOW_REMOTE=1 但未设置 GATEWAY_TOKEN：/api/* 与 /admin 对局域网无鉴权，建议设置令牌或改回回环绑定。");
+  }
   const resources = createResourceManager({ config, setup, registry, logger, workflowVisibility, mainModels });
   await resources.init();
   // 随包节点由启动器首次启动复制；直接用 start-all/start-gateway 启动时这里补一次（幂等）
