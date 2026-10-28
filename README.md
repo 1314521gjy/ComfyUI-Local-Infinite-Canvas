@@ -43,7 +43,7 @@ start-local.bat       Windows 一键启动
 - Windows 10/11；NVIDIA GPU（开发环境：RTX 4080 SUPER 32GB）。
 - Node.js 24+。
 - 一份可运行的 ComfyUI（便携版即可）。
-- **本仓库不包含模型权重、自定义节点和 ComfyUI 本体。** 工作流里引用的模型、LoRA、自定义节点需要在本机自行安装，并遵守各自许可证。
+- **Git 源码仓库不包含模型权重、自定义节点和 ComfyUI 本体。** 完整发布包会附带运行所必需的预解压节点、H3 VAE ONNX、预览 VAE 与观澜 LoRA；其余模型/LoRA 由资源中心按工作流下载，并遵守各自许可证。
 - 画布 `dist/` 已随仓库提供；修改前端源码后需要重新构建。
 
 ## 安装与启动
@@ -108,7 +108,7 @@ start-local.bat
 
 `comfyui-gateway`、`launcher` 及本地集成修改由 **1314521gjy** 编写，按 MIT 许可发布，详见根目录 [`LICENSE`](LICENSE)。
 
-ComfyUI 本体、模型权重、LoRA 和第三方自定义节点不随本仓库分发，分别适用其各自许可证；本项目与 ComfyUI、MiniMax、阿里云通义千问、MOSS、字节跳动 SeedVR2 等项目的维护方无隶属关系。
+ComfyUI 本体、其余模型权重、LoRA 和第三方自定义节点适用各自许可证；完整发布包随包附带运行必需的节点与少量 VAE/LoRA，其余按工作流下载；本项目与 ComfyUI、MiniMax、阿里云通义千问、MOSS、字节跳动 SeedVR2 等项目的维护方无隶属关系。
 
 ## 状态
 
