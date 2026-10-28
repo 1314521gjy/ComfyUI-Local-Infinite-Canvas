@@ -1,7 +1,7 @@
 {
-  "version": "v0.21.0",
-  "publishedAt": "2026-10-28",
-  "notes": "资源改为按工作流下载（节点随包自动安装）；H3 ONNX/观澜 LoRA/预览 VAE 随包；TRT engine 自动编译；文本卡片支持云端反推；跨站写拦截与云端地址校验；资源统计口径修正。",
+  "version": "v0.21.1",
+  "publishedAt": "2026-10-29",
+  "notes": "ComfyUI 模型目录改为读取 /internal/folder_paths，自动识别 extra_model_paths 和目录映射；图片反推云端 API 接线修复（不再报未配置），反推结果按云端/本地显示正确引擎；画布后台标签休眠不再误停后台；TRT engine 编译改为原子落盘，取消时结束整个编译进程树。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "mirrors": {

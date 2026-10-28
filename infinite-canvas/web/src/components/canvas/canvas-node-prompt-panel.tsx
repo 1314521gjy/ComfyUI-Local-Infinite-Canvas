@@ -80,7 +80,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     const sourceVideoReference = mentionReferences.find((reference) => reference.kind === "video");
     const sourceVideoNode = sourceVideoReference ? nodes.find((item) => item.id === sourceVideoReference.nodeId) : undefined;
     const sourceVideoDurationSeconds = sourceVideoNode?.metadata?.durationMs && sourceVideoNode.metadata.durationMs > 0 ? sourceVideoNode.metadata.durationMs / 1000 : undefined;
-    const isH3 = mode === "video" && (workflowId === "video-h3-t2v" || workflowId === "video-h3-frames" || isH3Reference);
+    const isH3 = mode === "video" && (workflowId === "video-h3-t2v" || workflowId === "video-h3-frames" || workflowId === "video-h3-fast" || isH3Reference);
     const isImage = mode === "image";
     const imageInputLimit = modelImageInputs(config, config.model || config.imageModel);
     const imageModeValue = String(config.imageMode || "").trim();
@@ -125,6 +125,10 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
               ? "both"
               : "first";
     const changeVideoMode = (value: "text" | "frames" | "reference") => {
+        if (workflowId === "video-h3-fast") {
+            onConfigChange(node.id, { videoMode: value, ...(value === "frames" ? { frameMode } : {}) });
+            return;
+        }
         const baseId = value === "reference" ? "video-h3-ref2va" : value === "frames" ? "video-h3-frames" : "video-h3-t2v";
         const nextModel = videoModelForWorkflow(config, baseId, { noVdn: isNoVdnModel });
         onConfigChange(node.id, { ...(nextModel ? { model: nextModel } : {}), videoMode: value, ...(value === "frames" ? { frameMode } : {}) });
@@ -355,7 +359,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
             const images = await resolveCanvasReferenceImages(imageReferences.slice(0, 1), nodes);
             if (!images.length) throw new Error(t("canvas.promptPanel.captionNoImage"));
             const result = await requestImageCaption(config, { images, language: "zh", engine: captionEngine, cloud: captionEngine === "cloud" ? { baseUrl: (config.promptCloudBaseUrl || "").trim(), apiKey: (config.promptCloudApiKey || "").trim(), model: (config.promptCloudModel || "").trim() } : undefined }, { signal: controller.signal });
-            onConfigChange(node.id, { captionStatus: "done", captionPrompt: result.prompt });
+            onConfigChange(node.id, { captionStatus: "done", captionPrompt: result.prompt, captionEngineUsed: result.engine || captionEngine });
         } catch (error) {
             if (controller.signal.aborted) clearCaptionPreview();
             else onConfigChange(node.id, { captionStatus: "error", captionError: error instanceof Error ? error.message : t("canvas.promptPanel.optimizeFailed") });
@@ -568,7 +572,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                 return (
                 <div className="mt-2 rounded-xl border p-2" style={{ borderColor: theme.toolbar.border, background: theme.toolbar.panel }}>
                     <div className="mb-1 flex items-center justify-between gap-2">
-                        <span className="text-xs font-medium">{t(isImage ? "canvas.promptPanel.optimizeImageTitle" : mode === "text" ? "canvas.promptPanel.captionTitle" : "canvas.promptPanel.optimizeTitle")}{mode === "text" ? ` · ${captionEngineUsed === "florence" ? "Florence" : "Qwen3.5-9B"}` : ""}</span>
+                        <span className="text-xs font-medium">{t(isImage ? "canvas.promptPanel.optimizeImageTitle" : mode === "text" ? "canvas.promptPanel.captionTitle" : "canvas.promptPanel.optimizeTitle")}{mode === "text" ? ` · ${captionEngineUsed === "florence" ? "Florence" : captionEngineUsed === "cloud" ? t("canvas.promptPanel.optimizeEngineCloud") : "Qwen3.5-9B"}` : ""}</span>
                         <Button
                             type="text"
                             size="small"
