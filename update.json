@@ -1,16 +1,16 @@
 {
-  "version": "v0.21.12",
+  "version": "v0.21.13",
   "publishedAt": "2026-10-29",
-  "notes": "新增免费「天使娘」皮肤：扇翅/羽毛笔书写动画，生成时卡片圣光与少量羽毛，光效不遮挡内容；提灯水母娘保持原激活码；鲸鱼娘已删除。",
+  "notes": "天使娘台词改为「圣光与你同在」；水母娘/天使娘生成动画在卡片左侧时镜像、始终面向卡片；免费皮肤与激活码逻辑不变。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.12.zip",
-    "sha256": "ce0ed015a6bed75354bb468d3a2726c93e4f860edc518651b819511864228786",
-    "size": 36022734
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.13.zip",
+    "sha256": "5523d36aea27f425c47b0cbdd5f9c641a59bbf6bf94b359743b6e893375a9ab9",
+    "size": 36022880
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

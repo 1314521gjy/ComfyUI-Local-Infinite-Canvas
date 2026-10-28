@@ -479,10 +479,10 @@ export const CanvasNode = React.memo(function CanvasNode({
                                             fontSize: Math.round(fishArtSize * 0.62),
                                             color: colorTheme === "dark" ? "#fff6df" : "#4a3720",
                                             textShadow: colorTheme === "dark" ? "0 0 16px rgba(255,225,150,.45), 0 2px 8px rgba(2,12,24,.35)" : "0 0 14px rgba(255,235,180,.55)",
-                                            whiteSpace: "nowrap",
+                                            whiteSpace: "normal",
                                         }}
                                     >
-                                        落笔生光
+                                        圣光与你同在
                                     </span>
                                     <span
                                         style={{
@@ -494,7 +494,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                                             color: colorTheme === "dark" ? "rgba(238,215,170,.78)" : "rgba(122,90,46,.78)",
                                         }}
                                     >
-                                        WINGED INK
+                                        LIGHT BE WITH YOU
                                     </span>
                                 </div>
                             </>
