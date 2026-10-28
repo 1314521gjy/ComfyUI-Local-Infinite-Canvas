@@ -1,16 +1,16 @@
 {
-  "version": "v0.21.10",
+  "version": "v0.21.11",
   "publishedAt": "2026-10-29",
-  "notes": "反推快捷工具改为只建文本卡（图片作为参考，进卡片再反推）；反推下拉恢复云端选项；资源自选替换走系统文件框（可跨盘/映射盘、中文正常）；应用内常驻升级提醒；本地运行库 3.10–3.14 全部走魔搭。",
+  "notes": "原「鲸鱼娘」角色与素材已移除（避免版权风险）；「蓝色大肥鱼」付费皮肤改为原创提灯水母娘，保留原皮肤 ID/激活码，已激活用户无需重激活；新增提灯守护动画与淡淡光晕。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.10.zip",
-    "sha256": "b727a4d6b999fccb34f596ee4d86a340034388588719e00029fa52e483b0b30a",
-    "size": 34173901
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.11.zip",
+    "sha256": "ab007336901c06cb737c3e25a724a8ad176eabe6439f0934a5e4a70e47b84d89",
+    "size": 35522013
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

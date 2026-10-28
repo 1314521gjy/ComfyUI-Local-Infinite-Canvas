@@ -619,36 +619,126 @@
     border-color: #ddcfb9 !important;
 }
 
-@keyframes whale-whip-bubble {
-    0%, 12%, 100% { transform: translateY(0) scale(1); }
-    6% { transform: translateY(-2px) scale(1.03); }
+@keyframes fish-guard-bubble {
+    0%, 18%, 100% { opacity: 0; transform: translateY(6px) scale(0.97); }
+    28%, 78% { opacity: 1; transform: translateY(0) scale(1); }
+    88% { opacity: 0; transform: translateY(-4px) scale(0.99); }
 }
 
-@keyframes whale-whip-float-right {
-    0%, 100% { transform: scaleX(-1) translateY(0); }
-    50% { transform: scaleX(-1) translateY(-3px); }
-}
-
-@keyframes whale-whip-float-left {
+@keyframes fish-guard-float {
     0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-3px); }
+    50% { transform: translateY(-6px); }
 }
 
-.whale-whip-mascot {
+.fish-guard-mascot {
     will-change: transform;
+    animation: fish-guard-float 3.6s ease-in-out infinite;
 }
 
-.whale-whip-mascot[data-side="right"] {
-    animation: whale-whip-float-right 2.4s ease-in-out infinite;
-}
-
-.whale-whip-mascot[data-side="left"] {
-    animation: whale-whip-float-left 2.4s ease-in-out infinite;
-}
-
-.whale-whip-bubble {
-    animation: whale-whip-bubble 2.3s ease-in-out infinite;
+.fish-guard-bubble {
+    animation: fish-guard-bubble 4.6s ease-in-out infinite;
     transform-origin: 20% 100%;
+}
+
+.fish-guard-frame {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: bottom center;
+}
+
+.fish-guard-frame-idle {
+    animation: fish-guard-frame-idle 4.6s ease-in-out infinite;
+}
+
+.fish-guard-frame-raise {
+    opacity: 0;
+    animation: fish-guard-frame-raise 4.6s ease-in-out infinite;
+}
+
+@keyframes fish-guard-frame-idle {
+    0%, 20% { opacity: 1; }
+    30%, 84% { opacity: 0; }
+    94%, 100% { opacity: 1; }
+}
+
+@keyframes fish-guard-frame-raise {
+    0%, 20% { opacity: 0; }
+    30%, 84% { opacity: 1; }
+    94%, 100% { opacity: 0; }
+}
+
+/* AT 力场：卡片外圈的网格能量罩，中心透明，不遮挡内容。 */
+.fish-guard-halo {
+    position: absolute;
+    inset: -28px;
+    border-radius: 38px;
+    pointer-events: none;
+    z-index: 0;
+    border: 1px solid rgba(160, 240, 255, 0.38);
+    box-shadow: 0 0 18px rgba(80, 205, 255, 0.35), 0 0 54px rgba(50, 160, 255, 0.18), inset 0 0 26px rgba(130, 225, 255, 0.16);
+    opacity: 0;
+    transform: scale(0.985);
+    animation: fish-guard-halo 4.6s ease-in-out infinite;
+    overflow: hidden;
+    will-change: opacity, transform;
+    background:
+        linear-gradient(#c8f7ff, #c8f7ff) left 10px top 10px / 20px 1px no-repeat,
+        linear-gradient(#c8f7ff, #c8f7ff) left 10px top 10px / 1px 20px no-repeat,
+        linear-gradient(#c8f7ff, #c8f7ff) right 10px top 10px / 20px 1px no-repeat,
+        linear-gradient(#c8f7ff, #c8f7ff) right 10px top 10px / 1px 20px no-repeat,
+        linear-gradient(#c8f7ff, #c8f7ff) left 10px bottom 10px / 20px 1px no-repeat,
+        linear-gradient(#c8f7ff, #c8f7ff) left 10px bottom 10px / 1px 20px no-repeat,
+        linear-gradient(#c8f7ff, #c8f7ff) right 10px bottom 10px / 20px 1px no-repeat,
+        linear-gradient(#c8f7ff, #c8f7ff) right 10px bottom 10px / 1px 20px no-repeat;
+}
+
+.fish-guard-halo::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-color: rgba(40, 160, 255, 0.03);
+    background-image:
+        repeating-linear-gradient(0deg, rgba(150, 235, 255, 0.22) 0 1px, transparent 1px 16px),
+        repeating-linear-gradient(60deg, rgba(120, 215, 255, 0.16) 0 1px, transparent 1px 26px),
+        repeating-linear-gradient(120deg, rgba(120, 215, 255, 0.16) 0 1px, transparent 1px 26px);
+    background-size: 16px 16px, 26px 26px, 26px 26px;
+    -webkit-mask-image: radial-gradient(ellipse at center, transparent 42%, rgba(0, 0, 0, 0.4) 56%, #000 78%);
+    mask-image: radial-gradient(ellipse at center, transparent 42%, rgba(0, 0, 0, 0.4) 56%, #000 78%);
+    animation: fish-guard-grid 9s linear infinite;
+}
+
+.fish-guard-halo::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -30%;
+    height: 30%;
+    background: linear-gradient(180deg, transparent, rgba(190, 248, 255, 0.35), transparent);
+    opacity: 0;
+    animation: fish-guard-scan 2.8s ease-in-out infinite;
+}
+
+@keyframes fish-guard-grid {
+    from { background-position: 0 0, 0 0, 0 0; }
+    to { background-position: 16px 16px, 26px 26px, -26px 26px; }
+}
+
+@keyframes fish-guard-scan {
+    0% { transform: translateY(0); opacity: 0; }
+    15% { opacity: 0.8; }
+    70% { opacity: 0.45; }
+    100% { transform: translateY(430%); opacity: 0; }
+}
+
+@keyframes fish-guard-halo {
+    0%, 26% { opacity: 0; transform: scale(0.985); }
+    38% { opacity: 0.55; }
+    50%, 82% { opacity: 0.9; transform: scale(1); }
+    94%, 100% { opacity: 0; transform: scale(1.015); }
 }
 
 @keyframes workflow-active-glow {
@@ -665,9 +755,24 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .whale-whip-mascot,
-    .whale-whip-bubble,
+    .fish-guard-mascot,
+    .fish-guard-bubble,
+    .fish-guard-halo,
+    .fish-guard-frame-idle,
+    .fish-guard-frame-raise,
     .workflow-active {
         animation: none;
+    }
+
+    .fish-guard-frame-raise {
+        display: none;
+    }
+
+    .fish-guard-halo {
+        opacity: 0.35;
+    }
+
+    .fish-guard-bubble {
+        opacity: 1;
     }
 }

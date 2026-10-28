@@ -473,7 +473,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                                 >
                                                     <span className="relative grid h-10 w-16 shrink-0 place-items-center overflow-hidden rounded-md border" style={{ background: palette.fill, borderColor: palette.stroke }}>
                                                         {id === "fish" ? (
-                                                            <img src="/skins/blue-whale-girl.png" alt="" draggable={false} className="size-10 object-contain" />
+                                                            <img src="/skins/lantern-guard-idle.png" alt="" draggable={false} className="size-10 object-contain" />
                                                         ) : (
                                                             <span className="space-y-1">
                                                                 <span className="block h-1 w-8 rounded-full" style={{ background: palette.text, opacity: 0.85 }} />

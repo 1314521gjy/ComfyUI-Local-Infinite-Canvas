@@ -135,7 +135,6 @@ export const CanvasNode = React.memo(function CanvasNode({
     const cardSkin = useEffectiveCardSkin();
     const fishSkin = cardSkin === "fish";
     const fishArtSize = Math.round(Math.max(15, Math.min(58, Math.min(data.height * 0.24, data.width * 0.15))));
-    const fishArtStroke = Math.max(1, Math.round(fishArtSize * 0.045));
     const cardBackground = getCardBackground(colorTheme, cardSkin);
     const titleTheme = canvasThemes[colorTheme].node;
     const { t } = useTranslation();
@@ -375,6 +374,8 @@ export const CanvasNode = React.memo(function CanvasNode({
                 </div>
             )}
 
+            {fishSkin && showFishWhip ? <div className="fish-guard-halo" aria-hidden="true" /> : null}
+
             <div
                 className="relative h-full w-full overflow-visible rounded-3xl border-2"
                 style={{
@@ -414,39 +415,38 @@ export const CanvasNode = React.memo(function CanvasNode({
                         <div className="absolute left-0 top-0 h-[62%] w-[58%]" style={{ background: "radial-gradient(circle at 0% 0%, rgba(3,15,26,.62), transparent 72%)" }} />
                         <div className="absolute bottom-[-24%] right-[-14%] h-[86%] w-[58%] rounded-full" style={{ background: "radial-gradient(circle, rgba(74,186,255,.30), transparent 66%)" }} />
                         <img
-                            src="/skins/blue-whale-girl.png"
+                            src="/skins/lantern-guard-idle.png"
                             alt=""
                             draggable={false}
                             className="absolute select-none opacity-95 drop-shadow-[0_10px_22px_rgba(0,8,20,.55)]"
                             style={{ height: "78%", width: "auto", maxWidth: "58%", right: "-2%", bottom: "-5%", objectFit: "contain", objectPosition: "bottom right" }}
                         />
-                        <div className="absolute flex items-baseline whitespace-nowrap" style={{ left: "6%", top: "50%", transform: "translateY(-50%) rotate(-9deg)", fontSize: fishArtSize }}>
+                        <div className="absolute flex flex-col" style={{ left: "7%", top: "50%", transform: "translateY(-50%)", width: "54%" }}>
                             <span
                                 style={{
                                     fontFamily: '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif',
-                                    fontWeight: 900,
-                                    fontStyle: "italic",
-                                    lineHeight: 0.9,
-                                    letterSpacing: "0.02em",
-                                    color: "#eafaff",
-                                    WebkitTextStroke: `${fishArtStroke}px #08263d`,
-                                    textShadow: "0 0 18px rgba(90,200,255,.75), 0 4px 0 rgba(5,20,34,.4)",
+                                    fontWeight: 600,
+                                    lineHeight: 1.18,
+                                    letterSpacing: "0.06em",
+                                    fontSize: Math.round(fishArtSize * 0.72),
+                                    color: "#eefbff",
+                                    textShadow: "0 0 16px rgba(150,225,255,.55), 0 2px 8px rgba(2,12,24,.35)",
+                                    whiteSpace: "normal",
                                 }}
                             >
-                                牛<span style={{ color: "#9be9ff" }}>啤</span>
+                                我将守护你的进程
                             </span>
                             <span
                                 style={{
-                                    marginLeft: "0.08em",
-                                    fontSize: "0.66em",
-                                    fontWeight: 900,
-                                    fontStyle: "italic",
-                                    color: "#8fe4ff",
-                                    textShadow: "0 0 12px rgba(110,215,255,.85), 0 2px 0 rgba(5,20,34,.45)",
-                                    transform: "translateY(-0.12em)",
+                                    marginTop: "0.4em",
+                                    fontFamily: '"Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif',
+                                    fontSize: Math.max(8, Math.round(fishArtSize * 0.22)),
+                                    fontWeight: 500,
+                                    letterSpacing: "0.24em",
+                                    color: "rgba(190,235,255,.72)",
                                 }}
                             >
-                                ！！
+                                PROCESS GUARDIAN
                             </span>
                         </div>
                         <span className="absolute right-[42%] top-[24%] size-1.5 rounded-full bg-cyan-100/25" />
@@ -513,24 +513,21 @@ export const CanvasNode = React.memo(function CanvasNode({
             {showFishWhip ? (
                 <div
                     className="pointer-events-none absolute z-[66] select-none"
-                    style={fishWhipSide === "left" ? { left: -120, bottom: 0, width: 140, height: 210 } : { right: -120, bottom: 0, width: 140, height: 210 }}
+                    style={fishWhipSide === "left" ? { left: -150, bottom: 0, width: 170, height: 220 } : { right: -150, bottom: 0, width: 170, height: 220 }}
                     aria-hidden="true"
-                    data-fish-whip
+                    data-fish-guard
                 >
                     <div
-                        className={`whale-whip-bubble absolute bottom-[200px] ${fishWhipSide === "left" ? "left-0" : "right-0"} w-max max-w-[190px] rounded-2xl border px-2.5 py-1.5 text-[12px] font-semibold leading-none shadow-lg`}
+                        className={`fish-guard-bubble absolute bottom-[210px] ${fishWhipSide === "left" ? "left-0" : "right-0"} w-max max-w-[190px] rounded-2xl border px-2.5 py-1.5 text-[12px] font-semibold leading-none shadow-lg`}
                         style={{ background: "rgba(7,21,33,.94)", borderColor: "rgba(120,210,255,.35)", color: "#eaf7ff" }}
                     >
                         {t("canvas.fishWhip.bubble")}
                         <span className="absolute -bottom-1 right-4 size-2 rotate-45 border-b border-r" style={{ background: "rgba(7,21,33,.94)", borderColor: "rgba(120,210,255,.35)" }} />
                     </div>
-                    <img
-                        src="/skins/whale-whip.webp"
-                        alt=""
-                        draggable={false}
-                        data-side={fishWhipSide}
-                        className={`whale-whip-mascot absolute bottom-0 ${fishWhipSide === "left" ? "left-0" : "right-0"} h-[200px] w-auto select-none drop-shadow-[0_8px_16px_rgba(0,8,20,.55)]`}
-                    />
+                    <div className={`fish-guard-mascot absolute bottom-0 ${fishWhipSide === "left" ? "left-0" : "right-0"} h-[220px] w-[170px]`} data-side={fishWhipSide}>
+                        <img src="/skins/lantern-guard-idle.png" alt="" draggable={false} className="fish-guard-frame fish-guard-frame-idle" />
+                        <img src="/skins/lantern-guard-raise.png" alt="" draggable={false} className="fish-guard-frame fish-guard-frame-raise" />
+                    </div>
                 </div>
             ) : null}
 
@@ -586,7 +583,8 @@ const nodeContentRenderers = {
 function FreeCardNodeContent({ node, theme }: NodeContentRendererProps) {
     const { t } = useTranslation();
     const info = node.metadata?.freeCard;
-    const fishSkin = useEffectiveCardSkin() === "fish";
+    const cardSkin = useEffectiveCardSkin();
+    const fishSkin = cardSkin === "fish";
     const kind = info ? (info.outputType === "video" ? t("canvas.freeCard.videoWorkflow") : info.outputType === "image" ? t("canvas.freeCard.imageWorkflow") : t("canvas.freeCard.otherWorkflow")) : t("canvas.freeCard.emptyHint");
     if (fishSkin) {
         return (
