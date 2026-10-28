@@ -309,13 +309,15 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
             "Add-Type -AssemblyName System.Windows.Forms",
             "$d = New-Object System.Windows.Forms.OpenFileDialog",
             `$d.InitialDirectory = ${quote(initial)}`,
-            `$d.Filter = ${quote("模型文件|*.safetensors;*.sft;*.ckpt;*.pt;*.pth;*.bin;*.gguf;*.onnx;*.engine|所有文件|*.*")}`,
+            `$d.Filter = ${quote("Models|*.safetensors;*.sft;*.ckpt;*.pt;*.pth;*.bin;*.gguf;*.onnx;*.engine|All files|*.*")}`,
             "$d.Multiselect = $false",
             "if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($d.FileName) }",
         ].join("; ");
         const systemRoot = process.env.SystemRoot || "C:\Windows";
         const powershell = path.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
-        const { stdout } = await execFileAsync(powershell, ["-STA", "-NoProfile", "-Command", script], {
+        // -EncodedCommand 用 UTF-16LE，避免含中文的模型路径在不同控制台编码下丢失。
+        const encoded = Buffer.from(script, "utf16le").toString("base64");
+        const { stdout } = await execFileAsync(powershell, ["-STA", "-NoProfile", "-EncodedCommand", encoded], {
             timeout: 300000,
             windowsHide: true,
             maxBuffer: 1024 * 1024,
