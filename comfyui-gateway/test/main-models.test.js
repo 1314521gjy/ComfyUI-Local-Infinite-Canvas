@@ -21,9 +21,18 @@ test("main model selection persists per pack and resolves per workflow", async (
     assert.equal(reloaded.fileForPack("krea2"), "my_krea2_finetune.safetensors");
     assert.equal(reloaded.fileForWorkflow("image-krea2-turbo"), "my_krea2_finetune.safetensors");
 
+    await reloaded.setForWorkflow("image-krea2-turbo", "direct_workflow_model.safetensors");
+    assert.equal(reloaded.fileForWorkflow("image-krea2-turbo"), "direct_workflow_model.safetensors");
+    assert.equal(reloaded.fileForPack("krea2"), "my_krea2_finetune.safetensors");
+    const directReload = createMainModelStore({ dataDir });
+    await directReload.load();
+    assert.equal(directReload.fileForWorkflow("image-krea2-turbo"), "direct_workflow_model.safetensors");
+    await directReload.setForWorkflow("image-krea2-turbo", "");
+    assert.equal(directReload.fileForWorkflow("image-krea2-turbo"), "");
+
     await reloaded.set("krea2", { file: "", workflows: ["image-krea2-turbo"] });
     assert.equal(reloaded.fileForPack("krea2"), "");
-    assert.equal(reloaded.fileForWorkflow("image-krea2-turbo"), "");
+    assert.equal(reloaded.fileForWorkflow("image-krea2-turbo"), "direct_workflow_model.safetensors");
   } finally {
     await fsp.rm(dataDir, { recursive: true, force: true });
   }
