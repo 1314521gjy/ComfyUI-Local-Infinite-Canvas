@@ -124,6 +124,8 @@ test("archive install applies a verified code patch and preserves local data", a
     assert.equal(fs.readFileSync(path.join(root, "comfyui-gateway", "node_modules", "marker"), "utf8"), "deps");
     assert.equal(fs.readFileSync(path.join(root, "launcher", "config.json"), "utf8"), "{}");
     assert.equal(fs.existsSync(path.join(root, "comfyui-gateway", "src", "old.js")), false);
+    assert.equal(fs.existsSync(path.join(root, "PATCH-DELETE.txt")), false);
+    assert.equal(fs.existsSync(path.join(root, ".update-backup", "v0.20.1", "comfyui-gateway", "src", "old.js")), true);
     assert.equal(JSON.parse(fs.readFileSync(path.join(root, "update.json"), "utf8")).version, "v0.20.1");
     assert.equal(result.launcherChanged, false);
   } finally {
