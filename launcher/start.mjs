@@ -1279,6 +1279,15 @@ async function main() {
 
   /* 4. 画布静态服务 */
   let canvasResult = canvas;
+  if (!DRY_RUN) {
+    // 无论画布是新启还是接管，都按当前配置重写运行时网关地址，
+    // 避免补丁应用或旧启动残留把 config.js 留在过期的网关地址上。
+    try {
+      writeRuntimeConfig(cfg, gatewayResult.url);
+    } catch (error) {
+      log(`写入运行时网关配置失败：${error.message}`, "WARN");
+    }
+  }
   if (!canvas) {
     if (!isDir(cfg.canvasDist) || !isFile(path.join(cfg.canvasDist, "index.html"))) {
       log(`画布静态产物缺失：${cfg.canvasDist}`, "ERROR");
@@ -1290,11 +1299,6 @@ async function main() {
       log(`[dry-run] 将在 http://${cfg.canvasHost || "127.0.0.1"}:${cfg.canvasPort} 托管 ${cfg.canvasDist}（SPA fallback → index.html，绑 ${cfg.canvasHost || "127.0.0.1"}）`);
       canvasResult = { url: cfg.canvasUrl, mode: "planned" };
     } else {
-      try {
-        writeRuntimeConfig(cfg, gatewayResult.url);
-      } catch (error) {
-        log(`写入运行时网关配置失败：${error.message}`, "WARN");
-      }
       const server = createCanvasServer(cfg);
       const listenError = await new Promise((resolve) => {
         server.once("error", (err) => resolve(err));
