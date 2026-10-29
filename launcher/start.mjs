@@ -412,6 +412,33 @@ function ensureGatewayDeps(cfg) {
 
 /* ------------------------------------------------------------- 网关启动 */
 
+async function quarantineTeManData(comfyRoot) {
+  if (!comfyRoot) return;
+  const dataDir = path.join(ROOT, "comfyui-gateway", "data");
+  const marker = path.join(dataDir, "te-man-cleanup-v1.json");
+  if (isFile(marker)) return;
+  const source = path.join(comfyRoot, "custom_nodes", "TE_MAN", "data");
+  let movedTo = "";
+  try {
+    if (isDir(source)) {
+      movedTo = path.join(dataDir, "te-man-quarantine", `20261029-${Date.now()}`);
+      await fsp.mkdir(path.dirname(movedTo), { recursive: true });
+      try {
+        await fsp.rename(source, movedTo);
+      } catch {
+        await fsp.cp(source, movedTo, { recursive: true, force: true });
+        await fsp.rm(source, { recursive: true, force: true });
+      }
+      await fsp.mkdir(source, { recursive: true });
+      log(`已隔离 TE_MAN 历史数据到 ${movedTo}`, "WARN");
+    }
+    await fsp.mkdir(dataDir, { recursive: true });
+    await fsp.writeFile(marker, JSON.stringify({ cleanedAt: new Date().toISOString(), movedTo }, null, 2));
+  } catch (error) {
+    log(`TE_MAN 历史数据隔离失败：${error.message}`, "WARN");
+  }
+}
+
 function spawnGateway(cfg, comfyUrl, workflowsDir) {
   const serverEntry = path.join(cfg.gatewayDir, "src", "server.js");
   if (!isFile(serverEntry)) {
@@ -1133,6 +1160,7 @@ async function main() {
       ? path.dirname(comfyInstall.mainPy)
       : (isDir(path.join(comfyInstall.dir, "ComfyUI")) ? path.join(comfyInstall.dir, "ComfyUI") : comfyInstall.dir);
     const installed = await installBundledNodes({ root: ROOT, comfyRoot, log });
+    await quarantineTeManData(comfyRoot);
     if (installed.length) log(`已自动放置 ${installed.length} 个内置节点包${comfy ? "；ComfyUI 已在运行，重启后生效" : ""}`);
   }
   if (!comfy) {

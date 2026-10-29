@@ -28,6 +28,21 @@ const copyByLocale = {
         refresh: "重新扫描",
         installSelected: "安装选中",
         installPack: "安装此包",
+        runtimeRiskTitle: "安装运行库会修改 ComfyUI 环境",
+        runtimeRiskBody: "以下运行库会写入 ComfyUI 的 Python 环境：",
+        runtimeRiskScope: "只会安装或替换这些运行库；不会改动 torch、CUDA 或 ComfyUI 本体。已有且可用的版本会自动跳过，不会覆盖。",
+        runtimeRiskSage: "SageAttention 是 H3 必需项；已安装可用版本时会跳过，不覆盖。",
+        runtimeNoMatchTitle: "没有匹配的预编译运行库",
+        runtimeNoMatchBody: "当前 ComfyUI 环境不在预编译包覆盖范围内，画布不会自动安装，也不会猜版本。请按下面命令手动安装；其他资源继续下载。",
+        runtimeBroken: "检测到已安装但无法导入；画布不会自动覆盖，请手动修复或交给 AI Agent。",
+        runtimeRestartWarning: "自动安装完成后会重启 ComfyUI；正在运行的任务会中断，网关自己的下载不受影响。",
+        runtimeAutoInstall: "画布自动安装",
+        runtimeManualInstall: "自己手动安装",
+        runtimeManualTitle: "手动安装命令",
+        runtimeManualNote: "这些运行库未安装；装好后重启 ComfyUI。其他资源会继续下载。",
+        runtimeManualClose: "知道了",
+        runtimeRuntime: "本机环境",
+        pipOutdated: "已安装版本较旧（{version}），可能无法运行；请手动升级，画布不会自动覆盖。",
         cancel: "终止安装",
         skip: "跳过",
         none: "未找到资源索引",
@@ -121,6 +136,21 @@ const copyByLocale = {
         refresh: "Rescan",
         installSelected: "Install selected",
         installPack: "Install pack",
+        runtimeRiskTitle: "Installing runtimes changes the ComfyUI environment",
+        runtimeRiskBody: "These runtimes will be installed into ComfyUI's Python environment:",
+        runtimeRiskScope: "Only these runtimes are installed or replaced; torch, CUDA and ComfyUI itself are not changed. An existing usable version is skipped and never overwritten.",
+        runtimeRiskSage: "SageAttention is required by H3; an existing usable version is skipped and not overwritten.",
+        runtimeNoMatchTitle: "No matching prebuilt runtime",
+        runtimeNoMatchBody: "This ComfyUI environment is outside the prebuilt wheel matrix. The app will not install automatically or guess a version. Install manually with the command below; other downloads continue.",
+        runtimeBroken: "Installed but not importable. The app will not overwrite it automatically. Repair it manually or hand it to your AI agent.",
+        runtimeRestartWarning: "Automatic installation restarts ComfyUI afterwards; running tasks are interrupted. Gateway downloads are not affected.",
+        runtimeAutoInstall: "Install automatically",
+        runtimeManualInstall: "I'll install manually",
+        runtimeManualTitle: "Manual install commands",
+        runtimeManualNote: "These runtimes were not installed; restart ComfyUI after installing them. Other downloads continue.",
+        runtimeManualClose: "Got it",
+        runtimeRuntime: "Detected",
+        pipOutdated: "Installed version {version} is old and may not work. Upgrade manually; the app will not overwrite it.",
         cancel: "Stop install",
         skip: "Skip",
         none: "No resource index found",
@@ -316,6 +346,8 @@ function ResourceCard({
                     {item.overridden && item.overriddenBy ? <div className="mt-0.5 text-[10px] leading-4 text-blue-600 dark:text-blue-300">{copy.replacedBy}: {item.overriddenBy}</div> : null}
                     <PipMissingHint item={item} copy={copy} />
                     {item.type === "pip" && item.restartAfterInstall && item.status === "present" ? <div className="mt-0.5 text-[10px] leading-4 text-stone-500 dark:text-stone-400">{copy.pipRestart}</div> : null}
+                    {item.type === "pip" && item.pipOutdated && item.status === "present" ? <div className="mt-0.5 text-[10px] leading-4 text-amber-600 dark:text-amber-400">{copy.pipOutdated.replace("{version}", item.pipVersion || "?")}</div> : null}
+                    {item.type === "pip" && item.pipBroken ? <div className="mt-0.5 text-[10px] leading-4 text-amber-600 dark:text-amber-400">{copy.runtimeBroken}</div> : null}
                     {!compact && item.note ? <div className="mt-0.5 text-[10px] leading-4 text-stone-400 dark:text-stone-500">{copy.note}: {item.note}</div> : null}
                     {canReplace ? (
                         <div className="mt-1 flex flex-wrap items-center justify-end gap-1">
@@ -367,6 +399,8 @@ function WorkflowResourceRow({
                 {item.overridden && item.overriddenBy ? <div className="mt-0.5 text-[10px] text-blue-600 dark:text-blue-300">{copy.replacedBy}: {item.overriddenBy}</div> : null}
                 <PipMissingHint item={item} copy={copy} />
                 {item.type === "pip" && item.restartAfterInstall && item.status === "present" ? <div className="mt-0.5 text-[10px] leading-4 text-stone-500 dark:text-stone-400">{copy.pipRestart}</div> : null}
+                {item.type === "pip" && item.pipOutdated && item.status === "present" ? <div className="mt-0.5 text-[10px] leading-4 text-amber-600 dark:text-amber-400">{copy.pipOutdated.replace("{version}", item.pipVersion || "?")}</div> : null}
+                {item.type === "pip" && item.pipBroken ? <div className="mt-0.5 text-[10px] leading-4 text-amber-600 dark:text-amber-400">{copy.runtimeBroken}</div> : null}
                 {item.type === "bake" && requires.length ? (
                     <div className="mt-0.5 text-[10px] text-amber-600 dark:text-amber-400">{copy.bakeRequires}: {requires.map((entry) => entry.label).join(" + ")}</div>
                 ) : null}
@@ -384,7 +418,7 @@ function WorkflowResourceRow({
 }
 
 export function ResourceCenterPanel({ compact = false, footer }: { compact?: boolean; footer?: React.ReactNode }) {
-    const { message } = App.useApp();
+    const { message, modal } = App.useApp();
     // 网关断线由统一横幅提示，这里不再逐条弹错。
     const showError = (error: unknown) => {
         if (isGatewayDown()) return;
@@ -501,13 +535,112 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
         void tick();
     }, [copy.done, copy.failed, load, message, stopPolling]);
 
+    const confirmRuntimeInstall = (items: ResourceItem[]) =>
+        new Promise<"auto" | "manual">((resolve) => {
+            modal.confirm({
+                title: copy.runtimeRiskTitle,
+                width: 560,
+                content: (
+                    <div className="space-y-3 text-sm">
+                        <div>{copy.runtimeRiskBody}</div>
+                        <div className="space-y-2">
+                            {items.map((item) => (
+                                <div key={item.id} className="rounded-md border border-stone-200 p-2 dark:border-stone-800">
+                                    <div className="font-medium">{item.label}</div>
+                                    <div className="mt-0.5 text-[11px] text-stone-500 dark:text-stone-400">{copy.runtimeRuntime}: {runtimeLabel(item)}</div>
+                                    {item.id === "sage_h3" ? <div className="mt-1 text-[11px] leading-4 text-amber-600 dark:text-amber-400">{copy.runtimeRiskSage}</div> : null}
+                                </div>
+                            ))}
+                        </div>
+                        <div className="text-xs leading-5 text-stone-500 dark:text-stone-400">{copy.runtimeRiskScope}</div>
+                        <div className="text-xs leading-5 text-amber-600 dark:text-amber-400">{copy.runtimeRestartWarning}</div>
+                    </div>
+                ),
+                okText: copy.runtimeAutoInstall,
+                cancelText: copy.runtimeManualInstall,
+                onOk: () => resolve("auto"),
+                onCancel: () => resolve("manual"),
+            });
+        });
+
+    const manualCommandFor = (item: ResourceItem) => `"${item.pythonRuntime || "python"}" -m pip install --no-deps ${item.pipName || item.label}`;
+
+    const agentPromptFor = (item: ResourceItem) =>
+        [
+            `请在我的 ComfyUI 环境里安装/修复「${item.label}」（${item.pipName || item.label}）。`,
+            "只处理这个运行库，不要升级或替换 torch、CUDA、ComfyUI 本体或其他包。",
+            `环境：${runtimeLabel(item)}；ComfyUI Python：${item.pythonRuntime || "?"}`,
+            `手动命令：${manualCommandFor(item)}`,
+            item.pipBroken ? `当前已安装但无法导入，版本：${item.pipVersion || "?"}` : "没有匹配的预编译包。",
+            "安装后验证 import sageattention 和 get_cuda_arch_versions，再重启 ComfyUI；失败请把完整报错贴给我。",
+        ].join("\n");
+
     const startInstall = async (input: { ids?: string[]; packs?: string[] }) => {
         if (!input.ids?.length && !input.packs?.length) {
             message.info(copy.emptyMissing);
             return;
         }
+        let nextInput = input;
+        const pipItems = (input.ids || [])
+            .map((id) => status?.resources.find((item) => item.id === id))
+            .filter((item): item is ResourceItem => Boolean(item && item.type === "pip" && item.status !== "present"));
+        const autoItems = pipItems.filter((item) => !item.pipWheelMissing);
+        const noMatchItems = pipItems.filter((item) => item.pipWheelMissing || item.pipBroken);
+        const skippedIds = new Set<string>();
+        if (noMatchItems.length) {
+            for (const item of noMatchItems) skippedIds.add(item.id);
+            modal.info({
+                title: copy.runtimeNoMatchTitle,
+                width: 560,
+                content: (
+                    <div className="space-y-2 text-sm">
+                        <div className="text-xs leading-5 text-stone-500 dark:text-stone-400">{copy.runtimeNoMatchBody}</div>
+                        {noMatchItems.map((item) => (
+                            <div key={item.id} className="rounded-md border border-stone-200 p-2 dark:border-stone-800">
+                                <div className="font-medium">{item.label}</div>
+                                <div className="mt-0.5 text-[11px] text-stone-500 dark:text-stone-400">{copy.runtimeRuntime}: {runtimeLabel(item)}</div>
+                                {item.pipBroken ? <div className="mt-1 text-[11px] leading-4 text-amber-600 dark:text-amber-400">{copy.runtimeBroken}</div> : null}
+                                <code className="mt-1 block break-all text-xs text-stone-600 dark:text-stone-300">{manualCommandFor(item)}</code>
+                                <div className="mt-1 flex justify-end">
+                                    <Button size="small" onClick={() => void copyHintText(agentPromptFor(item))}>{copy.copyHint}</Button>
+                                </div>
+                            </div>
+                        ))}
+                        <div className="text-xs leading-5 text-stone-500 dark:text-stone-400">{copy.runtimeManualNote}</div>
+                    </div>
+                ),
+                okText: copy.runtimeManualClose,
+            });
+        }
+        if (autoItems.length) {
+            const choice = await confirmRuntimeInstall(autoItems);
+            if (choice === "manual") {
+                for (const item of autoItems) skippedIds.add(item.id);
+                modal.info({
+                    title: copy.runtimeManualTitle,
+                    width: 560,
+                    content: (
+                        <div className="space-y-2 text-sm">
+                            {autoItems.map((item) => (
+                                <div key={item.id} className="rounded-md border border-stone-200 p-2 dark:border-stone-800">
+                                    <div className="font-medium">{item.label}</div>
+                                    <code className="mt-1 block break-all text-xs text-stone-600 dark:text-stone-300">{manualCommandFor(item)}</code>
+                                </div>
+                            ))}
+                            <div className="text-xs leading-5 text-stone-500 dark:text-stone-400">{copy.runtimeManualNote}</div>
+                        </div>
+                    ),
+                    okText: copy.runtimeManualClose,
+                });
+            }
+        }
+        if (skippedIds.size) {
+            const restIds = (input.ids || []).filter((id) => !skippedIds.has(id));
+            if (!restIds.length) return;
+            nextInput = { ids: restIds };
+        }
         try {
-            const next = await installResources(input);
+            const next = await installResources(nextInput);
             watchJob(next);
         } catch (installError) {
             showError(installError);

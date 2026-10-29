@@ -749,13 +749,23 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         return version;
     }
 
-    function pipImportStatus(python, module, { fresh = false } = {}) {
+    function pipImportStatus(python, module, { fresh = false, distribution = "" } = {}) {
         if (!python || !module) return { present: false, version: "", reason: "未找到 ComfyUI 的 Python" };
         const key = `${python}|${module}`.toLowerCase();
         const cached = pipCheckCache.get(key);
         if (!fresh && cached && Date.now() - cached.at < (cached.present ? 600000 : 60000)) return cached;
         try {
-            const stdout = execFileSync(python, ["-c", `import ${module} as _m; print(getattr(_m, "__version__", ""))`], {
+            const distributionName = String(distribution || module).trim() || module;
+            const code = [
+                `import ${module} as _m`,
+                "import importlib.metadata as _md",
+                "try:",
+                `    _v = _md.version(${JSON.stringify(distributionName)})`,
+                "except Exception:",
+                '    _v = ""',
+                'print(getattr(_m, "__version__", "") or _v)',
+            ].join("\n");
+            const stdout = execFileSync(python, ["-c", code], {
                 timeout: 15000,
                 windowsHide: true,
                 encoding: "utf8",
@@ -775,7 +785,25 @@ export function createResourceManager({ config, setup, registry, logger, workflo
     function pipStatusFor(resource, root) {
         const python = comfyPythonForBake(root);
         const module = String(resource.module || resource.importName || "").trim();
-        return { python, ...pipImportStatus(python, module) };
+        const distribution = String(resource.pipName || module).trim();
+        const imported = pipImportStatus(python, module, { distribution });
+        const distributionVersion = imported.present ? "" : pipDistributionVersion(python, distribution);
+        return { python, ...imported, distributionVersion };
+    }
+
+    function pipDistributionVersion(python, distribution) {
+        if (!python || !distribution) return "";
+        try {
+            return String(
+                execFileSync(python, ["-c", `import importlib.metadata as m;print(m.version(${JSON.stringify(String(distribution))}))`], {
+                    timeout: 10000,
+                    windowsHide: true,
+                    encoding: "utf8",
+                }),
+            ).trim();
+        } catch {
+            return "";
+        }
     }
 
     const pipRuntimeCache = new Map();
@@ -914,13 +942,20 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 ? {
                       pythonRuntime: pip.python || "",
                       pythonVersion,
-                      pipVersion: pip.version || "",
+                      pipVersion: pip.present ? pip.version || "" : pip.distributionVersion || "",
+                      pipBroken: Boolean(!pip.present && pip.distributionVersion),
                       pipReason: pip.reason || "",
                       pipName: String(resource.pipName || resource.module || ""),
                       wheelVersions,
                       pipRuntime: wheelPlan?.runtime || null,
                       pipWheel: wheelPlan?.url ? { url: wheelPlan.url, size: wheelPlan.size || 0, sha256: wheelPlan.sha256 || "" } : null,
                       pipWheelMissing: Boolean(pythonVersion && wheelPlan?.missing),
+                      pipMinVersion: String(resource.minVersion || ""),
+                      pipOutdated: Boolean(
+                          pip.present &&
+                              resource.minVersion &&
+                              (!pip.version || !satisfiesVersion(pip.version, `>=${resource.minVersion}`)),
+                      ),
                       restartAfterInstall: Boolean(resource.restartAfterInstall),
                   }
                 : {}),
@@ -1841,28 +1876,123 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         throw lastError || new Error("所有下载源均失败");
     }
 
+    function pipSitePackages(python) {
+        try {
+            return String(
+                execFileSync(python, ["-c", "import sysconfig;print(sysconfig.get_paths().get('purelib') or '')"], {
+                    timeout: 10000,
+                    windowsHide: true,
+                    encoding: "utf8",
+                }),
+            ).trim();
+        } catch {
+            return "";
+        }
+    }
+
+    function pipDistributionKey(value) {
+        return String(value || "").toLowerCase().replace(/[-_.]+/g, "_");
+    }
+
+    function pipDistributionEntries(site, distribution) {
+        const key = pipDistributionKey(distribution);
+        if (!site || !isDir(site)) return [];
+        return fs.readdirSync(site).filter((name) => name.toLowerCase().endsWith(".dist-info") && pipDistributionKey(name).startsWith(`${key}_`));
+    }
+
+    async function backupPipPackage(python, module, distribution) {
+        const site = pipSitePackages(python);
+        if (!site) return "";
+        const packageDir = path.join(site, module);
+        const distEntries = pipDistributionEntries(site, distribution);
+        if (!isDir(packageDir) && !distEntries.length) return "";
+        const backupDir = path.join(config.dataDir, "runtime-cache", `${module}-backup-${Date.now()}`);
+        await fsp.mkdir(backupDir, { recursive: true });
+        if (isDir(packageDir)) await fsp.cp(packageDir, path.join(backupDir, module), { recursive: true, force: true });
+        for (const entry of distEntries) {
+            await fsp.cp(path.join(site, entry), path.join(backupDir, entry), { recursive: true, force: true });
+        }
+        return backupDir;
+    }
+
+    async function restorePipBackup(python, module, distribution, backupDir) {
+        if (!backupDir || !isDir(backupDir)) return false;
+        const site = pipSitePackages(python);
+        if (!site) return false;
+        await fsp.rm(path.join(site, module), { recursive: true, force: true }).catch(() => {});
+        for (const entry of pipDistributionEntries(site, distribution)) {
+            await fsp.rm(path.join(site, entry), { recursive: true, force: true }).catch(() => {});
+        }
+        for (const entry of fs.readdirSync(backupDir)) {
+            await fsp.cp(path.join(backupDir, entry), path.join(site, entry), { recursive: true, force: true });
+        }
+        return true;
+    }
+
+    async function revertPipInstall(python, module, distribution, backupDir) {
+        if (backupDir) return restorePipBackup(python, module, distribution, backupDir);
+        try {
+            execFileSync(python, ["-m", "pip", "uninstall", "-y", distribution], {
+                timeout: 60000,
+                windowsHide: true,
+                encoding: "utf8",
+            });
+        } catch {
+            // 清理失败不覆盖原始安装错误。
+        }
+        return false;
+    }
+
+    function pipFailureHint({ resource, python, error, command = "", backupDir = "", distributionVersion = "" }) {
+        const runtime = pipRuntimeFor(python);
+        const distribution = String(resource?.pipName || resource?.module || resource?.label || "运行库").trim();
+        const label = resource?.label || distribution;
+        const lines = [
+            `请在我的 ComfyUI 环境里修复「${label}」（${distribution}）。`,
+            "要求：只处理这个运行库，不要升级或替换 torch、CUDA、ComfyUI 本体或其他包。",
+            `环境：Python ${runtime.python || "?"} / Torch ${runtime.torch || "?"} / CUDA ${runtime.cuda || "?"}；ComfyUI Python：${python}`,
+            distributionVersion ? `当前已安装版本：${distributionVersion}` : "",
+            `遇到的问题：${truncate(String(error || "未知错误"), 400)}`,
+            command ? `手动命令：${command}` : "",
+            backupDir ? `旧包备份：${backupDir}` : "",
+            "安装后验证：import sageattention；from sageattention.core import get_cuda_arch_versions；并重启 ComfyUI。",
+            "如果仍然失败，请把完整报错、Python/Torch/CUDA 版本和显卡型号贴给我。",
+        ];
+        return lines.filter(Boolean).join("\n");
+    }
+
     async function installPipResource(resource, jobItem, signal) {
         const root = comfyRoot();
         const python = comfyPythonForBake(root);
         if (!python) throw new Error("未找到 ComfyUI 的 Python，无法安装运行库；请先确认 ComfyUI 能正常启动");
         const module = String(resource.module || resource.importName || "").trim();
         if (!module) throw new Error("运行库资源缺少 module 字段");
-        const imported = pipImportStatus(python, module, { fresh: true });
+        const distribution = String(resource.pipName || module).trim();
+        const imported = pipImportStatus(python, module, { fresh: true, distribution });
         if (imported.present) {
             jobItem.status = "skipped";
             jobItem.skipped = true;
             return;
+        }
+        const installedVersion = pipDistributionVersion(python, distribution);
+        const pipName = String(resource.pipName || module).trim();
+        const manualCommand = `"${python}" -m pip install --no-deps ${pipName}`;
+        if (installedVersion) {
+            const error = new Error(`检测到已安装 ${distribution} ${installedVersion}，但无法导入。为保护环境，画布不会自动覆盖；请手动修复或交给 AI Agent。`);
+            error.hint = pipFailureHint({ resource, python, error, command: manualCommand, distributionVersion: installedVersion });
+            throw error;
         }
         const plan = pickPipWheel(resource, python);
         const runtimeLabel = [plan.runtime?.python ? `Python ${plan.runtime.python}` : "", plan.runtime?.torch ? `Torch ${plan.runtime.torch}` : "", plan.runtime?.cuda ? `CUDA ${plan.runtime.cuda}` : ""]
             .filter(Boolean)
             .join(" / ");
         if (!plan.url) {
-            const pipName = String(resource.pipName || module).trim();
-            throw new Error(
+            const error = new Error(
                 `当前 ComfyUI 环境（${runtimeLabel || "版本未知"}）没有匹配的预编译运行库。` +
-                    `请手动安装后重试：\"${python}\" -m pip install ${pipName}`,
+                    `画布不会自动安装或猜版本；请手动安装或交给 AI Agent。`,
             );
+            error.hint = pipFailureHint({ resource, python, error, command: manualCommand, distributionVersion: installedVersion });
+            throw error;
         }
         let wheel = plan.url;
         let wheelSize = plan.size || 0;
@@ -1895,37 +2025,52 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             }
             wheel = cached;
         }
+        const backupDir = Array.isArray(resource.wheelMatrix) ? await backupPipPackage(python, module, distribution) : "";
+        const forceReinstall = Array.isArray(resource.wheelMatrix);
+        const installCommand = `"${python}" -m pip install --no-deps ${forceReinstall ? "--force-reinstall " : ""}"${wheel}"`;
         jobItem.status = "installing";
         jobItem.source = "Python 运行库";
         jobItem.size = wheelSize || jobItem.size;
         const pipArgs = ["-m", "pip", "install", "--disable-pip-version-check", "--no-input"];
-        if (Array.isArray(resource.wheelMatrix)) pipArgs.push("--force-reinstall");
+        if (forceReinstall) pipArgs.push("--force-reinstall", "--no-deps");
         pipArgs.push(wheel);
-        await new Promise((resolve, reject) => {
-            const child = spawn(python, pipArgs, {
-                windowsHide: true,
-                env: { ...process.env, PIP_DISABLE_PIP_VERSION_CHECK: "1" },
+        try {
+            await new Promise((resolve, reject) => {
+                const child = spawn(python, pipArgs, {
+                    windowsHide: true,
+                    env: { ...process.env, PIP_DISABLE_PIP_VERSION_CHECK: "1" },
+                });
+                jobItem.child = child;
+                let output = "";
+                const onData = (data) => {
+                    output += String(data);
+                    if (output.length > 4000) output = output.slice(-4000);
+                    logger?.info?.(`[pip] ${String(data).trim()}`);
+                };
+                child.stdout.on("data", onData);
+                child.stderr.on("data", onData);
+                child.on("error", reject);
+                child.on("exit", (code) => {
+                    jobItem.child = null;
+                    if (signal?.aborted) return reject(new Error("已取消"));
+                    if (code !== 0) return reject(new Error(`运行库安装失败（exit ${code}）${output ? `：${truncate(output, 400)}` : ""}`));
+                    resolve();
+                });
             });
-            jobItem.child = child;
-            let output = "";
-            const onData = (data) => {
-                output += String(data);
-                if (output.length > 4000) output = output.slice(-4000);
-                logger?.info?.(`[pip] ${String(data).trim()}`);
-            };
-            child.stdout.on("data", onData);
-            child.stderr.on("data", onData);
-            child.on("error", reject);
-            child.on("exit", (code) => {
-                jobItem.child = null;
-                if (signal?.aborted) return reject(new Error("已取消"));
-                if (code !== 0) return reject(new Error(`运行库安装失败（exit ${code}）${output ? `：${truncate(output, 400)}` : ""}`));
-                resolve();
-            });
-        });
+        } catch (error) {
+            await revertPipInstall(python, module, distribution, backupDir);
+            pipCheckCache.delete(`${python}|${module}`.toLowerCase());
+            error.hint = error.hint || pipFailureHint({ resource, python, error, command: installCommand, backupDir });
+            throw error;
+        }
         pipCheckCache.delete(`${python}|${module}`.toLowerCase());
-        const recheck = pipImportStatus(python, module, { fresh: true });
-        if (!recheck.present) throw new Error(`运行库安装后仍无法导入 ${module}：${recheck.reason || "未知原因"}`);
+        const recheck = pipImportStatus(python, module, { fresh: true, distribution });
+        if (!recheck.present) {
+            const error = new Error(`运行库安装后仍无法导入 ${module}：${recheck.reason || "未知原因"}`);
+            await revertPipInstall(python, module, distribution, backupDir);
+            error.hint = pipFailureHint({ resource, python, error, command: installCommand, backupDir });
+            throw error;
+        }
         if (module === "sageattention") {
             try {
                 execFileSync(python, ["-c", "from sageattention.core import get_cuda_arch_versions as g;print(','.join(g()))"], {
@@ -1933,17 +2078,41 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                     windowsHide: true,
                     encoding: "utf8",
                 });
-            } catch (error) {
-                throw new Error(`SageAttention 安装后仍不可用：${truncate(String(error?.stderr || error?.message || error), 300)}`);
+            } catch (cause) {
+                const error = new Error(`SageAttention 安装后仍不可用：${truncate(String(cause?.stderr || cause?.message || cause), 300)}`);
+                await revertPipInstall(python, module, distribution, backupDir);
+                error.hint = pipFailureHint({ resource, python, error, command: installCommand, backupDir });
+                throw error;
             }
         }
         lock.installed = lock.installed || {};
         lock.installed[resource.id] = { version: index?.version || "", target: resource.target, size: resource.size || 0, installedAt: nowIso() };
         lock.updatedAt = nowIso();
         await saveLock();
-        jobItem.status = "done";
         jobItem.bytes = jobItem.size;
-        if (resource.restartAfterInstall) jobItem.restartRequired = true;
+        if (resource.restartAfterInstall) {
+            jobItem.restartRequired = true;
+            const control = String(config.launcherControlUrl || "").replace(/\/+$/, "");
+            if (control) {
+                jobItem.status = "installing";
+                jobItem.message = "正在重启 ComfyUI…";
+                updateJob(jobItem.job);
+                try {
+                    const response = await fetch(`${control}/restart-comfy`, {
+                        method: "POST",
+                        signal: AbortSignal.timeout(360000),
+                    });
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    jobItem.restarted = true;
+                } catch (cause) {
+                    jobItem.restartError = truncate(cause?.message || String(cause), 200);
+                    jobItem.hint = `运行库已安装，但自动重启 ComfyUI 失败：${jobItem.restartError}。请手动关闭并重新启动 start-local.bat，或把下面这段发给你的 AI Agent：\n请在我的 Windows 机器上重启 ComfyUI（安装目录 ${comfyRoot()}），检查 launcher.log 里的错误；不要重装 SageAttention。`;
+                }
+            } else {
+                jobItem.message = "安装完成，请手动重启 ComfyUI";
+            }
+        }
+        jobItem.status = "done";
     }
 
     async function runBake(resource, jobItem, signal) {
@@ -2075,6 +2244,18 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             } catch (error) {
                 item.status = "error";
                 item.error = truncate(error.message || String(error), 500);
+                if (error.hint) {
+                    item.hint = error.hint;
+                } else {
+                    const resource = resourceById(item.id);
+                    const python = comfyPythonForBake(comfyRoot());
+                    item.hint = pipFailureHint({
+                        resource,
+                        python,
+                        error: item.error,
+                        command: `"${python || "python"}" -m pip install --no-deps ${resource?.pipName || resource?.module || item.id}`,
+                    });
+                }
                 logger?.warn?.(`运行库安装失败 ${item.id}: ${item.error}`);
             } finally {
                 job.controllers.delete(item.id);

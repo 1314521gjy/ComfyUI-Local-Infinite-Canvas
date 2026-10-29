@@ -1491,7 +1491,8 @@
           "label": "SageAttention 上游源码",
           "verify": false
         }
-      ]
+      ],
+      "minVersion": "2.2.0"
     }
   ]
 }

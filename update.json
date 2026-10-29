@@ -1,16 +1,16 @@
 {
-  "version": "v0.21.16",
+  "version": "v0.21.17",
   "publishedAt": "2026-10-29",
-  "notes": "修复更新后版本号显示不一致；页面落后于程序时提示刷新页面。",
+  "notes": "安装运行库前增加风险确认（自动/手动）；旧版运行库提示、无匹配/失败时给出 Agent 处理提示；已有可用运行库不覆盖。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.16.zip",
-    "sha256": "519ec47067491185b7830c9c21dd0eca0657652a5e7f506c7e3bb98e156a6330",
-    "size": 36204196
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.17.zip",
+    "sha256": "6bd77c4dbd7582e251132e62a6968729acf7ea399cc50676f2a446d410b59abf",
+    "size": 36208750
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

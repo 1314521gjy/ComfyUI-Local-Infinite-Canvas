@@ -36,9 +36,13 @@ export type ResourceItem = {
     pythonRuntime?: string;
     pythonVersion?: string;
     pipName?: string;
+    pipVersion?: string;
     pipRuntime?: { python: string; torch: string; cuda: string } | null;
     pipWheel?: { url: string; size?: number; sha256?: string } | null;
     pipWheelMissing?: boolean;
+    pipMinVersion?: string;
+    pipOutdated?: boolean;
+    pipBroken?: boolean;
     restartAfterInstall?: boolean;
 };
 
