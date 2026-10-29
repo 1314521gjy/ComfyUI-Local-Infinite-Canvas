@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026.10.29-27",
+  "version": "2026.10.29-28",
   "channel": "stable",
   "updatedAt": "2026-10-29",
   "packs": [
@@ -476,14 +476,19 @@
     {
       "id": "upscale",
       "label": "超分",
-      "description": "快速放大（ESRGAN）与 SeedVR2 图片/视频超分。节点随包自动安装，权重按工作流下载；3B/7B DiT 是选下内容。",
+      "description": "快速放大（ESRGAN）与 SeedVR2 图片/视频超分。节点随包自动安装，运行库与权重按工作流下载；3B/7B DiT 是选下内容。",
       "resources": [
         "esrgan_x2plus",
         "esrgan_x4plus",
         "esrgan_anime6b",
         "seedvr2_3b_dit",
         "seedvr2_7b_dit",
-        "seedvr2_vae"
+        "seedvr2_vae",
+        "seedvr2_dep_diffusers",
+        "seedvr2_dep_rotary",
+        "seedvr2_dep_omegaconf",
+        "seedvr2_dep_opencv",
+        "seedvr2_dep_einops"
       ],
       "optionalResources": [
         "esrgan_x2plus",
@@ -491,7 +496,12 @@
         "esrgan_anime6b",
         "seedvr2_3b_dit",
         "seedvr2_7b_dit",
-        "seedvr2_vae"
+        "seedvr2_vae",
+        "seedvr2_dep_diffusers",
+        "seedvr2_dep_rotary",
+        "seedvr2_dep_omegaconf",
+        "seedvr2_dep_opencv",
+        "seedvr2_dep_einops"
       ],
       "workflows": [
         "image-esrgan-upscale",
@@ -518,11 +528,21 @@
         ],
         "image-seedvr2-upscale": [
           "seedvr2_7b_dit",
-          "seedvr2_vae"
+          "seedvr2_vae",
+          "seedvr2_dep_diffusers",
+          "seedvr2_dep_rotary",
+          "seedvr2_dep_omegaconf",
+          "seedvr2_dep_opencv",
+          "seedvr2_dep_einops"
         ],
         "video-seedvr2-upscale": [
           "seedvr2_3b_dit",
-          "seedvr2_vae"
+          "seedvr2_vae",
+          "seedvr2_dep_diffusers",
+          "seedvr2_dep_rotary",
+          "seedvr2_dep_omegaconf",
+          "seedvr2_dep_opencv",
+          "seedvr2_dep_einops"
         ]
       }
     }
@@ -1558,11 +1578,111 @@
       "bundleDir": "resources/nodes/unpacked/ComfyUI-SeedVR2_VideoUpscaler",
       "size": 2296099,
       "license": "Apache-2.0",
-      "note": "随包节点，启动器自动复制；安装后重启 ComfyUI。依赖 diffusers / peft / rotary_embedding_torch / gguf 等，缺失时按报错安装。",
+      "note": "随包节点，启动器自动复制；运行依赖（diffusers / rotary_embedding_torch / omegaconf / opencv-python / einops）由「运行库」安装项检测并补装，装完重启 ComfyUI。",
       "provides": [
         "SeedVR2LoadDiTModel",
         "SeedVR2LoadVAEModel",
         "SeedVR2VideoUpscaler"
+      ]
+    },
+    {
+      "id": "seedvr2_dep_diffusers",
+      "type": "pip",
+      "label": "diffusers 运行库（SeedVR2 必需）",
+      "target": "SEEDVR2/runtime/seedvr2_dep_diffusers",
+      "module": "diffusers",
+      "pipName": "diffusers",
+      "size": 3554612,
+      "license": "Apache-2.0",
+      "note": "SeedVR2 节点必需（DiT 的 timestep embedding / RMSNorm）。0.33.1 兼容较旧 huggingface_hub；纯 Python，阿里云 PyPI 镜像直连。",
+      "restartAfterInstall": true,
+      "wheelMatrix": [
+        {
+          "url": "https://mirrors.aliyun.com/pypi/packages/e7/7a/f08f610cea8a3395ad3b4f586db23bedb43c68db6c3261145a15e7b63126/diffusers-0.33.1-py3-none-any.whl",
+          "size": 3554612,
+          "sha256": "027469e74f289338eb24127409f8d60d840b1b7ce4b27ffcd3134fd3b8431567",
+          "label": "阿里云 PyPI 镜像"
+        }
+      ]
+    },
+    {
+      "id": "seedvr2_dep_rotary",
+      "type": "pip",
+      "label": "rotary_embedding_torch 运行库（SeedVR2 必需）",
+      "target": "SEEDVR2/runtime/seedvr2_dep_rotary",
+      "module": "rotary_embedding_torch",
+      "pipName": "rotary_embedding_torch",
+      "size": 5872,
+      "license": "MIT",
+      "note": "SeedVR2 3B/7B 的 RoPE 必需；纯 Python。",
+      "restartAfterInstall": true,
+      "wheelMatrix": [
+        {
+          "url": "https://mirrors.aliyun.com/pypi/packages/94/21/05e319ebef4a8194f9c4cc09f9c3213ab846da200fa6e88699cdb7e9679a/rotary_embedding_torch-0.8.9-py3-none-any.whl",
+          "size": 5872,
+          "sha256": "700e8de9dfbefba5f9117a66652a2520648dcc60136895f0068b6a85347cab02",
+          "label": "阿里云 PyPI 镜像"
+        }
+      ]
+    },
+    {
+      "id": "seedvr2_dep_omegaconf",
+      "type": "pip",
+      "label": "omegaconf 运行库（SeedVR2 必需）",
+      "target": "SEEDVR2/runtime/seedvr2_dep_omegaconf",
+      "module": "omegaconf",
+      "pipName": "omegaconf",
+      "size": 254152,
+      "license": "BSD-3-Clause",
+      "note": "SeedVR2 读取 configs_3b/7b 的 yaml 必需。2.4 起不再依赖 antlr4（2.3 需要），只依赖 ComfyUI 自带的 PyYAML。",
+      "restartAfterInstall": true,
+      "wheelMatrix": [
+        {
+          "url": "https://mirrors.aliyun.com/pypi/packages/4f/bd/0d9f8247b0819385213d09564eda5c52d3673313c2414d51f72883ec24cd/omegaconf-2.4.0-py3-none-any.whl",
+          "size": 254152,
+          "sha256": "f141a664c777582405e3cc6e0545ecc79429e79f844995b1a6e71c35946a025c",
+          "label": "阿里云 PyPI 镜像"
+        }
+      ]
+    },
+    {
+      "id": "seedvr2_dep_opencv",
+      "type": "pip",
+      "label": "opencv-python 运行库（SeedVR2 必需）",
+      "target": "SEEDVR2/runtime/seedvr2_dep_opencv",
+      "module": "cv2",
+      "pipName": "opencv-python",
+      "size": 38842521,
+      "license": "Apache-2.0",
+      "note": "SeedVR2 Alpha 通道超分（import cv2）必需；cp37-abi3 Windows 通用包，Python 3.7+ 均可装。",
+      "restartAfterInstall": true,
+      "wheelMatrix": [
+        {
+          "url": "https://mirrors.aliyun.com/pypi/packages/ec/6c/fab8113424af5049f85717e8e527ca3773299a3c6b02506e66436e19874f/opencv_python-4.10.0.84-cp37-abi3-win_amd64.whl",
+          "size": 38842521,
+          "sha256": "32dbbd94c26f611dc5cc6979e6b7aa1f55a64d6b463cc1dcd3c95505a63e48fe",
+          "label": "阿里云 PyPI 镜像"
+        }
+      ]
+    },
+    {
+      "id": "seedvr2_dep_einops",
+      "type": "pip",
+      "label": "einops 运行库（SeedVR2 必需）",
+      "target": "SEEDVR2/runtime/seedvr2_dep_einops",
+      "module": "einops",
+      "pipName": "einops",
+      "size": 64359,
+      "license": "MIT",
+      "note": "SeedVR2 张量重排必需；ComfyUI 核心通常已自带，已装且可导入时自动跳过。",
+      "restartAfterInstall": true,
+      "wheelMatrix": [
+        {
+          "url": "https://mirrors.aliyun.com/pypi/packages/87/62/9773de14fe6c45c23649e98b83231fffd7b9892b6cf863251dc2afa73643/einops-0.8.1-py3-none-any.whl",
+          "size": 64359,
+          "sha256": "919387eb55330f5757c6bea9165c5ff5cfe63a642682ea788a6d472576d81737",
+          "label": "阿里云 PyPI 镜像"
+        }
       ]
     },
     {

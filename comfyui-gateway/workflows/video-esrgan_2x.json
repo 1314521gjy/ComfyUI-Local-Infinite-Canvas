@@ -12,20 +12,20 @@
     }
   },
   "20": {
-    "class_type": "Upscale Model Loader",
+    "class_type": "UpscaleModelLoader",
     "inputs": {
       "model_name": "RealESRGAN_x2plus.pth"
     }
   },
   "30": {
-    "class_type": "Upscale Image",
+    "class_type": "ImageUpscaleWithModel",
     "inputs": {
-      "image": [
-        "10",
-        0
-      ],
       "upscale_model": [
         "20",
+        0
+      ],
+      "image": [
+        "10",
         0
       ]
     }

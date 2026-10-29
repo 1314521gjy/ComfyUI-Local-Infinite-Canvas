@@ -593,7 +593,7 @@ test("krea2 pack matches the zimage shape with no bundled LoRAs", () => {
     assert.ok(!pack.workflowDependencies["image-krea2-turbo"].includes("krea2_turbo_int8_convrot"));
     assert.equal(index.resources.some((item) => item.id === "krea2_darkbrush_lora"), false);
     assert.equal(index.resources.some((item) => item.id === "krea2_retroanime_lora"), false);
-    assert.equal(index.resources.length, 67);
+    assert.equal(index.resources.length, 72);
 });
 
 test("upscale pack ships the node with the app and downloads ESRGAN/SeedVR2 weights per workflow", () => {
@@ -609,8 +609,9 @@ test("upscale pack ships the node with the app and downloads ESRGAN/SeedVR2 weig
     ]);
     assert.deepEqual(pack.workflowDependencies["image-esrgan-upscale"], ["esrgan_x2plus"]);
     assert.deepEqual(pack.workflowDependencies["image-esrgan-upscale"], pack.workflowDependencies["video-esrgan_2x"]);
-    assert.deepEqual(pack.workflowDependencies["image-seedvr2-upscale"], ["seedvr2_7b_dit", "seedvr2_vae"]);
-    assert.deepEqual(pack.workflowDependencies["video-seedvr2-upscale"], ["seedvr2_3b_dit", "seedvr2_vae"]);
+    const runtimes = ["seedvr2_dep_diffusers", "seedvr2_dep_rotary", "seedvr2_dep_omegaconf", "seedvr2_dep_opencv", "seedvr2_dep_einops"];
+    assert.deepEqual(pack.workflowDependencies["image-seedvr2-upscale"], ["seedvr2_7b_dit", "seedvr2_vae", ...runtimes]);
+    assert.deepEqual(pack.workflowDependencies["video-seedvr2-upscale"], ["seedvr2_3b_dit", "seedvr2_vae", ...runtimes]);
     const optional = new Set(pack.optionalResources || []);
     for (const id of pack.resources) {
         assert.ok(optional.has(id), `${id} must stay optional so weight downloads remain user-driven`);
@@ -619,6 +620,15 @@ test("upscale pack ships the node with the app and downloads ESRGAN/SeedVR2 weig
     assert.equal(node.type, "node");
     assert.equal(node.autoInstall, true);
     assert.ok(node.bundleDir, "seedvr2 node must ship a bundled directory");
+    for (const id of runtimes) {
+        const runtime = index.resources.find((item) => item.id === id);
+        assert.equal(runtime.type, "pip", `${id} type`);
+        assert.ok(runtime.module && runtime.pipName, `${id} must declare module and pipName`);
+        assert.equal(runtime.restartAfterInstall, true, `${id} needs a ComfyUI restart`);
+        const wheel = runtime.wheelMatrix?.[0];
+        assert.ok(wheel?.url?.startsWith("https://mirrors.aliyun.com/pypi/"), `${id} wheel url`);
+        assert.ok(wheel.size > 0 && /^[0-9a-f]{64}$/.test(wheel.sha256), `${id} wheel size/sha256`);
+    }
     for (const id of ["seedvr2_3b_dit", "seedvr2_7b_dit"]) {
         const resource = index.resources.find((item) => item.id === id);
         assert.match(resource.target, /^SEEDVR2\//);
@@ -1321,6 +1331,19 @@ test("sage wheel matrix selects by python, torch and cuda", () => {
     assert.equal(pick("3.12", "2.7.1+cu128", "12.8"), "cu128-2.7.1");
     assert.equal(pick("3.12", "2.7.0+cu128", "12.8"), "");
     assert.equal(pick("3.12", "2.9.1+cu130", "12.6"), "");
+});
+
+test("universal pip wheels match any python/torch/cuda runtime", () => {
+    const resource = { wheelMatrix: [{ url: "https://example.test/universal.whl", size: 10, sha256: "a".repeat(64) }] };
+    for (const runtime of [
+        { python: "3.10", torch: "2.4.0", cuda: "12.1" },
+        { python: "3.12", torch: "2.12.0+cu130", cuda: "13.0" },
+        { python: "3.13", torch: "", cuda: "" },
+    ]) {
+        assert.equal(selectPipWheelForRuntime(resource, runtime)?.url, "https://example.test/universal.whl");
+    }
+    const gated = { wheelMatrix: [{ python: ">=3.13", url: "https://example.test/py313.whl" }] };
+    assert.equal(selectPipWheelForRuntime(gated, { python: "3.12" }), null);
 });
 
 test("release index includes sage runtime in every H3 workflow", () => {
