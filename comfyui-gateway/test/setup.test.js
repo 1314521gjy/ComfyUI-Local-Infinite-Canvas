@@ -131,3 +131,45 @@ test("workflow is unavailable when no matching base model is installed", async (
     await fsp.rm(dataDir, { recursive: true, force: true });
   }
 });
+
+test("a model folder change rescans availability without restarting the gateway", async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-folder-poll-"));
+  const models = path.join(root, "models", "unet");
+  await fsp.mkdir(models, { recursive: true });
+  try {
+    const manager = createSetupManager({
+      config: {
+        dataDir: path.join(root, "data"),
+        comfyUrl: "http://127.0.0.1:1",
+        comfyWorkflowsDir: "",
+        maxWorkflowBytes: 1024 * 1024,
+        scanDebounceMs: 5,
+      },
+      registry: {
+        list: () => [{ id: entry.id }],
+        resolve: () => entry,
+        scan: async () => ({ imported: 0 }),
+        reloadIfChanged: () => {},
+      },
+      comfy: {
+        systemStats: async () => ({}),
+        objectInfo: async () => objectInfo(await fsp.readdir(models)),
+        folderPaths: async () => ({ unet: [models], clip: [], vae: [] }),
+      },
+      logger: null,
+      mainModelFile: () => "",
+    });
+    await manager.scan();
+    assert.equal(manager.isAvailable(entry.id), false);
+    assert.equal(manager.pollModelFolders(), false, "nothing changed yet");
+
+    await fsp.writeFile(path.join(models, "z_image_turbo_bf16.safetensors"), "x");
+    assert.equal(manager.pollModelFolders(), true, "folder mtime changed");
+
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    assert.equal(manager.isAvailable(entry.id), true, "rescan activated the workflow");
+    assert.equal(manager.pollModelFolders(), false, "signature settled after the rescan");
+  } finally {
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+});
