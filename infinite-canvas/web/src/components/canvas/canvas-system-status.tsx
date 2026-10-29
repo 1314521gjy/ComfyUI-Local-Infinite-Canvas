@@ -19,6 +19,7 @@ type SystemStats = {
     at: string;
     gpu: GpuStats[];
     gpuError?: string | null;
+    gpuStale?: boolean;
     ram: { totalBytes: number; usedBytes: number; freeBytes: number };
     comfy: { url: string; reachable: boolean };
     restartAvailable: boolean;
@@ -164,7 +165,7 @@ export function CanvasSystemStatus() {
                         </div>
                         {gpu ? (
                             <div className="flex items-center justify-between text-[11px]" style={{ color: theme.node.faint }}>
-                                <span className="truncate">{gpu.name}</span>
+                                <span className="truncate">{gpu.name}{stats.gpuStale ? "（读取超时，显示上次读数）" : ""}</span>
                                 <span>
                                     利用率 {gpu.utilization}% · {gpu.temperature}°C
                                 </span>

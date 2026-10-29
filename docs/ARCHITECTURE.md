@@ -2,7 +2,7 @@
 
 > 截至 2026-10-29，对应发布版本 **v0.21.18**（发布树 `07842353-release-staging`，GitHub `main = 4616c53`）。
 > 本文件是架构层权威说明，已纳入 staging git（`docs/ARCHITECTURE.md`），不进发布包。状态与待办见外部 `HANDOFF-NEXT.md`，历史见 `docs/PROJECT_LOG.md`。
-> 版本/索引/路由/包数等数字为 2026-10-29 实测（网关单测 137/137）；`docs/` 不入发布包。
+> 版本/索引/路由/包数等数字为 2026-10-29 实测（网关单测 139/139）；`docs/` 不入发布包。
 
 ## 1. 定位
 
@@ -49,6 +49,7 @@ flowchart LR
 8. 看门狗 5s：时钟跳变 >60s 先静默 120s；要求见过会话、`count==0`、`activeTasks==0`；**只有页面显式关闭**（pagehide/beacon → 网关记录 `closedAt`）且关闭时间在 10 分钟内、空闲 ≥`canvasIdleGraceSec`（默认 30s）才停后台；心跳缺失（后台标签节流/冻结、浏览器崩溃）一律不停，避免挂机被误杀。
 9. 显式关闭语义（2026-10-29 补齐）：`sessions.js` 在 `status()` 中返回 `startedAt`/`closedAt`（此前只删会话、不记录关闭时间，导致启动器 `closedAt` 判定永远为假、自动退出实际不生效）；网关重启后 `startedAt` 变化会让启动器重置 `seen`，重新等待画布心跳。旧配置里残留的 15s 默认值会按 30s 处理，需要 15s 可显式设 `CANVAS_IDLE_GRACE_SEC=15`。
 
+10. 状态条数据：`GET /api/system/stats` 由网关调 `nvidia-smi`（8s 超时，`System32` 兜底）；显卡满载导致读取超时时沿用上次读数并标记 `gpuStale`，界面注明「读取超时，显示上次读数」，不再变成「显存 --」。
 ## 5. 生成链路
 
 - **图片**：图片节点 → `services/api/image.ts` → `POST /v1/images/generations` / `/edits` → `runner` → `registry` → `bindings` → ComfyUI `/prompt` → 轮询 `/history` → 回传。`count>1` 并发单图；本地加 `X-Request-Id`，取消走 `POST /api/requests/:id/cancel`，进度走 `/api/progress/:requestId`（250ms）。
@@ -107,7 +108,7 @@ flowchart LR
 # 整套启动
 start-local.bat            # 保持画布页打开；关页 30s 后停后台，见 §4.7
 
-# 网关单测（2026-10-29 实测 137/137）
+# 网关单测（2026-10-29 实测 139/139）
 cd 07842353-release-staging/comfyui-gateway
 COMFYUI_DIR=E:/ComfyUI/ComfyUI node --test --test-timeout=120000 test/*.test.js
 
