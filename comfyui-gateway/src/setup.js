@@ -71,8 +71,6 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
     let watcher = null;
     let poller = null;
     let debounceTimer = null;
-    let folderPollTimer = null;
-    let folderSignature = "";
     let loaderCatalog = {};
     let folderPathCatalog = {};
     let nodeClasses = new Set();
@@ -489,7 +487,6 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 state.phase = "ready";
                 state.scannedAt = nowIso();
                 state.scanDurationMs = Date.now() - started;
-                folderSignature = modelFolderSignature();
                 hasScanned = true;
                 logger?.info?.(`setup scan ready: ${state.counts.available}/${state.counts.total} workflows, ${state.missing.uiWorkflows} UI workflow(s) skipped, ${state.scanDurationMs}ms`);
                 if (gatewayScan.added.length || comfyScan.imported) {
@@ -508,31 +505,6 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
             }
         })();
         return scanPromise;
-    }
-
-    // 模型目录指纹：网关启动后手动拷入/下载的模型不会触发任何扫描，
-    // 资源中心读文件能看到，可用性缓存却还是旧的，工作流会一直不出现在模型选择里。
-    function modelFolderSignature() {
-        const dirs = new Set();
-        for (const list of Object.values(folderPathCatalog || {})) {
-            for (const dir of list || []) {
-                if (dir) dirs.add(String(dir));
-            }
-        }
-        return [...dirs]
-            .sort()
-            .map((dir) => `${dir}:${safeStat(dir)?.mtimeMs || 0}`)
-            .join("|");
-    }
-
-    function pollModelFolders() {
-        if (!folderPathCatalog || !Object.keys(folderPathCatalog).length) return false;
-        const signature = modelFolderSignature();
-        if (!signature || signature === folderSignature) return false;
-        const initial = !folderSignature;
-        folderSignature = signature;
-        if (!initial) schedule();
-        return !initial;
     }
 
     function startWatchers() {
@@ -559,14 +531,6 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
             registry.reloadIfChanged?.();
         }, 30000);
         if (typeof poller.unref === "function") poller.unref();
-        folderPollTimer = setInterval(() => {
-            try {
-                if (pollModelFolders()) logger?.info?.("检测到模型目录变化，重新扫描工作流可用性");
-            } catch (error) {
-                logger?.warn?.(`模型目录轮询失败：${error.message}`);
-            }
-        }, config.modelFolderPollMs || 30000);
-        if (typeof folderPollTimer.unref === "function") folderPollTimer.unref();
     }
 
     function start() {
@@ -579,8 +543,6 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         watcher = null;
         if (poller) clearInterval(poller);
         poller = null;
-        if (folderPollTimer) clearInterval(folderPollTimer);
-        folderPollTimer = null;
         if (debounceTimer) clearTimeout(debounceTimer);
         debounceTimer = null;
     }
@@ -619,7 +581,6 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         isAvailable,
         workflowStatus,
         hasNodeClass,
-        pollModelFolders,
         modelAliasFor,
         setModelAlias,
         setModelAliases,

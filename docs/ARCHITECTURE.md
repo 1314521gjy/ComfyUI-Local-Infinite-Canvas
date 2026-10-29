@@ -2,7 +2,7 @@
 
 > 截至 2026-10-29，对应发布版本 **v0.21.18**（发布树 `07842353-release-staging`，GitHub `main = 4616c53`）。
 > 本文件是架构层权威说明，已纳入 staging git（`docs/ARCHITECTURE.md`），不进发布包。状态与待办见外部 `HANDOFF-NEXT.md`，历史见 `docs/PROJECT_LOG.md`。
-> 版本/索引/路由/包数等数字为 2026-10-29 实测（网关单测 135/135）；`docs/` 不入发布包。
+> 版本/索引/路由/包数等数字为 2026-10-29 实测（网关单测 134/134）；`docs/` 不入发布包。
 
 ## 1. 定位
 
@@ -43,7 +43,7 @@ flowchart LR
 2. 探测顺序：安装器同文件夹 → 同盘限深（约 2s）→ 常见目录/配置 → 端口 8188–8199 → 手动配置；已在运行的进程直接接管，绝不重复启动。
 3. 网关缺 `express`/`multer` 时自愈：用 `launcher/gateway-deps.zip`（否则魔搭下载 + SHA 校验）解到 `.update/gateway-deps/`。
 4. 网关 :8190，环境 `PORT`、`HOST`、`COMFY_URL`、`COMFYUI_DIR`、`COMFY_WORKFLOWS_DIR`、`LAUNCHER_CONTROL_URL`；启动前等 `/health` 30s。
-5. setup 可用性缓存的刷新点：启动、工作流目录变化、资源安装/切换主模型/资源刷新；另每 30s 比对模型目录 mtime，变化即重扫（2026-10-29 补：此前网关启动后手动拷入的模型不会重扫，资源中心看得见、模型选择里却不出现）。
+5. setup 可用性缓存的刷新点：启动、工作流目录变化、资源安装/切换主模型、资源中心「重新扫描」（ → ，按钮自带 loading）。**不做后台自动扫描**：2026-10-29 曾加过模型目录 mtime 轮询与 10 分钟兜底重扫，评估后撤掉——扫描成本交给用户手动触发，避免周期性拖慢 ComfyUI。
 6. 画布由启动器在 :3000 托管 dist（SPA 回退、`/assets` 长缓存、路径逃逸 403），每次启动重写 `dist/config.js` 注入网关地址。
 7. 控制口 :8290：`GET /health`、`POST /restart-gateway`（接管来的网关返回 409）、`POST /restart-comfy`（taskkill 全部监听 PID → 等端口释放与显存回落 → 重拉 `run_nvidia_gpu.bat` → 重探 8188–8199）。网关以 `/api/system/restart-comfy` 暴露同一能力。
 8. 看门狗 5s：时钟跳变 >60s 先静默 120s；要求见过会话、`count==0`、`activeTasks==0`；**只有页面显式关闭**（pagehide/beacon → 网关记录 `closedAt`）且关闭时间在 10 分钟内、空闲 ≥`canvasIdleGraceSec`（默认 30s）才停后台；心跳缺失（后台标签节流/冻结、浏览器崩溃）一律不停，避免挂机被误杀。
@@ -105,7 +105,7 @@ flowchart LR
 # 整套启动
 start-local.bat            # 保持画布页打开；关页 30s 后停后台，见 §4.7
 
-# 网关单测（2026-10-29 实测 135/135）
+# 网关单测（2026-10-29 实测 134/134）
 cd 07842353-release-staging/comfyui-gateway
 COMFYUI_DIR=E:/ComfyUI/ComfyUI node --test --test-timeout=120000 test/*.test.js
 
