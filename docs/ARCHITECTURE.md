@@ -2,7 +2,7 @@
 
 > 截至 2026-10-29，对应发布版本 **v0.21.18**（发布树 `07842353-release-staging`，GitHub `main = 4616c53`）。
 > 本文件是架构层权威说明，已纳入 staging git（`docs/ARCHITECTURE.md`），不进发布包。状态与待办见外部 `HANDOFF-NEXT.md`，历史见 `docs/PROJECT_LOG.md`。
-> 版本/索引/路由/包数等数字为 2026-10-29 实测（网关单测 133/133）；`docs/` 不入发布包。
+> 版本/索引/路由/包数等数字为 2026-10-29 实测（网关单测 134/134）；`docs/` 不入发布包。
 
 ## 1. 定位
 
@@ -104,7 +104,7 @@ flowchart LR
 # 整套启动
 start-local.bat            # 保持画布页打开；关页 30s 后停后台，见 §4.7
 
-# 网关单测（2026-10-29 实测 133/133）
+# 网关单测（2026-10-29 实测 134/134）
 cd 07842353-release-staging/comfyui-gateway
 COMFYUI_DIR=E:/ComfyUI/ComfyUI node --test --test-timeout=120000 test/*.test.js
 
