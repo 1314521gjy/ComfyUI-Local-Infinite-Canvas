@@ -26,6 +26,27 @@ $ManifestUrls = @(
     "https://raw.githubusercontent.com/1314521gjy/ComfyUI-Local-Infinite-Canvas/main/update.json"
 )
 
+# 离线包优先：脚本同目录放 manifest.json + 补丁文件时完全不联网。
+# manifest.json 形如 { "version": "v0.21.19", "patch": { "file": "v0.21.19.zip", "size": 123, "sha256": "..." } }
+$localManifest = $null
+$localPatchPath = ""
+$localManifestPath = Join-Path $PSScriptRoot "manifest.json"
+if (Test-Path -LiteralPath $localManifestPath) {
+    try {
+        $candidate = Get-Content -LiteralPath $localManifestPath -Raw | ConvertFrom-Json
+        $candidateFile = [string]$candidate.patch.file
+        if ($candidate.version -and $candidate.patch -and $candidateFile) {
+            $candidatePath = Join-Path $PSScriptRoot $candidateFile
+            if (Test-Path -LiteralPath $candidatePath) {
+                $localManifest = $candidate
+                $localPatchPath = (Get-Item -LiteralPath $candidatePath).FullName
+            }
+        }
+    } catch {
+        Write-Host "本地清单读取失败，改用在线清单（$($_.Exception.Message)）" -ForegroundColor DarkYellow
+    }
+}
+
 function Write-Step([string]$Text) {
     Write-Host ""
     Write-Host "==> $Text" -ForegroundColor Cyan
@@ -112,16 +133,21 @@ Write-Host "当前版本：$currentVersion"
 Write-Step "读取更新清单"
 $manifest = $null
 $manifestUrl = ""
-foreach ($url in $ManifestUrls) {
-    try {
-        $data = Invoke-RestMethod -Uri $url -UseBasicParsing -TimeoutSec 30
-        if ($data.version) {
-            $manifest = $data
-            $manifestUrl = $url
-            break
+if ($localManifest) {
+    $manifest = $localManifest
+    Write-Host "使用本地离线补丁：$localPatchPath" -ForegroundColor Green
+} else {
+    foreach ($url in $ManifestUrls) {
+        try {
+            $data = Invoke-RestMethod -Uri $url -UseBasicParsing -TimeoutSec 30
+            if ($data.version) {
+                $manifest = $data
+                $manifestUrl = $url
+                break
+            }
+        } catch {
+            Write-Host "清单不可用：$url（$($_.Exception.Message)）" -ForegroundColor DarkYellow
         }
-    } catch {
-        Write-Host "清单不可用：$url（$($_.Exception.Message)）" -ForegroundColor DarkYellow
     }
 }
 if (-not $manifest) {
@@ -143,14 +169,20 @@ if ($current -and $latest -and $latest -le $current) {
 }
 
 $patch = $manifest.patch
-if (-not $patch -or -not $patch.url -or -not $patch.sha256) {
+if (-not $patch -or -not $patch.sha256) {
     Write-Host "这个版本没有可用的代码补丁，请到发布页下载完整包。" -ForegroundColor Red
     if ($manifest.repository) { Write-Host "发布页：$($manifest.repository)" }
     exit 4
 }
 $patchUrl = [string]$patch.url
-if ($patchUrl -notmatch "^https?://") {
-    $patchUrl = ([Uri]::new([Uri]$manifestUrl, $patchUrl)).AbsoluteUri
+if (-not $localPatchPath) {
+    if (-not $patchUrl) {
+        Write-Host "更新清单缺少补丁地址，请到发布页下载完整包。" -ForegroundColor Red
+        exit 4
+    }
+    if ($patchUrl -notmatch "^https?://") {
+        $patchUrl = ([Uri]::new([Uri]$manifestUrl, $patchUrl)).AbsoluteUri
+    }
 }
 
 $tempRoot = Join-Path $env:TEMP ("wujie-update-" + [Guid]::NewGuid().ToString("N"))
@@ -159,9 +191,14 @@ $payload = Join-Path $tempRoot "payload"
 New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
 
 try {
-    Write-Step "下载更新补丁"
-    Write-Host $patchUrl
-    Invoke-WebRequest -Uri $patchUrl -OutFile $zipPath -UseBasicParsing -TimeoutSec 600
+    Write-Step "准备更新补丁"
+    if ($localPatchPath) {
+        Copy-Item -LiteralPath $localPatchPath -Destination $zipPath -Force
+        Write-Host "已使用随包补丁（无需联网）" -ForegroundColor Green
+    } else {
+        Write-Host $patchUrl
+        Invoke-WebRequest -Uri $patchUrl -OutFile $zipPath -UseBasicParsing -TimeoutSec 600
+    }
     $actualSize = (Get-Item -LiteralPath $zipPath).Length
     if ($patch.size -and $actualSize -ne [int64]$patch.size) {
         throw "补丁大小不一致（$actualSize / $($patch.size)），可能下载不完整，请重试。"
@@ -219,11 +256,13 @@ try {
     }
     Write-Host "已更新 $($written.Count) 个文件（跳过 $skipped 个受保护文件）" -ForegroundColor Green
 
-    try {
-        $manifestJson = $manifest | ConvertTo-Json -Depth 10
-        [IO.File]::WriteAllText((Join-Path $appRoot "update.json"), $manifestJson, (New-Object Text.UTF8Encoding($false)))
-    } catch {
-        Write-Host "本地 update.json 同步失败（不影响使用）：$($_.Exception.Message)" -ForegroundColor DarkYellow
+    if ($patch.url) {
+        try {
+            $manifestJson = $manifest | ConvertTo-Json -Depth 10
+            [IO.File]::WriteAllText((Join-Path $appRoot "update.json"), $manifestJson, (New-Object Text.UTF8Encoding($false)))
+        } catch {
+            Write-Host "本地 update.json 同步失败（不影响使用）：$($_.Exception.Message)" -ForegroundColor DarkYellow
+        }
     }
 
     $installedVersion = (Get-Content -LiteralPath (Join-Path $appRoot "VERSION") -Raw).Trim()
