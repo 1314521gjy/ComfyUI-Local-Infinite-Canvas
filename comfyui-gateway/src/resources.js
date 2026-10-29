@@ -260,8 +260,72 @@ export function buildTrtCompileHint({ python, compiler, input, output, device = 
     ].join("\n");
 }
 
+function versionParts(value) {
+    const match = String(value || "").match(/(\d+)\.(\d+)(?:\.(\d+))?/);
+    return match ? [Number(match[1]), Number(match[2]), Number(match[3] || 0)] : null;
+}
+
+function compareVersionParts(left, right) {
+    for (let index = 0; index < 3; index += 1) {
+        if (left[index] !== right[index]) return left[index] > right[index] ? 1 : -1;
+    }
+    return 0;
+}
+
+function satisfiesVersion(value, spec) {
+    const current = versionParts(value);
+    if (!current) return false;
+    const text = String(spec || "").trim();
+    if (!text) return true;
+    return text.split(",").every((part) => {
+        const match = part.trim().match(/^(>=|<=|>|<|=)?\s*v?(.+)$/);
+        if (!match) return false;
+        const target = versionParts(match[2]);
+        if (!target) return false;
+        const compared = compareVersionParts(current, target);
+        switch (match[1] || "=") {
+            case ">=":
+                return compared >= 0;
+            case "<=":
+                return compared <= 0;
+            case ">":
+                return compared > 0;
+            case "<":
+                return compared < 0;
+            default:
+                return compared === 0;
+        }
+    });
+}
+
+function cudaMatches(value, expected) {
+    const current = String(value || "").trim();
+    const target = String(expected || "").trim();
+    if (!current || !target) return false;
+    return current === target || current.startsWith(`${target}.`);
+}
+
+export function selectPipWheelForRuntime(resource, runtime) {
+    const matrix = Array.isArray(resource?.wheelMatrix) ? resource.wheelMatrix : [];
+    if (!matrix.length) return null;
+    for (const entry of matrix) {
+        if (!entry?.url) continue;
+        if (entry.python && !satisfiesVersion(runtime?.python, entry.python)) continue;
+        if (entry.torch && !satisfiesVersion(runtime?.torch, entry.torch)) continue;
+        if (entry.cuda && !cudaMatches(runtime?.cuda, entry.cuda)) continue;
+        return {
+            url: String(entry.url),
+            size: Number(entry.size) || 0,
+            sha256: String(entry.sha256 || ""),
+            label: String(entry.label || ""),
+        };
+    }
+    return null;
+}
+
 export function createResourceManager({ config, setup, registry, logger, workflowVisibility = null, mainModels = null, hardware: hardwareOverride = null } = {}) {
     const indexPath = path.join(config.rootDir, "resources", "index.json");
+    const indexCachePath = path.join(config.dataDir, "resources-index.json");
     const lockPath = path.join(config.dataDir, "resource-lock.json");
     const jobs = new Map();
     const inventoryCache = new Map();
@@ -269,6 +333,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
     let hardware = hardwareOverride;
     let indexSource = "local";
     let indexError = "";
+    let indexWarning = "";
     let lock = { version: 1, installed: {} };
     let loadedAt = null;
 
@@ -477,17 +542,29 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         await writeJsonAtomic(lockPath, lock);
     }
 
-    async function loadIndex() {
+    async function loadIndex({ forceRemote = false } = {}) {
         indexError = "";
+        indexWarning = "";
         indexSource = "local";
         let local = null;
+        let localError = "";
+        const localExists = fs.existsSync(indexPath);
         try {
             local = validateIndex(readJson(indexPath));
         } catch (error) {
-            indexError = `本地索引不可用：${error.message}`;
+            localError = localExists ? error.message : "文件不存在";
+        }
+        let cached = null;
+        if (!local) {
+            try {
+                cached = validateIndex(readJson(indexCachePath));
+            } catch {
+                cached = null;
+            }
         }
         const remoteUrls = [config.resourcesIndexUrl, config.resourcesIndexUrlBackup].filter(Boolean);
-        if (remoteUrls.length) {
+        const shouldFetchRemote = forceRemote || !local;
+        if (shouldFetchRemote && remoteUrls.length) {
             let lastError = null;
             let remoteLoaded = false;
             for (const [urlIndex, url] of remoteUrls.entries()) {
@@ -497,23 +574,44 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                         headers: { Accept: "application/json" },
                     });
                     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                    index = validateIndex(await response.json());
+                    const remote = validateIndex(await response.json());
+                    index = remote;
                     indexSource = urlIndex === 0 && config.resourcesIndexUrl ? "remote" : "remote-backup";
-                    indexError = "";
+                    indexWarning = localError ? `本地索引不可用（${localError}），已从镜像加载` : "";
                     remoteLoaded = true;
+                    await fsp.mkdir(config.dataDir, { recursive: true });
+                    await writeJsonAtomic(indexCachePath, remote).catch(() => {});
                     break;
                 } catch (error) {
                     lastError = error;
                 }
             }
             if (!remoteLoaded) {
-                index = local;
-                indexSource = local ? "local" : "none";
-                indexError = `远端索引不可用：${lastError?.message || "未知错误"}`;
+                if (local) {
+                    index = local;
+                    indexSource = "local";
+                    indexWarning = `远端索引不可用：${lastError?.message || "未知错误"}，已使用本地索引`;
+                } else if (cached) {
+                    index = cached;
+                    indexSource = "cache";
+                    indexWarning = `本地索引不可用（${localError || "未知错误"}），远端也不可用（${lastError?.message || "未知错误"}），已使用缓存`;
+                } else {
+                    index = null;
+                    indexSource = "none";
+                    indexError = `本地索引不可用：${localError || "未知错误"}；远端索引不可用：${lastError?.message || "未知错误"}`;
+                }
             }
-        } else {
+        } else if (local) {
             index = local;
-            indexSource = local ? "local" : "none";
+            indexSource = "local";
+        } else if (cached) {
+            index = cached;
+            indexSource = "cache";
+            indexWarning = `本地索引不可用（${localError || "未知错误"}），已使用缓存`;
+        } else {
+            index = null;
+            indexSource = "none";
+            indexError = `本地索引不可用：${localError || "未知错误"}`;
         }
         loadedAt = nowIso();
         return index;
@@ -680,6 +778,62 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         return { python, ...pipImportStatus(python, module) };
     }
 
+    const pipRuntimeCache = new Map();
+
+    function pipRuntimeFor(python) {
+        if (!python) return { python: "", torch: "", cuda: "" };
+        const cached = pipRuntimeCache.get(python);
+        if (cached && Date.now() - cached.at < 1800000) return cached.info;
+        let info = { python: pythonVersionFor(python), torch: "", cuda: "" };
+        try {
+            const stdout = execFileSync(
+                python,
+                [
+                    "-c",
+                    "import sys,json,torch;print(json.dumps({'python':f'{sys.version_info.major}.{sys.version_info.minor}','torch':torch.__version__,'cuda':torch.version.cuda or ''}))",
+                ],
+                { timeout: 20000, windowsHide: true, encoding: "utf8" },
+            );
+            const lines = String(stdout || "").trim().split(/\r?\n/).filter(Boolean).reverse();
+            for (const line of lines) {
+                const text = line.trim();
+                if (!text.startsWith("{")) continue;
+                const parsed = JSON.parse(text);
+                info = {
+                    python: String(parsed.python || info.python),
+                    torch: String(parsed.torch || ""),
+                    cuda: String(parsed.cuda || ""),
+                };
+                break;
+            }
+        } catch {
+            // torch 导入失败时保留 Python 版本，wheel 选择会按缺失 Torch 处理。
+        }
+        pipRuntimeCache.set(python, { at: Date.now(), info });
+        return info;
+    }
+
+    function pickPipWheel(resource, python) {
+        const matrix = Array.isArray(resource?.wheelMatrix) ? resource.wheelMatrix : [];
+        if (matrix.length) {
+            const runtime = pipRuntimeFor(python);
+            const selected = selectPipWheelForRuntime(resource, runtime);
+            if (selected) return { ...selected, runtime };
+            return { url: "", size: 0, sha256: "", label: "", runtime, missing: true };
+        }
+        const version = pythonVersionFor(python);
+        const wheels = resource?.wheels && typeof resource.wheels === "object" ? resource.wheels : {};
+        const url = String(wheels[version] || resource?.wheel || "").trim();
+        return {
+            url,
+            size: 0,
+            sha256: "",
+            label: "",
+            runtime: { python: version, torch: "", cuda: "" },
+            missing: !url,
+        };
+    }
+
     function resourceStatus(resource, root) {
         const { dir, file } = targetParts(resource.target);
         const isNode = dir === "custom_nodes" || resource.type === "node";
@@ -708,8 +862,14 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         }
         const registered = dir !== "custom_nodes" ? exists : false;
         const isBake = resource.type === "bake";
-        const wheelVersions = isPip ? Object.keys(resource.wheels || {}) : [];
-        const pythonVersion = isPip ? pythonVersionFor(pip?.python || "") : "";
+        const wheelMatrix = isPip && Array.isArray(resource.wheelMatrix) ? resource.wheelMatrix : [];
+        const wheelPlan = isPip ? pickPipWheel(resource, pip?.python || "") : null;
+        const wheelVersions = isPip
+            ? wheelMatrix.length
+                ? wheelMatrix.map((item) => `${item.cuda || "*"} / torch ${item.torch || "*"}`)
+                : Object.keys(resource.wheels || {})
+            : [];
+        const pythonVersion = isPip ? (wheelPlan?.runtime?.python || pythonVersionFor(pip?.python || "")) : "";
         const missingRequires = isBake ? (resource.requires || []).filter((id) => {
             const dependency = index?.resources?.find((item) => item.id === id);
             if (!dependency) return true;
@@ -758,7 +918,10 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                       pipReason: pip.reason || "",
                       pipName: String(resource.pipName || resource.module || ""),
                       wheelVersions,
-                      pipWheelMissing: Boolean(pythonVersion && wheelVersions.length && !wheelVersions.includes(pythonVersion)),
+                      pipRuntime: wheelPlan?.runtime || null,
+                      pipWheel: wheelPlan?.url ? { url: wheelPlan.url, size: wheelPlan.size || 0, sha256: wheelPlan.sha256 || "" } : null,
+                      pipWheelMissing: Boolean(pythonVersion && wheelPlan?.missing),
+                      restartAfterInstall: Boolean(resource.restartAfterInstall),
                   }
                 : {}),
         };
@@ -1159,6 +1322,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             loadedAt,
             indexSource,
             indexError,
+            indexWarning,
             indexVersion: index?.version || "",
             channel: index?.channel || "",
             comfyRoot: root,
@@ -1689,29 +1853,56 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             jobItem.skipped = true;
             return;
         }
-        let version = "";
-        try {
-            version = String(execFileSync(python, ["-c", "import sys;print(f'{sys.version_info.major}.{sys.version_info.minor}')"], {
-                timeout: 15000,
-                windowsHide: true,
-                encoding: "utf8",
-            })).trim();
-        } catch {
-            version = "";
-        }
-        const wheels = resource.wheels && typeof resource.wheels === "object" ? resource.wheels : {};
-        const wheel = String(wheels[version] || resource.wheel || "").trim();
-        if (!wheel) {
+        const plan = pickPipWheel(resource, python);
+        const runtimeLabel = [plan.runtime?.python ? `Python ${plan.runtime.python}` : "", plan.runtime?.torch ? `Torch ${plan.runtime.torch}` : "", plan.runtime?.cuda ? `CUDA ${plan.runtime.cuda}` : ""]
+            .filter(Boolean)
+            .join(" / ");
+        if (!plan.url) {
             const pipName = String(resource.pipName || module).trim();
             throw new Error(
-                `当前 ComfyUI 使用 Python ${version || "未知版本"}，没有匹配的预编译运行库（支持 ${Object.keys(wheels).join(" / ") || "无"}）。` +
+                `当前 ComfyUI 环境（${runtimeLabel || "版本未知"}）没有匹配的预编译运行库。` +
                     `请手动安装后重试：\"${python}\" -m pip install ${pipName}`,
             );
         }
+        let wheel = plan.url;
+        let wheelSize = plan.size || 0;
+        if (plan.sha256) {
+            const cacheDir = path.join(config.dataDir, "runtime-cache");
+            await fsp.mkdir(cacheDir, { recursive: true });
+            const fileName = decodeURIComponent(path.basename(new URL(plan.url).pathname)) || `${resource.id}.whl`;
+            const cached = path.join(cacheDir, fileName);
+            let valid = false;
+            if (isFile(cached)) {
+                const stat = fs.statSync(cached);
+                valid =
+                    (!plan.size || stat.size === plan.size) &&
+                    (await sha256File(cached, signal)).toLowerCase() === plan.sha256.toLowerCase();
+            }
+            if (!valid) {
+                jobItem.status = "downloading";
+                jobItem.source = "Python 运行库";
+                const response = await fetch(plan.url, { signal });
+                if (!response.ok) throw new Error(`运行库下载失败：HTTP ${response.status}`);
+                const buffer = Buffer.from(await response.arrayBuffer());
+                if (signal?.aborted) throw new Error("已取消");
+                if (plan.size && buffer.length !== plan.size) throw new Error(`运行库大小不一致（${buffer.length}/${plan.size}）`);
+                const digest = crypto.createHash("sha256").update(buffer).digest("hex");
+                if (digest.toLowerCase() !== plan.sha256.toLowerCase()) throw new Error("运行库 SHA256 校验失败");
+                await fsp.writeFile(cached, buffer);
+                wheelSize = buffer.length;
+            } else {
+                wheelSize = fs.statSync(cached).size;
+            }
+            wheel = cached;
+        }
         jobItem.status = "installing";
         jobItem.source = "Python 运行库";
+        jobItem.size = wheelSize || jobItem.size;
+        const pipArgs = ["-m", "pip", "install", "--disable-pip-version-check", "--no-input"];
+        if (Array.isArray(resource.wheelMatrix)) pipArgs.push("--force-reinstall");
+        pipArgs.push(wheel);
         await new Promise((resolve, reject) => {
-            const child = spawn(python, ["-m", "pip", "install", "--disable-pip-version-check", "--no-input", wheel], {
+            const child = spawn(python, pipArgs, {
                 windowsHide: true,
                 env: { ...process.env, PIP_DISABLE_PIP_VERSION_CHECK: "1" },
             });
@@ -1733,12 +1924,26 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             });
         });
         pipCheckCache.delete(`${python}|${module}`.toLowerCase());
+        const recheck = pipImportStatus(python, module, { fresh: true });
+        if (!recheck.present) throw new Error(`运行库安装后仍无法导入 ${module}：${recheck.reason || "未知原因"}`);
+        if (module === "sageattention") {
+            try {
+                execFileSync(python, ["-c", "from sageattention.core import get_cuda_arch_versions as g;print(','.join(g()))"], {
+                    timeout: 30000,
+                    windowsHide: true,
+                    encoding: "utf8",
+                });
+            } catch (error) {
+                throw new Error(`SageAttention 安装后仍不可用：${truncate(String(error?.stderr || error?.message || error), 300)}`);
+            }
+        }
         lock.installed = lock.installed || {};
         lock.installed[resource.id] = { version: index?.version || "", target: resource.target, size: resource.size || 0, installedAt: nowIso() };
         lock.updatedAt = nowIso();
         await saveLock();
         jobItem.status = "done";
         jobItem.bytes = jobItem.size;
+        if (resource.restartAfterInstall) jobItem.restartRequired = true;
     }
 
     async function runBake(resource, jobItem, signal) {
@@ -2013,7 +2218,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         inventoryCache.clear();
         clearExtraModelPathsCache();
         if (!hardwareOverride) hardware = await probeHardware();
-        await loadIndex();
+        await loadIndex({ forceRemote: true });
         try {
             await setup?.scan?.();
         } catch (error) {

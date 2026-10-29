@@ -69,8 +69,16 @@ export function loadConfig(overrides = {}) {
     updateBranch: String(overrides.updateBranch ?? process.env.UPDATE_BRANCH ?? "main").trim(),
     updateFetchTimeoutMs: num(overrides.updateFetchTimeoutMs ?? process.env.UPDATE_FETCH_TIMEOUT_MS, 15000),
     updateApplyTimeoutMs: num(overrides.updateApplyTimeoutMs ?? process.env.UPDATE_APPLY_TIMEOUT_MS, 120000),
-    resourcesIndexUrl: String(overrides.resourcesIndexUrl ?? process.env.RESOURCES_INDEX_URL ?? "").trim(),
-    resourcesIndexUrlBackup: String(overrides.resourcesIndexUrlBackup ?? process.env.RESOURCES_INDEX_URL_BACKUP ?? "").trim(),
+    resourcesIndexUrl: String(
+        overrides.resourcesIndexUrl ??
+            process.env.RESOURCES_INDEX_URL ??
+            "https://www.modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/comfyui-gateway/resources/index.json",
+    ).trim(),
+    resourcesIndexUrlBackup: String(
+        overrides.resourcesIndexUrlBackup ??
+            process.env.RESOURCES_INDEX_URL_BACKUP ??
+            "https://raw.githubusercontent.com/1314521gjy/ComfyUI-Local-Infinite-Canvas/main/comfyui-gateway/resources/index.json",
+    ).trim(),
     resourcesFetchTimeoutMs: num(overrides.resourcesFetchTimeoutMs ?? process.env.RESOURCES_FETCH_TIMEOUT_MS, 8000),
     resourceConcurrency: num(overrides.resourceConcurrency ?? process.env.RESOURCE_CONCURRENCY, 2),
     allowRemote,

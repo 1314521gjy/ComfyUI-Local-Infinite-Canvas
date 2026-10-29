@@ -140,7 +140,10 @@ export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 *
       const failure = historyError(history);
       if (failure) {
         running = false;
-        throw new GenerationError(`ComfyUI 执行失败：${truncate(failure, 1200)}`, { status: 502, code: "comfy_execution_failed", details: failure });
+        const sageHint = /sageattention is not new enough|cannot apply MiniMax H3 Memory Efficient Sage Attention Patch/i.test(failure)
+          ? "。H3 需要 SageAttention 运行库：请在「设置 → 添加工作流 → H3 视频生成」安装「SageAttention 运行库（H3 必需）」，安装后重启 ComfyUI 再重试。"
+          : "";
+        throw new GenerationError(`ComfyUI 执行失败：${truncate(failure, 1200)}${sageHint}`, { status: 502, code: "comfy_execution_failed", details: failure });
       }
       if (historyCompleted(history)) {
         running = false;

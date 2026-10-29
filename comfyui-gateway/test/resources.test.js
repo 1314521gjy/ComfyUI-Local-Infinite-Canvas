@@ -8,7 +8,7 @@ import path from "node:path";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
 
-import { buildTrtCompileHint, createResourceManager } from "../src/resources.js";
+import { buildTrtCompileHint, createResourceManager, selectPipWheelForRuntime } from "../src/resources.js";
 
 async function waitForJob(manager, id, timeoutMs = 10000) {
     const started = Date.now();
@@ -593,7 +593,7 @@ test("krea2 pack matches the zimage shape with no bundled LoRAs", () => {
     assert.ok(!pack.workflowDependencies["image-krea2-turbo"].includes("krea2_turbo_int8_convrot"));
     assert.equal(index.resources.some((item) => item.id === "krea2_darkbrush_lora"), false);
     assert.equal(index.resources.some((item) => item.id === "krea2_retroanime_lora"), false);
-    assert.equal(index.resources.length, 59);
+    assert.equal(index.resources.length, 60);
 });
 
 test("h3 pack lists the shared models, VDN/noVDN variants and character swap", () => {
@@ -613,7 +613,9 @@ test("h3 pack lists the shared models, VDN/noVDN variants and character swap", (
         "video-h3-character-swap",
     ]);
     const byId = new Map(index.resources.map((item) => [item.id, item]));
-    assert.deepEqual(pack.optionalResources, pack.resources, "h3 must not declare pack-level required resources");
+    const optional = new Set(pack.optionalResources || []);
+    const required = pack.resources.filter((id) => !optional.has(id));
+    assert.deepEqual(required, ["sage_h3"], "h3 only requires the SageAttention runtime at pack level");
     for (const id of ["h3_unet_singularity_ref2va_v13_int8", "h3_te_qwen3vl_32b_int8_convrot", "h3_audio_vae_fp32", "h3_vae_onnx_decoder", "h3_trt_vae_decoder_engine", "h3_trt_vae_encoder_engine"]) {
         assert.ok(pack.resources.includes(id), `h3 missing ${id}`);
     }
@@ -1017,6 +1019,7 @@ test("remote resource index falls back to the backup URL", async () => {
     });
     try {
         await manager.init();
+        await manager.refresh();
         const status = manager.status();
         assert.equal(status.indexVersion, "backup-test");
         assert.equal(status.indexSource, "remote-backup");
@@ -1057,8 +1060,11 @@ test("packs only declare downloadable weights; nodes ship with the app", () => {
     for (const pack of index.packs) {
         const optional = new Set(pack.optionalResources || []);
         for (const id of pack.resources || []) {
-            assert.notEqual(byId.get(id)?.type, "node", `${pack.id} lists node ${id}`);
-            assert.ok(optional.has(id), `${pack.id} declares ${id} as required; packs must not have a required base`);
+            const resource = byId.get(id);
+            assert.notEqual(resource?.type, "node", `${pack.id} lists node ${id}`);
+            if (!optional.has(id)) {
+                assert.equal(resource?.type, "pip", `${pack.id} declares ${id} as required; only runtime pip resources may be required`);
+            }
         }
         for (const [workflowId, ids] of Object.entries(pack.workflowDependencies || {})) {
             for (const id of ids) {
@@ -1251,6 +1257,101 @@ test("extra_model_paths.yaml is used when ComfyUI folder paths are unavailable",
         const expectedRoot = path.join(extra, "vae").toLowerCase();
         assert.ok(status.modelRoots.vae.some((entry) => entry.toLowerCase() === expectedRoot));
     } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});
+
+test("sage wheel matrix selects by python, torch and cuda", () => {
+    const resource = {
+        wheelMatrix: [
+            { python: ">=3.10", torch: ">=2.10.0", cuda: "13.0", url: "cu130-2.10" },
+            { python: ">=3.10", torch: ">=2.9.1,<2.10.0", cuda: "13.0", url: "cu130-2.9.1" },
+            { python: ">=3.9", torch: ">=2.9.0,<2.9.1", cuda: "13.0", url: "cu130-2.9.0" },
+            { python: ">=3.10", torch: ">=2.10.0", cuda: "12.8", url: "cu128-2.10" },
+            { python: ">=3.10", torch: ">=2.9.1,<2.10.0", cuda: "12.8", url: "cu128-2.9.1" },
+            { python: ">=3.9", torch: ">=2.9.0,<2.9.1", cuda: "12.8", url: "cu128-2.9.0" },
+            { python: ">=3.9", torch: ">=2.8.0,<2.9.0", cuda: "12.8", url: "cu128-2.8.0" },
+            { python: ">=3.9", torch: ">=2.7.1,<2.8.0", cuda: "12.8", url: "cu128-2.7.1" },
+        ],
+    };
+    const pick = (python, torch, cuda) => selectPipWheelForRuntime(resource, { python, torch, cuda })?.url || "";
+    assert.equal(pick("3.12", "2.12.0+cu130", "13.0"), "cu130-2.10");
+    assert.equal(pick("3.12", "2.9.1+cu130", "13.0"), "cu130-2.9.1");
+    assert.equal(pick("3.12", "2.9.0+cu130", "13.0"), "cu130-2.9.0");
+    assert.equal(pick("3.12", "2.10.1+cu128", "12.8"), "cu128-2.10");
+    assert.equal(pick("3.12", "2.9.1+cu128", "12.8"), "cu128-2.9.1");
+    assert.equal(pick("3.12", "2.8.0+cu128", "12.8"), "cu128-2.8.0");
+    assert.equal(pick("3.12", "2.7.1+cu128", "12.8"), "cu128-2.7.1");
+    assert.equal(pick("3.12", "2.7.0+cu128", "12.8"), "");
+    assert.equal(pick("3.12", "2.9.1+cu130", "12.6"), "");
+});
+
+test("release index includes sage runtime in every H3 workflow", () => {
+    const index = JSON.parse(fs.readFileSync(new URL("../resources/index.json", import.meta.url), "utf8"));
+    const sage = index.resources.find((item) => item.id === "sage_h3");
+    assert.ok(sage, "missing sage_h3 resource");
+    assert.equal(sage.type, "pip");
+    assert.equal(sage.module, "sageattention");
+    assert.equal(sage.wheelMatrix.length, 10);
+    assert.ok(sage.wheelMatrix.every((item) => item.url && item.sha256 && item.size > 0));
+    const pick = (runtime) => selectPipWheelForRuntime(sage, runtime)?.url || "";
+    assert.match(pick({ python: "3.12", torch: "2.9.1+cu130", cuda: "13.0" }), /cu130torch2.9.1.post6/);
+    assert.match(pick({ python: "3.12", torch: "2.12.0+cu130", cuda: "13.0" }), /cu130torch2.10.0andhigher.post6/);
+    assert.match(pick({ python: "3.12", torch: "2.8.0+cu128", cuda: "12.8" }), /cu128torch2.8.0.post3/);
+    assert.equal(pick({ python: "3.12", torch: "2.7.0+cu128", cuda: "12.8" }), "");
+    const h3 = index.packs.find((item) => item.id === "h3");
+    assert.ok(h3.resources.includes("sage_h3"));
+    assert.equal(h3.optionalResources.includes("sage_h3"), false);
+    for (const ids of Object.values(h3.workflowDependencies || {})) {
+        assert.ok(ids.includes("sage_h3"));
+    }
+});
+
+test("missing local index self-heals from remote and falls back to cache", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-index-cache-test-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(comfy, { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    const server = http.createServer((req, res) => {
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ schema: 1, version: "remote-test", packs: [], resources: [] }));
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = server.address().port;
+    const config = {
+        rootDir: root,
+        dataDir: data,
+        comfyDir: comfy,
+        comfyWorkflowsDir: "",
+        resourcesIndexUrl: `http://127.0.0.1:${port}/index.json`,
+        resourcesIndexUrlBackup: "",
+        resourcesFetchTimeoutMs: 1000,
+        resourceConcurrency: 1,
+    };
+    const setup = { loaderOptions: () => ({}), status: () => ({ comfyReachable: false }), scan: async () => ({}) };
+    const hardware = { gpuName: "Test", vramTotalMb: 32768, ramTotalBytes: 64 * 1024 ** 3, ramFreeBytes: 64 * 1024 ** 3, detectedAt: new Date().toISOString(), source: "test" };
+    try {
+        const first = createResourceManager({ config, setup, hardware, logger: null });
+        await first.init();
+        const online = first.status();
+        assert.equal(online.indexVersion, "remote-test");
+        assert.equal(online.indexSource, "remote");
+        assert.equal(online.indexError, "");
+        assert.ok(fs.existsSync(path.join(data, "resources-index.json")));
+
+        await new Promise((resolve) => server.close(resolve));
+        const second = createResourceManager({ config, setup, hardware, logger: null });
+        await second.init();
+        const offline = second.status();
+        assert.equal(offline.indexVersion, "remote-test");
+        assert.equal(offline.indexSource, "cache");
+        assert.match(offline.indexWarning, /缓存/);
+        assert.equal(offline.indexError, "");
+    } finally {
+        await new Promise((resolve) => server.close(resolve));
         await fsp.rm(root, { recursive: true, force: true });
     }
 });

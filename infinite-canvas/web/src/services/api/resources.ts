@@ -36,7 +36,10 @@ export type ResourceItem = {
     pythonRuntime?: string;
     pythonVersion?: string;
     pipName?: string;
+    pipRuntime?: { python: string; torch: string; cuda: string } | null;
+    pipWheel?: { url: string; size?: number; sha256?: string } | null;
     pipWheelMissing?: boolean;
+    restartAfterInstall?: boolean;
 };
 
 export type PackMainModelOption = {
@@ -142,6 +145,7 @@ export type ResourceStatus = {
     loadedAt?: string;
     indexSource?: string;
     indexError?: string;
+    indexWarning?: string;
     indexVersion?: string;
     channel?: string;
     comfyRoot?: string;

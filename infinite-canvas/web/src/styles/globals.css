@@ -649,11 +649,6 @@
     object-position: bottom center;
 }
 
-/* 角色始终面向卡片：切到左侧时水平镜像。 */
-.fish-guard-mascot[data-side="left"] .fish-guard-frame {
-    transform: scaleX(-1);
-}
-
 .fish-guard-frame-idle {
     animation: fish-guard-frame-idle 4.6s ease-in-out infinite;
 }
@@ -811,10 +806,6 @@
     height: 100%;
     object-fit: contain;
     object-position: bottom center;
-}
-
-.angel-mascot[data-side="left"] .angel-frame {
-    transform: scaleX(-1);
 }
 
 .angel-frame-idle {

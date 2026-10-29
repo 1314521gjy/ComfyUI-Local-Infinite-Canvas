@@ -80,7 +80,7 @@ const copyByLocale = {
         size: "下载体积",
         sources: "下载源",
         autoMatch: "按本机 Python 自动匹配",
-        pipManual: "当前 Python {version} 没有预编译运行库，请手动安装：{command}",
+        pipManual: "当前 {version} 没有匹配的预编译运行库，请手动安装：{command}",
         localBake: "本地烘焙",
         noResources: "此包没有需要下载的资源。",
         downloadProgress: "安装进度",
@@ -93,7 +93,10 @@ const copyByLocale = {
         copyHint: "复制给 AI Agent",
         hintCopied: "已复制，直接发给你的 AI Agent",
         notReachable: "ComfyUI 当前未连接，资源状态可能不准确。",
-        indexError: "资源索引读取失败，当前使用内置清单。",
+        indexError: "资源索引读取失败：",
+        indexWarning: "资源索引提示：",
+        autoMatchRuntime: "按本机环境自动匹配",
+        pipRestart: "安装后重启 ComfyUI 生效",
         selectHint: "选择需要安装的功能包；已具备的资源会自动跳过。",
         target: "目标",
         matchedBySize: "按文件体积匹配",
@@ -170,7 +173,7 @@ const copyByLocale = {
         size: "Download size",
         sources: "Sources",
         autoMatch: "Auto-matched to local Python",
-        pipManual: "No prebuilt runtime for Python {version}. Install manually: {command}",
+        pipManual: "No prebuilt runtime matches {version}. Install manually: {command}",
         localBake: "Local bake",
         noResources: "This pack has no downloadable resources.",
         downloadProgress: "Install progress",
@@ -183,7 +186,10 @@ const copyByLocale = {
         copyHint: "Copy for your AI agent",
         hintCopied: "Copied — paste it to your AI agent",
         notReachable: "ComfyUI is not reachable; resource status may be stale.",
-        indexError: "Failed to load the resource index; using the bundled manifest.",
+        indexError: "Failed to load the resource index: ",
+        indexWarning: "Resource index notice: ",
+        autoMatchRuntime: "Auto-matched to this machine",
+        pipRestart: "Restart ComfyUI after installing",
         selectHint: "Select the packs to install; existing resources are skipped.",
         target: "Target",
         matchedBySize: "Matched by file size",
@@ -206,8 +212,17 @@ const copyByLocale = {
 
 type Copy = typeof copyByLocale.zh;
 
+function runtimeLabel(item: ResourceItem) {
+    const runtime = item.pipRuntime;
+    if (!runtime) return item.pythonVersion ? `Python ${item.pythonVersion}` : "?";
+    return [runtime.python ? `Python ${runtime.python}` : "", runtime.torch ? `Torch ${runtime.torch}` : "", runtime.cuda ? `CUDA ${runtime.cuda}` : ""]
+        .filter(Boolean)
+        .join(" / ") || "?";
+}
+
 function sourceSummary(item: ResourceItem, copy: Copy) {
     if (item.type === "pip") {
+        if (item.pipRuntime?.torch || item.pipRuntime?.cuda) return `${copy.autoMatchRuntime} (${runtimeLabel(item)})`;
         const versions = item.wheelVersions || [];
         return versions.length ? `${copy.autoMatch} (${versions[0]}–${versions[versions.length - 1]})` : copy.autoMatch;
     }
@@ -219,7 +234,7 @@ function PipMissingHint({ item, copy }: { item: ResourceItem; copy: Copy }) {
     const command = `"${item.pythonRuntime || "python"}" -m pip install ${item.pipName || "llama-cpp-python"}`;
     return (
         <div className="mt-0.5 break-all text-[10px] leading-4 text-amber-600 dark:text-amber-400">
-            {copy.pipManual.replace("{version}", item.pythonVersion || "?").replace("{command}", command)}
+            {copy.pipManual.replace("{version}", runtimeLabel(item)).replace("{command}", command)}
         </div>
     );
 }
@@ -300,6 +315,7 @@ function ResourceCard({
                     {item.sizeMismatch ? <div className="mt-0.5 text-[10px] leading-4 text-amber-600 dark:text-amber-400">{item.sizeMismatch}</div> : null}
                     {item.overridden && item.overriddenBy ? <div className="mt-0.5 text-[10px] leading-4 text-blue-600 dark:text-blue-300">{copy.replacedBy}: {item.overriddenBy}</div> : null}
                     <PipMissingHint item={item} copy={copy} />
+                    {item.type === "pip" && item.restartAfterInstall && item.status === "present" ? <div className="mt-0.5 text-[10px] leading-4 text-stone-500 dark:text-stone-400">{copy.pipRestart}</div> : null}
                     {!compact && item.note ? <div className="mt-0.5 text-[10px] leading-4 text-stone-400 dark:text-stone-500">{copy.note}: {item.note}</div> : null}
                     {canReplace ? (
                         <div className="mt-1 flex flex-wrap items-center justify-end gap-1">
@@ -350,6 +366,7 @@ function WorkflowResourceRow({
                 {item.sizeMismatch ? <div className="mt-0.5 text-[10px] text-amber-600 dark:text-amber-400">{item.sizeMismatch}</div> : null}
                 {item.overridden && item.overriddenBy ? <div className="mt-0.5 text-[10px] text-blue-600 dark:text-blue-300">{copy.replacedBy}: {item.overriddenBy}</div> : null}
                 <PipMissingHint item={item} copy={copy} />
+                {item.type === "pip" && item.restartAfterInstall && item.status === "present" ? <div className="mt-0.5 text-[10px] leading-4 text-stone-500 dark:text-stone-400">{copy.pipRestart}</div> : null}
                 {item.type === "bake" && requires.length ? (
                     <div className="mt-0.5 text-[10px] text-amber-600 dark:text-amber-400">{copy.bakeRequires}: {requires.map((entry) => entry.label).join(" + ")}</div>
                 ) : null}
@@ -667,7 +684,8 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                     </div>
                 </div>
                 {status?.comfyRoot && !status.comfyReachable ? <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400"><AlertTriangle className="size-3.5" />{copy.notReachable}</div> : null}
-                {status?.indexError ? <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400"><AlertTriangle className="size-3.5" />{copy.indexError}</div> : null}
+                {status?.indexError ? <div className="mt-2 break-all text-[11px] text-amber-600 dark:text-amber-400"><span className="inline-flex items-center gap-1.5"><AlertTriangle className="size-3.5 shrink-0" />{copy.indexError}</span>{status.indexError}</div> : null}
+                {!status?.indexError && status?.indexWarning ? <div className="mt-2 break-all text-[11px] text-stone-500 dark:text-stone-400"><span className="inline-flex items-center gap-1.5"><AlertTriangle className="size-3.5 shrink-0" />{copy.indexWarning}</span>{status.indexWarning}</div> : null}
                 {hardwareName && !recommendationAvailable ? <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400"><AlertTriangle className="size-3.5" />{copy.noCompatible}</div> : null}
             </div>
 

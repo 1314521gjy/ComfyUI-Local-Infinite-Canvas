@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026.10.29-22",
+  "version": "2026.10.29-24",
   "channel": "stable",
   "updatedAt": "2026-10-29",
   "packs": [
@@ -274,7 +274,8 @@
         "h3_vae_onnx_encoder",
         "h3_trt_vae_decoder_engine",
         "h3_trt_vae_encoder_engine",
-        "h3_tiny_vae"
+        "h3_tiny_vae",
+        "sage_h3"
       ],
       "workflows": [
         "video-h3-ref2va",
@@ -337,7 +338,8 @@
           "h3_vae_onnx_encoder",
           "h3_trt_vae_decoder_engine",
           "h3_trt_vae_encoder_engine",
-          "h3_tiny_vae"
+          "h3_tiny_vae",
+          "sage_h3"
         ],
         "video-h3-t2v": [
           "h3_unet_singularity_ref2va_v13_int8",
@@ -357,7 +359,8 @@
           "h3_vae_onnx_encoder",
           "h3_trt_vae_decoder_engine",
           "h3_trt_vae_encoder_engine",
-          "h3_tiny_vae"
+          "h3_tiny_vae",
+          "sage_h3"
         ],
         "video-h3-frames": [
           "h3_unet_singularity_ref2va_v13_int8",
@@ -377,7 +380,8 @@
           "h3_vae_onnx_encoder",
           "h3_trt_vae_decoder_engine",
           "h3_trt_vae_encoder_engine",
-          "h3_tiny_vae"
+          "h3_tiny_vae",
+          "sage_h3"
         ],
         "video-h3-ref2va-novdn": [
           "h3_unet_singularity_ref2va_v13_int8",
@@ -390,7 +394,8 @@
           "h3_vae_onnx_encoder",
           "h3_trt_vae_decoder_engine",
           "h3_trt_vae_encoder_engine",
-          "h3_tiny_vae"
+          "h3_tiny_vae",
+          "sage_h3"
         ],
         "video-h3-t2v-novdn": [
           "h3_unet_singularity_ref2va_v13_int8",
@@ -403,7 +408,8 @@
           "h3_vae_onnx_encoder",
           "h3_trt_vae_decoder_engine",
           "h3_trt_vae_encoder_engine",
-          "h3_tiny_vae"
+          "h3_tiny_vae",
+          "sage_h3"
         ],
         "video-h3-frames-novdn": [
           "h3_unet_singularity_ref2va_v13_int8",
@@ -416,7 +422,8 @@
           "h3_vae_onnx_encoder",
           "h3_trt_vae_decoder_engine",
           "h3_trt_vae_encoder_engine",
-          "h3_tiny_vae"
+          "h3_tiny_vae",
+          "sage_h3"
         ],
         "video-h3-character-swap": [
           "h3_unet_singularity_ref2va_v13_int8",
@@ -437,7 +444,8 @@
           "h3_vae_onnx_encoder",
           "h3_trt_vae_decoder_engine",
           "h3_trt_vae_encoder_engine",
-          "h3_tiny_vae"
+          "h3_tiny_vae",
+          "sage_h3"
         ]
       }
     },
@@ -1377,6 +1385,112 @@
       "note": "下载约 2.8GB，解压后约 3.1GB；比 Qwen 快、显存占用低。",
       "sources": [
         "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/models/Florence-2-large-PromptGen-v2.0.zip"
+      ]
+    },
+    {
+      "id": "sage_h3",
+      "type": "pip",
+      "label": "SageAttention 运行库（H3 必需）",
+      "target": "LLM/sageattention",
+      "module": "sageattention",
+      "pipName": "sageattention",
+      "size": 16871451,
+      "license": "Apache-2.0",
+      "note": "H3 的 SageAttention 内存优化必需；按本机 Python/Torch/CUDA 自动选择 Windows 预编译包，全部走魔搭镜像。安装后需重启 ComfyUI。",
+      "restartAfterInstall": true,
+      "wheelMatrix": [
+        {
+          "python": ">=3.10",
+          "torch": ">=2.10.0",
+          "cuda": "13.0",
+          "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/wheels/sageattention/sageattention-2.2.0%2Bcu130torch2.10.0andhigher.post6-cp310-abi3-win_amd64.whl",
+          "size": 16656067,
+          "sha256": "1635283f5c01ec3cda58a784d0d7eabbcaffaf9511d1b263db4750e1ed7958bb"
+        },
+        {
+          "python": ">=3.10",
+          "torch": ">=2.9.1,<2.10.0",
+          "cuda": "13.0",
+          "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/wheels/sageattention/sageattention-2.2.0%2Bcu130torch2.9.1.post6-cp310-abi3-win_amd64.whl",
+          "size": 15878625,
+          "sha256": "5ee9c3fe060481f27bb001b32d8983c468c9b6b03095d84344d4cc4ec44fd74a"
+        },
+        {
+          "python": ">=3.9",
+          "torch": ">=2.9.0,<2.9.1",
+          "cuda": "13.0",
+          "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/wheels/sageattention/sageattention-2.2.0%2Bcu130torch2.9.0andhigher.post4-cp39-abi3-win_amd64.whl",
+          "size": 12321863,
+          "sha256": "f7261c53a1d46202059daff6b8feac5ee806274d47e3e7fb7abf8c5f6d410c92"
+        },
+        {
+          "python": ">=3.10",
+          "torch": ">=2.10.0",
+          "cuda": "12.8",
+          "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/wheels/sageattention/sageattention-2.2.0%2Bcu128torch2.10.0andhigher.post6-cp310-abi3-win_amd64.whl",
+          "size": 16871451,
+          "sha256": "103e06df49486daa87c3338bf2490ada2b074da1422f2b90566a8f2f81a6b76e"
+        },
+        {
+          "python": ">=3.10",
+          "torch": ">=2.9.1,<2.10.0",
+          "cuda": "12.8",
+          "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/wheels/sageattention/sageattention-2.2.0%2Bcu128torch2.9.1.post6-cp310-abi3-win_amd64.whl",
+          "size": 16091154,
+          "sha256": "867862a3c582a058caf825bedeff6e36cabafe6ca954236db5544b78c626f9e9"
+        },
+        {
+          "python": ">=3.9",
+          "torch": ">=2.9.0,<2.9.1",
+          "cuda": "12.8",
+          "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/wheels/sageattention/sageattention-2.2.0%2Bcu128torch2.9.0andhigher.post4-cp39-abi3-win_amd64.whl",
+          "size": 12252026,
+          "sha256": "b8b3134d00dfbdae5c10cc34cc8508891d9420adaa182502fa30a496428531ed"
+        },
+        {
+          "python": ">=3.9",
+          "torch": ">=2.8.0,<2.9.0",
+          "cuda": "12.8",
+          "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/wheels/sageattention/sageattention-2.2.0%2Bcu128torch2.8.0.post3-cp39-abi3-win_amd64.whl",
+          "size": 11964789,
+          "sha256": "7dabcd00e63229b28f046c5a69ec37cf4756afb375dbadd1975dadec045ae21c"
+        },
+        {
+          "python": ">=3.9",
+          "torch": ">=2.7.1,<2.8.0",
+          "cuda": "12.8",
+          "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/wheels/sageattention/sageattention-2.2.0%2Bcu128torch2.7.1.post3-cp39-abi3-win_amd64.whl",
+          "size": 11966173,
+          "sha256": "7acbe7e274282e1ca9927e9e123bcdd512875492640fe55dce3c8b992506ec91"
+        },
+        {
+          "python": ">=3.9",
+          "torch": ">=2.6.0,<2.7.0",
+          "cuda": "12.6",
+          "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/wheels/sageattention/sageattention-2.2.0%2Bcu126torch2.6.0.post3-cp39-abi3-win_amd64.whl",
+          "size": 7308772,
+          "sha256": "04cc82fbac669e3958650deea8a04843dd0dea005603c4e7241d01bdfce27ab6"
+        },
+        {
+          "python": ">=3.9",
+          "torch": ">=2.5.1,<2.6.0",
+          "cuda": "12.4",
+          "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/wheels/sageattention/sageattention-2.2.0%2Bcu124torch2.5.1.post3-cp39-abi3-win_amd64.whl",
+          "size": 7297198,
+          "sha256": "b8dc7014d4046f3ee1db774acf8a0f956e5b6620e33cec2d02ab57427e0ed31a"
+        }
+      ],
+      "sources": [
+        {
+          "url": "https://github.com/woct0rdho/SageAttention/releases",
+          "label": "上游预编译发布（woct0rdho）",
+          "verify": false
+        },
+        {
+          "url": "https://github.com/thu-ml/SageAttention",
+          "label": "SageAttention 上游源码",
+          "verify": false
+        }
       ]
     }
   ]

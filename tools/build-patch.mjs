@@ -60,6 +60,7 @@ const EXCLUDE = [
     // 运行时配置由启动器按实际端口生成，补丁不能覆盖。
     /^infinite-canvas\/web\/dist\/config\.js$/i,
     /node_modules(\/|$)/i,
+    /^comfyui-gateway\/resources\/nodes\/unpacked\/TE_MAN\/data(\/|$)/i,
     /resources\/bundled(\/|$)/i,
     /__pycache__(\/|$)/i,
     /\.pyc$/i,

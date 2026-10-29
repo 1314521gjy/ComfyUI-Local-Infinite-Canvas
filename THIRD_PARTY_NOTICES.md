@@ -17,6 +17,13 @@
 - **ComfyUI-llama-cpp_vllm** — MIT；上游 https://github.com/lihaoyun6/ComfyUI-llama-cpp_vlm 。
 - **llama-cpp-python 预编译包** — MIT；Windows 预编译来源 https://github.com/JamePeng/llama-cpp-python ，未改动二进制。
 - **TE_MAN** — 原作者 LICENSE 原文写明未经书面授权禁止再分发；本项目依据用户提供的作者授权（2026-10-29）随包分发。若权利人提出异议，将立即移除相关文件。
+- **ComfyUI-KJNodes** — GPL-3.0；上游 https://github.com/kijai/ComfyUI-KJNodes ；随工作台提供预解压目录，未改动源码。
+
+## 按需下载的第三方运行库
+
+以下运行库不进入主安装包，由资源卡按需从 ModelScope 数据集 `shensanshu/ComfyUI-Local-Infinite-Canvas-Models` 下载：
+
+- **SageAttention 2.2.0 Windows 预编译包** — Apache-2.0；构建来源 https://github.com/woct0rdho/SageAttention （基于 https://github.com/thu-ml/SageAttention ），未改动 wheel；H3 视频的内存优化依赖。
 
 ## 可选下载的本地反推模型
 
@@ -39,8 +46,8 @@
 
 ## 主题素材
 
-- **蓝色大肥鱼卡片皮肤贴纸（鲸鱼娘）** — 基于开源梗图合集 [DeepSeek-chan meme pack](https://github.com/the-beating-light-of-the-nail/deepseek-chan-meme-pack) 的 #010 预览图改编：裁切、抠除背景并合成为透明贴纸，用于本地画布主题。原图版权归原作者/社区所有；如权利人不希望使用，可删除 `infinite-canvas/web/public/skins/blue-whale-girl.png` 并移除该主题。
-- **蓝色大肥鱼抽鞭子小动图** — 由项目方使用 ImageGen 生成的四帧原创 sprite（参考社区鲸鱼娘形象），去底为透明 WebP，用于生成中卡片旁的动效；蓝发鲸鱼娘角色形象权利归原作者/社区，商用前请确认授权或替换为完全原创角色。
+- **提灯水母娘**（`lantern-guard-idle.png` / `lantern-guard-raise.png`）— 项目方使用 ImageGen 生成的原创角色，用于付费皮肤「蓝色大肥鱼」（保留原皮肤 ID 与激活码）；台词「我将守护你的进程」。
+- **天使娘**（`angel-girl-idle.webp` / `angel-girl-write.webp`）— 项目方使用 ImageGen 生成的原创角色，用于免费皮肤；台词「圣光与你同在」。
 
 ## 商标
 

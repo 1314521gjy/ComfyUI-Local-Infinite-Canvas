@@ -20,6 +20,7 @@ import fsp from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import crypto from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -331,6 +332,82 @@ function spawnComfy(install) {
   child.on("error", (err) => log(`启动 ComfyUI 失败：${err.message}`, "ERROR"));
   child.unref();
   return child;
+}
+
+/* ------------------------------------------------------------- 网关依赖自愈 */
+
+const GATEWAY_DEPS_ZIP = path.join(__dirname, "gateway-deps.zip");
+const GATEWAY_DEPS_URL = "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/gateway-deps.zip";
+const GATEWAY_DEPS_SHA256 = "cb6d48c8b9e003b7608f82e2bce3fa3e6b1c21b78c3ab9000a44c6eb3c52d7b2";
+
+function gatewayDepsReady(gatewayDir) {
+  if (!isDir(gatewayDir)) return false;
+  const result = spawnSync(
+    process.execPath,
+    ["--input-type=module", "-e", "Promise.all([import('express'),import('multer')]).then(()=>process.exit(0),()=>process.exit(1))"],
+    { cwd: gatewayDir, timeout: 30000, windowsHide: true, stdio: "ignore" },
+  );
+  return result.status === 0;
+}
+
+function extractGatewayDeps(archive, destination) {
+  const tar = process.env.SystemRoot ? path.join(process.env.SystemRoot, "System32", "tar.exe") : "tar";
+  let result = spawnSync(tar, ["-xf", archive, "-C", destination], { timeout: 120000, windowsHide: true });
+  if (result.status === 0) return;
+  const powershell = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  const quote = (value) => `'${String(value).replace(/'/g, "''")}'`;
+  result = spawnSync(powershell, ["-NoProfile", "-Command", `Expand-Archive -LiteralPath ${quote(archive)} -DestinationPath ${quote(destination)} -Force`], {
+    timeout: 120000,
+    windowsHide: true,
+  });
+  if (result.status !== 0) throw new Error("解压网关依赖失败");
+}
+
+async function downloadGatewayDeps(destination) {
+  log("本机没有可用的网关依赖包，正在从魔搭镜像下载…", "WARN");
+  const response = await fetch(GATEWAY_DEPS_URL, { signal: AbortSignal.timeout(120000) });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const buffer = Buffer.from(await response.arrayBuffer());
+  const digest = crypto.createHash("sha256").update(buffer).digest("hex");
+  if (GATEWAY_DEPS_SHA256 && digest !== GATEWAY_DEPS_SHA256) throw new Error("依赖包 SHA256 校验失败");
+  await fsp.mkdir(path.dirname(destination), { recursive: true });
+  await fsp.writeFile(destination, buffer);
+  return destination;
+}
+
+let gatewayDepsRepair = null;
+
+function ensureGatewayDeps(cfg) {
+  if (gatewayDepsReady(cfg.gatewayDir)) return Promise.resolve();
+  if (!gatewayDepsRepair) {
+    gatewayDepsRepair = (async () => {
+      const candidates = [];
+      if (isFile(GATEWAY_DEPS_ZIP)) candidates.push({ archive: GATEWAY_DEPS_ZIP, label: "随包" });
+      candidates.push({ remote: true, label: "魔搭镜像" });
+      const errors = [];
+      log("检测到网关依赖缺失或不完整，正在自动修复…", "WARN");
+      for (const candidate of candidates) {
+        try {
+          const archive = candidate.remote
+            ? await downloadGatewayDeps(path.join(ROOT, ".update", "gateway-deps", "gateway-deps.zip"))
+            : candidate.archive;
+          extractGatewayDeps(archive, cfg.gatewayDir);
+          if (gatewayDepsReady(cfg.gatewayDir)) {
+            log(`网关依赖已自动修复（${candidate.label}）。`);
+            return;
+          }
+          throw new Error("解压后仍无法加载 express/multer");
+        } catch (error) {
+          errors.push(`${candidate.label}：${error.message}`);
+          log(`网关依赖修复失败（${candidate.label}）：${error.message}`, "WARN");
+        }
+      }
+      throw new Error(`网关依赖缺失，自动修复失败（${errors.join("；")}）`);
+    })().finally(() => {
+      gatewayDepsRepair = null;
+    });
+  }
+  return gatewayDepsRepair;
 }
 
 /* ------------------------------------------------------------- 网关启动 */
@@ -946,6 +1023,7 @@ async function startControlServer(cfg) {
           res.end(JSON.stringify({ ok: false, error: "网关不是本启动器启动的，无法原地重启" }));
           return;
         }
+        await ensureGatewayDeps(cfg);
         const previous = state.gatewayChild;
         state.gatewayChild = null;
         killOurChild(previous, "网关");
@@ -1123,6 +1201,7 @@ async function main() {
     } else {
       log(`启动网关：${path.join(cfg.gatewayDir, "src", "server.js")}（PORT=${cfg.gatewayPort}，COMFY_URL=${comfyUrl}）`);
       try {
+        await ensureGatewayDeps(cfg);
         state.gatewayComfyUrl = comfyUrl;
       state.gatewayWorkflowsDir = workflowsDir;
       state.gatewayChild = spawnGateway(cfg, comfyUrl, workflowsDir);

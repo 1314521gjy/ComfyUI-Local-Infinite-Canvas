@@ -1,16 +1,16 @@
 {
-  "version": "v0.21.14",
+  "version": "v0.21.15",
   "publishedAt": "2026-10-29",
-  "notes": "修正水母娘/天使娘的左右镜像：左侧镜像、右侧正常；天使娘台词「圣光与你同在」，水母娘保持原激活码。",
+  "notes": "H3 增加 SageAttention 运行库自动匹配与安装（含 RTX 50 系）；资源索引缺失时自动从魔搭恢复并缓存；网关依赖缺失时启动器自动修复。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.14.zip",
-    "sha256": "ef9af14af14492590e8b41fd2cdaca4d00c0af026c17a48066889c43beb74324",
-    "size": 36023063
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.15.zip",
+    "sha256": "528e8d6230498153dfb36b6fa4434aaf205e143bcd1fc8da3ead0eec8e8109d4",
+    "size": 36203140
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
