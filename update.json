@@ -1,16 +1,16 @@
 {
-  "version": "v0.21.25",
-  "publishedAt": "2026-10-29",
-  "notes": "自由卡片工作流含游离节点时不再生成失败（提交前自动剔除未连接输出的子图）；生图响应与日志会回传本次实际使用的 seed。",
+  "version": "v0.21.26",
+  "publishedAt": "2026-10-30",
+  "notes": "自由卡片工作流里游离的保存节点（SaveImage）不再导致生成失败：提交前只保留最完整的那条输出链路，其余输出子图会被剔除。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.25.zip",
-    "sha256": "9840f996a1463efb0e1cf2830f58af8d5b22a3970a9db2241baf436d862a0d8d",
-    "size": 37530814
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.26.zip",
+    "sha256": "09880aec2f906b5fdab52cd99bd2ca4e01cafc7942d3bad907e4f4b7d6784869",
+    "size": 37531224
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

@@ -264,3 +264,25 @@ test("orphan nodes are pruned before submission so they cannot fail validation",
   const noOutputs = { "1": { class_type: "LoadImage", inputs: { image: "a.png" } } };
   assert.deepEqual(applyFreeInputs(noOutputs, {}, { prompt: "p" }), noOutputs);
 });
+
+test("a stray SaveImage chain is dropped in favour of the main output", () => {
+  const workflow = {
+    "1": { class_type: "LoadImage", inputs: { image: "a.png" } },
+    "2": { class_type: "KSampler", inputs: { model: ["3", 0], latent_image: ["4", 0], seed: 1 } },
+    "3": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: "main.safetensors" } },
+    "4": { class_type: "EmptyLatentImage", inputs: { width: 512, height: 512, batch_size: 1 } },
+    "5": { class_type: "VAEDecode", inputs: { samples: ["2", 0], vae: ["3", 1] } },
+    "6": { class_type: "SaveImage", inputs: { images: ["5", 0], filename_prefix: "main" } },
+    "90": { class_type: "SaveImage", inputs: { images: ["91", 0], filename_prefix: "stray" } },
+    "91": { class_type: "VAEDecode", inputs: { samples: ["92", 0], vae: ["93", 0] } },
+    "92": { class_type: "KSampler", inputs: { model: ["93", 0], latent_image: ["94", 0], seed: 2 } },
+    "93": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: "missing.safetensors" } },
+    "94": { class_type: "EmptyLatentImage", inputs: { width: 512, height: 512, batch_size: 1 } },
+  };
+  const next = applyFreeInputs(workflow, {}, { prompt: "p" });
+  assert.equal(next["6"]?.class_type, "SaveImage", "main output kept");
+  assert.equal(next["90"], undefined, "stray save dropped");
+  assert.equal(next["93"], undefined, "stray model loader dropped");
+  assert.equal(next["1"], undefined, "unused LoadImage dropped");
+  assert.equal(Object.keys(next).length, 5);
+});

@@ -321,11 +321,17 @@ export function pruneUnreachableNodes(workflow) {
     .filter(([, node]) => /save|preview|output|combine/i.test(String(node?.class_type || "")))
     .map(([id]) => id);
   if (!roots.length) return workflow;
-  const reachable = reachableNodes(workflow, roots);
-  if (reachable.size === entries.length) return workflow;
+  // 多个输出互不相连时（例如工作流里残留的保存节点），只保留能回溯到最多节点的那条链路；
+  // 否则那条游离的 SaveImage 仍会被 ComfyUI 执行并因缺模型/缺输入而失败。
+  let best = null;
+  for (const root of roots) {
+    const reachable = reachableNodes(workflow, [root]);
+    if (!best || reachable.size > best.size) best = reachable;
+  }
+  if (!best || best.size === entries.length) return workflow;
   const next = {};
   for (const [id, node] of entries) {
-    if (reachable.has(id)) next[id] = node;
+    if (best.has(id)) next[id] = node;
   }
   return next;
 }
