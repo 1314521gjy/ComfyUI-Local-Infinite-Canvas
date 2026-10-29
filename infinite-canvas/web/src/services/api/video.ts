@@ -226,6 +226,25 @@ export async function storeGeneratedVideo(result: VideoGenerationResult): Promis
     throw new Error(apiText("noPlayableVideo"));
 }
 
+async function readFileDurationMs(file: File): Promise<number> {
+    if (typeof document === "undefined") return 0;
+    return await new Promise((resolve) => {
+        const url = URL.createObjectURL(file);
+        const element = document.createElement("video");
+        let settled = false;
+        const finish = (value: number) => {
+            if (settled) return;
+            settled = true;
+            URL.revokeObjectURL(url);
+            resolve(value);
+        };
+        element.preload = "metadata";
+        element.onloadedmetadata = () => finish(Number.isFinite(element.duration) ? element.duration * 1000 : 0);
+        element.onerror = () => finish(0);
+        element.src = url;
+    });
+}
+
 async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: VideoMediaOptions): Promise<VideoGenerationTask> {
     const mode = resolveVideoMode(config.videoMode, references.length);
     const frameMode = config.frameMode || (references.length >= 2 ? "both" : "first");
@@ -277,6 +296,14 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
     }
     videos.forEach((file) => body.append("video[]", file));
     audios.forEach((file) => body.append("audio[]", file));
+    // 角色替换等「跟随源视频」的工作流靠它算帧数：ffprobe 探不到时后端用这个时长兜底。
+    if (mode === "reference" && selectedVideos.length) {
+        let durationMs = Number(selectedVideos[0]?.durationMs) || 0;
+        if (!durationMs && videos[0]) durationMs = await readFileDurationMs(videos[0]);
+        if (Number.isFinite(durationMs) && durationMs > 0) {
+            body.append("source_duration_seconds", String(durationMs / 1000));
+        }
+    }
     try {
         const created = unwrapVideoResponse((await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), body, { headers: aiHeaders(config), signal: options?.signal })).data);
         if (!created.id) throw new Error(apiText("noVideoTaskId"));

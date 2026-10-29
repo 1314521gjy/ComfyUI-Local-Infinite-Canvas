@@ -131,3 +131,18 @@ test("workflow is unavailable when no matching base model is installed", async (
     await fsp.rm(dataDir, { recursive: true, force: true });
   }
 });
+
+test("a model placed in a deeper subfolder still activates the workflow", async () => {
+  const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-deep-"));
+  try {
+    const manager = createManager(dataDir, ["company/series/z_image_turbo_bf16.safetensors"]);
+    await manager.scan();
+    assert.equal(manager.isAvailable(entry.id), true);
+    assert.equal(
+      manager.modelAliasFor("UNETLoader", "unet_name", "z_image_turbo_bf16.safetensors"),
+      "company/series/z_image_turbo_bf16.safetensors",
+    );
+  } finally {
+    await fsp.rm(dataDir, { recursive: true, force: true });
+  }
+});

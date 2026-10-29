@@ -120,3 +120,9 @@ export function truncate(value, max = 2000) {
   const text = String(value ?? "");
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
+
+export function framesFromSeconds(seconds, fps = 24) {
+  const value = Number(seconds);
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return Math.max(1, Math.round(value * fps));
+}

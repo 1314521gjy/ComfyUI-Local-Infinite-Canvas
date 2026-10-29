@@ -903,8 +903,13 @@ export function createResourceManager({ config, setup, registry, logger, workflo
               : isNode
                 ? (() => {
                       const target = root ? path.join(root, "custom_nodes", file) : "";
-                      const present = Boolean(target && isDir(target));
-                      return { present, path: present ? target : "", rel: file, size: 0, matchedBy: present ? "path" : "", mismatch: "" };
+                      const dirPresent = Boolean(target && isDir(target));
+                      // 用户可能装的是同名插件的另一个目录（大小写/后缀不同），
+                      // 只要能提供同样的节点类就算已装，避免重复下载。
+                      const provides = Array.isArray(resource.provides) ? resource.provides.filter(Boolean) : [];
+                      const classPresent = provides.length > 0 && provides.every((name) => setup?.hasNodeClass?.(name));
+                      const present = dirPresent || classPresent;
+                      return { present, path: dirPresent ? target : "", rel: file, size: 0, matchedBy: dirPresent ? "path" : classPresent ? "class" : "", mismatch: "" };
                   })()
                 : resourceMatch(resource, root);
         const exists = Boolean(match.present);

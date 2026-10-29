@@ -76,6 +76,7 @@ const copyByLocale = {
         replacedBy: "已替换为",
         workflowReady: "可用",
         workflowRestart: "待重启",
+        workflowMismatch: "模型名未匹配",
         workflowEnabled: "启用",
         workflowDisabled: "已屏蔽",
         canvasEntry: "画布入口",
@@ -184,6 +185,7 @@ const copyByLocale = {
         replacedBy: "Replaced with",
         workflowReady: "Ready",
         workflowRestart: "Restart needed",
+        workflowMismatch: "Model name not matched",
         workflowEnabled: "Enabled",
         workflowDisabled: "Hidden",
         canvasEntry: "Canvas entry",
@@ -994,11 +996,15 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                             <div className="space-y-2">
                                                 {workflowDependencies.map((workflow, index) => {
                                                     const workflowExpanded = expandedWorkflows.has(workflow.id);
+                                                    const problemTypes = new Set((workflow.problems || []).map((problem) => problem.type));
+                                                    const restartOnly = problemTypes.size > 0 && [...problemTypes].every((type) => type === "node");
                                                     const workflowTag = workflow.missing
                                                         ? <Tag color="orange">{copy.missing} {workflow.missing}</Tag>
                                                         : workflow.available
                                                             ? <Tag color="green">{copy.workflowReady}</Tag>
-                                                            : <Tag color="gold">{copy.workflowRestart}</Tag>;
+                                                            : restartOnly
+                                                                ? <Tag color="gold">{copy.workflowRestart}</Tag>
+                                                                : <Tag color="gold">{copy.workflowMismatch}</Tag>;
                                                     const problemText = workflow.problems.map((problem) => problem.message).filter(Boolean).join("；");
                                                     return (
                                                         <div

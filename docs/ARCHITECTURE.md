@@ -2,7 +2,7 @@
 
 > 截至 2026-10-29，对应发布版本 **v0.21.18**（发布树 `07842353-release-staging`，GitHub `main = 4616c53`）。
 > 本文件是架构层权威说明，已纳入 staging git（`docs/ARCHITECTURE.md`），不进发布包。状态与待办见外部 `HANDOFF-NEXT.md`，历史见 `docs/PROJECT_LOG.md`。
-> 版本/索引/路由/包数等数字为 2026-10-29 实测（网关单测 134/134）；`docs/` 不入发布包。
+> 版本/索引/路由/包数等数字为 2026-10-29 实测（网关单测 137/137）；`docs/` 不入发布包。
 
 ## 1. 定位
 
@@ -53,7 +53,7 @@ flowchart LR
 
 - **图片**：图片节点 → `services/api/image.ts` → `POST /v1/images/generations` / `/edits` → `runner` → `registry` → `bindings` → ComfyUI `/prompt` → 轮询 `/history` → 回传。`count>1` 并发单图；本地加 `X-Request-Id`，取消走 `POST /api/requests/:id/cancel`，进度走 `/api/progress/:requestId`（250ms）。
 - **超分**（v0.21.18）：`POST /v1/images/upscale`、`/v1/videos/upscale`；4 条工作流——ESRGAN 快速放大（x2/x4/anime）、ESRGAN 2×（VHS 取帧/合片 + 核心 `UpscaleModelLoader`/`ImageUpscaleWithModel`，不依赖 WAS 节点）、SeedVR2 图片、SeedVR2 视频。
-- **H3 视频**：`POST /v1/videos`（multipart，`mode=text|frames|reference`）→ 任务制；`GET /v1/videos/:id`、`/content`、`/cancel`。6 个入口 = VDN 三档（默认）+ 无VDN 三档，共 9 NFE（快速 6 低 + 3 高；质量 5 + 4）。源视频走原生 `LoadVideo → GetVideoComponents` 只取帧，`length` 由 ffprobe 帧数写入；音频由 H3 生成，源音频不保留。
+- **H3 视频**：`POST /v1/videos`（multipart，`mode=text|frames|reference`）→ 任务制；`GET /v1/videos/:id`、`/content`、`/cancel`。6 个入口 = VDN 三档（默认）+ 无VDN 三档，共 9 NFE（快速 6 低 + 3 高；质量 5 + 4）。源视频走原生 `LoadVideo → GetVideoComponents` 只取帧，`length` 由 ffprobe 帧数写入；音频由 H3 生成，源音频不保留。角色替换没有手选时长，跟随源视频：ffprobe 探不到时用前端上报的 `source_duration_seconds × 24fps` 换算，不再回退工作流默认 124 帧（≈5.2s）。
 - **插帧**：`POST /v1/videos/interpolate`（RIFE 2×/3×，任务制，生成右侧子视频节点，不覆盖原片）。
 - **提示词**：`/v1/prompts/optimize`（H3/生图）、`/optimize-image`、`/caption`（`qwen35|florence|cloud`）。本地走 ComfyUI 工作流，云端走 OpenAI 兼容 `/chat/completions`；云端 Key 只在浏览器 localStorage。H3 云端加载官方 skill（`prompts/skills/h3-prompt-writing/`）。
 - **自由卡片**：`/api/free-workflows/*`（导入/扫描/同步/UI 图）+ `/v1/free-workflows/:id/images|videos`；UI 工作流经 `ui-workflow.js` 用 `/object_info` 转成 API 图。
@@ -70,12 +70,14 @@ flowchart LR
 
 - 索引 `resources/index.json` 版本 **2026.10.29-28**：**8 包 / 72 资源**——`core`（0 资源，按工作流依赖）、`moss` 8/6 工作流、`qwen21` 4/2、`zimage` 4/1、`krea2` 4/1、`h3` 21/7、`prompt-local` 4、`upscale` 11/4（6 权重 + 5 运行库）。
 - 依赖以 `workflowDependencies` 按工作流展开，共享资源去重；模型选择器只列 setup 判定可用的工作流，缺资源即从 `/v1/models` 移除。
-- **不变量：节点只随包，不写进 `workflowDependencies`**（单测强制）；节点由启动器 `bootstrap-nodes.mjs` 复制到 `custom_nodes/`。
+- **不变量：节点只随包，不写进 `workflowDependencies`**（单测强制）；节点由启动器 `bootstrap-nodes.mjs` 复制到 `custom_nodes/`。节点“已装”的判定：目标目录存在，**或** `provides` 里的类全部出现在 ComfyUI `/object_info`（用户装了同插件的另一个目录名也算已装）；启动器复制前同样按类检查，避免重复安装。
+- 模型“已装”的判定顺序：精确相对路径 → 主模型覆盖 → 同族底模回退 → 用户别名 → **唯一后缀匹配**（工作流写 `x.safetensors`、实际在 `a/b/x.safetensors` 也算命中，提交时改写成带前缀的真实值）。
 - 运行库（`type:"pip"`）：按 `module` 导入名 + `pipName` 检测是否已装，缺失才装；`wheelMatrix` 条目可只给 `url/size/sha256`（不写 python/torch/cuda 约束）表示纯 Python 通用包，任意运行时都匹配。安装走 `pip install --no-deps`，先备份原包，失败自动回滚；装完重新 import 校验，失败同样回滚。
 - 超分运行库（2026-10-29 补）：`seedvr2_dep_diffusers`（diffusers 0.33.1）、`seedvr2_dep_rotary`、`seedvr2_dep_omegaconf`（2.4.0，不再依赖 antlr4）、`seedvr2_dep_opencv`（cv2）、`seedvr2_dep_einops`——全部走阿里云 PyPI 镜像，挂到两条 SeedVR2 工作流；`peft`/`gguf`/`matplotlib` 节点代码未在导入期使用，不随包下发。
 - 多源：魔搭主源、hf-mirror / aifasthub 备源；Range 续传，跨源先丢弃旧 `.part`；SHA256 校验；锁 `data/resource-lock.json`；文件并发 2。
 - 随包节点（`type=node && autoInstall`）由 `launcher/bootstrap-nodes.mjs` 在启动时复制到 `custom_nodes/`：先解到同盘 `.canvas-install` 再原子 rename；幂等只按「目标目录存在」判断。
 - 主模型：`data/main-models.json`。可把已装本地微调设为某包工作流默认底模；被替代的包内默认模型标「已用自选」、不计 missing、不阻塞安装。
+- 资源卡工作流徽章：缺资源 → 「缺 N」；只有节点类缺失（文件已装、ComfyUI 未加载）→ 「待重启」；模型名不匹配等其余不可用 → 「模型名未匹配」，不再一律显示「待重启」。
 - 硬件：`nvidia-smi` 显存 + 系统 RAM；显存只承担激活/工作区，权重超出部分按 ComfyUI 内存卸载计入 RAM；8GB 推荐 INT8；界面不显示 VRAM 数字。
 - 许可：CC-BY-NC-SA 模型不随分发源提供（4x-UltraSharp / 4x-AnimeSharp 已从索引与魔搭数据集撤下）。
 
@@ -105,7 +107,7 @@ flowchart LR
 # 整套启动
 start-local.bat            # 保持画布页打开；关页 30s 后停后台，见 §4.7
 
-# 网关单测（2026-10-29 实测 134/134）
+# 网关单测（2026-10-29 实测 137/137）
 cd 07842353-release-staging/comfyui-gateway
 COMFYUI_DIR=E:/ComfyUI/ComfyUI node --test --test-timeout=120000 test/*.test.js
 

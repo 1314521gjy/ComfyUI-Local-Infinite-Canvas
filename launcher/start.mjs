@@ -1179,7 +1179,7 @@ async function main() {
     const comfyRoot = comfyInstall.mainPy
       ? path.dirname(comfyInstall.mainPy)
       : (isDir(path.join(comfyInstall.dir, "ComfyUI")) ? path.join(comfyInstall.dir, "ComfyUI") : comfyInstall.dir);
-    const installed = await installBundledNodes({ root: ROOT, comfyRoot, log });
+    const installed = await installBundledNodes({ root: ROOT, comfyRoot, comfyUrl: comfy || "", log });
     await quarantineTeManData(comfyRoot);
     if (installed.length) log(`已自动放置 ${installed.length} 个内置节点包${comfy ? "；ComfyUI 已在运行，重启后生效" : ""}`);
   }

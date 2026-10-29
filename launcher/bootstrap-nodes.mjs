@@ -68,7 +68,22 @@ async function findNodeRoot(directory, depth = 0) {
     return "";
 }
 
-export async function installBundledNodes({ root, comfyRoot, log = console.log } = {}) {
+async function comfyHasClasses(comfyUrl, classes) {
+    if (!comfyUrl || !classes.length) return false;
+    for (const name of classes) {
+        try {
+            const res = await fetch(`${String(comfyUrl).replace(/\/+$/, "")}/object_info/${encodeURIComponent(name)}`, { signal: AbortSignal.timeout(5000) });
+            if (!res.ok) return false;
+            const data = await res.json();
+            if (!data || !data[name]) return false;
+        } catch {
+            return false;
+        }
+    }
+    return true;
+}
+
+export async function installBundledNodes({ root, comfyRoot, comfyUrl = "", log = console.log } = {}) {
     const gatewayRoot = path.join(root, "comfyui-gateway");
     const indexPath = path.join(gatewayRoot, "resources", "index.json");
     if (!comfyRoot || !isFile(indexPath)) return [];
@@ -86,6 +101,12 @@ export async function installBundledNodes({ root, comfyRoot, log = console.log }
         if (parts[0] !== "custom_nodes" || parts.length < 2 || parts.some((part) => part === ".." || part === ".")) continue;
         const target = path.join(comfyRoot, "custom_nodes", ...parts.slice(1));
         if (isDir(target)) continue;
+        // 用户可能已经装了同一个插件的另一个目录名；ComfyUI 能提供同样的类就不再重复复制。
+        const provides = Array.isArray(resource.provides) ? resource.provides.filter(Boolean) : [];
+        if (provides.length && (await comfyHasClasses(comfyUrl, provides))) {
+            log(`[bootstrap] 已由其他目录提供同类节点，跳过：${resource.label || resource.id}`);
+            continue;
+        }
 
         const bundleDir = resource.bundleDir
             ? path.resolve(gatewayRoot, String(resource.bundleDir).replace(/^[/\\]+/, ""))

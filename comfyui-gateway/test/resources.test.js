@@ -1430,3 +1430,33 @@ test("infers ComfyUI root from folder_paths when comfyDir is empty", async () =>
         await fsp.rm(root, { recursive: true, force: true });
     }
 });
+
+test("a node pack installed under another folder name counts as present", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-node-provides-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(comfy, { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    const index = {
+        schema: 1,
+        version: "test-node-provides-1",
+        packs: [{ id: "test", resources: ["test-node"] }],
+        resources: [{ id: "test-node", type: "node", label: "Test node", target: "custom_nodes/ComfyUI-ExpectedName", provides: ["SeedVR2VideoUpscaler"] }],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: { loaderOptions: () => ({}), status: () => ({ comfyReachable: true }), scan: async () => ({}), hasNodeClass: (name) => name === "SeedVR2VideoUpscaler" },
+        logger: null,
+    });
+    try {
+        await manager.init();
+        const item = manager.status().resources[0];
+        assert.equal(item.status, "present");
+        assert.equal(item.matchedBy, "class");
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});

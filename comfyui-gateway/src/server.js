@@ -31,7 +31,7 @@ import { createTaskStore } from "./tasks.js";
 import { applyUpdate, checkForUpdate } from "./update.js";
 import { uploadImages } from "./uploads.js";
 import { createWorkflowVisibilityStore } from "./workflow-visibility.js";
-import { extFromMime, jsonError, nowIso, parseSize, randomId, safeFileName, sleep } from "./util.js";
+import { framesFromSeconds, extFromMime, jsonError, nowIso, parseSize, randomId, safeFileName, sleep } from "./util.js";
 
 class HttpError extends Error {
   constructor(message, { status = 400, code = "bad_request", details } = {}) {
@@ -43,21 +43,27 @@ class HttpError extends Error {
   }
 }
 
-function probeVideoFrames(file) {
+function probeVideoFrames(file, extraProbes = []) {
   if (!file?.buffer?.length) return 0;
   const rawExt = extFromMime(file.mimetype) || ".mp4";
   const ext = String(rawExt).startsWith(".") ? rawExt : `.${rawExt}`;
   const temp = path.join(os.tmpdir(), `comfy-probe-${randomId()}${ext}`);
+  const candidates = ["ffprobe", ...extraProbes.filter(Boolean)];
   try {
     fs.writeFileSync(temp, file.buffer);
-    const raw = execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=avg_frame_rate", "-show_entries", "format=duration", "-of", "json", temp], { encoding: "utf8", timeout: 20000 });
-    const data = JSON.parse(raw);
-    const rate = String(data.streams?.[0]?.avg_frame_rate || "0/1").split("/").map(Number);
-    const fps = rate[1] ? rate[0] / rate[1] : rate[0];
-    const duration = Number(data.format?.duration || 0);
-    if (!Number.isFinite(fps) || fps <= 0 || !Number.isFinite(duration) || duration <= 0) return 0;
-    return Math.max(1, Math.round(fps * duration));
-  } catch {
+    for (const bin of candidates) {
+      try {
+        const raw = execFileSync(bin, ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=avg_frame_rate", "-show_entries", "format=duration", "-of", "json", temp], { encoding: "utf8", timeout: 20000 });
+        const data = JSON.parse(raw);
+        const rate = String(data.streams?.[0]?.avg_frame_rate || "0/1").split("/").map(Number);
+        const fps = rate[1] ? rate[0] / rate[1] : rate[0];
+        const duration = Number(data.format?.duration || 0);
+        if (!Number.isFinite(fps) || fps <= 0 || !Number.isFinite(duration) || duration <= 0) continue;
+        return Math.max(1, Math.round(fps * duration));
+      } catch {
+        // 换下一个 ffprobe 路径。
+      }
+    }
     return 0;
   } finally {
     try {
@@ -1341,7 +1347,18 @@ export async function createGatewayApp(overrides = {}) {
         watermark: body.watermark,
       },
     });
-    if (videoFiles.length) context.sourceVideoFrames = probeVideoFrames(videoFiles[0]);
+    if (videoFiles.length) {
+      // H3 按 24fps 出片；源视频帧数优先用 ffprobe，探不到就用前端上报的时长换算，
+      // 避免回退到工作流默认 124 帧（用户看到的就是“永远 5 秒”）。
+      const sourceSeconds = Number(body.source_duration_seconds);
+      const fromDuration = framesFromSeconds(sourceSeconds);
+      const probes = config.comfyDir
+        ? [path.join(config.comfyDir, "ffprobe.exe"), path.join(config.comfyDir, "..", "ffprobe.exe"), path.join(config.comfyDir, "ffmpeg", "bin", "ffprobe.exe")]
+        : [];
+      const probed = probeVideoFrames(videoFiles[0], probes);
+      context.sourceVideoFrames = probed || fromDuration;
+      if (!probed && fromDuration) logger.warn(`ffprobe 不可用，按上报时长 ${sourceSeconds}s 换算为 ${fromDuration} 帧`);
+    }
     const task = tasks.create({
       model: entry.name,
       request: {

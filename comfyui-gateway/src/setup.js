@@ -222,6 +222,15 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         }
         const auto = autoAliases.get(classType)?.get(normalizeBaseName(value)) || "";
         if (auto && normalizeAliasValue(auto) !== normalizeAliasValue(value)) return auto;
+        // 模型放在更深子目录时，ComfyUI 的选项带路径前缀（a/b/x.safetensors）；
+        // 唯一后缀匹配视为同一文件，避免“放深一层就检测不到”。
+        const wanted = normalizeAliasValue(value);
+        const deep = loaderOptionsFor(classType).filter((item) => {
+            if (!isModelOption(item)) return false;
+            const normalized = normalizeAliasValue(item);
+            return normalized !== wanted && normalized.endsWith(`/${wanted}`);
+        });
+        if (deep.length === 1) return deep[0];
         return "";
     }
 
