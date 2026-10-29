@@ -7,7 +7,6 @@ import { BaseModelPicker, ModelPicker, WorkflowModelPicker } from "@/components/
 import { channelModelOf, defaultConfig, modelImageInputs, modelOptionName, resolveModelForCapability, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 
 import { useCanvasTheme } from "@/lib/canvas/use-canvas-theme";
-import { isPlainEnterKey } from "@/lib/keyboard-event";
 import { CanvasImageSettingsPopover } from "./canvas-image-settings-popover";
 import { CanvasAudioSettingsPopover, type CanvasAudioSettingKey } from "./canvas-audio-settings-popover";
 import { CanvasVideoSettingsPopover } from "./canvas-video-settings-popover";
@@ -18,6 +17,7 @@ import { resolveCanvasReferenceImages } from "@/lib/canvas/canvas-resource-refer
 import { requestImageCaption, requestImagePromptOptimize, requestPromptOptimize, type ImageCaptionEngine, type PromptOptimizeMode } from "@/services/api/image";
 import { videoModelForWorkflow, videoModelModePatch, baseVideoWorkflowId } from "@/lib/canvas/video-model-mode";
 import { CanvasNodeReferenceBar } from "./canvas-node-reference-bar";
+import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textarea";
 import { PromptOptimizeOptions } from "./prompt-optimize-options";
 import { abortCaptionJob, hasCaptionJob, registerCaptionJob, releaseCaptionJob } from "@/lib/canvas/caption-jobs";
 import { abortPromptOptimizeJob, hasPromptOptimizeJob, registerPromptOptimizeJob, releasePromptOptimizeJob } from "@/lib/canvas/prompt-optimize-jobs";
@@ -106,6 +106,10 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     const optimizeResult = node.metadata?.promptOptimizePrompt || "";
     const optimizeError = node.metadata?.promptOptimizeError || "";
     const originalPrompt = node.metadata?.promptOptimizeSource?.trim() || "";
+    const promptPlaceholder =
+        workflowId === "video-h3-character-swap"
+            ? t("canvas.promptPanel.characterSwapHint")
+            : t(`canvas.promptPanel.${mode === "image" && hasImageContent ? "editImage" : mode === "text" && hasTextContent ? "editText" : mode}`);
     const canOptimize = isH3 && Boolean(draft.trim()) && !isRunning && !optimizeRunning;
     const canOptimizeImage = isImage && Boolean(draft.trim()) && !isRunning && !optimizeRunning;
     const optimizeEngine = config.promptApiEngine === "cloud" ? "cloud" : "local";
@@ -124,6 +128,8 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     const canCaption = mode === "text" && Boolean(captionEngine) && captionLocalReady && (captionEngine !== "cloud" || optimizeCloudReady) && imageReferences.length > 0 && !isRunning && !captionRunning;
     const hasMediaReferences = mentionReferences.some((reference) => reference.kind !== "text");
     const textVideoHasReferences = isH3T2V && hasMediaReferences;
+    const refsWarningDismissed = Boolean(node.metadata?.refsWarningDismissed);
+    const sourceVideoTooLong = Boolean(sourceVideoNode?.metadata?.durationMs && sourceVideoNode.metadata.durationMs > 15000);
     const frameMode: "first" | "last" | "both" =
         node.metadata?.frameMode === "last" || node.metadata?.frameMode === "both" || node.metadata?.frameMode === "first"
             ? node.metadata.frameMode
@@ -209,6 +215,10 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mode, referencePrompt]);
 
+    useEffect(() => {
+        if (!textVideoHasReferences && node.metadata?.refsWarningDismissed) onConfigChange(node.id, { refsWarningDismissed: undefined });
+    }, [node.id, node.metadata?.refsWarningDismissed, onConfigChange, textVideoHasReferences]);
+
     const submit = () => {
         const text = draft.trim();
         if (!text || isRunning) return;
@@ -218,11 +228,26 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
         }
         commitPrompt(draft);
         if (mode === "image" && workflowId === "image-qwen21") {
+            const baseAvailable = imageReferences.length > 0 || Boolean(node.metadata?.content);
+            // 遮罩导出节点本身没有底图，但存了「底图 + 遮罩」两条参考；直接按原参考重跑。
+            const storedMask = !node.metadata?.content && (node.metadata?.references?.length || 0) >= 2;
             if (config.imageMode === "inpaint") {
+                if (!baseAvailable) {
+                    message.warning(t("canvas.promptPanel.imageBaseRequired"));
+                    return;
+                }
+                if (storedMask) {
+                    onGenerate(node.id, mode, text);
+                    return;
+                }
                 onOpenMaskEditor?.(node.id);
                 return;
             }
             if (config.imageMode === "outpaint") {
+                if (!baseAvailable) {
+                    message.warning(t("canvas.promptPanel.imageBaseRequired"));
+                    return;
+                }
                 onOpenOutpaintEditor?.(node.id);
                 return;
             }
@@ -401,22 +426,27 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
             onWheel={(event) => event.stopPropagation()}
         >
             <CanvasNodeReferenceBar nodeId={node.id} nodes={nodes} connectedNodes={connectedNodes} leadingNode={sourceImageReference ? node : undefined} onDisconnect={onDisconnectReference} onStartSelection={onStartReferenceSelection} addDisabled={isH3T2V} addDisabledHint={t("canvas.promptPanel.videoTextAddDisabled")} />
-            {textVideoHasReferences ? <div className="mb-2 text-xs leading-4 text-[#ef4444]">{t("canvas.promptPanel.videoTextRefsWarning")}</div> : null}
-            <textarea
+            {textVideoHasReferences && !refsWarningDismissed ? (
+                <div className="mb-2 flex items-start gap-2 rounded-lg bg-amber-500/10 px-2 py-1 text-xs leading-4 text-amber-700 dark:text-amber-300">
+                    <span className="min-w-0 flex-1">{t("canvas.promptPanel.videoTextRefsWarning")}</span>
+                    <button type="button" className="shrink-0 opacity-70 hover:opacity-100" aria-label={t("canvas.promptPanel.dismissHint")} onClick={() => onConfigChange(node.id, { refsWarningDismissed: true })}>
+                        <X className="size-3.5" />
+                    </button>
+                </div>
+            ) : null}
+            {sourceVideoTooLong && !textVideoHasReferences ? <div className="mb-2 text-xs leading-4 text-amber-600 dark:text-amber-400">{t("canvas.promptPanel.sourceVideoLimit")}</div> : null}
+            <CanvasResourceMentionTextarea
                 ref={textareaRef}
                 value={draft}
-                onChange={(event) => setDraft(event.target.value)}
+                references={mentionReferences}
+                onChange={setDraft}
                 onBlur={() => commitPrompt()}
-                onKeyDown={(event) => {
-                    event.stopPropagation();
-                    if (isPlainEnterKey(event)) {
-                        event.preventDefault();
-                        submit();
-                    }
-                }}
-                className="thin-scrollbar h-40 w-full cursor-text resize-none rounded-xl px-3 py-2 text-sm leading-5 outline-none"
+                onSubmit={submit}
+                onKeyDown={(event) => event.stopPropagation()}
+                containerClassName="!h-40"
+                className="thin-scrollbar h-full w-full cursor-text resize-none rounded-xl px-3 py-2 text-sm leading-5 outline-none"
                 style={{ background: "transparent", color: theme.node.text }}
-                placeholder={t(`canvas.promptPanel.${mode === "image" && hasImageContent ? "editImage" : mode === "text" && hasTextContent ? "editText" : mode}`)}
+                placeholder={promptPlaceholder}
             />
 
             <div className="mt-2 flex min-w-0 items-center justify-between gap-2">
@@ -661,27 +691,32 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                 </div>
                 );
             })()}
-            {mode !== "text" && originalPrompt && !optimizeRunning && !optimizeResult && !optimizeError ? (
+            {mode !== "text" && originalPrompt ? (
                 <OriginalPromptDisclosure key={`${node.id}:${originalPrompt}`} text={originalPrompt} label={t("canvas.promptPanel.originalPrompt")} hint={t("canvas.promptPanel.originalPromptHint")} theme={theme} />
             ) : null}
             <Modal title={t("canvas.promptPanel.editorTitle")} open={expanded} centered width={760} footer={null} onCancel={() => { commitPrompt(); setExpanded(false); }} destroyOnHidden>
                 <div data-canvas-no-zoom className="pt-2" onWheelCapture={(event) => event.stopPropagation()}>
                     <CanvasNodeReferenceBar nodeId={node.id} nodes={nodes} connectedNodes={connectedNodes} leadingNode={sourceImageReference ? node : undefined} onDisconnect={onDisconnectReference} onStartSelection={(nodeId) => { setExpanded(false); onStartReferenceSelection?.(nodeId); }} addDisabled={isH3T2V} addDisabledHint={t("canvas.promptPanel.videoTextAddDisabled")} />
-                    {textVideoHasReferences ? <div className="mb-2 text-xs leading-4 text-[#ef4444]">{t("canvas.promptPanel.videoTextRefsWarning")}</div> : null}
-                    <textarea
+                    {textVideoHasReferences && !refsWarningDismissed ? (
+                        <div className="mb-2 flex items-start gap-2 rounded-lg bg-amber-500/10 px-2 py-1 text-xs leading-4 text-amber-700 dark:text-amber-300">
+                            <span className="min-w-0 flex-1">{t("canvas.promptPanel.videoTextRefsWarning")}</span>
+                            <button type="button" className="shrink-0 opacity-70 hover:opacity-100" aria-label={t("canvas.promptPanel.dismissHint")} onClick={() => onConfigChange(node.id, { refsWarningDismissed: true })}>
+                                <X className="size-3.5" />
+                            </button>
+                        </div>
+                    ) : null}
+                    {sourceVideoTooLong && !textVideoHasReferences ? <div className="mb-2 text-xs leading-4 text-amber-600 dark:text-amber-400">{t("canvas.promptPanel.sourceVideoLimit")}</div> : null}
+                    <CanvasResourceMentionTextarea
                         value={draft}
-                        onChange={(event) => setDraft(event.target.value)}
+                        references={mentionReferences}
+                        onChange={setDraft}
                         onBlur={() => commitPrompt()}
-                        onKeyDown={(event) => {
-                            event.stopPropagation();
-                            if (isPlainEnterKey(event)) {
-                                event.preventDefault();
-                                submit();
-                            }
-                        }}
-                        className="thin-scrollbar h-[52dvh] min-h-80 w-full resize-none rounded-xl border p-4 text-[15px] leading-6 outline-none"
+                        onSubmit={submit}
+                        onKeyDown={(event) => event.stopPropagation()}
+                        containerClassName="!h-[52dvh] min-h-80"
+                        className="thin-scrollbar h-full w-full resize-none rounded-xl border p-4 text-[15px] leading-6 outline-none"
                         style={{ background: "transparent", borderColor: theme.toolbar.border, color: theme.node.text }}
-                        placeholder={t(`canvas.promptPanel.${mode === "image" && hasImageContent ? "editImage" : mode === "text" && hasTextContent ? "editText" : mode}`)}
+                        placeholder={promptPlaceholder}
                     />
                 </div>
             </Modal>

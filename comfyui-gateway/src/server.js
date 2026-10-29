@@ -13,6 +13,8 @@ import { imageInputCapacity } from "./base-models.js";
 import { createComfyBridge } from "./comfy-bridge.js";
 import { createComfyClient } from "./comfy-client.js";
 import { createLogger, loadConfig } from "./config.js";
+import { describeAutoDirectories, detectComfyLayout, directoryLoadReport, normalizeDirectorySettings, saveDirectorySettings, scanDirectories, validateDirectorySettings, writeManagedExtraPaths } from "./directories.js";
+import { pickFolder } from "./folder-picker.js";
 import { createMainModelStore } from "./main-models.js";
 import { createRegistry } from "./registry.js";
 import { createSessionTracker } from "./sessions.js";
@@ -31,7 +33,7 @@ import { createTaskStore } from "./tasks.js";
 import { applyUpdate, checkForUpdate } from "./update.js";
 import { uploadImages } from "./uploads.js";
 import { createWorkflowVisibilityStore } from "./workflow-visibility.js";
-import { alignH3Frames, framesFromSeconds, extFromMime, jsonError, nowIso, parseSize, randomId, safeFileName, sleep } from "./util.js";
+import { alignH3Frames, capH3ReferenceFrames, framesFromSeconds, extFromMime, jsonError, nowIso, parseSize, randomId, safeFileName, sleep } from "./util.js";
 
 class HttpError extends Error {
   constructor(message, { status = 400, code = "bad_request", details } = {}) {
@@ -43,8 +45,8 @@ class HttpError extends Error {
   }
 }
 
-function probeVideoFrames(file, extraProbes = []) {
-  if (!file?.buffer?.length) return 0;
+function probeVideoInfo(file, extraProbes = []) {
+  if (!file?.buffer?.length) return { fps: 0, duration: 0, frames: 0 };
   const rawExt = extFromMime(file.mimetype) || ".mp4";
   const ext = String(rawExt).startsWith(".") ? rawExt : `.${rawExt}`;
   const temp = path.join(os.tmpdir(), `comfy-probe-${randomId()}${ext}`);
@@ -59,18 +61,29 @@ function probeVideoFrames(file, extraProbes = []) {
         const fps = rate[1] ? rate[0] / rate[1] : rate[0];
         const duration = Number(data.format?.duration || 0);
         if (!Number.isFinite(fps) || fps <= 0 || !Number.isFinite(duration) || duration <= 0) continue;
-        return Math.max(1, Math.round(fps * duration));
+        return { fps, duration, frames: Math.max(1, Math.round(fps * duration)) };
       } catch {
         // 换下一个 ffprobe 路径。
       }
     }
-    return 0;
+    return { fps: 0, duration: 0, frames: 0 };
   } finally {
     try {
       fs.unlinkSync(temp);
     } catch {
     }
   }
+}
+
+function probeVideoFrames(file, extraProbes = []) {
+  return probeVideoInfo(file, extraProbes).frames;
+}
+
+function gpuVramTotalGb(stats) {
+  const totals = (stats?.gpu || [])
+    .map((gpu) => Number(gpu.memoryTotalMb))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  return totals.length ? Math.max(...totals) / 1024 : 0;
 }
 
 function corsMiddleware(config) {
@@ -218,7 +231,7 @@ function requireModel(registry, setup, model, expectedType) {
 export async function createGatewayApp(overrides = {}) {
   const config = loadConfig(overrides);
   const logger = createLogger(overrides.logPrefix || "gateway");
-  const previewHub = createPreviewHub({ comfyUrl: config.comfyUrl, logger });
+  const previewHub = createPreviewHub({ comfyUrl: () => comfy.baseUrl(), logger });
   const comfy = createComfyClient({
     baseUrl: config.comfyUrl,
     timeoutMs: config.requestTimeoutMs,
@@ -266,6 +279,7 @@ export async function createGatewayApp(overrides = {}) {
   }
   const resources = createResourceManager({ config, setup, registry, logger, workflowVisibility, mainModels });
   await resources.init();
+  setup.setRuntimeProblemProvider?.((workflowId) => resources.runtimeProblemsFor(workflowId));
   // 随包节点由启动器首次启动复制；直接用 start-all/start-gateway 启动时这里补一次（幂等）
   void ensureBundledNodes();
   async function ensureBundledNodes() {
@@ -319,7 +333,11 @@ export async function createGatewayApp(overrides = {}) {
     req.id = incomingId || randomId("req_");
     res.setHeader("X-Request-Id", req.id);
     const started = Date.now();
-    res.on("finish", () => logger.info(`${req.method} ${req.originalUrl} ${res.statusCode} ${Date.now() - started}ms ${req.id}`));
+    // 前端进度轮询与启动器会话轮询频率高、无诊断价值，不写访问日志，避免把真实错误淹没。
+    const quiet = /^\/api\/progress\//.test(req.path) || /^\/api\/session\/status\b/.test(req.path);
+    res.on("finish", () => {
+      if (!quiet) logger.info(`${req.method} ${req.originalUrl} ${res.statusCode} ${Date.now() - started}ms ${req.id}`);
+    });
     next();
   });
   app.use(corsMiddleware(config));
@@ -366,7 +384,7 @@ export async function createGatewayApp(overrides = {}) {
     res.json({
       status: "ok",
       version: config.version,
-      comfy: { url: config.comfyUrl, reachable },
+      comfy: { url: comfy.baseUrl(), reachable },
       // 与设置页一致：hidden 的辅助工作流不计入可用性统计。
       workflows: { count: setupStatus.counts?.total || registry.list().length },
       setup: { phase: setupStatus.phase, counts: setupStatus.counts },
@@ -376,7 +394,7 @@ export async function createGatewayApp(overrides = {}) {
   });
 
   app.get("/api/setup/status", (_req, res) => {
-    res.json({ ok: true, status: setup.status(), comfyUrl: config.comfyUrl });
+    res.json({ ok: true, status: setup.status(), comfyUrl: comfy.baseUrl() });
   });
 
   app.post("/api/setup/model-alias", async (req, res) => {
@@ -466,11 +484,13 @@ export async function createGatewayApp(overrides = {}) {
 
   app.get("/api/system/stats", async (_req, res) => {
     const stats = await readSystemStats();
+    const setupStatus = setup.status();
     const taskOOM = tasks.list().find((task) => /out of memory|CUDA OOM|\bOOM\b|allocation on device/i.test(task.error || ""));
     res.json({
       ok: true,
       ...stats,
-      comfy: { url: config.comfyUrl, reachable: setup.status().comfyReachable },
+      comfy: { url: comfy.baseUrl(), reachable: setupStatus.comfyReachable },
+      setup: { phase: setupStatus.phase, counts: setupStatus.counts, scannedAt: setupStatus.scannedAt },
       restartAvailable: Boolean(config.launcherControlUrl),
       lastOOM: lastOOM || (taskOOM ? { at: taskOOM.completedAt, message: taskOOM.error } : null),
     });
@@ -546,6 +566,121 @@ export async function createGatewayApp(overrides = {}) {
   app.post("/api/setup/scan", (_req, res) => {
     void setup.scan().catch((error) => logger.warn(`manual setup scan failed: ${error.message}`));
     res.json({ ok: true, status: setup.status() });
+  });
+
+  async function setLauncherComfyDir(dir) {
+    if (config.launcherControlUrl) {
+      try {
+        const response = await fetch(`${config.launcherControlUrl}/set-comfy-dir`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ dir }),
+        });
+        if (response.ok) return true;
+        logger.warn(`启动器拒绝更新 ComfyUI 目录：HTTP ${response.status}`);
+      } catch (error) {
+        logger.warn(`通知启动器更新 ComfyUI 目录失败：${error.message}`);
+      }
+    }
+    try {
+      const file = path.join(config.appRoot, "launcher", "config.json");
+      const data = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "")) : {};
+      data.comfyDir = dir;
+      fs.writeFileSync(file, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+      return true;
+    } catch (error) {
+      logger.warn(`写入 launcher/config.json 失败：${error.message}`);
+      return false;
+    }
+  }
+
+  let pickerBusy = false;
+
+  app.post("/api/setup/pick-directory", async (req, res) => {
+    if (config.allowRemote) throw new HttpError("远程模式不支持原生目录选择，请手动输入路径", { status: 400, code: "picker_remote_disabled" });
+    if (process.platform !== "win32" && !process.env.FOLDER_PICKER_FAKE) {
+      throw new HttpError("当前系统不支持原生目录选择，请手动输入路径", { status: 400, code: "picker_unsupported" });
+    }
+    if (pickerBusy) throw new HttpError("已有目录选择窗口打开，请先完成或取消", { status: 409, code: "picker_busy" });
+    pickerBusy = true;
+    try {
+      const result = await pickFolder({
+        title: String(req.body?.title || "选择文件夹"),
+        initial: String(req.body?.initial || ""),
+      });
+      res.json({ ok: true, ...result });
+    } finally {
+      pickerBusy = false;
+    }
+  });
+
+  app.get("/api/setup/directories", (_req, res) => {
+    const liveRoot = resources.comfyRoot?.() || config.comfyDir || "";
+    const settings = setup.getDirectorySettings();
+    const auto = describeAutoDirectories({ comfyRoot: liveRoot, workflowsDir: config.comfyWorkflowsDir });
+    const setupStatus = setup.status();
+    const loadReport = directoryLoadReport(settings, { comfyRoot: liveRoot, folderPaths: setup.folderPaths?.() || {} });
+    res.json({
+      ok: true,
+      settings,
+      comfyRoot: liveRoot,
+      auto,
+      loadReport,
+      setup: { phase: setupStatus.phase, counts: setupStatus.counts, comfyReachable: setupStatus.comfyReachable },
+    });
+  });
+
+  app.post("/api/setup/directories/scan", (req, res) => {
+    const settings = normalizeDirectorySettings({ ...(req.body || {}), mode: "manual" });
+    const validation = validateDirectorySettings(settings);
+    if (!validation.ok) throw new HttpError(validation.errors.join("；"), { status: 400, code: "invalid_directories", details: validation.errors });
+    res.json({ ok: true, scan: scanDirectories(settings), validation });
+  });
+
+  app.post("/api/setup/directories", async (req, res) => {
+    const body = req.body || {};
+    const settings = normalizeDirectorySettings({ ...body, mode: body.mode === "auto" ? "auto" : "manual" });
+    const validation = validateDirectorySettings(settings);
+    if (!validation.ok) throw new HttpError(validation.errors.join("；"), { status: 400, code: "invalid_directories", details: validation.errors });
+    const previous = setup.getDirectorySettings();
+    const liveRootBefore = resources.comfyRoot?.() || setup.comfyRootForScan() || config.comfyDir;
+    const saved = await saveDirectorySettings(config.dataDir, settings);
+    setup.setDirectorySettings(saved);
+    const liveRoot = liveRootBefore;
+    const manualRoot = saved.mode === "manual" && saved.comfyDir ? detectComfyLayout(saved.comfyDir)?.root || saved.comfyDir : "";
+    const targetRoot = manualRoot || liveRoot;
+    const yamlSettings = saved.mode === "manual" ? saved : { ...saved, modelDirs: [], loraDirs: [], customNodesDirs: [] };
+    const write = writeManagedExtraPaths(targetRoot, yamlSettings);
+    resources.invalidate?.();
+    // 换目录或切回自动时，把旧目录里的托管块也清掉，避免以后又切回去时残留旧路径。
+    if (previous.mode === "manual" && previous.comfyDir && previous.comfyDir !== saved.comfyDir) {
+      const previousRoot = detectComfyLayout(previous.comfyDir)?.root || previous.comfyDir;
+      if (previousRoot !== targetRoot) {
+        writeManagedExtraPaths(previousRoot, { ...previous, modelDirs: [], loraDirs: [], customNodesDirs: [] });
+      }
+    }
+    const launcherUpdated = saved.mode === "manual" && saved.comfyDir ? await setLauncherComfyDir(saved.comfyDir) : false;
+    const scan = scanDirectories(saved);
+    // 用 live 的 folder_paths 判断是否已在 ComfyUI 清单里，避免用上次扫描的旧结果误报“需重启”。
+    const liveFolderPaths = await comfy.folderPaths().catch(() => setup.folderPaths?.() || {});
+    const loadReport = directoryLoadReport(saved, { comfyRoot: liveRootBefore, folderPaths: liveFolderPaths });
+    const restartRequired = saved.mode === "manual" && (loadReport.restartRequired || Boolean(write.changed));
+    void setup.scan().catch((error) => logger.warn(`directory settings rescan failed: ${error.message}`));
+    res.json({
+      ok: true,
+      settings: saved,
+      comfyRoot: targetRoot,
+      write,
+      scan,
+      loadReport,
+      launcherUpdated,
+      restartRequired,
+      note: saved.mode === "auto"
+        ? "已切回自动识别，手动目录已从 extra_model_paths.yaml 移除。"
+        : restartRequired
+          ? "新目录不在 ComfyUI 当前清单中；已写入 extra_model_paths.yaml，重启 ComfyUI 后生效，资源卡与工作流可用性也会在重启后刷新。"
+          : "目录已在 ComfyUI 当前清单中，无需重启；已重新扫描，资源卡会直接更新。",
+    });
   });
 
   app.post("/api/session/open", (req, res) => {
@@ -726,7 +861,7 @@ export async function createGatewayApp(overrides = {}) {
     const source = await freeWorkflows.sourceState(entry);
     if (!source.exists) throw new HttpError("源工作流文件已不存在，无法在 ComfyUI 中编辑", { status: 409, code: "free_workflow_source_missing" });
     const bridge = await comfyBridge.ensure();
-    const target = new URL(config.comfyUrl);
+    const target = new URL(comfy.baseUrl());
     target.searchParams.set("local_canvas_open", entry.id);
     target.searchParams.set("local_canvas_gw", `${req.protocol}://${req.get("host")}`);
     res.json({
@@ -1032,17 +1167,24 @@ export async function createGatewayApp(overrides = {}) {
       throw new HttpError(`工作流 ${resolvedEntry.name} 没有 background 绑定，不能保证透明背景。`, { status: 400, code: "unsupported_background" });
     }
     const uploadedImages = await uploadImages(comfy, orderedFiles);
+    // 同一张卡上重绘/扩图并发出多张只会互抢显存，统一收敛为单张；
+    // 扩图采样像素按配置封顶，避免 16MP 在 16GB 卡上必 OOM。
+    const editParams = parseParams(body.params);
+    const singleShot = mode === "inpaint" || mode === "outpaint";
+    if (mode === "outpaint" && Number.isFinite(Number(editParams.megapixels))) {
+      editParams.megapixels = Math.max(0.1, Math.min(Number(editParams.megapixels), config.outpaintMaxMegapixels));
+    }
     const context = buildContext({
       prompt: applyBackgroundPrompt(promptText, body.background, resolvedEntry),
       negative: body.negative,
       size: body.size,
-      count: body.n ?? body.count,
+      count: singleShot ? 1 : (body.n ?? body.count),
       quality: body.quality,
       background: body.background,
       mode,
       images: orderedFiles,
       uploadedImages,
-      params: parseParams(body.params),
+      params: editParams,
       presets: entry.presets,
     });
     if (entry.id.startsWith("image-moss-")) applyMossLayoutPrompt(context);
@@ -1195,6 +1337,18 @@ export async function createGatewayApp(overrides = {}) {
     if (!videoFiles.length) throw new HttpError("视频超分请求缺少输入视频", { status: 400, code: "missing_input_video" });
     const uploadedVideos = await uploadImages(comfy, videoFiles);
     const params = parseParams(body.params);
+    // SeedVR2 的「最高画质」默认值在 16GB 卡上必 OOM；按实际显存分档收敛。
+    const vramGb = gpuVramTotalGb(await readSystemStats({ cacheMs: 30000 }));
+    const tier = vramGb > 0 && vramGb <= 18 ? { resolution: 1024, batch: 1 } : vramGb > 0 && vramGb <= 26 ? { resolution: 1280, batch: 2 } : null;
+    if (tier) {
+      const requestedResolution = Number(params.resolution) || 0;
+      const requestedBatch = Number(params.batch_size) || 0;
+      params.resolution = requestedResolution > 0 ? Math.min(requestedResolution, tier.resolution) : tier.resolution;
+      params.batch_size = requestedBatch > 0 ? Math.min(requestedBatch, tier.batch) : tier.batch;
+      if (requestedResolution > tier.resolution || requestedBatch > tier.batch) {
+        logger.warn(`视频超分按 ${Math.round(vramGb)}GB 显存收敛为 ${params.resolution}/${params.batch_size}（请求 ${requestedResolution}/${requestedBatch}）`);
+      }
+    }
     const context = buildContext({
       count: 1,
       mode: "upscale",
@@ -1246,9 +1400,15 @@ export async function createGatewayApp(overrides = {}) {
       throw new HttpError("插帧只支持 2x 或 3x", { status: 400, code: "invalid_interpolation" });
     }
     const source = videoFiles[0];
+    const probes = config.comfyDir
+      ? [path.join(config.comfyDir, "ffprobe.exe"), path.join(config.comfyDir, "..", "ffprobe.exe"), path.join(config.comfyDir, "ffmpeg", "bin", "ffprobe.exe")]
+      : [];
+    const sourceInfo = probeVideoInfo(source, probes);
+    const sourceFps = sourceInfo.fps > 0 ? sourceInfo.fps : 24;
+    if (!sourceInfo.fps) logger.warn(`插帧未探测到源视频帧率，按 24fps 处理：${req.id}`);
     const task = tasks.create({
       model: "video-rife",
-      request: { mode: "interpolate", multiplier, video: source.originalname || "input.mp4" },
+      request: { mode: "interpolate", multiplier, video: source.originalname || "input.mp4", source_fps: sourceFps },
     });
     tasks.enqueue(task, async (_task, progress, signal) => {
       progress?.({ phase: "interpolating", progress: 0.1 });
@@ -1257,6 +1417,7 @@ export async function createGatewayApp(overrides = {}) {
         buffer: source.buffer,
         filename: source.originalname || "input.mp4",
         multiplier: multiplier === "3x" ? 3 : 2,
+        sourceFps,
         requestId: req.id,
         signal,
         timeoutMs: Number(config.videoTimeoutMs) > 0 ? config.videoTimeoutMs : 10 * 60 * 1000,
@@ -1347,23 +1508,30 @@ export async function createGatewayApp(overrides = {}) {
         watermark: body.watermark,
       },
     });
+    let sourceVideoTruncated = false;
     if (videoFiles.length) {
-      // H3 按 24fps 出片；源视频帧数优先用 ffprobe，探不到就用前端上报的时长换算，
-      // 避免回退到工作流默认 124 帧（用户看到的就是“永远 5 秒”）。
+      // H3 统一按 24fps 出片：源视频用时长×24 换算帧数，30/60fps 素材不会算长。
       const sourceSeconds = Number(body.source_duration_seconds);
       const fromDuration = framesFromSeconds(sourceSeconds);
       const probes = config.comfyDir
         ? [path.join(config.comfyDir, "ffprobe.exe"), path.join(config.comfyDir, "..", "ffprobe.exe"), path.join(config.comfyDir, "ffmpeg", "bin", "ffprobe.exe")]
         : [];
-      const probed = probeVideoFrames(videoFiles[0], probes);
-      const sourceFrames = probed || fromDuration;
-      // 硬性跟随源视频长度：只按 H3 的 17n+5 向下对齐，不设上限。
+      const info = probeVideoInfo(videoFiles[0], probes);
+      const probedFrames = info.duration > 0 ? Math.round(info.duration * 24) : 0;
+      const sourceFrames = probedFrames || fromDuration;
       const aligned = alignH3Frames(sourceFrames);
-      context.sourceVideoFrames = aligned;
+      // 官方 H3 参考视频单段上限 15 秒（24fps 下 362 帧 = 17×21+5）。
+      // 超过后模型不再按训练区间工作，会整段进内存并把 RAM 顶爆，必须截断。
+      const capped = capH3ReferenceFrames(aligned);
+      context.sourceVideoFrames = capped;
+      sourceVideoTruncated = capped > 0 && aligned > capped;
       if (aligned && sourceFrames && aligned !== sourceFrames) {
         logger.info(`源视频 ${sourceFrames} 帧，按 17n+5 对齐为 ${aligned} 帧（约 ${(aligned / 24).toFixed(1)}s）`);
       }
-      if (!probed && fromDuration) logger.warn(`ffprobe 不可用，按上报时长 ${sourceSeconds}s 换算为 ${fromDuration} 帧`);
+      if (sourceVideoTruncated) {
+        logger.warn(`源视频约 ${(aligned / 24).toFixed(1)}s，超过 H3 单段 15s 上限，已截取前 ${(capped / 24).toFixed(1)}s`);
+      }
+      if (!probedFrames && fromDuration) logger.warn(`ffprobe 不可用，按上报时长 ${sourceSeconds}s 换算为 ${fromDuration} 帧`);
     }
     const task = tasks.create({
       model: entry.name,
@@ -1378,6 +1546,7 @@ export async function createGatewayApp(overrides = {}) {
         videos: uploadedVideos.map((file) => file.name),
         audios: uploadedAudios.map((file) => file.name),
         interpolation,
+        source_video_truncated: sourceVideoTruncated,
       },
     });
     tasks.enqueue(task, async (_task, progress, signal) => {

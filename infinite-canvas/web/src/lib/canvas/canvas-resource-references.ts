@@ -3,6 +3,7 @@ import i18n from "@/i18n";
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { imageToDataUrl } from "@/services/image-storage";
+import type { ReferenceImage } from "@/types/image";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/types/canvas";
 
 export type CanvasResourceKind = "image" | "video" | "audio" | "text" | "lora";
@@ -49,6 +50,92 @@ export async function resolveCanvasReferenceImages(references: CanvasResourceRef
             dataUrl,
         };
     }));
+}
+
+export type CanvasBaseImage = {
+    sourceNodeId: string;
+    reference: ReferenceImage;
+};
+
+const MIME_BY_EXT: Record<string, string> = {
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    webp: "image/webp",
+};
+
+function mimeFromUrl(url: string) {
+    const match = /^data:([^;]+)/.exec(url);
+    if (match) return match[1];
+    const ext = /\.([a-z0-9]+)(?:[?#]|$)/i.exec(url)?.[1]?.toLowerCase() || "";
+    return MIME_BY_EXT[ext] || "image/png";
+}
+
+function referenceFromNode(node: CanvasNodeData): ReferenceImage | null {
+    const content = node.metadata?.content;
+    if (!content) return null;
+    return {
+        id: `canvas:${node.id}`,
+        name: `${node.title || node.id}.png`,
+        type: node.metadata?.mimeType || mimeFromUrl(content),
+        dataUrl: content,
+        url: content,
+        storageKey: node.metadata?.storageKey,
+    };
+}
+
+// 局部重绘 / 扩图的底图：节点自身 → 节点存下的生成参考（遮罩导出）→ 相连图片 → @ 引用。
+export function resolveCanvasBaseImage(
+    node: CanvasNodeData,
+    nodes: CanvasNodeData[],
+    connections: CanvasConnection[],
+    references: CanvasResourceReference[] = [],
+): CanvasBaseImage | null {
+    const own = referenceFromNode(node);
+    if (own) return { sourceNodeId: node.id, reference: own };
+
+    const stored = node.metadata?.references?.find((url) => typeof url === "string" && url);
+    if (stored) {
+        return {
+            sourceNodeId: node.id,
+            reference: {
+                id: `canvas:${node.id}:ref`,
+                name: `${node.title || node.id}.png`,
+                type: mimeFromUrl(stored),
+                dataUrl: stored,
+                url: stored,
+            },
+        };
+    }
+
+    for (const connection of connections) {
+        if (connection.toNodeId !== node.id) continue;
+        const source = nodes.find((item) => item.id === connection.fromNodeId);
+        if (!source || source.type !== CanvasNodeType.Image) continue;
+        const reference = referenceFromNode(source);
+        if (reference) return { sourceNodeId: source.id, reference };
+    }
+
+    for (const reference of references) {
+        if (reference.kind !== "image") continue;
+        const source = nodes.find((item) => item.id === reference.nodeId);
+        const fromNode = source ? referenceFromNode(source) : null;
+        if (fromNode) return { sourceNodeId: reference.nodeId, reference: fromNode };
+        const url = reference.previewUrl;
+        if (url) {
+            return {
+                sourceNodeId: reference.nodeId,
+                reference: {
+                    id: `canvas:${reference.nodeId}`,
+                    name: reference.title || reference.label,
+                    type: mimeFromUrl(url),
+                    dataUrl: url,
+                    url,
+                },
+            };
+        }
+    }
+    return null;
 }
 
 export function getMentionResourceNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {

@@ -10,6 +10,7 @@ import { Transform } from "node:stream";
 
 import { findUnetLoader } from "./base-models.js";
 import { MODEL_LOADER_SPECS } from "./model-loaders.js";
+import { findSimilarModel, FUZZY_MODEL_EXTENSIONS } from "./model-match.js";
 import { collectModelRoots, clearExtraModelPathsCache } from "./model-paths.js";
 import { nowIso, truncate, writeJsonAtomic } from "./util.js";
 
@@ -195,6 +196,27 @@ function pythonFromRunningComfy(config) {
     return found;
 }
 
+const pythonProbeCache = new Map();
+
+function pythonRuns(file) {
+    if (!file) return false;
+    const cached = pythonProbeCache.get(file);
+    if (cached && Date.now() - cached.at < 300000) return cached.ok;
+    let ok = false;
+    try {
+        const stdout = execFileSync(file, ["-c", "import sys;print(sys.version_info[0])"], {
+            timeout: 8000,
+            windowsHide: true,
+            encoding: "utf8",
+        });
+        ok = /^\s*3\s*$/m.test(String(stdout || ""));
+    } catch {
+        ok = false;
+    }
+    pythonProbeCache.set(file, { at: Date.now(), ok });
+    return ok;
+}
+
 function resolveComfyPython(config, root, { probeProcess = false } = {}) {
     const candidates = [];
     const add = (value) => {
@@ -206,22 +228,43 @@ function resolveComfyPython(config, root, { probeProcess = false } = {}) {
         add(path.join(base, "python.exe"));
         add(path.join(base, "python_embeded", "python.exe"));
         add(path.join(base, "python_embedded", "python.exe"));
+        // 整合包常见布局：环境根目录下的 python/python.exe 或 env/Scripts、env/python。
+        add(path.join(base, "python", "python.exe"));
+        add(path.join(base, "env", "python.exe"));
+        add(path.join(base, "env", "python", "python.exe"));
+        add(path.join(base, "env", "Scripts", "python.exe"));
         add(path.join(base, "venv", "Scripts", "python.exe"));
         add(path.join(base, ".venv", "Scripts", "python.exe"));
         add(path.join(base, "Scripts", "python.exe"));
+        add(path.join(base, "miniconda3", "python.exe"));
+        add(path.join(base, "miniforge3", "python.exe"));
+        add(path.join(base, "anaconda3", "python.exe"));
         add(pythonFromBat(path.join(base, "run_nvidia_gpu.bat")));
         try {
             const envs = path.join(base, "envs");
-            for (const name of fs.readdirSync(envs)) add(path.join(envs, name, "python.exe"));
+            for (const name of fs.readdirSync(envs)) {
+                add(path.join(envs, name, "python.exe"));
+                add(path.join(envs, name, "Scripts", "python.exe"));
+            }
         } catch {
             // 没有 conda envs 目录。
         }
     }
-    if (root) add(pythonFromBat(path.join(path.dirname(root), "run_nvidia_gpu.bat")));
-    const staticMatch = candidates.find(isFile);
-    if (staticMatch) return staticMatch;
-    if (!probeProcess) return "";
-    return pythonFromRunningComfy(config);
+    if (root) {
+        const parent = path.dirname(root);
+        add(path.join(parent, "python", "python.exe"));
+        add(path.join(parent, "env", "python.exe"));
+        add(path.join(parent, "env", "python", "python.exe"));
+        add(path.join(parent, "env", "Scripts", "python.exe"));
+        add(pythonFromBat(path.join(parent, "run_nvidia_gpu.bat")));
+    }
+    if (probeProcess) {
+        // pip 安装必须先确认真能跑：整合包里可能存在一个坏掉的 env\Scripts\python.exe。
+        const working = candidates.find((candidate) => isFile(candidate) && pythonRuns(candidate));
+        if (working) return working;
+        return pythonFromRunningComfy(config);
+    }
+    return candidates.find(isFile) || "";
 }
 
 function safeUrl(value) {
@@ -530,8 +573,25 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 matchedBy = "size";
             }
         }
+        let similarScore = 0;
+        // 格式相同、名称相似度 ≥50% 的同类模型（不同量化/版本）识别；
+        // 只对普通权重生效，.onnx/.engine 编译产物不做模糊匹配。
+        if (!found && String(resource.type || "model") === "model") {
+            const targetExt = path.extname(wantedBase).toLowerCase();
+            if (FUZZY_MODEL_EXTENSIONS.has(targetExt)) {
+                const similar = findSimilarModel(wantedBase, inventory.map((item) => item.rel));
+                if (similar.file) {
+                    const candidate = inventory.find((item) => item.rel === similar.file);
+                    if (candidate) {
+                        found = candidate;
+                        matchedBy = "similar";
+                        similarScore = similar.score;
+                    }
+                }
+            }
+        }
         if (found) {
-            return { present: true, path: found.abs, rel: found.rel, size: found.size, matchedBy, mismatch: mismatch || directMismatch };
+            return { present: true, path: found.abs, rel: found.rel, size: found.size, matchedBy, mismatch: mismatch || directMismatch, similarScore };
         }
         return {
             present: false,
@@ -700,7 +760,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
 
     function resourceAliasFor(resource) {
         for (const spec of resourceLoaderSpecs(resource)) {
-            const to = setup?.modelAliasFor?.(spec.classType, spec.input, spec.from) || "";
+            // 只有用户显式「自选替换」才显示为已替换；自动/相似别名由文件匹配呈现。
+            const to = setup?.userModelAliasFor?.(spec.classType, spec.input, spec.from) || "";
             if (to) return { ...spec, to };
         }
         return null;
@@ -895,7 +956,9 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         const isNode = dir === "custom_nodes" || resource.type === "node";
         const isPip = resource.type === "pip";
         const pip = isPip ? pipStatusFor(resource, root) : null;
-        const alias = isPip || isNode ? null : resourceAliasFor(resource);
+        const directMatch = isPip || isNode ? null : resourceMatch(resource, root);
+        // 自动匹配（含相似匹配）优先；手动「自选替换」是最后手段，只有自动匹配不到时才生效。
+        const alias = directMatch?.present ? null : isPip || isNode ? null : resourceAliasFor(resource);
         const match = alias
             ? { present: true, path: "", rel: alias.to, size: 0, matchedBy: "alias", mismatch: "" }
             : isPip
@@ -911,7 +974,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                       const present = dirPresent || classPresent;
                       return { present, path: dirPresent ? target : "", rel: file, size: 0, matchedBy: dirPresent ? "path" : classPresent ? "class" : "", mismatch: "" };
                   })()
-                : resourceMatch(resource, root);
+                : directMatch;
         const exists = Boolean(match.present);
         let size = Number(match.size) || 0;
         if (!size && match.path) {
@@ -966,6 +1029,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             exists,
             matchedFile: match.rel || "",
             matchedBy: match.matchedBy || "",
+            similarScore: Number(match.similarScore) || 0,
             sizeMismatch: match.mismatch || "",
             actualSize: size,
             installed,
@@ -1440,6 +1504,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         if (value && !installed.has(value)) throw new Error("所选主模型尚未安装");
         await mainModels.set(pack.id, { file: value, workflows: info.workflowIds });
         try {
+            runtimeStatusCache.clear();
             await setup?.scan?.();
         } catch (error) {
             logger?.warn?.(`切换主模型后扫描失败：${error.message}`);
@@ -1490,6 +1555,44 @@ export function createResourceManager({ config, setup, registry, logger, workflo
 
     function resourceById(id) {
         return index?.resources?.find((resource) => resource.id === id) || null;
+    }
+
+    const runtimeStatusCache = new Map();
+
+    function cachedResourceStatus(resource, root) {
+        const key = `${resource.id}|${root}`;
+        const cached = runtimeStatusCache.get(key);
+        if (cached && Date.now() - cached.at < 30000) return cached.value;
+        const value = resourceStatus(resource, root);
+        runtimeStatusCache.set(key, { at: Date.now(), value });
+        return value;
+    }
+
+    // 可用性扫描补运行期依赖：pip 运行库、TRT 编译产物、自定义节点。
+    // 普通模型由 setup 的 loader 校验负责，这里不重复报。
+    function runtimeProblemsFor(workflowId) {
+        if (!index) return [];
+        const ids = new Set();
+        for (const pack of index.packs || []) {
+            const deps = pack.workflowDependencies?.[workflowId];
+            if (Array.isArray(deps)) for (const id of deps) ids.add(id);
+        }
+        const problems = [];
+        for (const id of ids) {
+            const resource = resourceById(id);
+            if (!resource) continue;
+            const type = String(resource.type || "model");
+            if (!["pip", "bake", "node"].includes(type)) continue;
+            const state = cachedResourceStatus(resource, comfyRoot());
+            if (state.present) continue;
+            const blocked = state.missingRequires?.length ? `（先安装 ${state.missingRequires.join("、")}）` : "";
+            problems.push({
+                type: "runtime",
+                message: `缺少运行期依赖：${state.label}${blocked}`,
+                resourceId: id,
+            });
+        }
+        return problems;
     }
 
     function selectResources({ ids = [], packs = [] } = {}) {
@@ -2342,6 +2445,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         }
         updateJob(job);
         try {
+            runtimeStatusCache.clear();
             await setup?.scan?.();
         } catch (error) {
             logger?.warn?.(`资源安装后重新扫描失败：${error.message}`);
@@ -2433,6 +2537,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         if (!hardwareOverride) hardware = await probeHardware();
         await loadIndex({ forceRemote: true });
         try {
+            runtimeStatusCache.clear();
             await setup?.scan?.();
         } catch (error) {
             logger?.warn?.(`资源刷新扫描失败：${error.message}`);
@@ -2468,5 +2573,11 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         return status();
     }
 
-    return { init, status, refresh, install, setMainModel, setResourceReplacement, pickResourceReplacement, getJob, cancelJob, comfyRoot, comfyPython, indexPath };
+    function invalidate() {
+        inventoryCache.clear();
+        clearExtraModelPathsCache();
+        runtimeStatusCache.clear();
+    }
+
+    return { init, status, refresh, install, setMainModel, setResourceReplacement, pickResourceReplacement, getJob, cancelJob, invalidate, runtimeProblemsFor, comfyRoot, comfyPython, indexPath };
 }

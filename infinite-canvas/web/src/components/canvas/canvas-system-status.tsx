@@ -22,6 +22,7 @@ type SystemStats = {
     gpuStale?: boolean;
     ram: { totalBytes: number; usedBytes: number; freeBytes: number };
     comfy: { url: string; reachable: boolean };
+    setup?: { phase: string; counts?: { available: number; total: number; unavailable: number }; scannedAt?: string | null };
     restartAvailable: boolean;
     lastOOM: { at: string; message: string } | null;
 };
@@ -73,6 +74,8 @@ export function CanvasSystemStatus() {
     const [freeing, setFreeing] = useState(false);
     const [freeResult, setFreeResult] = useState<FreeResult | null>(null);
     const [freeError, setFreeError] = useState("");
+    const [scanning, setScanning] = useState(false);
+    const [scanError, setScanError] = useState("");
 
     const refresh = useCallback(async () => {
         try {
@@ -136,6 +139,28 @@ export function CanvasSystemStatus() {
         }
     };
 
+    const rescan = async () => {
+        setScanning(true);
+        setScanError("");
+        try {
+            const response = await fetch(`${gatewayRoot}/api/setup/scan`, { method: "POST" });
+            if (!response.ok) throw new Error("重新扫描失败");
+            const started = Date.now();
+            while (Date.now() - started < 90000) {
+                await new Promise((resolve) => setTimeout(resolve, 1500));
+                const statusResponse = await fetch(`${gatewayRoot}/api/setup/status`);
+                const data = (await statusResponse.json().catch(() => ({}))) as { status?: { phase?: string } };
+                if (data?.status?.phase === "ready" || data?.status?.phase === "degraded") break;
+            }
+            await refresh();
+            window.dispatchEvent(new Event("local-gateway-refresh-models"));
+        } catch (error) {
+            setScanError(error instanceof Error ? error.message : String(error));
+        } finally {
+            setScanning(false);
+        }
+    };
+
     const barStyle = (value: number) => ({ width: `${value}%`, background: value >= 90 ? "#dc2626" : theme.node.text });
 
     return (
@@ -144,10 +169,11 @@ export function CanvasSystemStatus() {
                 type="button"
                 className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-[11px] transition-colors hover:bg-black/5 dark:hover:bg-white/10"
                 style={{ color: theme.node.muted, background: "transparent" }}
-                title="查看显存、内存与 ComfyUI 状态"
+                title={stats && !stats.comfy.reachable ? "ComfyUI 未连接，点击查看修复操作" : "查看显存、内存与 ComfyUI 状态"}
                 onClick={() => setOpen(true)}
             >
                 <Gauge className="size-3.5" />
+                {stats && !stats.comfy.reachable ? <span style={{ color: "#dc2626" }}>ComfyUI 离线 · 点击修复</span> : null}
                 <span>{gpu ? `显存 ${vramGb(gpu.memoryUsedMb)}/${vramGb(gpu.memoryTotalMb)}G` : "显存 --"}</span>
                 <span className="hidden opacity-40 lg:inline">·</span>
                 <span className="hidden lg:inline">内存 {stats ? `${gb(stats.ram.usedBytes)}/${gb(stats.ram.totalBytes)}G` : "--"}</span>
@@ -187,8 +213,37 @@ export function CanvasSystemStatus() {
                     </div>
                     <div className="flex items-center justify-between text-xs" style={{ color: theme.node.muted }}>
                         <span>ComfyUI</span>
-                        <span style={{ color: stats?.comfy.reachable ? theme.node.text : "#dc2626" }}>{stats?.comfy.reachable ? "在线" : "离线"}</span>
+                        <span className="flex items-center gap-2" style={{ color: stats?.comfy.reachable ? theme.node.text : "#dc2626" }}>
+                            {stats?.comfy.reachable ? "在线" : "离线"}
+                            {stats && !stats.comfy.reachable ? (
+                                <Button size="small" type="link" className="!h-6 !px-1" onClick={() => void refresh()}>
+                                    重新检测
+                                </Button>
+                            ) : null}
+                        </span>
                     </div>
+                    <div className="flex items-center justify-between text-xs" style={{ color: theme.node.muted }}>
+                        <span>工作流 / 模型</span>
+                        <span className="flex items-center gap-2">
+                            {stats?.setup
+                                ? stats.setup.phase === "ready"
+                                    ? `已识别 ${stats.setup.counts?.available ?? 0}/${stats.setup.counts?.total ?? 0}`
+                                    : stats.setup.phase === "scanning"
+                                      ? "扫描中…"
+                                      : stats.setup.phase === "degraded"
+                                        ? "扫描未完成"
+                                        : "未扫描"
+                                : "--"}
+                            <Button size="small" type="link" className="!h-6 !px-1" loading={scanning} onClick={() => void rescan()}>
+                                重新扫描
+                            </Button>
+                        </span>
+                    </div>
+                    {scanError ? (
+                        <div className="text-[11px]" style={{ color: "#b91c1c" }}>
+                            {scanError}
+                        </div>
+                    ) : null}
                     {oom ? (
                         <div className="rounded-lg border px-3 py-2 text-[11px]" style={{ borderColor: "#fca5a5", color: "#b91c1c" }}>
                             最近一次 OOM：{oom.message}

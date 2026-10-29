@@ -11,3 +11,31 @@ export const MODEL_LOADER_SPECS = [
     { classType: "LoraLoaderModelOnly", input: "lora_name", key: "lorasModelOnly", dirs: ["loras"] },
     { classType: "ApplyVDNH3Advanced", input: "vdn_checkpoint", key: "vdn", dirs: ["vdn"] },
 ];
+
+const MODEL_FILE_PATTERN = /\.(safetensors|ckpt|pt|pth|bin|gguf|onnx)$/i;
+const NON_MODEL_INPUT = /^(image|images|video|videos|audio|audios|file|filename|mask|prompt|text)$/i;
+const NON_MODEL_CLASS = /LoadImage|LoadVideo|LoadAudio|Upload|Preview|Save|VHS_/i;
+
+// 用户装的第三方 loader（LoraLoaderBypassModelOnly、GGUF 加载器等）不在静态清单里；
+// 从 /object_info 里动态发现“选项全是模型文件”的输入，别名体系就能自动覆盖。
+export function discoverModelLoaderSpecs(objectInfo, baseSpecs = MODEL_LOADER_SPECS) {
+    const specs = [...baseSpecs];
+    const seen = new Set(specs.map((spec) => `${spec.classType}\u0000${spec.input}`));
+    for (const [classType, info] of Object.entries(objectInfo || {})) {
+        if (!info || NON_MODEL_CLASS.test(classType)) continue;
+        for (const group of [info.input?.required, info.input?.optional]) {
+            if (!group || typeof group !== "object") continue;
+            for (const [input, definition] of Object.entries(group)) {
+                if (NON_MODEL_INPUT.test(input)) continue;
+                const options = Array.isArray(definition?.[0]) ? definition[0] : Array.isArray(definition?.[1]?.options) ? definition[1].options : null;
+                if (!options?.length) continue;
+                if (!options.every((value) => typeof value === "string" && MODEL_FILE_PATTERN.test(value))) continue;
+                const key = `${classType}\u0000${input}`;
+                if (seen.has(key)) continue;
+                seen.add(key);
+                specs.push({ classType, input, key: `${classType}.${input}`, dirs: [] });
+            }
+        }
+    }
+    return specs;
+}

@@ -97,6 +97,8 @@ export function extraModelPathsFor(root, comfyDir = "") {
         const parsed = parseExtraModelPaths(file);
         for (const [name, values] of Object.entries(parsed)) {
             if (!Array.isArray(values) || !values.length) continue;
+            // 托管块里的手动目录用于资源卡/文件选择器的存在性判断，ComfyUI 离线也能扫；
+            // 工作流可用性仍以 /object_info 为准，重启前不会误报“可用”。
             merged[name] = [...new Set([...(merged[name] || []), ...values])];
         }
     }

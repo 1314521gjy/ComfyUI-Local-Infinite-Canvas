@@ -28,6 +28,71 @@ function formatNodeErrors(nodeErrors) {
 export function createComfyClient({ baseUrl, timeoutMs = 10 * 60 * 1000, retryAttempts = 3, retryDelayMs = 500, logger, previewHub } = {}) {
   const base = String(baseUrl || "").replace(/\/+$/, "");
   if (!base) throw new Error("ComfyUI baseUrl 不能为空");
+  let activeBase = base;
+  let lastDiscoverAt = 0;
+  let discovery = null;
+
+  function loopbackHost() {
+    try {
+      return ["127.0.0.1", "localhost", "::1", "[::1]"].includes(new URL(base).hostname);
+    } catch {
+      return false;
+    }
+  }
+
+  function candidateBases() {
+    if (!loopbackHost()) return [base];
+    const ports = new Set();
+    const add = (value) => {
+      const port = Number(value);
+      if (Number.isInteger(port) && port > 0 && port < 65536) ports.add(port);
+    };
+    try {
+      add(new URL(base).port || (new URL(base).protocol === "https:" ? 443 : 80));
+    } catch {
+      /* 配置地址异常时只扫默认端口 */
+    }
+    for (const port of [8188, 8000, 7860, 8080, 8888, 18000]) add(port);
+    for (const value of String(process.env.COMFY_PORT_SCAN || "").split(",")) add(value.trim());
+    for (let port = 8189; port <= 8199; port += 1) add(port);
+    const selfPort = Number(process.env.PORT || 0);
+    if (selfPort) ports.delete(selfPort);
+    return [...ports].map((port) => `http://127.0.0.1:${port}`);
+  }
+
+  async function probeBase(url) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1500);
+    try {
+      const response = await fetch(`${url}/system_stats`, { signal: controller.signal });
+      return response.ok;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // 启动器可能还没探测到 ComfyUI，或整合包自己换了端口；
+  // 连不上时扫一遍本机常见端口，避免画布永久停在“离线/识别不到”。
+  async function discoverBase({ force = false } = {}) {
+    if (!loopbackHost()) return "";
+    if (discovery) return discovery;
+    if (!force && Date.now() - lastDiscoverAt < 15000) return "";
+    discovery = (async () => {
+      const hits = await Promise.all(candidateBases().map(async (url) => (await probeBase(url) ? url : "")));
+      const found = hits.find(Boolean) || "";
+      if (found && found !== activeBase) {
+        logger?.warn?.(`ComfyUI 地址自动切换：${activeBase} → ${found}`);
+        activeBase = found;
+      }
+      return found;
+    })().finally(() => {
+      discovery = null;
+      lastDiscoverAt = Date.now();
+    });
+    return discovery;
+  }
 
   async function requestOnce(pathname, { method = "GET", body, headers = {}, signal, timeout = timeoutMs, raw = false } = {}) {
     const controller = new AbortController();
@@ -38,7 +103,7 @@ export function createComfyClient({ baseUrl, timeoutMs = 10 * 60 * 1000, retryAt
       else signal.addEventListener("abort", onAbort, { once: true });
     }
     try {
-      const response = await fetch(`${base}${pathname}`, {
+      const response = await fetch(`${activeBase}${pathname}`, {
         method,
         headers,
         body,
@@ -94,6 +159,12 @@ export function createComfyClient({ baseUrl, timeoutMs = 10 * 60 * 1000, retryAt
       } catch (error) {
         lastError = error;
         if (attempt >= attempts || !isRetryable(error) || options.signal?.aborted) throw error;
+        if (error?.code === "comfy_unreachable") {
+          const found = await discoverBase({ force: attempt > 1 });
+          if (found) {
+            logger?.warn?.(`ComfyUI 已重新定位到 ${found}，重试 ${pathname}`);
+          }
+        }
         logger?.warn?.(`ComfyUI ${pathname} 第 ${attempt} 次请求失败，${retryDelayMs * attempt}ms 后重试：${error.message}`);
         await sleep(retryDelayMs * attempt);
       }
@@ -206,5 +277,5 @@ export function createComfyClient({ baseUrl, timeoutMs = 10 * 60 * 1000, retryAt
     }
   }
 
-  return { baseUrl: base, request, submit, history, view, uploadImage, interrupt, cancel, freeMemory, objectInfo, systemStats, folderPaths, queue, isReachable };
+  return { baseUrl: () => activeBase, configuredBaseUrl: () => base, request, submit, history, view, uploadImage, interrupt, cancel, freeMemory, objectInfo, systemStats, folderPaths, queue, isReachable };
 }

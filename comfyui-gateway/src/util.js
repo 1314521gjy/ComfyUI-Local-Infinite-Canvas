@@ -134,3 +134,13 @@ export function alignH3Frames(frames, { minN = 1 } = {}) {
   const n = Math.floor((value - 5) / 17);
   return 17 * Math.max(n, minN) + 5;
 }
+
+// 官方 H3 参考视频单段上限 15 秒：24fps 下 17×21+5=362 帧。
+// 超过后模型不再处于训练长度内，会把整段参考塞进内存并顶爆 RAM。
+export const H3_MAX_REFERENCE_FRAMES = 362;
+
+export function capH3ReferenceFrames(frames) {
+  const value = Number(frames);
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return Math.min(value, H3_MAX_REFERENCE_FRAMES);
+}

@@ -74,6 +74,27 @@ function historyError(history) {
   return "";
 }
 
+const OUT_OF_MEMORY_PATTERN = /out\s*of\s*memory|outofmemoryerror|cuda error: out of memory|not enough memory|allocation on device/i;
+
+function failureHint(failure) {
+  const hints = [];
+  if (/sageattention is not new enough|cannot apply MiniMax H3 Memory Efficient Sage Attention Patch/i.test(failure)) {
+    hints.push("H3 需要 SageAttention 运行库：请在「设置 → 添加工作流 → H3 视频生成」安装「SageAttention 运行库（H3 必需）」，安装后重启 ComfyUI 再重试。");
+  }
+  if (/not in list|value_not_in_list|value not in list/i.test(failure)) {
+    hints.push("工作流引用的模型文件在本机不存在：请在资源中心补齐，或在资源卡里替换为本机已有模型。");
+  }
+  if (/node ['\"]?[^'\"]+['\"]? not found|class_type[^\n]*not found|cannot execute because node/i.test(failure)) {
+    hints.push("缺少节点插件：请在资源中心安装对应工作流依赖，重启 ComfyUI 后重试。");
+  }
+  return hints.length ? `。${hints.join(" ")}` : "";
+}
+
+function isOutOfMemoryError(error) {
+  const details = typeof error?.details === "string" ? error.details : JSON.stringify(error?.details || "");
+  return OUT_OF_MEMORY_PATTERN.test(`${error?.message || ""} ${details}`);
+}
+
 function collectOutputFiles(history, { includePreview = false } = {}) {
   const files = [];
   const seen = new Set();
@@ -109,76 +130,98 @@ export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 *
   if (loraResult.applied.length) {
     logger?.info?.(`LoRA ${entry.name}: ${loraResult.applied.map((item) => `${path.basename(item.name)}@${item.strength}`).join(" -> ")}`);
   }
-  const submitted = await comfy.submit(workflow, { signal, requestId });
-  const promptId = submitted.promptId;
-  let running = true;
-  let cancelPromise = null;
-  const cancel = () => {
-    if (!running) return Promise.resolve();
-    if (!cancelPromise) cancelPromise = typeof comfy.cancel === "function" ? comfy.cancel(promptId) : comfy.interrupt(promptId);
-    return cancelPromise;
-  };
-  const onAbort = () => {
-    void cancel();
-  };
-  if (signal) signal.addEventListener("abort", onAbort, { once: true });
-  try {
-    if (signal?.aborted) {
-      await cancel();
-      throw new GenerationError("生成已取消", { status: 400, code: "cancelled" });
-    }
-    onProgress?.({ phase: "submitted", promptId, progress: 0.05 });
-
-    const timeout = Number(timeoutMs);
-    const deadline = timeout > 0 ? Date.now() + timeout : Number.POSITIVE_INFINITY;
-    let history = null;
-    while (Date.now() < deadline) {
+  const attemptOnce = async () => {
+    const submitted = await comfy.submit(workflow, { signal, requestId });
+    const promptId = submitted.promptId;
+    let running = true;
+    let cancelPromise = null;
+    const cancel = () => {
+      if (!running) return Promise.resolve();
+      if (!cancelPromise) cancelPromise = typeof comfy.cancel === "function" ? comfy.cancel(promptId) : comfy.interrupt(promptId);
+      return cancelPromise;
+    };
+    const onAbort = () => {
+      void cancel();
+    };
+    if (signal) signal.addEventListener("abort", onAbort, { once: true });
+    try {
       if (signal?.aborted) {
         await cancel();
         throw new GenerationError("生成已取消", { status: 400, code: "cancelled" });
       }
-      history = await comfy.history(promptId);
-      const failure = historyError(history);
-      if (failure) {
-        running = false;
-        const sageHint = /sageattention is not new enough|cannot apply MiniMax H3 Memory Efficient Sage Attention Patch/i.test(failure)
-          ? "。H3 需要 SageAttention 运行库：请在「设置 → 添加工作流 → H3 视频生成」安装「SageAttention 运行库（H3 必需）」，安装后重启 ComfyUI 再重试。"
-          : "";
-        throw new GenerationError(`ComfyUI 执行失败：${truncate(failure, 1200)}${sageHint}`, { status: 502, code: "comfy_execution_failed", details: failure });
-      }
-      if (historyCompleted(history)) {
-        running = false;
-        break;
-      }
-      await sleep(pollIntervalMs);
-    }
-    if (!historyCompleted(history)) {
-      running = false;
-      throw new GenerationError("生成超时", { status: 504, code: "generation_timeout" });
-    }
-    onProgress?.({ phase: "completed", promptId, progress: 0.65 });
+      onProgress?.({ phase: "submitted", promptId, progress: 0.05 });
 
-    const files = collectOutputFiles(history, { includePreview: includePreviewOutputs });
-    if (!files.length) throw new GenerationError("ComfyUI 没有返回任何输出文件", { status: 502, code: "no_output_files" });
+      const timeout = Number(timeoutMs);
+      const deadline = timeout > 0 ? Date.now() + timeout : Number.POSITIVE_INFINITY;
+      let history = null;
+      while (Date.now() < deadline) {
+        if (signal?.aborted) {
+          await cancel();
+          throw new GenerationError("生成已取消", { status: 400, code: "cancelled" });
+        }
+        history = await comfy.history(promptId);
+        const failure = historyError(history);
+        if (failure) {
+          running = false;
+          throw new GenerationError(`ComfyUI 执行失败：${truncate(failure, 1200)}${failureHint(failure)}`, { status: 502, code: "comfy_execution_failed", details: failure });
+        }
+        if (historyCompleted(history)) {
+          running = false;
+          break;
+        }
+        await sleep(pollIntervalMs);
+      }
+      if (!historyCompleted(history)) {
+        running = false;
+        throw new GenerationError("生成超时", { status: 504, code: "generation_timeout" });
+      }
+      onProgress?.({ phase: "completed", promptId, progress: 0.65 });
 
-    const outputs = [];
-    for (const file of files) {
-      const viewed = await comfy.view(file);
-      const mimeType = /^application\/octet-stream$/i.test(viewed.contentType) ? mimeFromFilename(file.filename) : viewed.contentType;
-      outputs.push({
-        buffer: viewed.buffer,
-        mimeType,
-        filename: path.basename(file.filename),
-        subfolder: file.subfolder || "",
-        type: file.type || "output",
-        nodeId: file.nodeId,
-      });
+      const files = collectOutputFiles(history, { includePreview: includePreviewOutputs });
+      if (!files.length) throw new GenerationError("ComfyUI 没有返回任何输出文件", { status: 502, code: "no_output_files" });
+
+      const outputs = [];
+      for (const file of files) {
+        const viewed = await comfy.view(file);
+        const mimeType = /^application\/octet-stream$/i.test(viewed.contentType) ? mimeFromFilename(file.filename) : viewed.contentType;
+        outputs.push({
+          buffer: viewed.buffer,
+          mimeType,
+          filename: path.basename(file.filename),
+          subfolder: file.subfolder || "",
+          type: file.type || "output",
+          nodeId: file.nodeId,
+        });
+      }
+      onProgress?.({ phase: "downloaded", promptId, progress: 0.95 });
+      return { promptId, files: outputs, workflow, usedSeed: stats.seed ?? null };
+    } finally {
+      signal?.removeEventListener("abort", onAbort);
     }
-    onProgress?.({ phase: "downloaded", promptId, progress: 0.95 });
-    return { promptId, files: outputs, workflow, usedSeed: stats.seed ?? null };
-  } finally {
-    signal?.removeEventListener("abort", onAbort);
+  };
+
+  let lastOom = null;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      return await attemptOnce();
+    } catch (error) {
+      if (!isOutOfMemoryError(error) || signal?.aborted) throw error;
+      lastOom = error;
+      if (attempt === 2) break;
+      logger?.warn?.(`ComfyUI 显存不足，释放模型后重试一次：${entry.name}`);
+      try {
+        await comfy.freeMemory();
+      } catch (freeError) {
+        logger?.warn?.(`释放显存失败：${freeError.message}`);
+      }
+      await sleep(1000);
+    }
   }
+  throw new GenerationError("显存不足：已自动释放模型并重试一次仍然失败。请降低分辨率 / 张数，或先关闭其他占用显存的程序再试。", {
+    status: 507,
+    code: "comfy_out_of_memory",
+    details: lastOom?.details || lastOom?.message,
+  });
 }
 
 export async function runImage({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, requestId, onProgress, logger, loraCatalog, modelAliasFor = null, includePreviewOutputs = false }) {

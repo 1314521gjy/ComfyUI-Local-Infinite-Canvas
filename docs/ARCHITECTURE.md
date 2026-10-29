@@ -1,8 +1,8 @@
 # 无界工作台 · 程序架构
 
-> 截至 2026-10-29，对应发布版本 **v0.21.18**（发布树 `07842353-release-staging`，GitHub `main = 4616c53`）。
+> 截至 2026-10-30，对应发布版本 **v0.22.1**（发布树 `07842353-release-staging`）。
 > 本文件是架构层权威说明，已纳入 staging git（`docs/ARCHITECTURE.md`），不进发布包。状态与待办见外部 `HANDOFF-NEXT.md`，历史见 `docs/PROJECT_LOG.md`。
-> 版本/索引/路由/包数等数字为 2026-10-29 实测（网关单测 139/139）；`docs/` 不入发布包。
+> 版本/索引/路由/包数等数字为 2026-10-30 实测（网关单测 168/168）；`docs/` 不入发布包。
 
 ## 1. 定位
 
@@ -44,18 +44,21 @@ flowchart LR
 3. 网关缺 `express`/`multer` 时自愈：用 `launcher/gateway-deps.zip`（否则魔搭下载 + SHA 校验）解到 `.update/gateway-deps/`。
 4. 网关 :8190，环境 `PORT`、`HOST`、`COMFY_URL`、`COMFYUI_DIR`、`COMFY_WORKFLOWS_DIR`、`LAUNCHER_CONTROL_URL`；启动前等 `/health` 30s。
 5. ComfyUI 定位与拉起（2026-10-29 扩展）：端口并行探测 `config/comfyUrl` → 8188 → 8000（桌面版默认）→ 7860/8080/8888/18000 → 8189–8199，可用 `COMFY_PORT_SCAN=9000-9010` 追加范围；安装目录额外查 `%LOCALAPPDATA%\Programs\@comfyorgcomfyui-electron`（含 `resources/ComfyUI`）。拉起顺序：桌面版 exe → 内容调用 `main.py` 的启动脚本（含任意/中文文件名，父目录也扫）→ 包内 `python.exe main.py --port <空闲端口>`。
-7. setup 可用性缓存的刷新点：启动、工作流目录变化、资源安装/切换主模型、资源中心「重新扫描」（`POST /api/resources/refresh` → `setup.scan()`，按钮自带 loading）。**不做后台自动扫描**：2026-10-29 曾加过模型目录 mtime 轮询与 10 分钟兜底重扫，评估后撤掉——扫描成本交给用户手动触发，避免周期性拖慢 ComfyUI。
+7. ComfyUI 发现与重连：网关客户端连不上时扫本机常见端口（8188/8000/7860/8080/8888/18000/8189–8199），命中后自动切换；setup 每 10s 检查连通性，ComfyUI 上线/换地址会自动重扫。设置 → 偏好设置可切「手动指定」，填 ComfyUI/模型/LoRA/插件目录，保存写入 ComfyUI `extra_model_paths.yaml` 的托管块（备份原文件；只映射目录里实际存在的模型子目录，扁平目录才回退为通用映射），由启动器 `POST /set-comfy-dir` 记录新目录；保存时用 live `folder_paths` 判断是否已在清单里，只有缺失目录或 YAML 内容变化才要求重启 ComfyUI。相关接口：`GET/POST /api/setup/directories`、`POST /api/setup/directories/scan`、`POST /api/setup/pick-directory`（本机 PowerShell 原生文件夹对话框，远程模式禁用；选中后回填，文本输入保留作兜底）。
+7.1 setup 可用性缓存的刷新点：启动、工作流目录变化、资源安装/切换主模型、ComfyUI 重连、资源中心「重新扫描」（`POST /api/resources/refresh` → `setup.scan()`，按钮自带 loading）。激活规则：`validateWorkflow` 逐 variant 校验，**任一 variant 可跑入口就可用**；模型匹配顺序为精确路径 → 深目录唯一后缀 → 相似匹配（格式相同、名称相似度 ≥50%、家族词加权）→ 用户「自选替换」最后；底模回退同样要求扩展名一致。磁盘有文件但 `/object_info` 未列出 → 标「待重启」而不是缺模型。`phase=degraded` 时不可用，避免拿旧结果假装可用。**不做后台自动扫描**：2026-10-29 曾加过模型目录 mtime 轮询与 10 分钟兜底重扫，评估后撤掉——扫描成本交给用户手动触发，避免周期性拖慢 ComfyUI。扫描维度：节点类名 + 模型文件 + **运行期依赖**（pip 运行库 / TRT 编译产物 / 自定义节点，由 `resources.runtimeProblemsFor()` 提供，带 30s 缓存）；ComfyUI `workflows/` 下 `*-draft*`、`*副本*`、`*test*` 等草稿不再导入 registry，已导入的旧草稿会在扫描时移除登记（不动文件）。
 8. 画布由启动器在 :3000 托管 dist（SPA 回退、`/assets` 长缓存、路径逃逸 403），每次启动重写 `dist/config.js` 注入网关地址。
 9. 控制口 :8290：`GET /health`、`POST /restart-gateway`（接管来的网关返回 409）、`POST /restart-comfy`（taskkill 全部监听 PID → 等端口释放与显存回落 → 按同一套启动计划重新拉起 → 重探端口列表）。网关以 `/api/system/restart-comfy` 暴露同一能力。
 10. 看门狗 5s：时钟跳变 >60s 先静默 120s；要求见过会话、`count==0`、`activeTasks==0`；**只有页面显式关闭**（pagehide/beacon → 网关记录 `closedAt`）且关闭时间在 10 分钟内、空闲 ≥`canvasIdleGraceSec`（默认 30s）才停后台；心跳缺失（后台标签节流/冻结、浏览器崩溃）一律不停，避免挂机被误杀。
 11. 显式关闭语义（2026-10-29 补齐）：`sessions.js` 在 `status()` 中返回 `startedAt`/`closedAt`（此前只删会话、不记录关闭时间，导致启动器 `closedAt` 判定永远为假、自动退出实际不生效）；网关重启后 `startedAt` 变化会让启动器重置 `seen`，重新等待画布心跳。旧配置里残留的 15s 默认值会按 30s 处理，需要 15s 可显式设 `CANVAS_IDLE_GRACE_SEC=15`。
 
-12. 状态条数据：`GET /api/system/stats` 由网关调 `nvidia-smi`（8s 超时，`System32` 兜底）；显卡满载导致读取超时时沿用上次读数并标记 `gpuStale`，界面注明「读取超时，显示上次读数」，不再变成「显存 --」。
+12. 状态条数据：`GET /api/system/stats` 由网关调 `nvidia-smi`（8s 超时，`System32` 兜底）；显卡满载导致读取超时时沿用上次读数并标记 `gpuStale`，界面注明「读取超时，显示上次读数」，不再变成「显存 --」。ComfyUI 离线时状态条显示「ComfyUI 离线 · 点击修复」，弹窗内可重新检测或一键重启。
+13. 生成执行：`runWorkflow` 捕获 `OutOfMemory` 后调 `/free`（unload_models + free_memory）并重试一次，仍失败返回 `comfy_out_of_memory` 中文可行动提示；扩图/重绘强制单张、outpaint 采样按显存/配置封顶（默认 4MP）；视频超分按显存分档收敛（≤18GB 1024/1，≤26GB 1280/2）；插帧输出帧率 = 源 fps × 倍率。
+14. 画布端口：默认 3000，被占用时自动尝试 3001–3010；`/config.js` 由启动器动态生成，`npm run build` 清空 dist 也不会丢网关地址。启动器识别 python 时覆盖 `python_embeded / python / env/python / env/Scripts / ..\python` 等整合包布局，并实际执行 `python -c` 探活。
 ## 5. 生成链路
 
 - **图片**：图片节点 → `services/api/image.ts` → `POST /v1/images/generations` / `/edits` → `runner` → `registry` → `bindings` → ComfyUI `/prompt` → 轮询 `/history` → 回传。`count>1` 并发单图；本地加 `X-Request-Id`，取消走 `POST /api/requests/:id/cancel`，进度走 `/api/progress/:requestId`（250ms）。
 - **超分**（v0.21.18）：`POST /v1/images/upscale`、`/v1/videos/upscale`；4 条工作流——ESRGAN 快速放大（x2/x4/anime）、ESRGAN 2×（VHS 取帧/合片 + 核心 `UpscaleModelLoader`/`ImageUpscaleWithModel`，不依赖 WAS 节点）、SeedVR2 图片、SeedVR2 视频。
-- **H3 视频**：`POST /v1/videos`（multipart，`mode=text|frames|reference`）→ 任务制；`GET /v1/videos/:id`、`/content`、`/cancel`。6 个入口 = VDN 三档（默认）+ 无VDN 三档，共 9 NFE（快速 6 低 + 3 高；质量 5 + 4）。源视频走原生 `LoadVideo → GetVideoComponents` 只取帧，`length` 由 ffprobe 帧数写入；音频由 H3 生成，源音频不保留。角色替换没有手选时长，硬性跟随源视频全长（不设上限，只按 H3 的 17n+5 向下对齐；参考视频策略 `model_minimum`），ffprobe 探不到时用前端上报的 `source_duration_seconds × 24fps` 换算，不再回退工作流默认 124 帧。超过官方 15 秒后的画质/一致性未验证。
+- **H3 视频**：`POST /v1/videos`（multipart，`mode=text|frames|reference`）→ 任务制；`GET /v1/videos/:id`、`/content`、`/cancel`。6 个入口 = VDN 三档（默认）+ 无VDN 三档，共 9 NFE（快速 6 低 + 3 高；质量 5 + 4）。源视频走原生 `LoadVideo → GetVideoComponents` 只取帧，`length` 由 ffprobe 帧数写入；音频由 H3 生成，源音频不保留。角色替换没有手选时长，按官方上限跟随：ffprobe 时长 × 24fps → 17n+5 向下对齐 → **封顶 362 帧（15 秒）**，参考视频策略 `model_minimum`；ffprobe 探不到时用前端上报的 `source_duration_seconds × 24` 换算。超过 15 秒的部分不参与生成（任务记 `source_video_truncated`，画布显示提示）；官方要求长视频走滑动窗口 relay，自动分段/拼接尚未实现。2026-10-30 之前不封顶的版本在长视频上会把参考整段塞进内存，RAM 可涨到 90GB+。当前 VDN+SelfLift 组合与作者 turbo8 示例（480p/124 帧/er_sde）未做 A/B，替换质量待真机确认。
 - **上传上限**：multer 单文件 512 MB（`MAX_UPLOAD_BYTES` / config `maxUploadBytes` 可调），超限返回 413 中文提示；视频参考直接走内存，不再沿用旧的 50 MB 默认值。
 - **插帧**：`POST /v1/videos/interpolate`（RIFE 2×/3×，任务制，生成右侧子视频节点，不覆盖原片）。
 - **提示词**：`/v1/prompts/optimize`（H3/生图）、`/optimize-image`、`/caption`（`qwen35|florence|cloud`）。本地走 ComfyUI 工作流，云端走 OpenAI 兼容 `/chat/completions`；云端 Key 只在浏览器 localStorage。H3 云端加载官方 skill（`prompts/skills/h3-prompt-writing/`）。
@@ -88,7 +91,7 @@ flowchart LR
 
 - 清单 `update.json`：魔搭主源，GitHub raw 兜底，可用 `UPDATE_MANIFEST_URL(_BACKUP)` 覆盖。
 - 应用内：`GET /api/update/check?fetch=1`、`POST /api/update/apply`（有任务在跑返回 409）。git 安装走 `fetch` + `pull --ff-only`（脏树拒绝）；归档安装校验 `size`+`sha256`，支持 `PATCH-DELETE.txt`、`PATCH_PROTECTED` 白名单保护，失败回滚，成功后 1.5s 调 launcher `/restart-gateway`。
-- 旧客户端：`patches/update-bridge.zip`（5,735 B）——解析版本 → 下载补丁 → 校验 → 解压时跳过受保护路径 → 备份到 `.update-backup` → 重启。
+- 旧客户端：`patches/update-bridge.zip`（5,945 B）——解析版本 → 下载补丁 → 校验 → 解压时跳过受保护路径 → 备份到 `.update-backup` → 重启。
 - 前端：`use-version-check` 每会话检查一次；`UpdateAvailableBanner` 每 10 分钟重查；只提示，不做静默下载/自动重启（用户已否决）。
 
 ## 9. 存储
@@ -110,7 +113,7 @@ flowchart LR
 # 整套启动
 start-local.bat            # 保持画布页打开；关页 30s 后停后台，见 §4.7
 
-# 网关单测（2026-10-29 实测 139/139）
+# 网关单测（2026-10-30 实测 168/168）
 cd 07842353-release-staging/comfyui-gateway
 COMFYUI_DIR=E:/ComfyUI/ComfyUI node --test --test-timeout=120000 test/*.test.js
 
@@ -118,7 +121,7 @@ COMFYUI_DIR=E:/ComfyUI/ComfyUI node --test --test-timeout=120000 test/*.test.js
 cd ../infinite-canvas/web && npm run typecheck && npm run build
 
 # 构建补丁（必须在最后一次 build 之后）
-node ../../tools/build-patch.mjs --root ../.. --out ../../patches/v0.21.18.zip --write-manifest
+node ../../tools/build-patch.mjs --root ../.. --out ../../patches/v0.22.1.zip --write-manifest
 ```
 
 端口：画布 3000、启动器控制 8290、网关 8190、ComfyUI 8188（探测 8188–8199）。

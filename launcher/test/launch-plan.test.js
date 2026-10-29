@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { comfyInstallInfo, comfyPortCandidates, probeAnyComfy, resolveLaunchPlan } from "../start.mjs";
+import { comfyInstallInfo, comfyPortCandidates, listenCanvasServer, probeAnyComfy, resolveLaunchPlan } from "../start.mjs";
 
 async function fake(files) {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), "launch-plan-"));
@@ -84,5 +84,34 @@ test("dynamic probing finds ComfyUI on a non-standard port", async () => {
     assert.match(hit.url, /:18123$/);
   } finally {
     server.close();
+  }
+});
+
+test("finds the python bundled under an integration package's env/python directory", async () => {
+  const dir = await fake({ "ComfyUI/main.py": "", "env/python/python.exe": "" });
+  try {
+    const info = comfyInstallInfo(dir);
+    assert.ok(info, "integrated package should be recognized");
+    assert.match(info.pythonExe.replaceAll("\\", "/"), /env\/python\/python\.exe$/);
+  } finally {
+    await fsp.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("canvas server falls back to a free port when 3000 is occupied", async () => {
+  const http = await import("node:http");
+  const blocker = http.createServer((_req, res) => res.end("occupied"));
+  await new Promise((resolve) => blocker.listen(0, "127.0.0.1", resolve));
+  const occupied = blocker.address().port;
+  try {
+    const result = await listenCanvasServer({ canvasDist: os.tmpdir(), gatewayUrl: "http://127.0.0.1:8190", gatewayPort: 8190 }, occupied);
+    try {
+      assert.notEqual(result.port, occupied);
+      assert.equal(result.port, occupied + 1);
+    } finally {
+      result.server.close();
+    }
+  } finally {
+    blocker.close();
   }
 });

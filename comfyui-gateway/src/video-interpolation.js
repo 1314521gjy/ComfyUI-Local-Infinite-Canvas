@@ -10,7 +10,7 @@ export function createVideoInterpolator({ config, logger } = {}) {
     return JSON.parse(fs.readFileSync(workflowPath, "utf8"));
   }
 
-  async function interpolate({ comfy, buffer, filename, multiplier, requestId, signal, timeoutMs = 10 * 60 * 1000 }) {
+  async function interpolate({ comfy, buffer, filename, multiplier, sourceFps = 24, requestId, signal, timeoutMs = 10 * 60 * 1000 }) {
     const factor = Number(multiplier);
     if (factor !== 2 && factor !== 3) throw new Error("插帧倍率仅支持 2× 或 3×");
     if (!buffer?.length) throw new Error("插帧缺少输入视频");
@@ -19,7 +19,9 @@ export function createVideoInterpolator({ config, logger } = {}) {
     const workflow = template();
     workflow["1"].inputs.video = uploaded.subfolder ? `${uploaded.subfolder}/${uploaded.name}` : uploaded.name;
     workflow["2"].inputs.multiplier = factor;
-    workflow["3"].inputs.frame_rate = 24 * factor;
+    // 输出帧率必须跟随源视频，否则 30/60fps 素材会变速。
+    const fps = Number(sourceFps) > 0 ? Number(sourceFps) : 24;
+    workflow["3"].inputs.frame_rate = Number((fps * factor).toFixed(3));
     workflow["3"].inputs.filename_prefix = `rife/${safeRequest}`;
     const submitted = await comfy.submit(workflow, { signal, requestId, clientId: `rife-${Date.now()}` });
     const promptId = submitted.promptId;

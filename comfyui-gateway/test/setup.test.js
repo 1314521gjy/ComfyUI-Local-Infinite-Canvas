@@ -77,6 +77,152 @@ test("auto-recognizes the same model file in a different subfolder", async () =>
   }
 });
 
+test("base model alternatives must use the same file format", async () => {
+  const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-base-format-"));
+  try {
+    const manager = createManager(dataDir, ["z_image_turbo_int8.gguf"]);
+    await manager.scan();
+    assert.equal(manager.isAvailable(entry.id), false);
+    const problem = manager.workflowStatus(entry.id).problems.find((item) => item.type === "model");
+    assert.match(problem?.message || "", /z_image_turbo_bf16\.safetensors/);
+  } finally {
+    await fsp.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("a single working variant keeps the workflow entry active", async () => {
+  const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-variants-"));
+  const variantEntry = {
+    id: "multi-variant",
+    name: "multi-variant",
+    type: "image",
+    workflow: { 1: { class_type: "UNETLoader", inputs: { unet_name: "missing_base.safetensors" } } },
+    variants: {
+      v1: { workflow: { 1: { class_type: "UNETLoader", inputs: { unet_name: "missing_v1.safetensors" } } } },
+      v2: { workflow: { 1: { class_type: "UNETLoader", inputs: { unet_name: "present_v2.safetensors" } } } },
+    },
+  };
+  try {
+    const manager = createSetupManager({
+      config: { dataDir, comfyUrl: "http://127.0.0.1:1", comfyWorkflowsDir: "", maxWorkflowBytes: 1024 * 1024 },
+      registry: {
+        list: () => [{ id: variantEntry.id }],
+        resolve: () => variantEntry,
+        scan: async () => ({ imported: 0 }),
+        reloadIfChanged: () => {},
+      },
+      comfy: {
+        systemStats: async () => ({}),
+        objectInfo: async () => objectInfo(["present_v2.safetensors"]),
+      },
+      logger: null,
+      mainModelFile: () => "",
+    });
+    await manager.scan();
+    assert.equal(manager.isAvailable(variantEntry.id), true);
+    const status = manager.workflowStatus(variantEntry.id);
+    assert.equal(status.available, true);
+    assert.equal(status.variants.v2.available, true);
+    assert.equal(status.variants.v1.available, false);
+  } finally {
+    await fsp.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("a model on disk but not in ComfyUI's loader list is reported as restart, not missing", async () => {
+  const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-pending-"));
+  const comfyRoot = path.join(dataDir, "ComfyUI");
+  try {
+    await fsp.mkdir(path.join(comfyRoot, "models", "diffusion_models"), { recursive: true });
+    await fsp.mkdir(path.join(comfyRoot, "models", "text_encoders"), { recursive: true });
+    await fsp.mkdir(path.join(comfyRoot, "models", "vae"), { recursive: true });
+    await fsp.writeFile(path.join(comfyRoot, "models", "diffusion_models", "z_image_turbo_int8.safetensors"), "x");
+    const manager = createSetupManager({
+      config: { dataDir, comfyDir: comfyRoot, comfyUrl: "http://127.0.0.1:1", comfyWorkflowsDir: "", maxWorkflowBytes: 1024 * 1024 },
+      registry: {
+        list: () => [{ id: entry.id }],
+        resolve: () => entry,
+        scan: async () => ({ imported: 0 }),
+        reloadIfChanged: () => {},
+      },
+      comfy: {
+        systemStats: async () => ({}),
+        objectInfo: async () => objectInfo([]),
+      },
+      logger: null,
+      mainModelFile: () => "",
+    });
+    await manager.scan();
+    assert.equal(manager.isAvailable(entry.id), false);
+    const problems = manager.workflowStatus(entry.id).problems;
+    assert.ok(problems.some((problem) => problem.type === "restart"));
+    assert.equal(problems.some((problem) => problem.type === "model" && /z_image_turbo_bf16/.test(problem.message)), false);
+  } finally {
+    await fsp.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("degraded scans do not keep workflows marked available", async () => {
+  const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-degraded-"));
+  try {
+    const manager = createSetupManager({
+      config: { dataDir, comfyUrl: "http://127.0.0.1:1", comfyWorkflowsDir: "", maxWorkflowBytes: 1024 * 1024 },
+      registry: {
+        list: () => [{ id: entry.id }],
+        resolve: () => entry,
+        scan: async () => ({ imported: 0 }),
+        reloadIfChanged: () => {},
+      },
+      comfy: {
+        systemStats: async () => {
+          throw new Error("ComfyUI down");
+        },
+        objectInfo: async () => ({}),
+      },
+      logger: null,
+      mainModelFile: () => "",
+    });
+    await manager.scan();
+    assert.equal(manager.isAvailable(entry.id), false);
+    const status = manager.workflowStatus(entry.id);
+    assert.equal(status.available, false);
+    assert.equal(status.stale, true);
+  } finally {
+    await fsp.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("fuzzy alias is runtime-only and never marks a resource as user-replaced", async () => {
+  const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-alias-fuzzy-"));
+  try {
+    const manager = createAliasManager(dataDir, ["z_image_turbo_int8.safetensors"], {
+      1: { class_type: "UNETLoader", inputs: { unet_name: "z_image_turbo_bf16.safetensors" } },
+    });
+    await manager.scan();
+    assert.equal(manager.isAvailable(entry.id), true);
+    assert.equal(manager.modelAliasFor("UNETLoader", "unet_name", "z_image_turbo_bf16.safetensors"), "z_image_turbo_int8.safetensors");
+    assert.equal(manager.userModelAliasFor("UNETLoader", "unet_name", "z_image_turbo_bf16.safetensors"), "");
+    await manager.setModelAlias({ classType: "UNETLoader", input: "unet_name", from: "z_image_turbo_bf16.safetensors", to: "z_image_turbo_int8.safetensors" });
+    assert.equal(manager.userModelAliasFor("UNETLoader", "unet_name", "z_image_turbo_bf16.safetensors"), "z_image_turbo_int8.safetensors");
+  } finally {
+    await fsp.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("matches installed model filenames case-insensitively", async () => {
+  const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-alias-case-"));
+  try {
+    const manager = createAliasManager(dataDir, ["ZImage/Z_Image_Turbo_BF16.safetensors"], {
+      1: { class_type: "UNETLoader", inputs: { unet_name: "z_image_turbo_bf16.safetensors" } },
+    });
+    await manager.scan();
+    assert.equal(manager.isAvailable(entry.id), true);
+    assert.equal(manager.modelAliasFor("UNETLoader", "unet_name", "z_image_turbo_bf16.safetensors"), "ZImage/Z_Image_Turbo_BF16.safetensors");
+  } finally {
+    await fsp.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("explicit alias only applies after the user chooses an installed candidate", async () => {
   const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-alias-explicit-"));
   try {

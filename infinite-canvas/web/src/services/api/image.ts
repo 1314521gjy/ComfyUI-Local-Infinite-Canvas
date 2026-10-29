@@ -161,7 +161,7 @@ export function attachLocalProgress(config: AiConfig, requestId: string, signal?
         } catch {
             // Progress is best-effort and must never fail the generation itself.
         }
-        if (!stopped) timer = window.setTimeout(tick, 250);
+        if (!stopped) timer = window.setTimeout(tick, 1000);
     };
     void tick();
     return () => {
@@ -889,7 +889,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     if (config.imageMode === "outpaint" && config.outpaint) {
         const { left, top, right, bottom, width, height } = config.outpaint;
         // ComfyUI's ImageScaleToTotalPixels counts 1 MP as 1024², not 1e6.
-        const megapixels = Math.min(16, Math.max(0.1, (width * height) / (1024 * 1024)));
+        const megapixels = Math.min(4, Math.max(0.1, (width * height) / (1024 * 1024)));
         Object.assign(requestParams, { left, top, right, bottom, megapixels, outpaintWidth: width, outpaintHeight: height });
     }
     if (config.imageMode === "layout" && config.layout) {

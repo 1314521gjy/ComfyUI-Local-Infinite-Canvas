@@ -12,7 +12,8 @@ export function createPreviewHub({ comfyUrl, logger, ttlMs = DEFAULT_TTL_MS } = 
   const sockets = new Map();
 
   function wsEndpoint(clientId) {
-    const url = new URL(comfyUrl);
+    // comfyUrl 可以是 getter：ComfyUI 端口自动发现后，预览 WebSocket 也要跟着切。
+    const url = new URL(typeof comfyUrl === "function" ? comfyUrl() : comfyUrl);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     url.pathname = "/ws";
     url.search = "";

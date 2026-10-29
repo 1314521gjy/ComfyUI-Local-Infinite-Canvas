@@ -1,5 +1,5 @@
 import { App, Button, Checkbox, Progress, Select, Tag, Tooltip } from "antd";
-import { AlertTriangle, ChevronDown, Download, HardDriveDownload, RefreshCw, Server, XCircle } from "lucide-react";
+import { AlertTriangle, ChevronDown, Download, HardDriveDownload, RefreshCw, Server, X, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -44,6 +44,7 @@ const copyByLocale = {
         runtimeRuntime: "本机环境",
         pipOutdated: "已安装版本较旧（{version}），可能无法运行；请手动升级，画布不会自动覆盖。",
         cancel: "终止安装",
+        dismiss: "收起进度",
         skip: "跳过",
         none: "未找到资源索引",
         comfyRoot: "ComfyUI",
@@ -67,6 +68,8 @@ const copyByLocale = {
         otherWorkflows: "其他工作流模型",
         otherWorkflowsHint: "ComfyUI 自动导入、且不在资源包里的工作流；一般不用管",
         modelAliasPickInstalled: "选择已安装模型",
+        similarMatch: "相似匹配",
+        similarTo: "匹配到",
         replaceModel: "自选替换",
         pickHint: "请在弹出的文件选择框中选择模型文件（默认已打开 ComfyUI 对应模型目录）",
         picking: "已打开文件选择窗口",
@@ -77,6 +80,9 @@ const copyByLocale = {
         workflowReady: "可用",
         workflowRestart: "待重启",
         workflowMismatch: "模型名未匹配",
+        workflowRuntime: "缺运行库",
+        workflowOffline: "未连接",
+        sizeMismatchTag: "大小不一致",
         workflowEnabled: "启用",
         workflowDisabled: "已屏蔽",
         canvasEntry: "画布入口",
@@ -108,7 +114,7 @@ const copyByLocale = {
         compileFailed: "本机编译失败",
         copyHint: "复制给 AI Agent",
         hintCopied: "已复制，直接发给你的 AI Agent",
-        notReachable: "ComfyUI 当前未连接，资源状态可能不准确。",
+        notReachable: "ComfyUI 未连接：模型文件仍按已识别的目录扫描；工作流可用性和自定义节点需 ComfyUI 在线后才能确认。",
         indexError: "资源索引读取失败：",
         indexWarning: "资源索引提示：",
         autoMatchRuntime: "按本机环境自动匹配",
@@ -153,6 +159,7 @@ const copyByLocale = {
         runtimeRuntime: "Detected",
         pipOutdated: "Installed version {version} is old and may not work. Upgrade manually; the app will not overwrite it.",
         cancel: "Stop install",
+        dismiss: "Dismiss",
         skip: "Skip",
         none: "No resource index found",
         comfyRoot: "ComfyUI",
@@ -176,6 +183,8 @@ const copyByLocale = {
         otherWorkflows: "Other workflow models",
         otherWorkflowsHint: "Workflows auto-imported from ComfyUI that are not part of a resource pack; usually safe to ignore",
         modelAliasPickInstalled: "Choose installed model",
+        similarMatch: "Similar match",
+        similarTo: "Matched",
         replaceModel: "Choose replacement",
         pickHint: "Pick a model file in the dialog (it opens at the matching ComfyUI model folder)",
         picking: "File dialog opened",
@@ -186,6 +195,9 @@ const copyByLocale = {
         workflowReady: "Ready",
         workflowRestart: "Restart needed",
         workflowMismatch: "Model name not matched",
+        workflowRuntime: "Missing runtime",
+        workflowOffline: "Offline",
+        sizeMismatchTag: "Size mismatch",
         workflowEnabled: "Enabled",
         workflowDisabled: "Hidden",
         canvasEntry: "Canvas entry",
@@ -217,7 +229,7 @@ const copyByLocale = {
         compileFailed: "Local compile failed",
         copyHint: "Copy for your AI agent",
         hintCopied: "Copied — paste it to your AI agent",
-        notReachable: "ComfyUI is not reachable; resource status may be stale.",
+        notReachable: "ComfyUI is offline: model files are still scanned from detected folders; workflow availability and custom nodes need ComfyUI online.",
         indexError: "Failed to load the resource index: ",
         indexWarning: "Resource index notice: ",
         autoMatchRuntime: "Auto-matched to this machine",
@@ -335,6 +347,7 @@ function ResourceCard({
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <span className="text-[11px] font-medium text-stone-700 dark:text-stone-200">{item.label}</span>
                         {item.type === "bake" ? <Tag className="m-0">{copy.localBake}</Tag> : null}
+                        {item.matchedBy === "similar" ? <Tag color="gold" className="m-0">{copy.similarMatch}</Tag> : null}
                         {statusTag(item, copy)}
                     </div>
                     <div className="mt-0.5 truncate text-[10px] text-stone-400 dark:text-stone-500">{item.target}</div>
@@ -344,6 +357,12 @@ function ResourceCard({
                         {!compact && item.license ? <span>{copy.license}: {item.license}</span> : null}
                     </div>
                     {item.matchedBy === "size" && item.matchedFile ? <div className="mt-0.5 text-[10px] leading-4 text-stone-400 dark:text-stone-500">{copy.matchedBySize}: {item.matchedFile}</div> : null}
+                    {item.matchedBy === "similar" && item.matchedFile ? (
+                        <div className="mt-0.5 text-[10px] leading-4 text-amber-600 dark:text-amber-400">
+                            {copy.similarTo}: {item.matchedFile}
+                            {item.similarScore ? ` · ${Math.round(item.similarScore * 100)}%` : ""}
+                        </div>
+                    ) : null}
                     {item.sizeMismatch ? <div className="mt-0.5 text-[10px] leading-4 text-amber-600 dark:text-amber-400">{item.sizeMismatch}</div> : null}
                     {item.overridden && item.overriddenBy ? <div className="mt-0.5 text-[10px] leading-4 text-blue-600 dark:text-blue-300">{copy.replacedBy}: {item.overriddenBy}</div> : null}
                     <PipMissingHint item={item} copy={copy} />
@@ -453,6 +472,12 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
         }
     }, []);
 
+    const dismissJob = useCallback(() => {
+        setJob(null);
+        setSpeeds({});
+        speedSamples.current.clear();
+    }, []);
+
     const applyStatus = useCallback((next: ResourceStatus) => {
         setStatus(next);
         if (!selectedInitialized.current) {
@@ -481,6 +506,14 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
         void load();
         return () => stopPolling();
     }, [load, stopPolling]);
+
+    useEffect(() => {
+        const refresh = () => {
+            void fetchResourceStatus().then(applyStatus).catch(() => undefined);
+        };
+        window.addEventListener("local-gateway-refresh-resources", refresh);
+        return () => window.removeEventListener("local-gateway-refresh-resources", refresh);
+    }, [applyStatus]);
 
     useEffect(() => {
         if (!status) return;
@@ -523,8 +556,10 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                     stopPolling();
                     speedSamples.current.clear();
                     setSpeeds({});
-                    if (next.status === "done") message.success(copy.done);
-                    else if (next.status === "error") message.error(next.message || copy.failed);
+                    // 取消后不再保留常驻进度条；完成/失败保留面板，用户可手动收起。
+                    if (next.status === "canceled") setJob(null);
+                    else if (next.status === "done") message.success(copy.done);
+                    else message.error(next.message || copy.failed);
                     await load(true);
                     window.dispatchEvent(new Event("local-gateway-refresh-models"));
                 }
@@ -654,7 +689,8 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
         setStopping(true);
         try {
             const next = await cancelResourceJob(job.id);
-            setJob(next);
+            if (next.status === "canceled") setJob(null);
+            else setJob(next);
         } catch (stopError) {
             showError(stopError);
         } finally {
@@ -818,7 +854,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                         </Button>
                     </div>
                 </div>
-                {status?.comfyRoot && !status.comfyReachable ? <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400"><AlertTriangle className="size-3.5" />{copy.notReachable}</div> : null}
+                {status && !status.comfyReachable ? <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400"><AlertTriangle className="size-3.5" />{copy.notReachable}</div> : null}
                 {status?.indexError ? <div className="mt-2 break-all text-[11px] text-amber-600 dark:text-amber-400"><span className="inline-flex items-center gap-1.5"><AlertTriangle className="size-3.5 shrink-0" />{copy.indexError}</span>{status.indexError}</div> : null}
                 {!status?.indexError && status?.indexWarning ? <div className="mt-2 break-all text-[11px] text-stone-500 dark:text-stone-400"><span className="inline-flex items-center gap-1.5"><AlertTriangle className="size-3.5 shrink-0" />{copy.indexWarning}</span>{status.indexWarning}</div> : null}
                 {hardwareName && !recommendationAvailable ? <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400"><AlertTriangle className="size-3.5" />{copy.noCompatible}</div> : null}
@@ -837,7 +873,11 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                             <span className="min-w-0 truncate text-stone-500 dark:text-stone-400">{job.message || job.status}</span>
                             {job.status === "running" ? (
                                 <Button size="small" danger loading={stopping} onClick={() => void stopInstall()}>{copy.cancel}</Button>
-                            ) : null}
+                            ) : (
+                                <Button size="small" type="text" aria-label={copy.dismiss} title={copy.dismiss} onClick={dismissJob}>
+                                    <X className="size-3.5" />
+                                </Button>
+                            )}
                         </div>
                     </div>
                     <Progress percent={job.progress} size="small" status={job.status === "error" ? "exception" : job.status === "done" ? "success" : "active"} />
@@ -997,14 +1037,20 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                                 {workflowDependencies.map((workflow, index) => {
                                                     const workflowExpanded = expandedWorkflows.has(workflow.id);
                                                     const problemTypes = new Set((workflow.problems || []).map((problem) => problem.type));
-                                                    const restartOnly = problemTypes.size > 0 && [...problemTypes].every((type) => type === "node");
+                                                    const restartOnly = problemTypes.size > 0 && [...problemTypes].every((type) => type === "node" || type === "restart");
+                                                    const runtimeMissing = problemTypes.has("runtime");
+                                                    const offline = problemTypes.has("offline");
                                                     const workflowTag = workflow.missing
                                                         ? <Tag color="orange">{copy.missing} {workflow.missing}</Tag>
                                                         : workflow.available
                                                             ? <Tag color="green">{copy.workflowReady}</Tag>
-                                                            : restartOnly
-                                                                ? <Tag color="gold">{copy.workflowRestart}</Tag>
-                                                                : <Tag color="gold">{copy.workflowMismatch}</Tag>;
+                                                            : offline
+                                                                ? <Tag color="red">{copy.workflowOffline}</Tag>
+                                                                : restartOnly
+                                                                    ? <Tag color="gold">{copy.workflowRestart}</Tag>
+                                                                    : runtimeMissing
+                                                                        ? <Tag color="red">{copy.workflowRuntime}</Tag>
+                                                                        : <Tag color="gold">{copy.workflowMismatch}</Tag>;
                                                     const problemText = workflow.problems.map((problem) => problem.message).filter(Boolean).join("；");
                                                     return (
                                                         <div

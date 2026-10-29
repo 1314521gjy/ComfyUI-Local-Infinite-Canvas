@@ -52,7 +52,7 @@ import { useAgentStore } from "@/stores/use-agent-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
 import { usePluginHost } from "@/pages/canvas/hooks/use-plugin-host";
-import { buildNodeMentionReferences, getGroupResourceNodes, isCanvasReferenceNode, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+import { buildNodeMentionReferences, getGroupResourceNodes, isCanvasReferenceNode, resolveCanvasBaseImage, type CanvasBaseImage, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { exportCanvasProjects } from "@/lib/canvas/canvas-export";
 import { applyNodeConfigPatch, audioMetadata, buildAudioGenerationMetadata, buildImageGenerationMetadata, createCanvasNode, imageMetadata, videoMetadata } from "@/lib/canvas/canvas-node-factory";
 import { recallNodeSettings } from "@/lib/canvas/node-settings-memory";
@@ -932,6 +932,14 @@ function InfiniteCanvasPage() {
         nodes.forEach((node) => map.set(node.id, buildNodeMentionReferences(node, nodes, connections)));
         return map;
     }, [connections, nodes]);
+    const maskEditBase = useMemo(
+        () => (maskEditNode ? resolveCanvasBaseImage(maskEditNode, nodes, connections, mentionReferencesByNodeId.get(maskEditNode.id) || []) : null),
+        [connections, maskEditNode, mentionReferencesByNodeId, nodes],
+    );
+    const outpaintBase = useMemo(
+        () => (outpaintNode ? resolveCanvasBaseImage(outpaintNode, nodes, connections, mentionReferencesByNodeId.get(outpaintNode.id) || []) : null),
+        [connections, mentionReferencesByNodeId, nodes, outpaintNode],
+    );
     const connectedNodesByNodeId = useMemo(() => {
         const map = new Map<string, CanvasNodeData[]>();
         connections.forEach((connection) => {
@@ -2139,8 +2147,7 @@ function InfiniteCanvasPage() {
     );
 
     const maskEditImageNode = useCallback(
-        async (node: CanvasNodeData, payload: CanvasImageMaskEditPayload) => {
-            if (!node.metadata?.content) return;
+        async (node: CanvasNodeData, payload: CanvasImageMaskEditPayload, base: CanvasBaseImage) => {
             const isQwenImage = channelModelOf(effectiveConfig, buildGenerationConfig(effectiveConfig, node, "image").model)?.model.workflowId === "image-qwen21";
             const generationConfig = {
                 ...buildGenerationConfig(effectiveConfig, node, "image"),
@@ -2159,7 +2166,7 @@ function InfiniteCanvasPage() {
             const generationMask = isQwenImage ? await uploadImage(payload.binaryMaskDataUrl) : null;
             const maskNodeId = nanoid();
             const childId = nanoid();
-            const source = { id: node.id, name: `${node.title || node.id}.png`, type: node.metadata.mimeType || "image/png", dataUrl: node.metadata.content, storageKey: node.metadata.storageKey };
+            const source = { ...base.reference, id: base.sourceNodeId, name: base.reference.name || `${node.title || node.id}.png` };
             const maskSource = { id: maskNodeId, name: "mask.png", type: maskImage.mimeType || "image/png", dataUrl: maskImage.url, storageKey: maskImage.storageKey };
             const references = [source, generationMask ? { ...maskSource, dataUrl: generationMask.url, storageKey: generationMask.storageKey } : maskSource];
             const generationMetadata = buildImageGenerationMetadata("edit", generationConfig, 1, references);
@@ -2187,7 +2194,7 @@ function InfiniteCanvasPage() {
             ]);
             setConnections((prev) => [
                 ...prev,
-                { id: nanoid(), fromNodeId: node.id, toNodeId: childId },
+                { id: nanoid(), fromNodeId: base.sourceNodeId, toNodeId: childId },
                 { id: nanoid(), fromNodeId: maskNodeId, toNodeId: childId },
             ]);
             setSelectedNodeIds(new Set([childId]));
@@ -2195,7 +2202,7 @@ function InfiniteCanvasPage() {
             setDialogNodeId(childId);
             if (!payload.generate) return;
             setRunningNodeId(childId);
-            const controller = startGenerationRequest(childId, node.id, childId);
+            const controller = startGenerationRequest(childId, base.sourceNodeId, childId);
             try {
                 const image = await requestEdit(generationConfig, prompt, references, { signal: controller.signal }).then((items) => items[0]);
                 const uploaded = await uploadImage(image.dataUrl, { signal: controller.signal });
@@ -2215,8 +2222,7 @@ function InfiniteCanvasPage() {
     );
 
     const outpaintImageNode = useCallback(
-        async (node: CanvasNodeData, payload: CanvasOutpaintPayload) => {
-            if (!node.metadata?.content) return;
+        async (node: CanvasNodeData, payload: CanvasOutpaintPayload, base: CanvasBaseImage) => {
             const generationConfig = {
                 ...buildGenerationConfig(effectiveConfig, node, "image"),
                 count: "1",
@@ -2230,7 +2236,7 @@ function InfiniteCanvasPage() {
             }
             setOutpaintNodeId(null);
             const childId = nanoid();
-            const source = { id: node.id, name: `${node.title || node.id}.png`, type: node.metadata.mimeType || "image/png", dataUrl: node.metadata.content, storageKey: node.metadata.storageKey };
+            const source = { ...base.reference, id: base.sourceNodeId, name: base.reference.name || `${node.title || node.id}.png` };
             const references = [source];
             const generationMetadata = buildImageGenerationMetadata("edit", generationConfig, 1, references);
             setNodes((prev) => [
@@ -2245,12 +2251,12 @@ function InfiniteCanvasPage() {
                     metadata: { prompt: payload.prompt, status: NODE_STATUS_LOADING, ...generationMetadata },
                 },
             ]);
-            setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: node.id, toNodeId: childId }]);
+            setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: base.sourceNodeId, toNodeId: childId }]);
             setSelectedNodeIds(new Set([childId]));
             setSelectedConnectionId(null);
             setDialogNodeId(childId);
             setRunningNodeId(childId);
-            const controller = startGenerationRequest(childId, node.id, childId);
+            const controller = startGenerationRequest(childId, base.sourceNodeId, childId);
             try {
                 const image = await requestEdit(generationConfig, payload.prompt, references, { signal: controller.signal }).then((items) => items[0]);
                 const uploaded = await uploadImage(image.dataUrl, { signal: controller.signal });
@@ -2918,6 +2924,7 @@ function InfiniteCanvasPage() {
 
                     const controller = startGenerationRequest(rootId, nodeId, nodeId, runController, count);
                     let hasSuccess = false;
+                    let successCount = 0;
                     let hasFailure = false;
                     let firstError = "";
                     await Promise.all(
@@ -2954,6 +2961,7 @@ function InfiniteCanvasPage() {
                                     }),
                                 );
                                 hasSuccess = true;
+                                successCount += 1;
                                 if (isConfigNode) setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_SUCCESS, errorDetails: undefined } } : node)));
                                 return true;
                             } catch (error) {
@@ -2967,6 +2975,8 @@ function InfiniteCanvasPage() {
                         }),
                     );
                     if (rootId !== nodeId) finishGenerationRequest(rootId, controller);
+                    // 批量出多张时直接展开堆叠，避免用户以为“只有第一张”。
+                    if (successCount > 1) setExpandedBatchNodeIds((current) => new Set(current).add(rootId));
                     if (controller.signal.aborted) {
                         setNodes((prev) => prev.map((node) => (node.id === nodeId && isConfigNode && node.metadata?.status === NODE_STATUS_LOADING ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_IDLE, errorDetails: undefined } } : node)));
                         return;
@@ -3642,6 +3652,7 @@ function InfiniteCanvasPage() {
                                   : item,
                         ),
                     );
+                    if (uploadedItems.length > 1) setExpandedBatchNodeIds((current) => new Set(current).add(childId));
                 }
             } catch (error) {
                 if (isGenerationCanceled(error)) {
@@ -4141,17 +4152,17 @@ function InfiniteCanvasPage() {
 
                 {cropNode?.metadata?.content ? <CanvasNodeCropDialog dataUrl={cropNode.metadata.content} open={Boolean(cropNode)} onClose={() => setCropNodeId(null)} onConfirm={(crop) => void cropImageNode(cropNode!, crop)} /> : null}
 
-                {maskEditNode?.metadata?.content ? (
-                    <CanvasNodeMaskEditDialog dataUrl={maskEditNode.metadata.content} open={Boolean(maskEditNode)} onClose={() => setMaskEditNodeId(null)} onConfirm={(payload) => void maskEditImageNode(maskEditNode!, payload)} />
+                {maskEditNode && maskEditBase ? (
+                    <CanvasNodeMaskEditDialog dataUrl={maskEditBase.reference.dataUrl} open={Boolean(maskEditNode)} onClose={() => setMaskEditNodeId(null)} onConfirm={(payload) => void maskEditImageNode(maskEditNode, payload, maskEditBase)} />
                 ) : null}
 
-                {outpaintNode?.metadata?.content ? (
+                {outpaintNode && outpaintBase ? (
                     <CanvasNodeOutpaintDialog
-                        dataUrl={outpaintNode.metadata.content}
+                        dataUrl={outpaintBase.reference.dataUrl}
                         open={Boolean(outpaintNode)}
-                        promptDefault={outpaintNode.metadata.composerContent ?? outpaintNode.metadata.prompt ?? ""}
+                        promptDefault={outpaintNode.metadata?.composerContent ?? outpaintNode.metadata?.prompt ?? ""}
                         onClose={() => setOutpaintNodeId(null)}
-                        onConfirm={(payload) => void outpaintImageNode(outpaintNode!, payload)}
+                        onConfirm={(payload) => void outpaintImageNode(outpaintNode, payload, outpaintBase)}
                     />
                 ) : null}
 

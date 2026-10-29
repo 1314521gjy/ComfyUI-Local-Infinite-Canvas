@@ -9,6 +9,7 @@ import { imageAspectOptions } from "@/components/image-settings-panel";
 import { LOCAL_ONLY } from "@/constant/app-mode";
 import { videoResolutionOptions } from "@/components/video-settings-panel";
 import { ChannelEditorDrawer } from "@/components/layout/channel-editor-drawer";
+import { ConfigDirectories } from "@/components/layout/config-directories";
 import { ConfigLocalProxy } from "@/components/layout/config-local-proxy";
 import { ConfigPromptSources } from "@/components/layout/config-prompt-sources";
 import { ConfigLocalStorage } from "@/components/layout/config-local-storage";
@@ -639,7 +640,12 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                     {
                         key: "resources",
                         label: t("config.tabs.resources"),
-                        children: <ResourceCenterPanel />,
+                        children: (
+                            <>
+                                <ConfigDirectories />
+                                <ResourceCenterPanel />
+                            </>
+                        ),
                     },
                     {
                         key: "local-storage",

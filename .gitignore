@@ -29,6 +29,14 @@ infinite-canvas/plugins/canvas/*/dist/
 # local test artifacts
 tmp-*
 
+# internal working docs (local only, never published)
+docs/HANDOFF.md
+docs/PROJECT_LOG.md
+docs/FEEDBACK-BACKLOG.md
+
+# local release artifacts
+/patches/
+
 # bundled model files: shipped inside the distribution package, too large for git
 comfyui-gateway/resources/bundled/
 comfyui-gateway/resources/loras/*.safetensors

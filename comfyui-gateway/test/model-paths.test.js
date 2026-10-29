@@ -63,6 +63,28 @@ test("collectModelRoots merges folder paths, extra yaml and fallbacks", async ()
     }
 });
 
+test("manual managed dirs are visible to resource scans even when ComfyUI folderPaths is empty", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "model-paths-manual-"));
+    try {
+        const comfy = path.join(root, "ComfyUI");
+        const manual = path.join(root, "ManualModels");
+        await fsp.mkdir(path.join(comfy, "models"), { recursive: true });
+        await fsp.mkdir(manual, { recursive: true });
+        await fsp.writeFile(path.join(comfy, "extra_model_paths.yaml"), [
+            "# >>> local-canvas manual directories (managed)",
+            "local_canvas_models_1:",
+            `  base_path: ${manual.replace(/\\/g, "/")}`,
+            "  diffusion_models: .",
+            "# <<< local-canvas manual directories (managed)",
+        ].join("\n"), "utf8");
+        clearExtraModelPathsCache();
+        const roots = collectModelRoots({ dir: "diffusion_models", folderPaths: {}, comfyDir: comfy, comfyRoot: comfy });
+        assert.ok(roots.map((item) => item.toLowerCase()).includes(manual.toLowerCase()));
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});
+
 test("modelRelativePath accepts roots and folds junction targets back", async (t) => {
     if (process.platform !== "win32") {
         t.skip("Windows junction test");

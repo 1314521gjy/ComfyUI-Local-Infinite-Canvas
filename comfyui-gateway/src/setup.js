@@ -4,8 +4,10 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
+import { detectComfyLayout, loadDirectorySettings, normalizeDirectorySettings, writeManagedExtraPaths } from "./directories.js";
 import { isApiWorkflow, isUiWorkflow } from "./registry.js";
-import { MODEL_LOADER_SPECS as LOADER_SPECS } from "./model-loaders.js";
+import { findSimilarModel } from "./model-match.js";
+import { MODEL_LOADER_SPECS as LOADER_SPECS, discoverModelLoaderSpecs } from "./model-loaders.js";
 import { MODEL_DIR_KEYS, collectModelRoots, modelRelativePath } from "./model-paths.js";
 import { nowIso, truncate, writeJsonAtomic } from "./util.js";
 
@@ -49,6 +51,9 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
     const statusFile = path.join(config.dataDir, "setup-status.json");
     const aliasFile = path.join(config.dataDir, "model-aliases.json");
     let aliases = readAliasFile(aliasFile);
+    const originalComfyDir = config.comfyDir || "";
+    const originalWorkflowsDir = config.comfyWorkflowsDir || "";
+    let directorySettings = loadDirectorySettings(config.dataDir);
     const autoAliases = new Map();
     const availability = new Map();
     const comfyFileCache = new Map();
@@ -71,9 +76,32 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
     let watcher = null;
     let poller = null;
     let debounceTimer = null;
+    let connectivityTimer = null;
+    let connectivityChecking = false;
+    let lastAutoScanAt = 0;
+    let lastComfyBase = "";
     let loaderCatalog = {};
     let folderPathCatalog = {};
     let nodeClasses = new Set();
+    let currentLoaderSpecs = LOADER_SPECS;
+    let runtimeProblemProvider = null;
+    const fuzzyAliasLogged = new Set();
+
+    function applyDirectorySettings(input, { restoreAuto = true } = {}) {
+        directorySettings = normalizeDirectorySettings(input);
+        if (directorySettings.mode === "manual" && directorySettings.comfyDir) {
+            config.comfyDir = directorySettings.comfyDir;
+            const layout = detectComfyLayout(directorySettings.comfyDir);
+            // 手动目录下没有 user/default/workflows 时不要再沿用旧树的用户工作流。
+            config.comfyWorkflowsDir = layout?.workflowsDir || "";
+        } else if (restoreAuto) {
+            config.comfyDir = originalComfyDir;
+            config.comfyWorkflowsDir = originalWorkflowsDir;
+        }
+        return directorySettings;
+    }
+
+    applyDirectorySettings(directorySettings);
 
     async function persist() {
         try {
@@ -104,9 +132,12 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         const entries = await fsp.readdir(config.comfyWorkflowsDir);
         let imported = 0;
         let ui = 0;
+        let removed = 0;
         const samples = [];
         for (const name of entries) {
             if (!name.toLowerCase().endsWith(".json")) continue;
+            // 草稿/测试/副本工作流不该出现在画布的模型列表里。
+            if (isSkippedComfyWorkflow(name)) continue;
             if (importedComfyNames.has(path.basename(name))) continue;
             const file = path.join(config.comfyWorkflowsDir, name);
             const stat = safeStat(file);
@@ -152,12 +183,28 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 logger?.warn?.(`读取 ComfyUI 工作流失败 ${name}: ${error.message}`);
             }
         }
-        return { imported, ui, samples };
+        // 之前版本已经把草稿导进 registry 的，这里顺手清掉（只移除登记，不动用户文件）。
+        const comfyRoot = path.resolve(config.comfyWorkflowsDir) + path.sep;
+        for (const entry of registry.list()) {
+            const internal = registry.resolve(entry.id);
+            const sourcePath = internal?.source?.path || entry.source?.path;
+            if (!sourcePath) continue;
+            const absolute = path.isAbsolute(sourcePath) ? path.resolve(sourcePath) : path.resolve(config.comfyWorkflowsDir, sourcePath);
+            if (!absolute.startsWith(comfyRoot)) continue;
+            if (!isSkippedComfyWorkflow(path.basename(absolute))) continue;
+            if (await registry.remove(entry.id)) removed += 1;
+        }
+        return { imported, ui, samples, removed };
     }
 
-    function collectLoaderOptions(objectInfo) {
+    function isSkippedComfyWorkflow(name) {
+        const base = path.basename(String(name || ""), path.extname(String(name || "")));
+        return /(?:^|[-_.\s])(draft|test|tmp|temp|copy|bak|backup|副本|测试)(?:[-_.\s]?\d+)?$/i.test(base) || /^(draft|test|tmp|temp)[-_.\s]/i.test(base);
+    }
+
+    function collectLoaderOptions(objectInfo, specs = LOADER_SPECS) {
         const loaders = new Map();
-        for (const spec of LOADER_SPECS) {
+        for (const spec of specs) {
             const definition = objectInfo?.[spec.classType]?.input?.required?.[spec.input];
             // 旧版 object_info 把选项放在 [0]，新版 COMBO 放在 ["COMBO", { options }]。
             const options = Array.isArray(definition?.[0]) ? definition[0] : Array.isArray(definition?.[1]?.options) ? definition[1].options : null;
@@ -175,7 +222,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
     // 同名文件出现多份时不自动选，留给用户确认。
     function rebuildAutoAliases() {
         autoAliases.clear();
-        for (const spec of LOADER_SPECS) {
+        for (const spec of currentLoaderSpecs) {
             const options = loaderOptionsFor(spec.classType);
             if (!options.length) continue;
             const byBase = new Map();
@@ -198,40 +245,103 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         return collectModelRoots({ dir, folderPaths: folderPathCatalog, comfyDir: config.comfyDir });
     }
 
+    const modelInventory = new Map();
+
+    function listModelFilesForRoot(root) {
+        const key = String(root || "").toLowerCase();
+        const cached = modelInventory.get(key);
+        if (cached && Date.now() - cached.at < 60000) return cached.files;
+        const files = [];
+        const stack = [{ dir: root, depth: 0 }];
+        while (stack.length && files.length < 5000) {
+            const current = stack.pop();
+            let entries = [];
+            try {
+                entries = fs.readdirSync(current.dir, { withFileTypes: true });
+            } catch {
+                continue;
+            }
+            for (const entry of entries) {
+                if (entry.name.startsWith(".")) continue;
+                const full = path.join(current.dir, entry.name);
+                if (entry.isDirectory()) {
+                    if (current.depth < 6) stack.push({ dir: full, depth: current.depth + 1 });
+                    continue;
+                }
+                if (!entry.isFile() || !/\.(safetensors|sft|ckpt|pt|pth|bin|gguf)$/i.test(entry.name)) continue;
+                files.push(path.relative(root, full).split(path.sep).join("/"));
+                if (files.length >= 5000) break;
+            }
+        }
+        modelInventory.set(key, { at: Date.now(), files });
+        return files;
+    }
+
+    // ComfyUI 未把文件列进 /object_info，但磁盘上已经有同名/相似模型：
+    // 不是“缺模型”，而是需要重启 ComfyUI 重新加载。
+    function pendingModelFile(classType, input, value) {
+        const spec = currentLoaderSpecs.find((item) => item.classType === classType && item.input === input);
+        if (!spec || !(spec.dirs || []).length) return null;
+        for (const dir of spec.dirs) {
+            for (const root of modelRootsForDir(dir)) {
+                const similar = findSimilarModel(value, listModelFilesForRoot(root));
+                if (similar.file) return { file: similar.file, score: similar.score, dir };
+            }
+        }
+        return null;
+    }
+
     function findInstalledOption(classType, value) {
-        const normalized = normalizeAliasValue(value);
-        return loaderOptionsFor(classType).find((item) => isModelOption(item) && normalizeAliasValue(item) === normalized) || "";
+        const normalized = normalizeAliasValue(value).toLowerCase();
+        return loaderOptionsFor(classType).find((item) => isModelOption(item) && normalizeAliasValue(item).toLowerCase() === normalized) || "";
     }
 
     function aliasTargetExists(classType, value) {
         if (findInstalledOption(classType, value)) return true;
         const normalized = normalizeAliasValue(value);
         if (!normalized || path.isAbsolute(normalized) || normalized.split("/").includes("..")) return false;
-        const spec = LOADER_SPECS.find((item) => item.classType === classType);
-        if (!spec) return false;
+        const spec = currentLoaderSpecs.find((item) => item.classType === classType);
+        if (!spec || !(spec.dirs || []).length) return false;
         return (spec.dirs || []).some((dir) => modelRootsForDir(dir).some((root) => safeStat(path.join(root, normalized))?.isFile()));
+    }
+
+    // 只返回用户显式点过「自选替换」的别名；资源卡用它判断“已用自选”，
+    // 自动/相似匹配不能伪造这个状态。
+    function userModelAliasFor(classType, input, value) {
+        if (!value) return "";
+        const user = aliases[modelAliasKey(classType, input, value)] || "";
+        if (!user) return "";
+        // 只有 ComfyUI 当前 loader 列表里真有的文件才算生效；
+        // 仅磁盘存在但未加载的文件交给 pendingModelFile 标“待重启”，不能伪造可用。
+        return findInstalledOption(classType, user);
     }
 
     function modelAliasFor(classType, input, value) {
         if (!value) return "";
-        const user = aliases[modelAliasKey(classType, input, value)] || "";
-        if (user) {
-            const actual = findInstalledOption(classType, user);
-            if (actual) return actual;
-            if (aliasTargetExists(classType, user)) return normalizeAliasValue(user);
-        }
         const auto = autoAliases.get(classType)?.get(normalizeBaseName(value)) || "";
         if (auto && normalizeAliasValue(auto) !== normalizeAliasValue(value)) return auto;
         // 模型放在更深子目录时，ComfyUI 的选项带路径前缀（a/b/x.safetensors）；
         // 唯一后缀匹配视为同一文件，避免“放深一层就检测不到”。
-        const wanted = normalizeAliasValue(value);
+        const wanted = normalizeAliasValue(value).toLowerCase();
         const deep = loaderOptionsFor(classType).filter((item) => {
             if (!isModelOption(item)) return false;
-            const normalized = normalizeAliasValue(item);
+            const normalized = normalizeAliasValue(item).toLowerCase();
             return normalized !== wanted && normalized.endsWith(`/${wanted}`);
         });
         if (deep.length === 1) return deep[0];
-        return "";
+        // 格式相同、名称相似度 ≥50% 的同类模型（不同量化/版本）自动认；
+        // 两个候选分数接近时不猜，留给资源卡「自选替换」。
+        const similar = findSimilarModel(value, loaderOptionsFor(classType).filter(isModelOption));
+        if (similar.file) {
+            const key = `${classType}|${value}|${similar.file}`;
+            if (!fuzzyAliasLogged.has(key)) {
+                fuzzyAliasLogged.add(key);
+                logger?.info?.(`模型相似匹配：${value} → ${similar.file}（${Math.round(similar.score * 100)}%）`);
+            }
+            return similar.file;
+        }
+        // 手动「自选替换」是最后手段：只有自动/深目录/相似都匹配不到时才用它。
+        return userModelAliasFor(classType, input, value);
     }
 
     function modelCandidates(classType, value) {
@@ -249,8 +359,9 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         for (const entry of entries) {
             const classType = String(entry?.classType || "");
             const input = String(entry?.input || "");
-            const spec = LOADER_SPECS.find((item) => item.classType === classType && item.input === input);
-            if (!spec) throw new Error("不支持的模型输入");
+            const spec = currentLoaderSpecs.find((item) => item.classType === classType && item.input === input);
+            // 动态发现的第三方 loader 没有静态目录信息，但只要能枚举出模型文件就允许设别名。
+            if (!spec && !loaderOptionsFor(classType).length) throw new Error("不支持的模型输入");
             const source = String(entry?.from || "").trim();
             if (!source) throw new Error("缺少原模型名");
             const target = String(entry?.to || "").trim();
@@ -381,13 +492,33 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         return picked;
     }
 
-    function hasBaseModelAlternative(entry, classType, input, options) {
+    // VAE / CLIP / 文本编码器 / LoRA 等文件名里也常带底模家族名，
+    // 以前用 filter 子串任意命中就算“底模存在”，会拿错架构的组件顶替。
+    const NON_BASE_MODEL_ROLE = /(?:^|[_\-./])(vae|clip|text[_-]?encoder|t5|umt5|clip[_-]?vision|lora|controlnet|control[_-]?net|ipadapter|upscale|encoder|embedding|tokenizer)(?:[_\-.]|$)/i;
+
+    function isBaseModelFile(file) {
+        const base = normalizeBaseName(file);
+        return Boolean(base) && !NON_BASE_MODEL_ROLE.test(base);
+    }
+
+    function hasBaseModelAlternative(entry, classType, input, options, requiredValue = "") {
         const config = entry?.baseModels;
         if (!config) return false;
         if ((config.classType || "UNETLoader") !== classType) return false;
         if ((config.input || "unet_name") !== input) return false;
+        const requiredExt = path.extname(normalizeBaseName(requiredValue)).toLowerCase();
+        const exact = Array.isArray(config.files) && config.files.length ? new Set(config.files.map((file) => normalizeAliasValue(file).toLowerCase())) : null;
+        const names = Array.isArray(config.names) && config.names.length ? new Set(config.names.map((file) => normalizeBaseName(file))) : null;
         for (const file of options) {
             if (typeof file !== "string") continue;
+            // 格式是红线：要求的底模是 .safetensors，就不能拿 .gguf/.ckpt 顶替。
+            if (requiredExt && path.extname(normalizeBaseName(file)).toLowerCase() !== requiredExt) continue;
+            if (exact) {
+                if (exact.has(normalizeAliasValue(file).toLowerCase())) return true;
+                continue;
+            }
+            if (names?.has(normalizeBaseName(file))) return true;
+            if (!isBaseModelFile(file)) continue;
             if (config.filter) {
                 try {
                     if (!new RegExp(config.filter, "i").test(file)) continue;
@@ -420,9 +551,23 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
             const value = node.inputs?.[loader.input];
             if (typeof value === "string" && value && !loader.options.has(value)) {
                 const override = mainModelFile(entry?.id);
-                if (override && classType === "UNETLoader" && loader.input === "unet_name" && loader.options.has(override)) continue;
-                if (hasBaseModelAlternative(entry, classType, loader.input, loader.options)) continue;
+                const overrideLower = normalizeAliasValue(override).toLowerCase();
+                const overrideInstalled = Boolean(override) && [...loader.options].some((option) => normalizeAliasValue(option).toLowerCase() === overrideLower);
+                if (override && classType === "UNETLoader" && loader.input === "unet_name" && overrideInstalled) continue;
+                if (hasBaseModelAlternative(entry, classType, loader.input, loader.options, value)) continue;
                 if (modelAliasFor(classType, loader.input, value)) continue;
+                const pending = pendingModelFile(classType, loader.input, value);
+                if (pending) {
+                    problems.push({
+                        type: "restart",
+                        message: `模型已在本机（${pending.file}），但 ComfyUI 尚未加载；重启 ComfyUI 后生效`,
+                        classType,
+                        input: loader.input,
+                        value,
+                        pendingFile: pending.file,
+                    });
+                    continue;
+                }
                 problems.push({
                     type: "model",
                     message: `缺少模型 ${classType}.${loader.input}=${value}`,
@@ -439,6 +584,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
     async function scan() {
         if (scanPromise) return scanPromise;
         scanPromise = (async () => {
+            modelInventory.clear();
             state.phase = "scanning";
             state.scanStartedAt = nowIso();
             state.scannedAt = null;
@@ -452,7 +598,8 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 state.comfyReachable = true;
                 const classes = new Set(Object.keys(objectInfo || {}));
                 nodeClasses = classes;
-                const loaders = collectLoaderOptions(objectInfo);
+                currentLoaderSpecs = discoverModelLoaderSpecs(objectInfo);
+                const loaders = collectLoaderOptions(objectInfo, currentLoaderSpecs);
                 loaderCatalog = Object.fromEntries([...loaders.entries()].map(([classType, loader]) => [classType, [...loader.options].sort()]));
                 rebuildAutoAliases();
                 const loraOptions = loaders.get("LoraLoaderModelOnly")?.options || loaders.get("LoraLoader")?.options || new Set();
@@ -465,10 +612,19 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 const workflows = [];
                 const missingModels = new Set();
                 const missingNodes = new Set();
+                const missingRuntime = new Set();
+                const missingRestart = new Set();
                 availability.clear();
                 for (const entry of entries) {
-                    const variants = [entry.workflow, ...Object.values(entry.variants || {}).map((variant) => variant?.workflow)].filter(Boolean);
-                    const problems = variants.flatMap((workflow) => validateWorkflow(workflow, classes, loaders, entry));
+                    const baseProblems = entry.workflow ? validateWorkflow(entry.workflow, classes, loaders, entry) : [];
+                    const variantStatus = {};
+                    for (const [mode, variant] of Object.entries(entry.variants || {})) {
+                        if (!variant?.workflow) continue;
+                        variantStatus[mode] = validateWorkflow(variant.workflow, classes, loaders, entry);
+                    }
+                    const variantProblems = Object.values(variantStatus).flat();
+                    const runtimeProblems = typeof runtimeProblemProvider === "function" ? runtimeProblemProvider(entry.id) || [] : [];
+                    const problems = [...baseProblems, ...variantProblems, ...runtimeProblems];
                     const unique = [];
                     for (const problem of problems) {
                         const key = `${problem.type}:${problem.message}`;
@@ -476,10 +632,17 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                         unique.push(problem);
                         if (problem.type === "model") missingModels.add(problem.message);
                         if (problem.type === "node") missingNodes.add(problem.message);
+                        if (problem.type === "runtime") missingRuntime.add(problem.message);
+                        if (problem.type === "restart") missingRestart.add(problem.message);
                     }
-                    const available = unique.length === 0;
-                    availability.set(entry.id, { available, problems: unique });
-                    workflows.push({ id: entry.id, name: entry.name, type: entry.type, available, problems: unique });
+                    // 一个 variant 缺模型不应拖着整个入口“不可用”：
+                    // 只要有任一 variant 可跑，入口就激活；具体哪档缺模型放在 variants 里。
+                    const baseAvailable = baseProblems.length === 0;
+                    const anyVariantAvailable = Object.values(variantStatus).some((list) => list.length === 0);
+                    const available = runtimeProblems.length === 0 && (baseAvailable || anyVariantAvailable);
+                    const variants = Object.fromEntries(Object.entries(variantStatus).map(([mode, list]) => [mode, { available: list.length === 0, problems: list }]));
+                    availability.set(entry.id, { available, problems: unique, variants });
+                    workflows.push({ id: entry.id, name: entry.name, type: entry.type, available, problems: unique, variants });
                 }
                 state.workflows = workflows;
                 state.counts = {
@@ -490,6 +653,8 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 state.missing = {
                     models: [...missingModels].sort(),
                     nodes: [...missingNodes].sort(),
+                    runtime: [...missingRuntime].sort(),
+                    restart: [...missingRestart].sort(),
                     uiWorkflows: comfyScan.ui,
                     uiSamples: comfyScan.samples,
                 };
@@ -498,8 +663,8 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 state.scanDurationMs = Date.now() - started;
                 hasScanned = true;
                 logger?.info?.(`setup scan ready: ${state.counts.available}/${state.counts.total} workflows, ${state.missing.uiWorkflows} UI workflow(s) skipped, ${state.scanDurationMs}ms`);
-                if (gatewayScan.added.length || comfyScan.imported) {
-                    logger?.info?.(`auto-imported workflows: gateway=${gatewayScan.added.length}, comfy=${comfyScan.imported}`);
+                if (gatewayScan.added?.length || comfyScan.imported || comfyScan.removed) {
+                    logger?.info?.(`auto-imported workflows: gateway=${gatewayScan.added?.length || 0}, comfy=${comfyScan.imported}, removed drafts=${comfyScan.removed || 0}`);
                 }
             } catch (error) {
                 state.phase = "degraded";
@@ -509,6 +674,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 state.scannedAt = nowIso();
                 logger?.warn?.(`setup scan degraded: ${state.lastError}`);
             } finally {
+                if (typeof comfy.baseUrl === "function") lastComfyBase = comfy.baseUrl() || lastComfyBase;
                 await persist();
                 scanPromise = null;
             }
@@ -542,8 +708,62 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         if (typeof poller.unref === "function") poller.unref();
     }
 
+    // 启动器可能先起网关、后起 ComfyUI；或 ComfyUI 中途重启/换端口。
+    // 只做连通性轮询，连上就重扫一次（区别于用户否决的目录 mtime 自动扫描）。
+    async function checkConnectivity() {
+        if (connectivityChecking || scanPromise) return;
+        if (typeof comfy.isReachable !== "function") return;
+        connectivityChecking = true;
+        try {
+            const reachable = await comfy.isReachable();
+            const currentBase = typeof comfy.baseUrl === "function" ? comfy.baseUrl() : "";
+            const addressChanged = Boolean(lastComfyBase && currentBase && currentBase !== lastComfyBase);
+            if (!reachable) {
+                if (state.comfyReachable || state.phase === "ready") {
+                    state.comfyReachable = false;
+                    state.phase = "degraded";
+                    state.lastError = "ComfyUI 连接已断开，等待重连后自动重新扫描";
+                    logger?.warn?.(state.lastError);
+                    await persist();
+                }
+                return;
+            }
+            if (state.comfyReachable && state.phase === "ready" && !addressChanged) return;
+            if (Date.now() - lastAutoScanAt < 10000) return;
+            lastAutoScanAt = Date.now();
+            logger?.info?.(addressChanged ? `ComfyUI 地址变化（${lastComfyBase} → ${currentBase}），自动重新扫描` : "ComfyUI 已连接，自动重新扫描工作流与模型");
+            await scan();
+        } catch (error) {
+            logger?.warn?.(`ComfyUI 连通性检查失败：${error.message}`);
+        } finally {
+            connectivityChecking = false;
+            const currentBase = typeof comfy.baseUrl === "function" ? comfy.baseUrl() : "";
+            if (currentBase) lastComfyBase = currentBase;
+        }
+    }
+
+    function startConnectivityWatch() {
+        if (connectivityTimer) return;
+        connectivityTimer = setInterval(() => void checkConnectivity(), 10000);
+        if (typeof connectivityTimer.unref === "function") connectivityTimer.unref();
+    }
+
     function start() {
+        // 手动目录的托管块按当前映射规则重写一次（例如从“全类型 .”收敛到实际子目录）；
+        // ComfyUI 运行中不会热加载 YAML，重启后才生效。
+        if (directorySettings.mode === "manual") {
+            const root = detectComfyLayout(directorySettings.comfyDir)?.root || directorySettings.comfyDir || config.comfyDir;
+            if (root) {
+                try {
+                    const result = writeManagedExtraPaths(root, directorySettings);
+                    if (result.changed) logger?.info?.(`手动目录配置已更新：${result.file}（重启 ComfyUI 后生效）`);
+                } catch (error) {
+                    logger?.warn?.(`更新手动目录配置失败：${error.message}`);
+                }
+            }
+        }
         startWatchers();
+        startConnectivityWatch();
         void scan().catch((error) => logger?.warn?.(`initial setup scan failed: ${error.message}`));
     }
 
@@ -554,16 +774,29 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         poller = null;
         if (debounceTimer) clearTimeout(debounceTimer);
         debounceTimer = null;
+        if (connectivityTimer) clearInterval(connectivityTimer);
+        connectivityTimer = null;
     }
 
     function isAvailable(id) {
-        if (!hasScanned) return true;
+        // ComfyUI 离线/扫描失败时不能再用旧结果假装可用。
+        if (state.phase === "degraded") return false;
+        if (!hasScanned) return state.phase === "idle" || state.phase === "scanning";
         const entry = availability.get(id);
-        return entry ? entry.available : true;
+        return entry ? entry.available : false;
     }
 
     function workflowStatus(id) {
-        return availability.get(id) || { available: true, problems: [] };
+        if (state.phase === "degraded") {
+            return {
+                available: false,
+                stale: true,
+                problems: [{ type: "offline", message: "ComfyUI 未连接，暂时无法确认工作流可用性" }],
+            };
+        }
+        const entry = availability.get(id);
+        if (entry) return entry;
+        return { available: !hasScanned, problems: [] };
     }
 
     function loraNames() {
@@ -582,6 +815,26 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         return nodeClasses.has(name);
     }
 
+    function setRuntimeProblemProvider(provider) {
+        runtimeProblemProvider = typeof provider === "function" ? provider : null;
+    }
+
+    function modelLoaderSpecs() {
+        return currentLoaderSpecs;
+    }
+
+    function setDirectorySettings(input) {
+        return applyDirectorySettings(input);
+    }
+
+    function getDirectorySettings() {
+        return { ...directorySettings, comfyDir: config.comfyDir || directorySettings.comfyDir };
+    }
+
+    function comfyRootForScan() {
+        return config.comfyDir || "";
+    }
+
     return {
         state,
         scan,
@@ -590,6 +843,12 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         isAvailable,
         workflowStatus,
         hasNodeClass,
+        setRuntimeProblemProvider,
+        modelLoaderSpecs,
+        setDirectorySettings,
+        getDirectorySettings,
+        comfyRootForScan,
+        userModelAliasFor,
         modelAliasFor,
         setModelAlias,
         setModelAliases,

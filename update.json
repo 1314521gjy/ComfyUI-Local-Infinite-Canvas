@@ -1,16 +1,16 @@
 {
-  "version": "v0.21.26",
+  "version": "v0.22.1",
   "publishedAt": "2026-10-30",
-  "notes": "自由卡片工作流里游离的保存节点（SaveImage）不再导致生成失败：提交前只保留最完整的那条输出链路，其余输出子图会被剔除。",
+  "notes": "下载后识别不到 ComfyUI / 工作流 / 模型的问题已修复：自动探测常见端口并在 ComfyUI 上线后自动重扫，新增手动指定目录与原生文件夹选择，模型按「名字 + 格式」相似匹配；工作流任一档位可跑即激活，待重启单独提示；同时修复扩图 OOM、无底图死键、下载进度条不消失等一批稳定性问题。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.26.zip",
-    "sha256": "09880aec2f906b5fdab52cd99bd2ca4e01cafc7942d3bad907e4f4b7d6784869",
-    "size": 37531224
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.22.1.zip",
+    "sha256": "5b20dc499ea67f4ad19679b70f1b35b7ade733ec4a1e799a68812d88552181a1",
+    "size": 37561721
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

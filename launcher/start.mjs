@@ -294,6 +294,24 @@ function isFile(p) {
   }
 }
 
+const pythonProbeCache = new Map();
+// 整合包里可能存在坏掉的 python.exe（例如 env\Scripts 下的占位文件），
+// 选解释器前实际跑一次，别把 ComfyUI 拉起失败留到用户面前。
+function pythonWorks(file) {
+  if (!file) return false;
+  const cached = pythonProbeCache.get(file);
+  if (cached && Date.now() - cached.at < 300000) return cached.ok;
+  let ok = false;
+  try {
+    const result = spawnSync(file, ["-c", "import sys;print(sys.version_info[0])"], { timeout: 8000, windowsHide: true, encoding: "utf8" });
+    ok = result.status === 0 && /^\s*3\s*$/m.test(String(result.stdout || ""));
+  } catch {
+    ok = false;
+  }
+  pythonProbeCache.set(file, { at: Date.now(), ok });
+  return ok;
+}
+
 function comfyInstallInfo(dir) {
   if (!dir || !isDir(dir)) return null;
   const mainCandidates = [
@@ -304,12 +322,22 @@ function comfyInstallInfo(dir) {
   const mainPy = mainCandidates.find((candidate) => isFile(candidate)) || "";
   const pythonCandidates = [
     path.join(dir, "python_embeded", "python.exe"),
+    path.join(dir, "python_embedded", "python.exe"),
     path.join(dir, "python", "python.exe"),
+    path.join(dir, "env", "python.exe"),
+    path.join(dir, "env", "python", "python.exe"),
+    path.join(dir, "env", "Scripts", "python.exe"),
     path.join(dir, "venv", "Scripts", "python.exe"),
+    path.join(dir, ".venv", "Scripts", "python.exe"),
+    path.join(dir, "Scripts", "python.exe"),
+    path.join(dir, "..", "python", "python.exe"),
+    path.join(dir, "..", "env", "python.exe"),
+    path.join(dir, "..", "env", "python", "python.exe"),
+    path.join(dir, "..", "env", "Scripts", "python.exe"),
     path.join(dir, "..", "python_embeded", "python.exe"),
     mainPy ? path.join(path.dirname(mainPy), "..", "python_embeded", "python.exe") : "",
   ].filter(Boolean);
-  const pythonExe = pythonCandidates.find((candidate) => isFile(candidate)) || "";
+  const pythonExe = pythonCandidates.find((candidate) => isFile(candidate) && pythonWorks(candidate)) || pythonCandidates.find((candidate) => isFile(candidate)) || "";
   const scripts = [];
   // 只把内容里真的调用 main.py 的脚本算作 ComfyUI 启动脚本；
   // 否则我们自己的 start-local.bat、卸载脚本之类都会被误判成 ComfyUI 安装。
@@ -453,6 +481,28 @@ async function pickFreePort(ports) {
     if (!(await probeComfy(`http://127.0.0.1:${port}`, 300))) return port;
   }
   return COMFY_PORT_FIRST;
+}
+
+// 3000 经常被 NEW API / 其他开发服务占着；画布不能因为一个端口就整体退出。
+async function listenCanvasServer(cfg, preferredPort) {
+  const ports = [preferredPort, ...Array.from({ length: 10 }, (_, index) => preferredPort + index + 1)];
+  let lastError = null;
+  for (const port of ports) {
+    const server = createCanvasServer(cfg);
+    const error = await new Promise((resolve) => {
+      server.once("error", (err) => resolve(err));
+      server.listen(port, "127.0.0.1", () => resolve(null));
+    });
+    if (!error) return { server, port };
+    lastError = error;
+    try {
+      server.close();
+    } catch {
+      /* 监听失败时 server 可能还没打开 */
+    }
+    if (error.code !== "EADDRINUSE") break;
+  }
+  throw lastError || new Error("画布端口不可用");
 }
 
 function spawnComfy(plan, port = COMFY_PORT_FIRST) {
@@ -769,6 +819,24 @@ function createCanvasServer(cfg) {
       } catch {
         res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
         res.end("400 Bad Request");
+        return;
+      }
+
+      // 运行时配置由服务端直接生成：npm run build 清空 dist 后也不会丢网关地址。
+      if (pathname === "/config.js") {
+        let origin = cfg.gatewayUrl;
+        try {
+          origin = new URL(cfg.gatewayUrl).origin;
+        } catch {
+          /* 保持原样 */
+        }
+        const runtime = {
+          LOCAL_GATEWAY_HOST: "127.0.0.1",
+          LOCAL_GATEWAY_PORT: String(cfg.gatewayPort),
+          LOCAL_GATEWAY_URL: `${origin}/v1`,
+        };
+        res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store" });
+        res.end(`window.__RUNTIME_CONFIG__ = ${JSON.stringify(runtime)};\n`);
         return;
       }
 
@@ -1190,6 +1258,37 @@ async function startControlServer(cfg) {
         res.end(JSON.stringify({ ok: true, pid: state.gatewayChild.pid }));
         return;
       }
+      if (req.method === "POST" && pathname === "/set-comfy-dir") {
+        const body = await new Promise((resolve) => {
+          let raw = "";
+          req.setEncoding("utf8");
+          req.on("data", (chunk) => {
+            raw += chunk;
+            if (raw.length > 8192) req.destroy();
+          });
+          req.on("end", () => {
+            try {
+              resolve(JSON.parse(raw || "{}"));
+            } catch {
+              resolve({});
+            }
+          });
+          req.on("error", () => resolve({}));
+        });
+        const dir = String(body.dir || "").trim();
+        if (!dir || !isDir(dir)) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ ok: false, error: `目录不存在：${dir || "（空）"}` }));
+          return;
+        }
+        cfg.comfyDir = dir;
+        const info = comfyInstallInfo(dir);
+        if (info?.workflowsDir) cfg.comfyWorkflowsDir = info.workflowsDir;
+        persistDiscovery(cfg);
+        log(`已更新 ComfyUI 目录：${cfg.comfyDir}${cfg.comfyWorkflowsDir ? `（工作流 ${cfg.comfyWorkflowsDir}）` : ""}`);
+        res.end(JSON.stringify({ ok: true, comfyDir: cfg.comfyDir, workflowsDir: cfg.comfyWorkflowsDir, restartRequired: true }));
+        return;
+      }
       if (req.method === "POST" && pathname === "/restart-comfy") {
         res.setTimeout(360000);
         const report = await restartComfy(cfg);
@@ -1418,23 +1517,22 @@ async function main() {
       } catch (error) {
         log(`写入运行时网关配置失败：${error.message}`, "WARN");
       }
-      const server = createCanvasServer(cfg);
-      const listenError = await new Promise((resolve) => {
-        server.once("error", (err) => resolve(err));
-        server.listen(cfg.canvasPort, "127.0.0.1", () => resolve(null));
-      });
-      if (listenError) {
-        const hint =
-          listenError.code === "EADDRINUSE"
-            ? `端口 ${cfg.canvasPort} 已被其他程序占用且不是可识别的画布服务`
-            : listenError.message;
-        log(`画布静态服务启动失败：${hint}`, "ERROR");
+      let listen;
+      try {
+        listen = await listenCanvasServer(cfg, cfg.canvasPort);
+      } catch (error) {
+        log(`画布静态服务启动失败：${error.message}`, "ERROR");
         await shutdown(1);
         return;
       }
-      state.canvasServer = server;
+      if (listen.port !== cfg.canvasPort) {
+        log(`画布端口 ${cfg.canvasPort} 已被其他程序占用，改用空闲端口 ${listen.port}`);
+        cfg.canvasPort = listen.port;
+        cfg.canvasUrl = `http://127.0.0.1:${listen.port}`;
+      }
+      state.canvasServer = listen.server;
       canvasResult = { url: cfg.canvasUrl, mode: "started" };
-      log(`画布已托管：http://127.0.0.1:${cfg.canvasPort}/ ← ${cfg.canvasDist}（SPA fallback 已启用，仅绑 127.0.0.1）`);
+      log(`画布已托管：${cfg.canvasUrl}/ ← ${cfg.canvasDist}（SPA fallback 已启用，仅绑 127.0.0.1）`);
     }
   }
 
@@ -1490,4 +1588,4 @@ if (invokedDirectly) {
   });
 }
 
-export { comfyInstallInfo, resolveLaunchPlan, comfyPortCandidates, detectComfy, probeAnyComfy };
+export { comfyInstallInfo, resolveLaunchPlan, comfyPortCandidates, detectComfy, probeAnyComfy, listenCanvasServer };

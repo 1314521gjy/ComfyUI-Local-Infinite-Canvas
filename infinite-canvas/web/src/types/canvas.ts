@@ -135,6 +135,7 @@ export type CanvasNodeMetadata = {
     mimeType?: string;
     bytes?: number;
     durationMs?: number;
+    refsWarningDismissed?: boolean;
     videoTaskId?: string;
     videoTaskProvider?: "openai" | "gemini";
     previewUrl?: string;
