@@ -1,16 +1,16 @@
 {
-  "version": "v0.21.22",
+  "version": "v0.21.23",
   "publishedAt": "2026-10-29",
-  "notes": "支持 ComfyUI 桌面端与各种整合包：自动识别桌面版 8000 端口与安装目录；识别内容调用 main.py 的启动脚本（含任意/中文文件名），没有脚本时用包内 python 直启；端口并行探测覆盖 8000/7860/8080/8888/18000。",
+  "notes": "人物替换不再因源视频超过 15 秒报错：现在硬性跟随源视频全长（按 H3 的 17n+5 向下对齐），参考策略放宽；超过 15 秒后的画质与一致性尚未验证。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.22.zip",
-    "sha256": "322862d4a1801acdb9b2817f1fc3cb23e3e9cb0b6e7633d47ea76036f9bc74eb",
-    "size": 37528617
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.23.zip",
+    "sha256": "64443d5ba8f8e4cc592cca0a5e0763f154117e47875e0462f8d9006ac1741c9a",
+    "size": 37529633
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

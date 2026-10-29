@@ -124,7 +124,7 @@
       "prompt_primary_audio_ordinal": 0,
       "strict_prompt_tags": true,
       "ref_image_size": "match",
-      "reference_video_policy": "official_2_to_15s",
+      "reference_video_policy": "model_minimum",
       "allow_above_reference_area": false,
       "clip": [
         "3",

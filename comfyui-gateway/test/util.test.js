@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { framesFromSeconds, uniqueFileName } from "../src/util.js";
+import { alignH3Frames, framesFromSeconds, uniqueFileName } from "../src/util.js";
 
 test("upload filenames stay unique for references with the same original name", () => {
   assert.equal(uniqueFileName("AI_.png", "aaaa"), "AI_-aaaa.png");
@@ -16,4 +16,13 @@ test("framesFromSeconds converts to H3 frames and rejects bad input", () => {
   assert.equal(framesFromSeconds(0), 0);
   assert.equal(framesFromSeconds(-1), 0);
   assert.equal(framesFromSeconds(undefined), 0);
+});
+
+test("alignH3Frames keeps 17n+5 aligned downwards without a cap", () => {
+  assert.equal(alignH3Frames(294), 294);
+  assert.equal(alignH3Frames(124), 124);
+  assert.equal(alignH3Frames(541), 532);
+  assert.equal(alignH3Frames(360), 345);
+  assert.equal(alignH3Frames(24), 22);
+  assert.equal(alignH3Frames(0), 0);
 });

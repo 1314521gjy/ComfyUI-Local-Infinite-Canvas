@@ -126,3 +126,11 @@ export function framesFromSeconds(seconds, fps = 24) {
   if (!Number.isFinite(value) || value <= 0) return 0;
   return Math.max(1, Math.round(value * fps));
 }
+
+// H3 的长度必须是 17n+5；向下对齐，保证不超过源视频的实际帧数。
+export function alignH3Frames(frames, { minN = 1 } = {}) {
+  const value = Number(frames);
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  const n = Math.floor((value - 5) / 17);
+  return 17 * Math.max(n, minN) + 5;
+}

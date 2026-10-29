@@ -1490,4 +1490,4 @@ if (invokedDirectly) {
   });
 }
 
-export { comfyInstallInfo, resolveLaunchPlan, comfyPortCandidates, detectComfy };
+export { comfyInstallInfo, resolveLaunchPlan, comfyPortCandidates, detectComfy, probeAnyComfy };

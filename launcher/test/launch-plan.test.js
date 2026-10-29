@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { comfyInstallInfo, comfyPortCandidates, resolveLaunchPlan } from "../start.mjs";
+import { comfyInstallInfo, comfyPortCandidates, probeAnyComfy, resolveLaunchPlan } from "../start.mjs";
 
 async function fake(files) {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), "launch-plan-"));
@@ -68,5 +68,21 @@ test("port candidates cover desktop 8000 and honor COMFY_PORT_SCAN", () => {
   } finally {
     if (previous === undefined) delete process.env.COMFY_PORT_SCAN;
     else process.env.COMFY_PORT_SCAN = previous;
+  }
+});
+
+test("dynamic probing finds ComfyUI on a non-standard port", async () => {
+  const http = await import("node:http");
+  const server = http.createServer((req, res) => {
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ system: { os: "nt" }, devices: [] }));
+  });
+  await new Promise((resolve) => server.listen(18123, "127.0.0.1", resolve));
+  try {
+    const hit = await probeAnyComfy([18122, 18123], 500);
+    assert.ok(hit, "should find the stub");
+    assert.match(hit.url, /:18123$/);
+  } finally {
+    server.close();
   }
 });

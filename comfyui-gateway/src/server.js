@@ -31,7 +31,7 @@ import { createTaskStore } from "./tasks.js";
 import { applyUpdate, checkForUpdate } from "./update.js";
 import { uploadImages } from "./uploads.js";
 import { createWorkflowVisibilityStore } from "./workflow-visibility.js";
-import { framesFromSeconds, extFromMime, jsonError, nowIso, parseSize, randomId, safeFileName, sleep } from "./util.js";
+import { alignH3Frames, framesFromSeconds, extFromMime, jsonError, nowIso, parseSize, randomId, safeFileName, sleep } from "./util.js";
 
 class HttpError extends Error {
   constructor(message, { status = 400, code = "bad_request", details } = {}) {
@@ -1356,7 +1356,13 @@ export async function createGatewayApp(overrides = {}) {
         ? [path.join(config.comfyDir, "ffprobe.exe"), path.join(config.comfyDir, "..", "ffprobe.exe"), path.join(config.comfyDir, "ffmpeg", "bin", "ffprobe.exe")]
         : [];
       const probed = probeVideoFrames(videoFiles[0], probes);
-      context.sourceVideoFrames = probed || fromDuration;
+      const sourceFrames = probed || fromDuration;
+      // 硬性跟随源视频长度：只按 H3 的 17n+5 向下对齐，不设上限。
+      const aligned = alignH3Frames(sourceFrames);
+      context.sourceVideoFrames = aligned;
+      if (aligned && sourceFrames && aligned !== sourceFrames) {
+        logger.info(`源视频 ${sourceFrames} 帧，按 17n+5 对齐为 ${aligned} 帧（约 ${(aligned / 24).toFixed(1)}s）`);
+      }
       if (!probed && fromDuration) logger.warn(`ffprobe 不可用，按上报时长 ${sourceSeconds}s 换算为 ${fromDuration} 帧`);
     }
     const task = tasks.create({
