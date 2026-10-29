@@ -31,3 +31,24 @@ test("stale sessions expire and report idle time from their last heartbeat", () 
   assert.equal(status.seen, true);
   assert.equal(status.idleMs, 100);
 });
+
+test("reports startedAt and explicit close time for the launcher watchdog", () => {
+  let now = 5000;
+  const sessions = createSessionTracker({ clock: () => now });
+  const initial = sessions.status();
+  assert.equal(initial.startedAt, new Date(5000).toISOString());
+  assert.equal(initial.closedAt, 0);
+
+  sessions.touch("a");
+  now = 9000;
+  sessions.close("");
+  assert.equal(sessions.status().closedAt, 0, "empty id must not count as a page close");
+
+  const afterClose = sessions.close("a");
+  assert.equal(afterClose.closedAt, 9000);
+  assert.equal(afterClose.startedAt, new Date(5000).toISOString());
+
+  now = 12000;
+  sessions.touch("b");
+  assert.equal(sessions.status().closedAt, 9000, "reopening a page keeps the last close time until the next close");
+});

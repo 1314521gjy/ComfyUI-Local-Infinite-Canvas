@@ -49,7 +49,7 @@ const DEFAULT_CONFIG = {
   openBrowser: true,
   closeCanvasStopsBackend: true,
   stopAdoptedComfyOnCanvasClose: true,
-  canvasIdleGraceSec: 15,
+  canvasIdleGraceSec: 30,
 };
 
 /* ------------------------------------------------------------------ 日志 */
@@ -78,6 +78,27 @@ function toPort(value, fallback, envName) {
   if (Number.isInteger(n) && n > 0 && n < 65536) return n;
   if (envName && process.env[envName]) log(`环境变量 ${envName}=${process.env[envName]} 非法，忽略`, "WARN");
   return fallback;
+}
+
+// 15s 是 v0.21.18 及以前的默认值；旧 config.json 原样保留 15 时按新默认处理。
+// 想用 15s 可显式设环境变量 CANVAS_IDLE_GRACE_SEC=15。
+const LEGACY_IDLE_GRACE_SEC = 15;
+
+function resolveIdleGraceSec(merged) {
+  const fromEnv = process.env.CANVAS_IDLE_GRACE_SEC;
+  if (fromEnv !== undefined) {
+    const n = Number(fromEnv);
+    if (n > 0) return n;
+    log(`环境变量 CANVAS_IDLE_GRACE_SEC=${fromEnv} 非法，改用默认 ${DEFAULT_CONFIG.canvasIdleGraceSec}s`, "WARN");
+    return DEFAULT_CONFIG.canvasIdleGraceSec;
+  }
+  const n = Number(merged.canvasIdleGraceSec);
+  if (!(n > 0)) return DEFAULT_CONFIG.canvasIdleGraceSec;
+  if (n === LEGACY_IDLE_GRACE_SEC) {
+    log(`画布空闲宽限 ${LEGACY_IDLE_GRACE_SEC}s 是旧默认值，按新默认 ${DEFAULT_CONFIG.canvasIdleGraceSec}s 处理。`);
+    return DEFAULT_CONFIG.canvasIdleGraceSec;
+  }
+  return n;
 }
 
 function loadConfig() {
@@ -109,7 +130,7 @@ function loadConfig() {
     openBrowser: merged.openBrowser !== false,
     closeCanvasStopsBackend: process.env.CLOSE_CANVAS_STOPS_BACKEND !== "0" && merged.closeCanvasStopsBackend !== false,
     stopAdoptedComfyOnCanvasClose: process.env.STOP_ADOPTED_COMFY !== "0" && merged.stopAdoptedComfyOnCanvasClose !== false,
-    canvasIdleGraceSec: Number(process.env.CANVAS_IDLE_GRACE_SEC ?? merged.canvasIdleGraceSec) > 0 ? Number(process.env.CANVAS_IDLE_GRACE_SEC ?? merged.canvasIdleGraceSec) : 15,
+    canvasIdleGraceSec: resolveIdleGraceSec(merged),
     configCreated: created,
   };
   cfg.gatewayUrl = `http://127.0.0.1:${cfg.gatewayPort}`;
@@ -921,11 +942,10 @@ function startSessionWatchdog(cfg, gatewayUrl) {
       return;
     }
     const idleMs = Number(status.idleMs) || 0;
-    // 显式关闭（页面 pagehide/sendBeacon）走 15s 宽限；
-    // 心跳缺失（后台标签被节流/冻结、浏览器崩溃）只当异常兜底，等 10 分钟再收。
+    // 只有页面显式关闭（pagehide/beacon，网关记录 closedAt）才停后台；
+    // 心跳缺失（后台标签节流/冻结、浏览器崩溃）不停，避免挂机被误杀。
     const explicitCloseAt = Number(status.closedAt) || 0;
     const explicitRecent = explicitCloseAt > 0 && now - explicitCloseAt < 10 * 60 * 1000;
-    // 心跳丢失（后台标签被节流/冻结、浏览器休眠）不当成关闭；只有页面显式关闭才停后台。
     if (!explicitRecent) return;
     if (idleMs < cfg.canvasIdleGraceSec * 1000) return;
     await shutdown(0, `画布已关闭（显式关闭信号，空闲 ${Math.round(idleMs / 1000)}s，无进行中任务），停止后台。`, {

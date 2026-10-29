@@ -1,7 +1,9 @@
 export function createSessionTracker({ staleMs = 120000, clock = Date.now } = {}) {
   const sessions = new Map();
+  const startedAt = new Date(clock()).toISOString();
   let seenAt = 0;
   let emptySince = null;
+  let closedAt = 0;
 
   function prune() {
     const now = clock();
@@ -24,6 +26,8 @@ export function createSessionTracker({ staleMs = 120000, clock = Date.now } = {}
       idleMs: sessions.size ? 0 : clock() - (emptySince ?? clock()),
       staleMs,
       lastSeenAt: seenAt ? new Date(seenAt).toISOString() : null,
+      startedAt,
+      closedAt,
     };
   }
 
@@ -39,7 +43,10 @@ export function createSessionTracker({ staleMs = 120000, clock = Date.now } = {}
 
   function close(id) {
     const key = String(id || "").trim();
-    if (key) sessions.delete(key);
+    if (key) {
+      sessions.delete(key);
+      closedAt = clock();
+    }
     if (!sessions.size) emptySince ??= clock();
     return status();
   }
