@@ -8,7 +8,7 @@ import path from "node:path";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
 
-import { buildTrtCompileHint, createResourceManager, selectPipWheelForRuntime } from "../src/resources.js";
+import { buildTrtCompileHint, createResourceManager, inferComfyRootFromFolderPaths, selectPipWheelForRuntime } from "../src/resources.js";
 
 async function waitForJob(manager, id, timeoutMs = 10000) {
     const started = Date.now();
@@ -593,7 +593,44 @@ test("krea2 pack matches the zimage shape with no bundled LoRAs", () => {
     assert.ok(!pack.workflowDependencies["image-krea2-turbo"].includes("krea2_turbo_int8_convrot"));
     assert.equal(index.resources.some((item) => item.id === "krea2_darkbrush_lora"), false);
     assert.equal(index.resources.some((item) => item.id === "krea2_retroanime_lora"), false);
-    assert.equal(index.resources.length, 60);
+    assert.equal(index.resources.length, 67);
+});
+
+test("upscale pack ships the node with the app and downloads ESRGAN/SeedVR2 weights per workflow", () => {
+    const index = JSON.parse(fs.readFileSync(new URL("../resources/index.json", import.meta.url), "utf8"));
+    const pack = index.packs.find((item) => item.id === "upscale");
+    assert.ok(pack, "upscale pack is missing");
+    assert.equal(pack.optional, true);
+    assert.deepEqual(pack.workflows, [
+        "image-esrgan-upscale",
+        "video-esrgan_2x",
+        "image-seedvr2-upscale",
+        "video-seedvr2-upscale",
+    ]);
+    assert.deepEqual(pack.workflowDependencies["image-esrgan-upscale"], ["esrgan_x2plus"]);
+    assert.deepEqual(pack.workflowDependencies["image-esrgan-upscale"], pack.workflowDependencies["video-esrgan_2x"]);
+    assert.deepEqual(pack.workflowDependencies["image-seedvr2-upscale"], ["seedvr2_7b_dit", "seedvr2_vae"]);
+    assert.deepEqual(pack.workflowDependencies["video-seedvr2-upscale"], ["seedvr2_3b_dit", "seedvr2_vae"]);
+    const optional = new Set(pack.optionalResources || []);
+    for (const id of pack.resources) {
+        assert.ok(optional.has(id), `${id} must stay optional so weight downloads remain user-driven`);
+    }
+    const node = index.resources.find((item) => item.id === "seedvr2_node");
+    assert.equal(node.type, "node");
+    assert.equal(node.autoInstall, true);
+    assert.ok(node.bundleDir, "seedvr2 node must ship a bundled directory");
+    for (const id of ["seedvr2_3b_dit", "seedvr2_7b_dit"]) {
+        const resource = index.resources.find((item) => item.id === id);
+        assert.match(resource.target, /^SEEDVR2\//);
+        assert.ok(resource.sha256);
+    }
+    const vae = index.resources.find((item) => item.id === "seedvr2_vae");
+    assert.equal(vae.target, "vae/ema_vae_fp16.safetensors");
+    for (const id of ["esrgan_x2plus", "esrgan_x4plus", "esrgan_anime6b"]) {
+        const resource = index.resources.find((item) => item.id === id);
+        assert.equal(resource.target.startsWith("upscale_models/"), true, `${id} target`);
+        assert.ok(resource.sha256);
+    }
 });
 
 test("h3 pack lists the shared models, VDN/noVDN variants and character swap", () => {
@@ -1352,6 +1389,21 @@ test("missing local index self-heals from remote and falls back to cache", async
         assert.equal(offline.indexError, "");
     } finally {
         await new Promise((resolve) => server.close(resolve));
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});
+
+test("infers ComfyUI root from folder_paths when comfyDir is empty", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "comfy-root-infer-"));
+    const comfy = path.join(root, "MyComfy");
+    const vae = path.join(comfy, "models", "vae");
+    await fsp.mkdir(vae, { recursive: true });
+    await fsp.mkdir(path.join(comfy, "custom_nodes"), { recursive: true });
+    try {
+        const inferred = inferComfyRootFromFolderPaths({ vae: [vae] });
+        assert.equal(inferred, comfy);
+        assert.equal(inferComfyRootFromFolderPaths({ vae: [path.join(root, "elsewhere", "vae")] }), "");
+    } finally {
         await fsp.rm(root, { recursive: true, force: true });
     }
 });

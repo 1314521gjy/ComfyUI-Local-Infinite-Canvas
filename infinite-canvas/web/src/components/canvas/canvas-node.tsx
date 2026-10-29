@@ -597,8 +597,8 @@ export const CanvasNode = React.memo(function CanvasNode({
                         data-angel-guard
                     >
                         <div className={`angel-mascot absolute bottom-0 ${fishWhipSide === "left" ? "left-0" : "right-0"} h-[230px] w-[210px]`} data-side={fishWhipSide}>
-                            <img src="/skins/angel-girl-idle.webp" alt="" draggable={false} className="angel-frame angel-frame-idle" style={{ transform: fishWhipSide === "right" ? "scaleX(-1)" : "none" }} />
-                            <img src="/skins/angel-girl-write.webp" alt="" draggable={false} className="angel-frame angel-frame-write" style={{ transform: fishWhipSide === "right" ? "scaleX(-1)" : "none" }} />
+                            <img src="/skins/angel-girl-idle.webp" alt="" draggable={false} className="angel-frame angel-frame-idle" style={{ transform: fishWhipSide === "left" ? "scaleX(-1)" : "none" }} />
+                            <img src="/skins/angel-girl-write.webp" alt="" draggable={false} className="angel-frame angel-frame-write" style={{ transform: fishWhipSide === "left" ? "scaleX(-1)" : "none" }} />
                         </div>
                     </div>
                 )

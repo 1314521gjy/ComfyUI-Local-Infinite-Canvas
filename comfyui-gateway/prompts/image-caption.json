@@ -11,8 +11,8 @@
   "2": {
     "class_type": "llama_cpp_model_loader",
     "inputs": {
-      "model": "Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf",
-      "mmproj": "mmproj-Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-BF16.gguf",
+      "model": "Qwen3.5-9B-Q4_K_M.gguf",
+      "mmproj": "mmproj-BF16.gguf",
       "chat_handler": "Qwen3.5",
       "n_ctx": 8192,
       "vram_limit": -1,

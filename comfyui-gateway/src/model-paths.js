@@ -13,6 +13,7 @@ export const MODEL_DIR_KEYS = {
     vdn: ["vdn"],
     clip_vision: ["clip_vision"],
     LLM: ["LLM", "llm"],
+    SEEDVR2: ["SEEDVR2", "seedvr2"],
 };
 
 export function parseExtraModelPaths(file) {

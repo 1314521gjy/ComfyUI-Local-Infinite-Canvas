@@ -13,7 +13,7 @@ import { MODEL_LOADER_SPECS } from "./model-loaders.js";
 import { collectModelRoots, clearExtraModelPathsCache } from "./model-paths.js";
 import { nowIso, truncate, writeJsonAtomic } from "./util.js";
 
-const MODEL_DIRS = new Set(["diffusion_models", "text_encoders", "vae", "vae_approx", "loras", "checkpoints", "upscale_models", "latent_upscale_models", "vdn", "clip_vision", "LLM"]);
+const MODEL_DIRS = new Set(["diffusion_models", "text_encoders", "vae", "vae_approx", "loras", "checkpoints", "upscale_models", "latent_upscale_models", "vdn", "clip_vision", "LLM", "SEEDVR2"]);
 const WEIGHT_FILE_EXTENSIONS = /\.(safetensors|sft|ckpt|pt|pth|bin|gguf|onnx|data|engine)$/i;
 const LOADER_BY_DIR = {
     diffusion_models: { classType: "UNETLoader", input: "unet_name" },
@@ -117,6 +117,30 @@ function resolveComfyRoot(config) {
         if (isFile(path.join(dir, "main.py")) || isDir(path.join(dir, "custom_nodes")) || isDir(path.join(dir, "models"))) return dir;
     }
     return "";
+}
+
+export function inferComfyRootFromFolderPaths(folderPaths = {}) {
+    const strict = [];
+    const loose = [];
+    for (const value of Object.values(folderPaths || {})) {
+        if (!Array.isArray(value)) continue;
+        for (const entry of value) {
+            if (typeof entry !== "string" || !entry.trim()) continue;
+            const resolved = path.resolve(entry);
+            const parts = resolved.split(path.sep);
+            for (let index = parts.length - 1; index > 0; index -= 1) {
+                if (parts[index].toLowerCase() !== "models") continue;
+                const candidate = parts.slice(0, index).join(path.sep);
+                if (!candidate) continue;
+                if (isFile(path.join(candidate, "main.py")) || isDir(path.join(candidate, "custom_nodes"))) {
+                    strict.push(candidate);
+                } else if (isDir(path.join(candidate, "models")) && path.parse(candidate).root !== candidate) {
+                    loose.push(candidate);
+                }
+            }
+        }
+    }
+    return strict[0] || loose[0] || "";
 }
 
 function pythonFromBat(bat) {
@@ -338,7 +362,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
     let loadedAt = null;
 
     function comfyRoot() {
-        return resolveComfyRoot(config);
+        return resolveComfyRoot(config) || inferComfyRootFromFolderPaths(setup?.folderPaths?.() || {});
     }
 
     function comfyPython(root = comfyRoot()) {
@@ -448,12 +472,12 @@ export function createResourceManager({ config, setup, registry, logger, workflo
 
     function resourceMatch(resource, root = comfyRoot()) {
         const { dir, file } = targetParts(resource.target);
-        if (!root) return { present: false, path: "", rel: "", size: 0, matchedBy: "", mismatch: "" };
+        if (dir === "custom_nodes" && !root) return { present: false, path: "", rel: "", size: 0, matchedBy: "", mismatch: "" };
         if (resource.type === "dir") {
             for (const base of modelRoots(dir, root)) {
                 const candidate = path.join(base, file);
                 if (isDir(candidate) && (isFile(path.join(candidate, "config.json")) || isFile(path.join(candidate, "model.safetensors")))) {
-                    return { present: true, path: candidate, rel: path.relative(root, candidate), size: 0, matchedBy: "path", mismatch: "" };
+                    return { present: true, path: candidate, rel: root ? path.relative(root, candidate) : candidate, size: 0, matchedBy: "path", mismatch: "" };
                 }
             }
             return { present: false, path: "", rel: "", size: 0, matchedBy: "", mismatch: "" };
@@ -476,7 +500,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 candidateSize = 0;
             }
             if (sameSize({ size: candidateSize })) {
-                return { present: true, path: candidate, rel: path.relative(root, candidate), size: candidateSize, matchedBy: "path", mismatch: "" };
+                return { present: true, path: candidate, rel: root ? path.relative(root, candidate) : candidate, size: candidateSize, matchedBy: "path", mismatch: "" };
             }
             if (expectedSize && candidateSize) {
                 directMismatch = `本机同名文件大小不一致（${candidateSize} / 资源包 ${expectedSize}）`;
@@ -527,10 +551,14 @@ export function createResourceManager({ config, setup, registry, logger, workflo
     // 都不可写时退回 <ComfyUI>/models/<类型>。
     function targetPath(resource, root = comfyRoot()) {
         const { dir, file } = targetParts(resource.target);
-        if (!root) throw new Error("未找到 ComfyUI 安装目录");
-        if (dir === "custom_nodes") return path.join(root, "custom_nodes", file);
+        if (dir === "custom_nodes") {
+            if (!root) throw new Error("未找到 ComfyUI 安装目录");
+            return path.join(root, "custom_nodes", file);
+        }
         const writable = modelRoots(dir, root).find((entry) => isDir(entry) && canWrite(entry));
-        return path.join(writable || path.join(root, "models", dir), file);
+        if (writable) return path.join(writable, file);
+        if (root) return path.join(root, "models", dir, file);
+        throw new Error("未找到可写的 ComfyUI 模型目录；请确认 ComfyUI 已启动，并且「添加工作流」能识别到模型目录");
     }
 
     async function loadLock() {
@@ -1554,7 +1582,6 @@ export function createResourceManager({ config, setup, registry, logger, workflo
 
     async function downloadResource(resource, jobItem, signal) {
         const root = comfyRoot();
-        if (!root) throw new Error("未找到 ComfyUI 安装目录");
         const existing = resourceStatus(resource, root);
         if (existing.status === "present") {
             jobItem.status = "skipped";

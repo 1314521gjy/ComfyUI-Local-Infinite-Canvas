@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026.10.29-24",
+  "version": "2026.10.29-27",
   "channel": "stable",
   "updatedAt": "2026-10-29",
   "packs": [
@@ -472,6 +472,59 @@
       "workflowDependencies": {},
       "family": "prompt",
       "tier": "core"
+    },
+    {
+      "id": "upscale",
+      "label": "超分",
+      "description": "快速放大（ESRGAN）与 SeedVR2 图片/视频超分。节点随包自动安装，权重按工作流下载；3B/7B DiT 是选下内容。",
+      "resources": [
+        "esrgan_x2plus",
+        "esrgan_x4plus",
+        "esrgan_anime6b",
+        "seedvr2_3b_dit",
+        "seedvr2_7b_dit",
+        "seedvr2_vae"
+      ],
+      "optionalResources": [
+        "esrgan_x2plus",
+        "esrgan_x4plus",
+        "esrgan_anime6b",
+        "seedvr2_3b_dit",
+        "seedvr2_7b_dit",
+        "seedvr2_vae"
+      ],
+      "workflows": [
+        "image-esrgan-upscale",
+        "video-esrgan_2x",
+        "image-seedvr2-upscale",
+        "video-seedvr2-upscale"
+      ],
+      "family": "upscale",
+      "tier": "utility",
+      "optional": true,
+      "autoRecommend": false,
+      "requirements": {
+        "vramFloorGb": 8,
+        "weightsGb": 12.5,
+        "ramBaseGb": 16,
+        "recommendVramGb": 16
+      },
+      "workflowDependencies": {
+        "image-esrgan-upscale": [
+          "esrgan_x2plus"
+        ],
+        "video-esrgan_2x": [
+          "esrgan_x2plus"
+        ],
+        "image-seedvr2-upscale": [
+          "seedvr2_7b_dit",
+          "seedvr2_vae"
+        ],
+        "video-seedvr2-upscale": [
+          "seedvr2_3b_dit",
+          "seedvr2_vae"
+        ]
+      }
     }
   ],
   "resources": [
@@ -1352,26 +1405,28 @@
       "id": "prompt_qwen_gguf",
       "type": "model",
       "label": "Qwen3.5-9B 反推模型（Q4_K_M）",
-      "target": "LLM/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf",
-      "size": 5627044224,
-      "sha256": "2ca636d9e81d3d23ca9b60c234fe185d30ec082eeba69ce770fdb0c76559a4f5",
+      "target": "LLM/Qwen3.5-9B-Q4_K_M.gguf",
+      "size": 5680522464,
+      "sha256": "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8",
       "license": "Apache-2.0（Qwen3.5-9B 底模）",
       "note": "本地图片反推；约 5.3GB。",
       "sources": [
-        "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/models/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf"
+        "https://modelscope.cn/models/unsloth/Qwen3.5-9B-GGUF/resolve/master/Qwen3.5-9B-Q4_K_M.gguf",
+        "https://hf-mirror.com/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf"
       ]
     },
     {
       "id": "prompt_qwen_mmproj",
       "type": "model",
       "label": "Qwen3.5-9B 视觉投影（mmproj）",
-      "target": "LLM/mmproj-Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-BF16.gguf",
-      "size": 921704448,
-      "sha256": "05f662501f8bd45607b079723a3e238a4e888fd085a10a53f4057a0e250f6934",
+      "target": "LLM/mmproj-BF16.gguf",
+      "size": 921705024,
+      "sha256": "853698ce7aa6c7ba732478bad280240969ddf7b0fcbf93900046f63903a83383",
       "license": "Apache-2.0（Qwen3.5-9B 底模）",
       "note": "Qwen 看图反推必需；约 880MB。",
       "sources": [
-        "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/models/mmproj-Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-BF16.gguf"
+        "https://modelscope.cn/models/unsloth/Qwen3.5-9B-GGUF/resolve/master/mmproj-BF16.gguf",
+        "https://hf-mirror.com/unsloth/Qwen3.5-9B-GGUF/resolve/main/mmproj-BF16.gguf"
       ]
     },
     {
@@ -1493,6 +1548,130 @@
         }
       ],
       "minVersion": "2.2.0"
+    },
+    {
+      "id": "seedvr2_node",
+      "type": "node",
+      "label": "SeedVR2 超分节点",
+      "target": "custom_nodes/ComfyUI-SeedVR2_VideoUpscaler",
+      "autoInstall": true,
+      "bundleDir": "resources/nodes/unpacked/ComfyUI-SeedVR2_VideoUpscaler",
+      "size": 2296099,
+      "license": "Apache-2.0",
+      "note": "随包节点，启动器自动复制；安装后重启 ComfyUI。依赖 diffusers / peft / rotary_embedding_torch / gguf 等，缺失时按报错安装。",
+      "provides": [
+        "SeedVR2LoadDiTModel",
+        "SeedVR2LoadVAEModel",
+        "SeedVR2VideoUpscaler"
+      ]
+    },
+    {
+      "id": "seedvr2_3b_dit",
+      "type": "model",
+      "label": "SeedVR2 3B DiT（视频）",
+      "target": "SEEDVR2/seedvr2_ema_3b_fp8_e4m3fn.safetensors",
+      "size": 3391544696,
+      "sha256": "3bf1e43ebedd570e7e7a0b1b60d6a02e105978f505c8128a241cde99a8240cff",
+      "license": "Apache-2.0",
+      "note": "SeedVR2 视频超分 DiT；约 3.4GB。",
+      "sources": [
+        {
+          "url": "https://hf-mirror.com/numz/SeedVR2_comfyUI/resolve/main/seedvr2_ema_3b_fp8_e4m3fn.safetensors",
+          "label": "HF 镜像"
+        },
+        {
+          "url": "https://huggingface.co/numz/SeedVR2_comfyUI/resolve/main/seedvr2_ema_3b_fp8_e4m3fn.safetensors",
+          "label": "Hugging Face"
+        }
+      ]
+    },
+    {
+      "id": "seedvr2_7b_dit",
+      "type": "model",
+      "label": "SeedVR2 7B DiT（图片）",
+      "target": "SEEDVR2/seedvr2_ema_7b_fp8_e4m3fn_mixed_block35_fp16.safetensors",
+      "size": 8466296338,
+      "sha256": "3d68b5ec0b295ae28092e355c8cad870edd00b817b26587d0cb8f9dd2df19bb2",
+      "license": "Apache-2.0",
+      "note": "SeedVR2 图片超分 7B DiT；约 8.5GB。",
+      "sources": [
+        {
+          "url": "https://hf-mirror.com/AInVFX/SeedVR2_comfyUI/resolve/main/seedvr2_ema_7b_fp8_e4m3fn_mixed_block35_fp16.safetensors",
+          "label": "HF 镜像"
+        },
+        {
+          "url": "https://huggingface.co/AInVFX/SeedVR2_comfyUI/resolve/main/seedvr2_ema_7b_fp8_e4m3fn_mixed_block35_fp16.safetensors",
+          "label": "Hugging Face"
+        }
+      ]
+    },
+    {
+      "id": "seedvr2_vae",
+      "type": "model",
+      "label": "SeedVR2 VAE",
+      "target": "vae/ema_vae_fp16.safetensors",
+      "size": 501324814,
+      "sha256": "20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1",
+      "license": "Apache-2.0",
+      "note": "SeedVR2 图片/视频超分共用 VAE。",
+      "sources": [
+        {
+          "url": "https://hf-mirror.com/numz/SeedVR2_comfyUI/resolve/main/ema_vae_fp16.safetensors",
+          "label": "HF 镜像"
+        },
+        {
+          "url": "https://huggingface.co/numz/SeedVR2_comfyUI/resolve/main/ema_vae_fp16.safetensors",
+          "label": "Hugging Face"
+        }
+      ]
+    },
+    {
+      "id": "esrgan_x2plus",
+      "type": "model",
+      "label": "RealESRGAN x2plus（快速放大）",
+      "target": "upscale_models/RealESRGAN_x2plus.pth",
+      "size": 67061725,
+      "sha256": "49fafd45f8fd7aa8d31ab2a22d14d91b536c34494a5cfe31eb5d89c2fa266abb",
+      "license": "BSD-3-Clause",
+      "note": "ESRGAN 快速放大默认模型。",
+      "sources": [
+        {
+          "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/upscale_models/RealESRGAN_x2plus.pth",
+          "label": "魔搭镜像"
+        }
+      ]
+    },
+    {
+      "id": "esrgan_anime6b",
+      "type": "model",
+      "label": "RealESRGAN anime 6B（动漫放大）",
+      "target": "upscale_models/RealESRGAN_x4plus_anime_6B.pth",
+      "size": 17938799,
+      "sha256": "f872d837d3c90ed2e05227bed711af5671a6fd1c9f7d7e91c911a61f155e99da",
+      "license": "BSD-3-Clause",
+      "note": "面向动漫/插画的 4x 放大模型；不是快速放大工作流的默认模型，可在 ComfyUI 中替换。",
+      "sources": [
+        {
+          "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/upscale_models/RealESRGAN_x4plus_anime_6B.pth",
+          "label": "魔搭镜像"
+        }
+      ]
+    },
+    {
+      "id": "esrgan_x4plus",
+      "type": "model",
+      "label": "RealESRGAN x4plus",
+      "target": "upscale_models/RealESRGAN_x4plus.pth",
+      "size": 67040989,
+      "sha256": "4fa0d38905f75ac06eb49a7951b426670021be3018265fd191d2125df9d682f1",
+      "license": "BSD-3-Clause",
+      "note": "4x 快速放大；输出尺寸较大。",
+      "sources": [
+        {
+          "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/upscale_models/RealESRGAN_x4plus.pth",
+          "label": "魔搭镜像"
+        }
+      ]
     }
   ]
 }

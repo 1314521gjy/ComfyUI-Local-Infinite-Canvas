@@ -1,16 +1,16 @@
 {
-  "version": "v0.21.17",
+  "version": "v0.21.18",
   "publishedAt": "2026-10-29",
-  "notes": "安装运行库前增加风险确认（自动/手动）；旧版运行库提示、无匹配/失败时给出 Agent 处理提示；已有可用运行库不覆盖。",
+  "notes": "新增超分资源卡（RealESRGAN 快速放大、SeedVR2 3B/7B 图片/视频超分）；修复 Qwen3.5-9B 反推模型下载 404，改用魔搭上的 unsloth Qwen3.5-9B GGUF；修复非默认 ComfyUI 路径下自动安装提示“未找到 ComfyUI 安装目录”。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.17.zip",
-    "sha256": "6bd77c4dbd7582e251132e62a6968729acf7ea399cc50676f2a446d410b59abf",
-    "size": 36208750
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.18.zip",
+    "sha256": "e504aef464f726ab15b3420bbd98db732adbf07a09cf108e521fcdc57bc9577c",
+    "size": 37519394
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

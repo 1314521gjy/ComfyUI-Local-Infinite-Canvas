@@ -18,6 +18,7 @@
 - **llama-cpp-python 预编译包** — MIT；Windows 预编译来源 https://github.com/JamePeng/llama-cpp-python ，未改动二进制。
 - **TE_MAN** — 原作者 LICENSE 原文写明未经书面授权禁止再分发；本项目依据用户提供的作者授权（2026-10-29）随包分发。若权利人提出异议，将立即移除相关文件。
 - **ComfyUI-KJNodes** — GPL-3.0；上游 https://github.com/kijai/ComfyUI-KJNodes ；随工作台提供预解压目录，未改动源码。
+- **ComfyUI-SeedVR2_VideoUpscaler** — Apache-2.0；上游 https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler ；随工作台提供预解压目录，未改动源码。
 
 ## 按需下载的第三方运行库
 
@@ -27,20 +28,27 @@
 
 ## 可选下载的本地反推模型
 
-以下模型不进入主安装包，由资源卡按需从 ModelScope 数据集 `shensanshu/ComfyUI-Local-Infinite-Canvas-Models` 下载：
+以下模型不进入主安装包，由资源卡按需下载：
 
-- **Qwen3.5-9B-Uncensored-HauhauCS-Aggressive（Q4_K_M + mmproj）** — 基于 Qwen3.5-9B，按底模 Apache-2.0 分发；如上游权利人提出限制，将移除下载。
-- **Florence-2-large-PromptGen-v2.0** — MIT（模型卡标注），来源 MiaoshouAI。
+- **Qwen3.5-9B GGUF（Q4_K_M + mmproj BF16）** — Apache-2.0；上游模型 Qwen/Qwen3.5-9B，GGUF 由 unsloth 转换；从 ModelScope `unsloth/Qwen3.5-9B-GGUF` 下载（HF 镜像为备用），未改动权重。原第三方「Uncensored」版本已停止提供。
+- **Florence-2-large-PromptGen-v2.0** — MIT（模型卡标注），来源 MiaoshouAI，从 ModelScope 数据集 `shensanshu/ComfyUI-Local-Infinite-Canvas-Models` 下载。
 
-## 模型与自定义节点
+## 可选下载的超分模型
+
+以下模型不进入主安装包，由「超分」资源卡按工作流按需下载：
+
+- **RealESRGAN x2plus / x4plus / x4plus anime 6B** — BSD-3-Clause；上游 https://github.com/xinntao/Real-ESRGAN ；从 ModelScope 数据集 `shensanshu/ComfyUI-Local-Infinite-Canvas-Models` 的 `upscale_models/` 下载，未改动权重。
+- **SeedVR2 3B / 7B DiT 与 VAE** — Apache-2.0；上游 https://github.com/ByteDance-Seed/SeedVR ；权重来自 https://huggingface.co/numz/SeedVR2_comfyUI 与 https://huggingface.co/AInVFX/SeedVR2_comfyUI ，经 hf-mirror 下载，未改动权重。
+- 4x-UltraSharp、4x-AnimeSharp 为 CC-BY-NC-SA-4.0（禁止商用、相同方式共享），本项目不提供下载。
+
+## 其他模型
 
 以下内容不随本仓库分发，需自行从合法渠道获取并遵守模型/节点许可证：
 
 - MiniMax-H3（Singularity ref2va / 8-step LightX2V 等）相关权重与节点。
 - 阿里云通义千问 Qwen Image 2.1、Qwen3-VL、Qwen3.5 相关权重。
 - MOSS Image SFT、MOSS 8-step DMD LoRA、Qwen3.5-9B CLIP 等。
-- SeedVR2 3B/7B、ESRGAN/RealESRGAN 放大模型。
-- ComfyUI 自定义节点（VHS、KJNodes、TE-Speed、SeedVR2、FlashVSR 等）。
+- 未随包的 ComfyUI 自定义节点（VHS、TE-Speed、FlashVSR 等）。
 
 模型权重、LoRA、样片和生成内容可能附带额外使用限制；请以模型发布方的许可证为准。不要将无权分发的权重提交到本仓库。
 
