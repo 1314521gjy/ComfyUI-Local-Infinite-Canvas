@@ -43,6 +43,7 @@ export function useVersionCheck() {
                 if (result.latestVersion) setLatestVersion(result.latestVersion);
                 if (showMessage) {
                     if (result.updateAvailable) message.success(t("version.updateAvailable", { version: result.latestVersion }));
+                    else if (isNewerVersion(result.currentVersion || "", currentVersion)) message.warning(t("version.pageStaleShort"));
                     else message.success(t("version.upToDate"));
                 }
                 return result;
@@ -92,7 +93,8 @@ export function useVersionCheck() {
         }
     }, [checkLatest, message, t]);
 
-    const hasNewVersion = Boolean(updateInfo?.updateAvailable) || isNewerVersion(latestVersion, currentVersion);
+    const pageStale = Boolean(updateInfo?.currentVersion && isNewerVersion(updateInfo.currentVersion, currentVersion));
+    const hasNewVersion = Boolean(updateInfo?.updateAvailable) || pageStale || isNewerVersion(latestVersion, currentVersion);
 
     return {
         open,
@@ -102,6 +104,7 @@ export function useVersionCheck() {
         releases,
         checking,
         hasNewVersion,
+        pageStale,
         checkLatestRelease,
         updateInfo,
         applyResult,

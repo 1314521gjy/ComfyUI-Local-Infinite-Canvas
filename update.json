@@ -1,16 +1,16 @@
 {
-  "version": "v0.21.15",
+  "version": "v0.21.16",
   "publishedAt": "2026-10-29",
-  "notes": "H3 增加 SageAttention 运行库自动匹配与安装（含 RTX 50 系）；资源索引缺失时自动从魔搭恢复并缓存；网关依赖缺失时启动器自动修复。",
+  "notes": "修复更新后版本号显示不一致；页面落后于程序时提示刷新页面。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.15.zip",
-    "sha256": "528e8d6230498153dfb36b6fa4434aaf205e143bcd1fc8da3ead0eec8e8109d4",
-    "size": 36203140
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.16.zip",
+    "sha256": "519ec47067491185b7830c9c21dd0eca0657652a5e7f506c7e3bb98e156a6330",
+    "size": 36204196
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

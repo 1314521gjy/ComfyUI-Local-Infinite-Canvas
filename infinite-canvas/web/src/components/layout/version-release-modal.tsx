@@ -29,7 +29,7 @@ type VersionReleaseModalProps = {
 export function VersionReleaseModal({ className, style }: VersionReleaseModalProps) {
     const { t } = useTranslation();
     const { modal } = App.useApp();
-    const { open, setOpen, openReleaseModal, latestVersion, releases, checking, hasNewVersion, checkLatestRelease, updateInfo, applyResult, applying, applyUpdate } =
+    const { open, setOpen, openReleaseModal, latestVersion, releases, checking, hasNewVersion, pageStale, checkLatestRelease, updateInfo, applyResult, applying, applyUpdate } =
         useVersionCheck();
 
     useEffect(() => {
@@ -84,6 +84,18 @@ export function VersionReleaseModal({ className, style }: VersionReleaseModalPro
                         <div className="mt-1 text-base font-semibold text-stone-950 dark:text-stone-100">{latestVersion}</div>
                     </div>
                 </div>
+                {pageStale ? (
+                    <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-900/60 dark:bg-blue-950/30">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="text-sm font-semibold text-stone-900 dark:text-stone-100">
+                                {t("version.pageStale", { page: APP_VERSION, program: updateInfo?.currentVersion || latestVersion })}
+                            </div>
+                            <Button size="small" type="primary" onClick={() => window.location.reload()}>
+                                {t("version.refreshPage")}
+                            </Button>
+                        </div>
+                    </div>
+                ) : null}
                 {updateInfo?.updateAvailable ? (
                     <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/30">
                         <div className="flex flex-wrap items-center justify-between gap-2">

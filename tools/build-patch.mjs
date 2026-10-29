@@ -20,6 +20,23 @@ if (!root || !fs.existsSync(path.join(root, "VERSION"))) {
     process.exit(1);
 }
 const version = fs.readFileSync(path.join(root, "VERSION"), "utf8").trim();
+const changelog = fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8");
+if (!changelog.includes(`## ${version}`)) {
+    console.error(`CHANGELOG.md 缺少 ${version} 条目；请先补 CHANGELOG 再构建补丁`);
+    process.exit(1);
+}
+const distIndexPath = path.join(root, "infinite-canvas", "web", "dist", "index.html");
+const distIndex = fs.readFileSync(distIndexPath, "utf8");
+const jsAsset = distIndex.match(/\/assets\/(index-[^"]+\.js)/);
+if (!jsAsset) {
+    console.error("dist/index.html 没有引用 index JS，前端 dist 不完整");
+    process.exit(1);
+}
+const jsText = fs.readFileSync(path.join(root, "infinite-canvas", "web", "dist", "assets", jsAsset[1]), "utf8");
+if (!jsText.includes(version)) {
+    console.error(`前端 dist 不是 ${version} 构建（${jsAsset[1]} 中找不到版本号）；请先改 VERSION/CHANGELOG，再 npm run build，最后打补丁`);
+    process.exit(1);
+}
 const out = path.resolve(arg("out", path.join("patches", `${version}.zip`)));
 const writeManifest = args.includes("--write-manifest");
 const deleteFile = arg("delete", "");
