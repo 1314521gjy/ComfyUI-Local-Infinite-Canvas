@@ -3,7 +3,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 
 import { isApiWorkflow, isUiWorkflow } from "./registry.js";
-import { bindingSummary, canonicalAspectRatio, convertUiWorkflow, detectFreeBindings } from "./ui-workflow.js";
+import { bindingSummary, canonicalAspectRatio, convertUiWorkflow, detectFreeBindings, pruneUnreachableNodes } from "./ui-workflow.js";
 import { deepClone, nowIso, randomId, writeJsonAtomic } from "./util.js";
 
 const FILE_NAME = "free-workflows.json";
@@ -24,7 +24,7 @@ function imageValue(uploaded) {
 }
 
 export function applyFreeInputs(workflow, bindings, { prompt, texts = [], uploadedImages = [], size, count, seed, seedFixed, ratio } = {}) {
-  const next = deepClone(workflow || {});
+  const next = deepClone(pruneUnreachableNodes(workflow) || {});
   // 只允许写回扫描时识别出的文本输入，避免通过接口改到模型名/文件名等字段。
   const allowed = new Set((bindings.textInputs || []).map((item) => `${item.node}\u0000${item.input}`));
   const textWrites = new Map();

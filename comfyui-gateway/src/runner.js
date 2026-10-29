@@ -97,7 +97,8 @@ export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 *
   const resolved = resolveForMode(entry, context.mode);
   const params = resolved.baseModelParams ? { ...resolved.baseModelParams, ...(context.params || {}) } : context.params;
   const aliasedWorkflow = applyModelAliases(resolved.workflow, modelAliasFor);
-  const bound = applyMainModelFile(applyBindings(aliasedWorkflow, resolved, { ...context, params }, { logger }), resolved.mainModelFile);
+  const stats = {};
+  const bound = applyMainModelFile(applyBindings(aliasedWorkflow, resolved, { ...context, params }, { logger, stats }), resolved.mainModelFile);
   const loraResult = applyLoraChain(bound, params, {
     available: loraCatalog,
     filter: resolved.lora?.filter,
@@ -174,7 +175,7 @@ export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 *
       });
     }
     onProgress?.({ phase: "downloaded", promptId, progress: 0.95 });
-    return { promptId, files: outputs, workflow };
+    return { promptId, files: outputs, workflow, usedSeed: stats.seed ?? null };
   } finally {
     signal?.removeEventListener("abort", onAbort);
   }
@@ -184,6 +185,7 @@ export async function runImage({ entry, context, comfy, timeoutMs, pollIntervalM
   const count = context.count || 1;
   const all = [];
   let lastPromptId;
+  let lastUsedSeed = null;
   // 工作流如果支持 batch，一次就能返回 count 张；不支持时按张补跑，避免画布静默少图。
   for (let attempt = 0; attempt < count && all.length < count; attempt += 1) {
     const result = await runWorkflow({
@@ -201,9 +203,10 @@ export async function runImage({ entry, context, comfy, timeoutMs, pollIntervalM
       onProgress: (event) => onProgress?.({ ...event, attempt, attempts: count }),
     });
     lastPromptId = result.promptId;
+    lastUsedSeed = result.usedSeed ?? lastUsedSeed;
     all.push(...result.files);
   }
-  return { promptId: lastPromptId, files: all.slice(0, count) };
+  return { promptId: lastPromptId, files: all.slice(0, count), usedSeed: lastUsedSeed };
 }
 
 export async function runVideo({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, requestId, onProgress, logger, loraCatalog, modelAliasFor = null, includePreviewOutputs = false }) {

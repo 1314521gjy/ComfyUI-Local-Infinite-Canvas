@@ -312,6 +312,24 @@ function reachableNodes(workflow, roots) {
   return all;
 }
 
+// ComfyUI 会校验提交上来的每一个节点；游离节点（没连到任何输出）照样会被校验，
+// 里面引用了缺失的模型/节点就会让整次生成失败。执行前只保留输出节点能到达的子图。
+export function pruneUnreachableNodes(workflow) {
+  const entries = listNodes(workflow);
+  if (!entries.length) return workflow || {};
+  const roots = entries
+    .filter(([, node]) => /save|preview|output|combine/i.test(String(node?.class_type || "")))
+    .map(([id]) => id);
+  if (!roots.length) return workflow;
+  const reachable = reachableNodes(workflow, roots);
+  if (reachable.size === entries.length) return workflow;
+  const next = {};
+  for (const [id, node] of entries) {
+    if (reachable.has(id)) next[id] = node;
+  }
+  return next;
+}
+
 function numericInput(node, name) {
   const value = node?.inputs?.[name];
   return typeof value === "number" && Number.isFinite(value) ? value : null;

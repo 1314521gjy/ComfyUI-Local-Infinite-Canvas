@@ -90,7 +90,7 @@ function nextGatewayLoadId(workflow) {
   return String(id);
 }
 
-export function applyBindings(workflow, entry, context, { logger } = {}) {
+export function applyBindings(workflow, entry, context, { logger, stats } = {}) {
   const next = deepClone(workflow);
 
   for (const [key, value] of Object.entries(entry.defaults || {})) {
@@ -261,6 +261,10 @@ export function applyBindings(workflow, entry, context, { logger } = {}) {
     if (binding.map && Object.prototype.hasOwnProperty.call(binding.map, value)) value = binding.map[value];
     value = applyTransform(value, binding);
     node.inputs[binding.input] = value;
+    if (key === "seed") {
+      context.usedSeed = value;
+      if (stats) stats.seed = value;
+    }
   }
 
   const outputSize = entry.outputSize?.fromSize ? context.size : context.outputSize;

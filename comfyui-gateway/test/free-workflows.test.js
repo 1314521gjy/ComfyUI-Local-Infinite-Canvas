@@ -248,3 +248,19 @@ test("free workflow store deletes entries and persists", async () => {
     await fsp.rm(dataDir, { recursive: true, force: true });
   }
 });
+
+test("orphan nodes are pruned before submission so they cannot fail validation", () => {
+  const workflow = {
+    "1": { class_type: "LoadImage", inputs: { image: "a.png" } },
+    "2": { class_type: "SaveImage", inputs: { images: ["1", 0], filename_prefix: "x" } },
+    "99": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: "missing.safetensors" } },
+    "98": { class_type: "LoraLoader", inputs: { model: ["99", 0], lora_name: "missing.safetensors", strength_model: 1, strength_clip: 1 } },
+  };
+  const next = applyFreeInputs(workflow, {}, { prompt: "p" });
+  assert.deepEqual(Object.keys(next).sort(), ["1", "2"]);
+  assert.equal(next["99"], undefined);
+  assert.equal(next["98"], undefined);
+
+  const noOutputs = { "1": { class_type: "LoadImage", inputs: { image: "a.png" } } };
+  assert.deepEqual(applyFreeInputs(noOutputs, {}, { prompt: "p" }), noOutputs);
+});

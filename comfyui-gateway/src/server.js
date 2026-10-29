@@ -932,7 +932,7 @@ export async function createGatewayApp(overrides = {}) {
     } finally {
       abort.cleanup();
     }
-    logger.info(`image ${entry.name} -> ${result.promptId} (${result.files.length} file(s)) ${req.id}`);
+    logger.info(`image ${entry.name} seed=${result.usedSeed ?? "-"} -> ${result.promptId} (${result.files.length} file(s)) ${req.id}`);
     const responseFormat = String(body.response_format || "b64_json").toLowerCase();
     const data = [];
     for (const file of result.files) {
@@ -944,7 +944,7 @@ export async function createGatewayApp(overrides = {}) {
       }
     }
     if (!data.length) throw new HttpError("ComfyUI 没有返回图片", { status: 502, code: "no_images" });
-    res.json({ created: Math.floor(Date.now() / 1000), data });
+    res.json({ created: Math.floor(Date.now() / 1000), data, seed: result.usedSeed ?? null });
   });
 
   app.post("/v1/images/upscale", upload.any(), async (req, res) => {
@@ -1000,7 +1000,7 @@ export async function createGatewayApp(overrides = {}) {
       }
     }
     if (!data.length) throw new HttpError("超分工作流没有返回图片", { status: 502, code: "no_images" });
-    res.json({ created: Math.floor(Date.now() / 1000), data });
+    res.json({ created: Math.floor(Date.now() / 1000), data, seed: result.usedSeed ?? null });
   });
 
   app.post("/v1/images/edits", upload.any(), async (req, res) => {
