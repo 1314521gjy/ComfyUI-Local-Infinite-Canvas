@@ -114,9 +114,9 @@ flowchart LR
 # 整套启动
 start-local.bat            # 保持画布页打开；关页 30s 后停后台，见 §4.7
 
-# 网关单测（2026-10-30 实测 169/169）
+# 网关单测（2026-10-30 实测 176/176）
 cd 07842353-release-staging/comfyui-gateway
-COMFYUI_DIR=E:/ComfyUI/ComfyUI node --test --test-timeout=120000 test/*.test.js
+COMFYUI_DIR=C:/ComfyUI node --test --test-timeout=120000 test/*.test.js
 
 # 前端
 cd ../infinite-canvas/web && npm run typecheck && npm run build
