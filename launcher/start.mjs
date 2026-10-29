@@ -50,7 +50,27 @@ const DEFAULT_CONFIG = {
   closeCanvasStopsBackend: true,
   stopAdoptedComfyOnCanvasClose: true,
   canvasIdleGraceSec: 30,
+  canvasHost: "127.0.0.1",
+  gatewayHost: "127.0.0.1",
+  gatewayPublicHost: "",
+  corsOrigins: "",
 };
+
+function normalizeHost(value, fallback = "127.0.0.1") {
+  const raw = String(value || "").trim();
+  if (!raw) return fallback;
+  return raw.replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+}
+
+function isLoopbackHost(host) {
+  const value = String(host || "").trim().toLowerCase().replace(/^\[|\]$/g, "");
+  return value === "localhost" || value === "::1" || value === "0:0:0:0:0:0:0:1" || /^127\./.test(value);
+}
+
+function browseHostFor(bindHost) {
+  const host = normalizeHost(bindHost);
+  return host === "0.0.0.0" || host === "::" || isLoopbackHost(host) ? "127.0.0.1" : host;
+}
 
 /* ------------------------------------------------------------------ 日志 */
 
@@ -131,10 +151,15 @@ function loadConfig() {
     closeCanvasStopsBackend: process.env.CLOSE_CANVAS_STOPS_BACKEND !== "0" && merged.closeCanvasStopsBackend !== false,
     stopAdoptedComfyOnCanvasClose: process.env.STOP_ADOPTED_COMFY !== "0" && merged.stopAdoptedComfyOnCanvasClose !== false,
     canvasIdleGraceSec: resolveIdleGraceSec(merged),
+    canvasHost: normalizeHost(merged.canvasHost, DEFAULT_CONFIG.canvasHost),
+    gatewayHost: normalizeHost(merged.gatewayHost, DEFAULT_CONFIG.gatewayHost),
+    gatewayPublicHost: normalizeHost(merged.gatewayPublicHost, ""),
+    corsOrigins: String(merged.corsOrigins || "").trim(),
     configCreated: created,
   };
-  cfg.gatewayUrl = `http://127.0.0.1:${cfg.gatewayPort}`;
-  cfg.canvasUrl = `http://127.0.0.1:${cfg.canvasPort}`;
+  const gatewayPublicHost = cfg.gatewayPublicHost || "127.0.0.1";
+  cfg.gatewayUrl = `http://${gatewayPublicHost}:${cfg.gatewayPort}`;
+  cfg.canvasUrl = `http://${browseHostFor(cfg.canvasHost)}:${cfg.canvasPort}`;
   cfg.controlUrl = `http://127.0.0.1:${cfg.controlPort}`;
   return cfg;
 }
@@ -491,7 +516,7 @@ async function listenCanvasServer(cfg, preferredPort) {
     const server = createCanvasServer(cfg);
     const error = await new Promise((resolve) => {
       server.once("error", (err) => resolve(err));
-      server.listen(port, "127.0.0.1", () => resolve(null));
+      server.listen(port, cfg.canvasHost || "127.0.0.1", () => resolve(null));
     });
     if (!error) return { server, port };
     lastError = error;
@@ -602,27 +627,37 @@ function ensureGatewayDeps(cfg) {
 async function quarantineTeManData(comfyRoot) {
   if (!comfyRoot) return;
   const dataDir = path.join(ROOT, "comfyui-gateway", "data");
-  const marker = path.join(dataDir, "te-man-cleanup-v1.json");
+  const marker = path.join(dataDir, "te-man-cleanup-v2.json");
   if (isFile(marker)) return;
-  const source = path.join(comfyRoot, "custom_nodes", "TE_MAN", "data");
-  let movedTo = "";
+  const quarantineRoot = path.join(dataDir, "te-man-quarantine", `20261030-${Date.now()}`);
+  const customNodes = path.join(comfyRoot, "custom_nodes", "TE_MAN");
+  const bundledNodes = path.join(ROOT, "comfyui-gateway", "resources", "nodes", "unpacked", "TE_MAN");
+  const moved = [];
   try {
-    if (isDir(source)) {
-      movedTo = path.join(dataDir, "te-man-quarantine", `20261029-${Date.now()}`);
-      await fsp.mkdir(path.dirname(movedTo), { recursive: true });
+    const move = async (source, label) => {
+      if (!fs.existsSync(source)) return;
+      const destination = path.join(quarantineRoot, label, path.basename(source));
+      await fsp.mkdir(path.dirname(destination), { recursive: true });
       try {
-        await fsp.rename(source, movedTo);
+        await fsp.rename(source, destination);
       } catch {
-        await fsp.cp(source, movedTo, { recursive: true, force: true });
+        await fsp.cp(source, destination, { recursive: true, force: true });
         await fsp.rm(source, { recursive: true, force: true });
       }
-      await fsp.mkdir(source, { recursive: true });
-      log(`已隔离 TE_MAN 历史数据到 ${movedTo}`, "WARN");
+      moved.push(label);
+    };
+    for (const [root, prefix] of [[customNodes, "custom"], [bundledNodes, "bundled"]]) {
+      await move(path.join(root, "data"), `${prefix}-data`);
+      const config = path.join(root, "config_IdeaDesk.ini");
+      // 只清理随包分发的旧配置（1042B），用户自己改过的配置保持不动。
+      if (isFile(config) && fs.statSync(config).size === 1042) await move(config, `${prefix}-config`);
     }
+    await fsp.mkdir(path.join(customNodes, "data"), { recursive: true });
     await fsp.mkdir(dataDir, { recursive: true });
-    await fsp.writeFile(marker, JSON.stringify({ cleanedAt: new Date().toISOString(), movedTo }, null, 2));
+    await fsp.writeFile(marker, JSON.stringify({ cleanedAt: new Date().toISOString(), moved }, null, 2));
+    if (moved.length) log(`已隔离 TE_MAN 旧数据/配置 ${moved.length} 项`, "WARN");
   } catch (error) {
-    log(`TE_MAN 历史数据隔离失败：${error.message}`, "WARN");
+    log(`TE_MAN 旧数据/配置隔离失败：${error.message}`, "WARN");
   }
 }
 
@@ -634,7 +669,9 @@ function spawnGateway(cfg, comfyUrl, workflowsDir) {
   const env = {
     ...process.env,
     PORT: String(cfg.gatewayPort),
-    HOST: "127.0.0.1",
+    HOST: cfg.gatewayHost || "127.0.0.1",
+    ...(isLoopbackHost(cfg.gatewayHost || "127.0.0.1") ? {} : { ALLOW_REMOTE: "1" }),
+    ...(cfg.corsOrigins ? { CORS_ORIGINS: cfg.corsOrigins } : {}),
     COMFY_URL: comfyUrl,
     ...(cfg.comfyDir ? { COMFYUI_DIR: cfg.comfyDir } : {}),
     ...(cfg.launcherControlUrl ? { LAUNCHER_CONTROL_URL: cfg.launcherControlUrl } : {}),
@@ -730,7 +767,7 @@ function writeRuntimeConfig(cfg, gatewayUrl) {
   } catch {
     origin = cfg.gatewayUrl;
   }
-  runtime.LOCAL_GATEWAY_HOST = "127.0.0.1";
+  runtime.LOCAL_GATEWAY_HOST = cfg.gatewayPublicHost || "127.0.0.1";
   runtime.LOCAL_GATEWAY_PORT = String(cfg.gatewayPort);
   runtime.LOCAL_GATEWAY_URL = `${origin}/v1`;
   fs.writeFileSync(file, `window.__RUNTIME_CONFIG__ = ${JSON.stringify(runtime)};\n`, "utf8");
@@ -1509,7 +1546,7 @@ async function main() {
       return;
     }
     if (DRY_RUN) {
-      log(`[dry-run] 将在 http://127.0.0.1:${cfg.canvasPort} 托管 ${cfg.canvasDist}（SPA fallback → index.html，仅绑 127.0.0.1）`);
+      log(`[dry-run] 将在 http://${browseHostFor(cfg.canvasHost)}:${cfg.canvasPort} 托管 ${cfg.canvasDist}（SPA fallback → index.html，绑 ${cfg.canvasHost}）`);
       canvasResult = { url: cfg.canvasUrl, mode: "planned" };
     } else {
       try {
@@ -1528,11 +1565,11 @@ async function main() {
       if (listen.port !== cfg.canvasPort) {
         log(`画布端口 ${cfg.canvasPort} 已被其他程序占用，改用空闲端口 ${listen.port}`);
         cfg.canvasPort = listen.port;
-        cfg.canvasUrl = `http://127.0.0.1:${listen.port}`;
+        cfg.canvasUrl = `http://${browseHostFor(cfg.canvasHost)}:${listen.port}`;
       }
       state.canvasServer = listen.server;
       canvasResult = { url: cfg.canvasUrl, mode: "started" };
-      log(`画布已托管：${cfg.canvasUrl}/ ← ${cfg.canvasDist}（SPA fallback 已启用，仅绑 127.0.0.1）`);
+      log(`画布已托管：${cfg.canvasUrl}/ ← ${cfg.canvasDist}（SPA fallback 已启用，绑 ${cfg.canvasHost}）`);
     }
   }
 
@@ -1588,4 +1625,4 @@ if (invokedDirectly) {
   });
 }
 
-export { comfyInstallInfo, resolveLaunchPlan, comfyPortCandidates, detectComfy, probeAnyComfy, listenCanvasServer };
+export { comfyInstallInfo, resolveLaunchPlan, comfyPortCandidates, detectComfy, probeAnyComfy, listenCanvasServer, isLoopbackHost, normalizeHost, browseHostFor };

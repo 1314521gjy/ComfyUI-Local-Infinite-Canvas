@@ -60,6 +60,7 @@ const PATCH_PROTECTED = [
   "node",
   "update.json",
   "launcher/config.json",
+  "infinite-canvas/web/dist/config.js",
   "launcher/launcher.log",
   "comfyui-gateway/data",
   "comfyui-gateway/node_modules",

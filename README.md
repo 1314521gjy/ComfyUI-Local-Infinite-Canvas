@@ -70,6 +70,24 @@ start-local.bat
 
 启动器会检测 `8188` 和常见 ComfyUI 目录；找到后接管或拉起 ComfyUI，启动网关，并在 `http://127.0.0.1:3000` 托管画布。首次发现 ComfyUI 后会把路径写入 `launcher/config.json`。
 
+### 局域网 / 多机访问（可选）
+
+默认全部只绑 `127.0.0.1`，单机行为不变。如果要在「工作站跑模型 + 其他设备浏览器打开 WebUI」，可在 `launcher/config.json` 增加：
+
+```json
+{
+  "canvasHost": "0.0.0.0",
+  "gatewayHost": "0.0.0.0",
+  "gatewayPublicHost": "192.168.1.10",
+  "corsOrigins": "http://192.168.1.10:3000,http://192.168.1.20:3000"
+}
+```
+
+- `canvasHost`：画布静态服务监听地址；`gatewayHost`：网关监听地址（非回环时自动设置 `ALLOW_REMOTE=1`）。
+- `gatewayPublicHost`：写进前端 `config.js` 的对外可达网关地址；留空等于 `127.0.0.1`。
+- `corsOrigins`：允许跨域调用网关的画布来源，逗号分隔，不支持通配符。
+- 放开绑定后相关端口仍没有内置鉴权，只在可信内网使用，**不要映射到公网**；跨机使用前先读下方「安全提示」。
+
 ## 网关
 
 - 健康检查：`GET http://127.0.0.1:8190/health`
@@ -99,6 +117,7 @@ start-local.bat
 ## 安全提示
 
 - 网关、ComfyUI、启动器控制接口默认只绑 `127.0.0.1`，**没有鉴权**。
+- 只有显式配置 `canvasHost` / `gatewayHost` 才会放开监听；放开后只限可信内网，并配合防火墙限制来源，**不要映射到公网**。
 - 不要把 `:8188`、`:8190`、`:8290` 暴露到公网或不可信局域网。
 - 本地渠道默认 API Key 是占位值 `local`，网关不校验该值；仓库不包含真实 API Key、Token 或私钥。
 - 不要提交 `launcher/config.json`、`comfyui-gateway/data/`、任务输出、模型权重、`.env` 或任何密钥。

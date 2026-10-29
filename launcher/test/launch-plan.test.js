@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { comfyInstallInfo, comfyPortCandidates, listenCanvasServer, probeAnyComfy, resolveLaunchPlan } from "../start.mjs";
+import { browseHostFor, comfyInstallInfo, comfyPortCandidates, isLoopbackHost, listenCanvasServer, normalizeHost, probeAnyComfy, resolveLaunchPlan } from "../start.mjs";
 
 async function fake(files) {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), "launch-plan-"));
@@ -96,6 +96,17 @@ test("finds the python bundled under an integration package's env/python directo
   } finally {
     await fsp.rm(dir, { recursive: true, force: true });
   }
+});
+
+test("host binding helpers keep loopback defaults and accept LAN hosts", () => {
+  assert.equal(isLoopbackHost("127.0.0.1"), true);
+  assert.equal(isLoopbackHost("localhost"), true);
+  assert.equal(isLoopbackHost("::1"), true);
+  assert.equal(isLoopbackHost("0.0.0.0"), false);
+  assert.equal(isLoopbackHost("192.168.1.10"), false);
+  assert.equal(normalizeHost("http://192.168.1.10/"), "192.168.1.10");
+  assert.equal(browseHostFor("0.0.0.0"), "127.0.0.1");
+  assert.equal(browseHostFor("192.168.1.10"), "192.168.1.10");
 });
 
 test("canvas server falls back to a free port when 3000 is occupied", async () => {

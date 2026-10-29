@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## v0.22.2 - 2026-10-30
+
++ [新增] 局域网 / 多机访问（issue #1 / PR #3）：`launcher/config.json` 新增 `canvasHost`、`gatewayHost`、`gatewayPublicHost`、`corsOrigins`，默认仍只绑 `127.0.0.1`；工作站跑模型、其他设备浏览器打开画布时不再需要改源码。放开监听前请阅读 README 的安全提示。
+
++ [修复] Krea2 等不读取参考图的模型会把「参考图片编号」前缀带进正向提示词，导致画面出现无关文字（issue #2）：非 Qwen 多图编辑现在会剥离这段前端协议头，Qwen 多图编辑仍保留图片顺序说明。
+
++ [修复] 更新补丁不再覆盖 `infinite-canvas/web/dist/config.js`，避免应用更新后丢失运行时网关地址。
+
 ## v0.22.1 - 2026-10-30
 
 + [新增] 设置 →「添加工作流」新增「ComfyUI 目录与资源扫描」：默认自动识别；识别不到时可手动指定 ComfyUI、模型、LoRA、插件目录，「浏览…」调本机原生文件夹对话框，多层扫描并显示数量与样例；保存时只把目录里实际存在的模型子目录写入 ComfyUI `extra_model_paths.yaml`（首次备份原文件），并按 ComfyUI 实时目录清单判断是否需要重启。

@@ -1,8 +1,8 @@
 # 无界工作台 · 程序架构
 
-> 截至 2026-10-30，对应发布版本 **v0.22.1**（发布树 `07842353-release-staging`）。
+> 截至 2026-10-30，对应发布版本 **v0.22.2**（发布树 `07842353-release-staging`）。
 > 本文件是架构层权威说明，已纳入 staging git（`docs/ARCHITECTURE.md`），不进发布包。状态与待办见外部 `HANDOFF-NEXT.md`，历史见 `docs/PROJECT_LOG.md`。
-> 版本/索引/路由/包数等数字为 2026-10-30 实测（网关单测 168/168）；`docs/` 不入发布包。
+> 版本/索引/路由/包数等数字为 2026-10-30 实测（网关单测 169/169、启动器 8/8）；`docs/` 不入发布包。
 
 ## 1. 定位
 
@@ -54,9 +54,10 @@ flowchart LR
 12. 状态条数据：`GET /api/system/stats` 由网关调 `nvidia-smi`（8s 超时，`System32` 兜底）；显卡满载导致读取超时时沿用上次读数并标记 `gpuStale`，界面注明「读取超时，显示上次读数」，不再变成「显存 --」。ComfyUI 离线时状态条显示「ComfyUI 离线 · 点击修复」，弹窗内可重新检测或一键重启。
 13. 生成执行：`runWorkflow` 捕获 `OutOfMemory` 后调 `/free`（unload_models + free_memory）并重试一次，仍失败返回 `comfy_out_of_memory` 中文可行动提示；扩图/重绘强制单张、outpaint 采样按显存/配置封顶（默认 4MP）；视频超分按显存分档收敛（≤18GB 1024/1，≤26GB 1280/2）；插帧输出帧率 = 源 fps × 倍率。
 14. 画布端口：默认 3000，被占用时自动尝试 3001–3010；`/config.js` 由启动器动态生成，`npm run build` 清空 dist 也不会丢网关地址。启动器识别 python 时覆盖 `python_embeded / python / env/python / env/Scripts / ..\python` 等整合包布局，并实际执行 `python -c` 探活。
+15. 多机访问（v0.22.2）：`launcher/config.json` 新增 `canvasHost`、`gatewayHost`、`gatewayPublicHost`、`corsOrigins`，默认仍只绑 `127.0.0.1`。`gatewayHost` 非回环时自动设置 `ALLOW_REMOTE=1` 并透传 `CORS_ORIGINS`；`gatewayPublicHost` 写入前端运行时网关地址。放开绑定后端口仍无内置鉴权，只限可信内网；更新器保护 `web/dist/config.js` 不被补丁覆盖。
 ## 5. 生成链路
 
-- **图片**：图片节点 → `services/api/image.ts` → `POST /v1/images/generations` / `/edits` → `runner` → `registry` → `bindings` → ComfyUI `/prompt` → 轮询 `/history` → 回传。`count>1` 并发单图；本地加 `X-Request-Id`，取消走 `POST /api/requests/:id/cancel`，进度走 `/api/progress/:requestId`（250ms）。
+- **图片**：图片节点 → `services/api/image.ts` → `POST /v1/images/generations` / `/edits` → `runner` → `registry` → `bindings` → ComfyUI `/prompt` → 轮询 `/history` → 回传。v0.22.2 起，非 Qwen 多图编辑会在网关剥离前端「参考图片编号 / Reference image labels」协议头，避免 Krea2 等不读参考图的模型把它画成文字；Qwen 多图编辑仍重建图片顺序说明。`count>1` 并发单图；本地加 `X-Request-Id`，取消走 `POST /api/requests/:id/cancel`，进度走 `/api/progress/:requestId`（250ms）。
 - **超分**（v0.21.18）：`POST /v1/images/upscale`、`/v1/videos/upscale`；4 条工作流——ESRGAN 快速放大（x2/x4/anime）、ESRGAN 2×（VHS 取帧/合片 + 核心 `UpscaleModelLoader`/`ImageUpscaleWithModel`，不依赖 WAS 节点）、SeedVR2 图片、SeedVR2 视频。
 - **H3 视频**：`POST /v1/videos`（multipart，`mode=text|frames|reference`）→ 任务制；`GET /v1/videos/:id`、`/content`、`/cancel`。6 个入口 = VDN 三档（默认）+ 无VDN 三档，共 9 NFE（快速 6 低 + 3 高；质量 5 + 4）。源视频走原生 `LoadVideo → GetVideoComponents` 只取帧，`length` 由 ffprobe 帧数写入；音频由 H3 生成，源音频不保留。角色替换没有手选时长，按官方上限跟随：ffprobe 时长 × 24fps → 17n+5 向下对齐 → **封顶 362 帧（15 秒）**，参考视频策略 `model_minimum`；ffprobe 探不到时用前端上报的 `source_duration_seconds × 24` 换算。超过 15 秒的部分不参与生成（任务记 `source_video_truncated`，画布显示提示）；官方要求长视频走滑动窗口 relay，自动分段/拼接尚未实现。2026-10-30 之前不封顶的版本在长视频上会把参考整段塞进内存，RAM 可涨到 90GB+。当前 VDN+SelfLift 组合与作者 turbo8 示例（480p/124 帧/er_sde）未做 A/B，替换质量待真机确认。
 - **上传上限**：multer 单文件 512 MB（`MAX_UPLOAD_BYTES` / config `maxUploadBytes` 可调），超限返回 413 中文提示；视频参考直接走内存，不再沿用旧的 50 MB 默认值。
@@ -113,7 +114,7 @@ flowchart LR
 # 整套启动
 start-local.bat            # 保持画布页打开；关页 30s 后停后台，见 §4.7
 
-# 网关单测（2026-10-30 实测 168/168）
+# 网关单测（2026-10-30 实测 169/169）
 cd 07842353-release-staging/comfyui-gateway
 COMFYUI_DIR=E:/ComfyUI/ComfyUI node --test --test-timeout=120000 test/*.test.js
 
@@ -121,7 +122,7 @@ COMFYUI_DIR=E:/ComfyUI/ComfyUI node --test --test-timeout=120000 test/*.test.js
 cd ../infinite-canvas/web && npm run typecheck && npm run build
 
 # 构建补丁（必须在最后一次 build 之后）
-node ../../tools/build-patch.mjs --root ../.. --out ../../patches/v0.22.1.zip --write-manifest
+node ../../tools/build-patch.mjs --root ../.. --out ../../patches/v0.22.2.zip --write-manifest
 ```
 
 端口：画布 3000、启动器控制 8290、网关 8190、ComfyUI 8188（探测 8188–8199）。

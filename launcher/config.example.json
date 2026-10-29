@@ -12,5 +12,9 @@
   "openBrowser": true,
   "closeCanvasStopsBackend": true,
   "stopAdoptedComfyOnCanvasClose": true,
-  "canvasIdleGraceSec": 30
+  "canvasIdleGraceSec": 30,
+  "canvasHost": "127.0.0.1",
+  "gatewayHost": "127.0.0.1",
+  "gatewayPublicHost": "",
+  "corsOrigins": ""
 }

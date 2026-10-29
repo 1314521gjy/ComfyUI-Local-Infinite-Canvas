@@ -21,7 +21,7 @@ import { createSessionTracker } from "./sessions.js";
 import { createSetupManager } from "./setup.js";
 import { createResourceManager } from "./resources.js";
 import { createPromptOptimizer } from "./prompt-optimizer.js";
-import { reorderQwenEditFiles, reorderQwenEditPrompt } from "./qwen-edit.js";
+import { reorderQwenEditFiles, reorderQwenEditPrompt, stripImageLabelPreamble } from "./qwen-edit.js";
 import { createVideoInterpolator } from "./video-interpolation.js";
 import { createPreviewHub } from "./preview-hub.js";
 import { createFreeWorkflowStore, applyFreeInputs } from "./free-workflows.js";
@@ -1032,7 +1032,7 @@ export async function createGatewayApp(overrides = {}) {
       throw new HttpError(`工作流 ${entry.name} 没有 background 绑定，不能保证透明背景。`, { status: 400, code: "unsupported_background" });
     }
     const context = buildContext({
-      prompt: applyBackgroundPrompt(body.prompt, body.background, entry),
+      prompt: applyBackgroundPrompt(stripImageLabelPreamble(body.prompt), body.background, entry),
       negative: body.negative,
       size: body.size,
       count: body.n ?? body.count,
@@ -1161,7 +1161,11 @@ export async function createGatewayApp(overrides = {}) {
     }
     const qwenEdit = entry.id === "image-qwen21" && mode === "edit" && files.length > 1;
     const orderedFiles = qwenEdit ? reorderQwenEditFiles(files) : files;
-    const promptText = qwenEdit ? reorderQwenEditPrompt(body.prompt, files.length) : body.prompt;
+    const promptText = qwenEdit
+      ? reorderQwenEditPrompt(body.prompt, files.length)
+      : entry.id === "image-qwen21"
+        ? body.prompt
+        : stripImageLabelPreamble(body.prompt);
     const resolvedEntry = registry.resolveForMode(entry, mode);
     if (body.background && !resolvedEntry.bindings?.background && !resolvedEntry.backgroundPrompt) {
       throw new HttpError(`工作流 ${resolvedEntry.name} 没有 background 绑定，不能保证透明背景。`, { status: 400, code: "unsupported_background" });

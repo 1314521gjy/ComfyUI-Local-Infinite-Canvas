@@ -1,18 +1,22 @@
 const CN_NUMERALS = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
 
+export function stripImageLabelPreamble(prompt) {
+  return String(prompt || "")
+    .replace(/^\uFEFF/, "")
+    .trim()
+    .replace(/^参考图片编号：[\s\S]*?\r?\n\r?\n/, "")
+    .replace(/^Reference image labels:[\s\S]*?\r?\n\r?\n/, "")
+    .trim();
+}
+
 export function reorderQwenEditFiles(files) {
   return Array.isArray(files) && files.length > 1 ? [...files.slice(1), files[0]] : files;
 }
 
 export function reorderQwenEditPrompt(prompt, count) {
   const total = Math.max(0, Number(count) || 0);
-  if (total < 2) return String(prompt || "").trim();
-  let text = String(prompt || "")
-    .replace(/^\uFEFF/, "")
-    .trim()
-    .replace(/^参考图片编号：[\s\S]*?\r?\n\r?\n/, "")
-    .replace(/^Reference image labels:[\s\S]*?\r?\n\r?\n/, "")
-    .trim();
+  if (total < 2) return stripImageLabelPreamble(prompt);
+  let text = stripImageLabelPreamble(prompt);
   const target = total;
   const mapped = (index) => (index === 1 ? target : index >= 2 && index <= total ? index - 1 : index);
   text = text.replace(/原图|底图|目标图/g, "__TARGET_IMAGE__");

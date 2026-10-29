@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { reorderQwenEditFiles, reorderQwenEditPrompt } from "../src/qwen-edit.js";
+import { reorderQwenEditFiles, reorderQwenEditPrompt, stripImageLabelPreamble } from "../src/qwen-edit.js";
+
+test("strips the reference-label preamble before sending to non-Qwen workflows", () => {
+  const zh = "参考图片编号：图片1。请按这些编号理解提示词中的图片引用。\n\nmario 16-bit pixel art";
+  assert.equal(stripImageLabelPreamble(zh), "mario 16-bit pixel art");
+  const en = "Reference image labels: Image 1. Use these labels to interpret image references in the prompt.\n\nmario 16-bit pixel art";
+  assert.equal(stripImageLabelPreamble(en), "mario 16-bit pixel art");
+  assert.equal(stripImageLabelPreamble("mario 16-bit pixel art"), "mario 16-bit pixel art");
+  assert.equal(reorderQwenEditPrompt(zh, 1), "mario 16-bit pixel art");
+});
 
 test("Qwen multi-image edit moves the target image to the end", () => {
   const files = ["target.png", "ref.png", "extra.png"];
