@@ -1,16 +1,16 @@
 {
-  "version": "v0.21.18",
+  "version": "v0.21.19",
   "publishedAt": "2026-10-29",
-  "notes": "新增超分资源卡（RealESRGAN 快速放大、SeedVR2 3B/7B 图片/视频超分）；修复 Qwen3.5-9B 反推模型下载 404，改用魔搭上的 unsloth Qwen3.5-9B GGUF；修复非默认 ComfyUI 路径下自动安装提示“未找到 ComfyUI 安装目录”。",
+  "notes": "修复关闭画布后后台不自动退出（现在关页 30 秒后回收）；超分资源包补装 SeedVR2 运行库（diffusers、rotary_embedding_torch、omegaconf、opencv-python、einops），干净机器装完即可用；视频 ESRGAN 2× 改用 ComfyUI 核心放大节点，不再需要 WAS 节点套件。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.18.zip",
-    "sha256": "31f9d1af4207dbfe4431fef69bec0ab13556e4a40ea27220c89eb6ab0e0625ca",
-    "size": 37519392
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.19.zip",
+    "sha256": "61947d0cda68b9db7bbae6472c08dd9424e2ad8b68625d7a0fd84b927db5239a",
+    "size": 37521830
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

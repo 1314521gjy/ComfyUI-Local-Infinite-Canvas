@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## v0.21.19 - 2026-10-29
+
++ [修复] 关闭画布页面后后台不自动退出：「关页 30 秒后停后台」此前从未生效——网关的会话状态不返回关闭时间，启动器据此永远判不出「页面已关」。现在网关记录显式关闭时间与启动时间，启动器按 30 秒宽限回收后台（后台标签被节流、浏览器崩溃等心跳缺失仍不算关闭，不会误停）。旧配置里残留的 15 秒默认值会自动按 30 秒处理。
+
++ [修复] 超分资源包在干净机器上装完仍不可用：SeedVR2 节点缺少 diffusers / rotary_embedding_torch / omegaconf / opencv-python / einops 五个运行库。现已作为「运行库」按工作流按需安装（阿里云 PyPI 镜像、带大小与 SHA256 校验、失败自动回滚，装完重启 ComfyUI 生效）；已装的会自动跳过。
+
++ [修复] 「视频 ESRGAN 2×」依赖 WAS 节点套件（Upscale Model Loader / Upscale Image），干净机器上缺节点直接跑不了；改用 ComfyUI 核心放大节点（UpscaleModelLoader / ImageUpscaleWithModel），画面与倍率不变，只保留随包的 VHS 负责取帧/合片。
+
 ## v0.21.18 - 2026-10-29
 
 + [新增] 超分资源卡：RealESRGAN x2/x4/anime 6B 快速放大，以及 SeedVR2 图片/视频超分（3B/7B DiT + VAE）；SeedVR2 节点随包自动安装，权重按工作流按需下载，3B/7B 为选下内容。
