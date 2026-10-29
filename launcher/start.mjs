@@ -183,28 +183,65 @@ async function httpGet(url, timeoutMs = 2500) {
 
 const COMFY_PORT_FIRST = 8188;
 const COMFY_PORT_LAST = 8199;
+// 8000 是 ComfyUI 桌面版默认端口；其余是常见整合包/自定义端口。
+const EXTRA_COMFY_PORTS = [8000, 7860, 8080, 8888, 18000];
 
-async function probeComfy(url) {
-  const res = await httpGet(`${url.replace(/\/+$/, "")}/system_stats`, 2000);
+function parsePortSpec(spec) {
+  const ports = [];
+  for (const part of String(spec || "").split(",")) {
+    const piece = part.trim();
+    if (!piece) continue;
+    const range = piece.match(/^(\d+)\s*-\s*(\d+)$/);
+    if (range) {
+      const from = Number(range[1]);
+      const to = Number(range[2]);
+      if (!Number.isInteger(from) || !Number.isInteger(to)) continue;
+      const maxSpan = 200;
+      for (let p = Math.min(from, to); p <= Math.max(from, to) && p - Math.min(from, to) < maxSpan; p += 1) ports.push(p);
+    } else if (/^\d+$/.test(piece)) {
+      ports.push(Number(piece));
+    }
+  }
+  return ports;
+}
+
+function comfyPortCandidates(cfg) {
+  const ports = [];
+  const add = (port) => {
+    if (!Number.isInteger(port) || port <= 0 || port >= 65536) return;
+    if (!ports.includes(port)) ports.push(port);
+  };
+  add(portFromUrl(cfg.comfyUrl));
+  add(COMFY_PORT_FIRST);
+  for (const port of EXTRA_COMFY_PORTS) add(port);
+  for (const port of parsePortSpec(process.env.COMFY_PORT_SCAN)) add(port);
+  for (let port = COMFY_PORT_FIRST + 1; port <= COMFY_PORT_LAST; port += 1) add(port);
+  return ports;
+}
+
+async function probeComfy(url, timeoutMs = 900) {
+  const res = await httpGet(`${url.replace(/\/+$/, "")}/system_stats`, timeoutMs);
   return res.ok;
 }
 
+// 并行探测一组端口，避免逐个 2s 超时把启动拖成十几秒。
+async function probeAnyComfy(ports, timeoutMs = 900) {
+  const queue = [...ports];
+  const worker = async () => {
+    while (queue.length) {
+      const port = queue.shift();
+      const url = `http://127.0.0.1:${port}`;
+      if (await probeComfy(url, timeoutMs)) return url;
+    }
+    return "";
+  };
+  const results = await Promise.all(Array.from({ length: Math.min(16, queue.length) }, worker));
+  const hit = results.find(Boolean);
+  return hit ? { url: hit, via: `端口 ${portFromUrl(hit)}` } : null;
+}
+
 async function detectComfy(cfg) {
-  // 1) 首选 8188
-  const primary = `http://127.0.0.1:${COMFY_PORT_FIRST}`;
-  if (await probeComfy(primary)) return { url: primary, via: "8188 默认端口" };
-
-  // 2) 扫 8189–8199（8188 已试过）
-  for (let port = COMFY_PORT_FIRST + 1; port <= COMFY_PORT_LAST; port += 1) {
-    const url = `http://127.0.0.1:${port}`;
-    if (await probeComfy(url)) return { url, via: `扫描 ${port}` };
-  }
-
-  // 3) 配置/环境变量里的地址
-  if (cfg.comfyUrl && !cfg.comfyUrl.endsWith(`:${COMFY_PORT_FIRST}`)) {
-    if (await probeComfy(cfg.comfyUrl)) return { url: cfg.comfyUrl, via: "config.comfyUrl" };
-  }
-  return null;
+  return await probeAnyComfy(comfyPortCandidates(cfg), 900);
 }
 
 async function detectGateway(cfg) {
@@ -259,19 +296,82 @@ function isFile(p) {
 
 function comfyInstallInfo(dir) {
   if (!dir || !isDir(dir)) return null;
-  const bat = path.join(dir, "run_nvidia_gpu.bat");
-  const mainPy = path.join(dir, "ComfyUI", "main.py");
-  const mainPyFlat = path.join(dir, "main.py");
-  const hasBat = isFile(bat);
-  const hasMain = isFile(mainPy) || isFile(mainPyFlat);
-  if (!hasBat && !hasMain) return null;
+  const mainCandidates = [
+    path.join(dir, "ComfyUI", "main.py"),
+    path.join(dir, "main.py"),
+    path.join(dir, "resources", "ComfyUI", "main.py"),
+  ];
+  const mainPy = mainCandidates.find((candidate) => isFile(candidate)) || "";
+  const pythonCandidates = [
+    path.join(dir, "python_embeded", "python.exe"),
+    path.join(dir, "python", "python.exe"),
+    path.join(dir, "venv", "Scripts", "python.exe"),
+    path.join(dir, "..", "python_embeded", "python.exe"),
+    mainPy ? path.join(path.dirname(mainPy), "..", "python_embeded", "python.exe") : "",
+  ].filter(Boolean);
+  const pythonExe = pythonCandidates.find((candidate) => isFile(candidate)) || "";
+  const scripts = [];
+  // 只把内容里真的调用 main.py 的脚本算作 ComfyUI 启动脚本；
+  // 否则我们自己的 start-local.bat、卸载脚本之类都会被误判成 ComfyUI 安装。
+  const pushScript = (file) => {
+    if (!isFile(file) || scripts.includes(file)) return;
+    try {
+      if (/main\.py/i.test(fs.readFileSync(file, "utf8"))) scripts.push(file);
+    } catch {
+      /* 读不到就跳过 */
+    }
+  };
+  let electronExe = [path.join(dir, "ComfyUI.exe"), path.join(dir, "ComfyUI Desktop.exe")].find((candidate) => isFile(candidate)) || "";
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    const rank = (name) => (/^run_nvidia_gpu\.bat$/i.test(name) ? 0 : /^run.*\.(bat|cmd)$/i.test(name) ? 1 : /(启动|一键|开始|start|launch)/i.test(name) ? 2 : 3);
+    const parent = path.dirname(dir);
+    const scanDirs = [dir, parent && parent !== path.parse(dir).root ? parent : ""].filter(Boolean);
+    for (const base of scanDirs) {
+      let list = [];
+      try {
+        list = fs.readdirSync(base, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      const bats = list
+        .filter((entry) => entry.isFile() && /\.(bat|cmd)$/i.test(entry.name))
+        .sort((a, b) => rank(a.name) - rank(b.name));
+      for (const entry of bats) pushScript(path.join(base, entry.name));
+    }
+    if (!electronExe) {
+      const exe = entries.find((entry) => entry.isFile() && /\.exe$/i.test(entry.name) && /comfy/i.test(entry.name));
+      if (exe) electronExe = path.join(dir, exe.name);
+    }
+  } catch {
+    /* 目录不可读时按已有信息处理 */
+  }
+  if (!scripts.length && !mainPy && !electronExe) return null;
 
   const workflowCandidates = [
     path.join(dir, "ComfyUI", "user", "default", "workflows"),
+    path.join(dir, "resources", "ComfyUI", "user", "default", "workflows"),
     path.join(dir, "user", "default", "workflows"),
   ];
-  const workflowsDir = workflowCandidates.find((p) => isDir(p)) || "";
-  return { dir, bat: hasBat ? bat : "", mainPy: hasMain ? (isFile(mainPy) ? mainPy : mainPyFlat) : "", workflowsDir };
+  const workflowsDir = workflowCandidates.find((candidate) => isDir(candidate)) || "";
+  return {
+    dir,
+    bat: scripts[0] || "",
+    scripts,
+    mainPy,
+    pythonExe,
+    electronExe,
+    workflowsDir,
+  };
+}
+
+function resolveLaunchPlan(install) {
+  if (!install) return null;
+  if (install.electronExe) return { kind: "desktop", file: install.electronExe, cwd: install.dir };
+  // 整合包的 bat 往往带了必要的启动参数/环境变量，能跑就优先用；python 直启只作兜底。
+  if (install.scripts?.length) return { kind: "script", file: install.scripts[0], cwd: path.dirname(install.scripts[0]) };
+  if (install.pythonExe && install.mainPy) return { kind: "python", file: install.pythonExe, mainPy: install.mainPy, cwd: install.dir };
+  return null;
 }
 
 function findComfyInstall(cfg) {
@@ -286,10 +386,14 @@ function findComfyInstall(cfg) {
     path.resolve(ROOT, "..", "ComfyUI_windows_portable"),
     path.resolve(ROOT, "..", "ComfyUI_windows_portable", "ComfyUI"),
   ];
+  const localAppData = process.env.LOCALAPPDATA || path.join(home, "AppData", "Local");
   const common = [
     cfg.comfyDir,
     path.join(home, "ComfyUI"),
     path.join(home, "Documents", "ComfyUI"),
+    path.join(localAppData, "Programs", "@comfyorgcomfyui-electron"),
+    path.join(localAppData, "Programs", "@comfyorgcomfyui-electron", "resources", "ComfyUI"),
+    path.join(localAppData, "Programs", "ComfyUI"),
     "C:\\ComfyUI",
     "D:\\ComfyUI",
     "E:\\ComfyUI",
@@ -332,6 +436,8 @@ function findComfyInstall(cfg) {
     if (/comfy/i.test(entry.name)) {
       const child = inspect(path.join(dir, "ComfyUI"), "同盘子目录");
       if (child) return child;
+      const resourceChild = inspect(path.join(dir, "resources", "ComfyUI"), "同盘 resources/ComfyUI");
+      if (resourceChild) return resourceChild;
     }
   }
 
@@ -342,14 +448,24 @@ function findComfyInstall(cfg) {
   return null;
 }
 
-function spawnComfy(install) {
-  const comspec = process.env.ComSpec || "C:\\Windows\\System32\\cmd.exe";
-  const child = spawn(comspec, ["/d", "/s", "/c", install.bat], {
-    cwd: install.dir,
-    detached: true,
-    stdio: "ignore",
-    windowsHide: false,
-  });
+async function pickFreePort(ports) {
+  for (const port of ports) {
+    if (!(await probeComfy(`http://127.0.0.1:${port}`, 300))) return port;
+  }
+  return COMFY_PORT_FIRST;
+}
+
+function spawnComfy(plan, port = COMFY_PORT_FIRST) {
+  const options = { cwd: plan.cwd, detached: true, stdio: "ignore", windowsHide: plan.kind !== "script" };
+  let child;
+  if (plan.kind === "python") {
+    child = spawn(plan.file, [plan.mainPy, "--port", String(port), "--listen", "127.0.0.1"], options);
+  } else if (plan.kind === "desktop") {
+    child = spawn(plan.file, [], { ...options, windowsHide: false });
+  } else {
+    const comspec = process.env.ComSpec || "C:\\Windows\\System32\\cmd.exe";
+    child = spawn(comspec, ["/d", "/s", "/c", plan.file], { ...options, windowsHide: false });
+  }
   child.on("error", (err) => log(`启动 ComfyUI 失败：${err.message}`, "ERROR"));
   child.unref();
   return child;
@@ -1013,18 +1129,13 @@ async function restartComfy(cfg) {
     });
 
     const install = findComfyInstall(cfg);
-    if (!install?.bat) throw new Error(`未找到 ComfyUI 启动脚本（comfyDir=${cfg.comfyDir || "空"}）`);
+    const plan = resolveLaunchPlan(install);
+    if (!plan) throw new Error(`未找到 ComfyUI 启动方式（comfyDir=${cfg.comfyDir || "空"}）`);
     const startStarted = Date.now();
-    state.comfyChild = spawnComfy(install);
+    state.comfyChild = spawnComfy(plan, plan.kind === "python" ? port : COMFY_PORT_FIRST);
     const ready = await waitFor(
       "ComfyUI（重启）",
-      async () => {
-        for (let p = COMFY_PORT_FIRST; p <= COMFY_PORT_LAST; p += 1) {
-          const url = `http://127.0.0.1:${p}`;
-          if (await probeComfy(url)) return { url };
-        }
-        return null;
-      },
+      async () => probeAnyComfy(comfyPortCandidates(cfg), 900),
       cfg.comfyStartTimeoutSec,
       { intervalMs: 2000, progressEveryMs: 15000 },
     );
@@ -1191,40 +1302,43 @@ async function main() {
       log("请安装/解压 ComfyUI 后重试，或在 launcher/config.json 里填写 comfyDir。", "ERROR");
       log("继续启动网关；完成后会打开 /admin 让你查看真实状态（不会假装 ComfyUI 已就绪）。", "WARN");
       comfy = { url: cfg.comfyUrl, mode: "missing" };
-    } else if (!comfyInstall.bat) {
-      log(`找到 ComfyUI 目录 ${comfyInstall.dir}，但缺少 run_nvidia_gpu.bat，无法自动启动`, "ERROR");
-      log("可手动启动 ComfyUI 后重跑本脚本；继续启动网关并打开 /admin。", "WARN");
-      comfy = { url: cfg.comfyUrl, mode: "missing" };
     } else {
-      log(`ComfyUI 安装目录：${comfyInstall.dir}`);
-      log(`ComfyUI 启动脚本：${comfyInstall.bat}`);
-      if (comfyInstall.workflowsDir) log(`ComfyUI 用户工作流目录：${comfyInstall.workflowsDir}`);
-
-      if (DRY_RUN) {
-        log(`[dry-run] 将启动 ComfyUI：${comfyInstall.bat}（cwd=${comfyInstall.dir}，等待 /system_stats 最多 ${cfg.comfyStartTimeoutSec}s）`);
-        comfy = { url: `http://127.0.0.1:${COMFY_PORT_FIRST}`, mode: "planned" };
+      const plan = resolveLaunchPlan(comfyInstall);
+      if (!plan) {
+        log(`找到 ComfyUI 目录 ${comfyInstall.dir}，但没找到可用的启动方式（启动脚本 / python_embeded+main.py / 桌面版 exe）`, "ERROR");
+        log("可手动启动 ComfyUI 后重跑本脚本；继续启动网关并打开 /admin。", "WARN");
+        comfy = { url: cfg.comfyUrl, mode: "missing" };
       } else {
-        log(`启动 ComfyUI（detached）：${comfyInstall.bat}`);
-        state.comfyChild = spawnComfy(comfyInstall);
-        log(`ComfyUI 子进程 PID=${state.comfyChild.pid}，等待 /system_stats（上限 ${cfg.comfyStartTimeoutSec}s）`);
-        comfy = await waitFor(
-          "ComfyUI",
-          async () => {
-            for (let port = COMFY_PORT_FIRST; port <= COMFY_PORT_LAST; port += 1) {
-              const url = `http://127.0.0.1:${port}`;
-              if (await probeComfy(url)) return { url };
-            }
-            return null;
-          },
-          cfg.comfyStartTimeoutSec,
-          { intervalMs: 3000, progressEveryMs: 20000 }
-        );
-        if (comfy) {
-          comfy.mode = "started";
-          log(`ComfyUI 已启动：${comfy.url}`);
+        const launchPort = plan.kind === "python" ? await pickFreePort(comfyPortCandidates(cfg)) : COMFY_PORT_FIRST;
+        const planLabel = plan.kind === "desktop"
+          ? `桌面版 ${plan.file}`
+          : plan.kind === "python"
+            ? `${plan.file} ${plan.mainPy} --port ${launchPort}`
+            : `启动脚本 ${plan.file}`;
+        log(`ComfyUI 安装目录：${comfyInstall.dir}`);
+        log(`ComfyUI 启动方式：${planLabel}`);
+        if (comfyInstall.workflowsDir) log(`ComfyUI 用户工作流目录：${comfyInstall.workflowsDir}`);
+
+        if (DRY_RUN) {
+          log(`[dry-run] 将启动 ComfyUI：${planLabel}（cwd=${comfyInstall.dir}，等待 /system_stats 最多 ${cfg.comfyStartTimeoutSec}s）`);
+          comfy = { url: `http://127.0.0.1:${launchPort}`, mode: "planned" };
         } else {
-          comfy = { url: `http://127.0.0.1:${COMFY_PORT_FIRST}`, mode: "missing" };
-          log("ComfyUI 启动后未在超时内就绪，继续启动网关，稍后可在 /admin 查看状态。", "WARN");
+          log(`启动 ComfyUI（detached）：${planLabel}`);
+          state.comfyChild = spawnComfy(plan, launchPort);
+          log(`ComfyUI 子进程 PID=${state.comfyChild.pid}，等待 /system_stats（上限 ${cfg.comfyStartTimeoutSec}s）`);
+          comfy = await waitFor(
+            "ComfyUI",
+            async () => probeAnyComfy(comfyPortCandidates(cfg), 900),
+            cfg.comfyStartTimeoutSec,
+            { intervalMs: 3000, progressEveryMs: 20000 }
+          );
+          if (comfy) {
+            comfy.mode = "started";
+            log(`ComfyUI 已启动：${comfy.url}`);
+          } else {
+            comfy = { url: `http://127.0.0.1:${launchPort}`, mode: "missing" };
+            log("ComfyUI 启动后未在超时内就绪，继续启动网关，稍后可在 /admin 查看状态。", "WARN");
+          }
         }
       }
     }
@@ -1375,3 +1489,5 @@ if (invokedDirectly) {
     }
   });
 }
+
+export { comfyInstallInfo, resolveLaunchPlan, comfyPortCandidates, detectComfy };

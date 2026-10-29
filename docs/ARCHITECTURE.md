@@ -40,16 +40,17 @@ flowchart LR
 ## 4. 启动与接管
 
 1. `start-local.bat` → `launcher/start.mjs`。
-2. 探测顺序：安装器同文件夹 → 同盘限深（约 2s）→ 常见目录/配置 → 端口 8188–8199 → 手动配置；已在运行的进程直接接管，绝不重复启动。
+2. 探测顺序：安装器同文件夹 → 同盘限深（约 2s）→ 常见目录/配置（含桌面版路径）→ 端口并行探测（见第 5 条）→ 手动配置；已在运行的进程直接接管，绝不重复启动。
 3. 网关缺 `express`/`multer` 时自愈：用 `launcher/gateway-deps.zip`（否则魔搭下载 + SHA 校验）解到 `.update/gateway-deps/`。
 4. 网关 :8190，环境 `PORT`、`HOST`、`COMFY_URL`、`COMFYUI_DIR`、`COMFY_WORKFLOWS_DIR`、`LAUNCHER_CONTROL_URL`；启动前等 `/health` 30s。
-5. setup 可用性缓存的刷新点：启动、工作流目录变化、资源安装/切换主模型、资源中心「重新扫描」（`POST /api/resources/refresh` → `setup.scan()`，按钮自带 loading）。**不做后台自动扫描**：2026-10-29 曾加过模型目录 mtime 轮询与 10 分钟兜底重扫，评估后撤掉——扫描成本交给用户手动触发，避免周期性拖慢 ComfyUI。
-6. 画布由启动器在 :3000 托管 dist（SPA 回退、`/assets` 长缓存、路径逃逸 403），每次启动重写 `dist/config.js` 注入网关地址。
-7. 控制口 :8290：`GET /health`、`POST /restart-gateway`（接管来的网关返回 409）、`POST /restart-comfy`（taskkill 全部监听 PID → 等端口释放与显存回落 → 重拉 `run_nvidia_gpu.bat` → 重探 8188–8199）。网关以 `/api/system/restart-comfy` 暴露同一能力。
-8. 看门狗 5s：时钟跳变 >60s 先静默 120s；要求见过会话、`count==0`、`activeTasks==0`；**只有页面显式关闭**（pagehide/beacon → 网关记录 `closedAt`）且关闭时间在 10 分钟内、空闲 ≥`canvasIdleGraceSec`（默认 30s）才停后台；心跳缺失（后台标签节流/冻结、浏览器崩溃）一律不停，避免挂机被误杀。
-9. 显式关闭语义（2026-10-29 补齐）：`sessions.js` 在 `status()` 中返回 `startedAt`/`closedAt`（此前只删会话、不记录关闭时间，导致启动器 `closedAt` 判定永远为假、自动退出实际不生效）；网关重启后 `startedAt` 变化会让启动器重置 `seen`，重新等待画布心跳。旧配置里残留的 15s 默认值会按 30s 处理，需要 15s 可显式设 `CANVAS_IDLE_GRACE_SEC=15`。
+5. ComfyUI 定位与拉起（2026-10-29 扩展）：端口并行探测 `config/comfyUrl` → 8188 → 8000（桌面版默认）→ 7860/8080/8888/18000 → 8189–8199，可用 `COMFY_PORT_SCAN=9000-9010` 追加范围；安装目录额外查 `%LOCALAPPDATA%\Programs\@comfyorgcomfyui-electron`（含 `resources/ComfyUI`）。拉起顺序：桌面版 exe → 内容调用 `main.py` 的启动脚本（含任意/中文文件名，父目录也扫）→ 包内 `python.exe main.py --port <空闲端口>`。
+7. setup 可用性缓存的刷新点：启动、工作流目录变化、资源安装/切换主模型、资源中心「重新扫描」（`POST /api/resources/refresh` → `setup.scan()`，按钮自带 loading）。**不做后台自动扫描**：2026-10-29 曾加过模型目录 mtime 轮询与 10 分钟兜底重扫，评估后撤掉——扫描成本交给用户手动触发，避免周期性拖慢 ComfyUI。
+8. 画布由启动器在 :3000 托管 dist（SPA 回退、`/assets` 长缓存、路径逃逸 403），每次启动重写 `dist/config.js` 注入网关地址。
+9. 控制口 :8290：`GET /health`、`POST /restart-gateway`（接管来的网关返回 409）、`POST /restart-comfy`（taskkill 全部监听 PID → 等端口释放与显存回落 → 按同一套启动计划重新拉起 → 重探端口列表）。网关以 `/api/system/restart-comfy` 暴露同一能力。
+10. 看门狗 5s：时钟跳变 >60s 先静默 120s；要求见过会话、`count==0`、`activeTasks==0`；**只有页面显式关闭**（pagehide/beacon → 网关记录 `closedAt`）且关闭时间在 10 分钟内、空闲 ≥`canvasIdleGraceSec`（默认 30s）才停后台；心跳缺失（后台标签节流/冻结、浏览器崩溃）一律不停，避免挂机被误杀。
+11. 显式关闭语义（2026-10-29 补齐）：`sessions.js` 在 `status()` 中返回 `startedAt`/`closedAt`（此前只删会话、不记录关闭时间，导致启动器 `closedAt` 判定永远为假、自动退出实际不生效）；网关重启后 `startedAt` 变化会让启动器重置 `seen`，重新等待画布心跳。旧配置里残留的 15s 默认值会按 30s 处理，需要 15s 可显式设 `CANVAS_IDLE_GRACE_SEC=15`。
 
-10. 状态条数据：`GET /api/system/stats` 由网关调 `nvidia-smi`（8s 超时，`System32` 兜底）；显卡满载导致读取超时时沿用上次读数并标记 `gpuStale`，界面注明「读取超时，显示上次读数」，不再变成「显存 --」。
+12. 状态条数据：`GET /api/system/stats` 由网关调 `nvidia-smi`（8s 超时，`System32` 兜底）；显卡满载导致读取超时时沿用上次读数并标记 `gpuStale`，界面注明「读取超时，显示上次读数」，不再变成「显存 --」。
 ## 5. 生成链路
 
 - **图片**：图片节点 → `services/api/image.ts` → `POST /v1/images/generations` / `/edits` → `runner` → `registry` → `bindings` → ComfyUI `/prompt` → 轮询 `/history` → 回传。`count>1` 并发单图；本地加 `X-Request-Id`，取消走 `POST /api/requests/:id/cancel`，进度走 `/api/progress/:requestId`（250ms）。
@@ -138,7 +139,7 @@ node ../../tools/build-patch.mjs --root ../.. --out ../../patches/v0.21.18.zip -
 
 ## 14. 交接入口
 
-1. 外部 `HANDOFF-NEXT.md`：当前状态与待办。
-2. 本文件：架构与运行链路。
-3. `docs/PROJECT_LOG.md`：历史细节（追加式）。
-4. 具体行为以 `comfyui-gateway/workflows/*.json`、`resources/index.json`、`comfyui-gateway/src/*` 为准。
+13. 外部 `HANDOFF-NEXT.md`：当前状态与待办。
+14. 本文件：架构与运行链路。
+15. `docs/PROJECT_LOG.md`：历史细节（追加式）。
+16. 具体行为以 `comfyui-gateway/workflows/*.json`、`resources/index.json`、`comfyui-gateway/src/*` 为准。
