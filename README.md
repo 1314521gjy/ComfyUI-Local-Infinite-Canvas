@@ -70,6 +70,25 @@ start-local.bat
 
 启动器会检测 `8188` 和常见 ComfyUI 目录；找到后接管或拉起 ComfyUI，启动网关，并在 `http://127.0.0.1:3000` 托管画布。首次发现 ComfyUI 后会把路径写入 `launcher/config.json`。
 
+### 局域网 / 多机访问（可选）
+
+默认全部只绑 `127.0.0.1`（单机使用，行为不变）。如果想在「工作站跑模型 + 其他设备浏览器打开 WebUI」的场景使用，可在 `launcher/config.json` 增加以下配置：
+
+```json
+{
+  "canvasHost": "0.0.0.0",
+  "gatewayHost": "0.0.0.0",
+  "gatewayPublicHost": "192.168.1.10",
+  "corsOrigins": "http://192.168.1.10:3000,http://192.168.1.20:3000"
+}
+```
+
+- `canvasHost`：画布静态服务监听地址；`gatewayHost`：网关监听地址（非回环时会自动设置 `ALLOW_REMOTE=1`）。
+- `gatewayPublicHost`：写进前端 `config.js` 的对外可达地址，供其他设备访问网关；留空时等于 `127.0.0.1`。
+- `corsOrigins`：允许跨域调用网关的画布来源列表（逗号分隔，不支持通配符），按实际打开画布的地址填写。
+
+⚠️ 放开绑定前先读[安全提示](#安全提示)：相关端口**没有鉴权**，只在可信内网使用，切勿映射到公网。
+
 ## 网关
 
 - 健康检查：`GET http://127.0.0.1:8190/health`
