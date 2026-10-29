@@ -50,6 +50,10 @@ const DEFAULT_CONFIG = {
   closeCanvasStopsBackend: true,
   stopAdoptedComfyOnCanvasClose: true,
   canvasIdleGraceSec: 15,
+  canvasHost: "127.0.0.1",
+  gatewayHost: "127.0.0.1",
+  gatewayPublicHost: "",
+  corsOrigins: "",
 };
 
 /* ------------------------------------------------------------------ 日志 */
@@ -110,9 +114,14 @@ function loadConfig() {
     closeCanvasStopsBackend: process.env.CLOSE_CANVAS_STOPS_BACKEND !== "0" && merged.closeCanvasStopsBackend !== false,
     stopAdoptedComfyOnCanvasClose: process.env.STOP_ADOPTED_COMFY !== "0" && merged.stopAdoptedComfyOnCanvasClose !== false,
     canvasIdleGraceSec: Number(process.env.CANVAS_IDLE_GRACE_SEC ?? merged.canvasIdleGraceSec) > 0 ? Number(process.env.CANVAS_IDLE_GRACE_SEC ?? merged.canvasIdleGraceSec) : 15,
+    canvasHost: String(merged.canvasHost || "127.0.0.1"),
+    gatewayHost: String(merged.gatewayHost || "127.0.0.1"),
+    gatewayPublicHost: String(merged.gatewayPublicHost || ""),
+    corsOrigins: String(merged.corsOrigins || ""),
     configCreated: created,
   };
-  cfg.gatewayUrl = `http://127.0.0.1:${cfg.gatewayPort}`;
+  const gatewayPublicHost = cfg.gatewayPublicHost || "127.0.0.1";
+  cfg.gatewayUrl = `http://${gatewayPublicHost}:${cfg.gatewayPort}`;
   cfg.canvasUrl = `http://127.0.0.1:${cfg.canvasPort}`;
   cfg.controlUrl = `http://127.0.0.1:${cfg.controlPort}`;
   return cfg;
@@ -447,7 +456,9 @@ function spawnGateway(cfg, comfyUrl, workflowsDir) {
   const env = {
     ...process.env,
     PORT: String(cfg.gatewayPort),
-    HOST: "127.0.0.1",
+    HOST: cfg.gatewayHost || "127.0.0.1",
+    ...(String(cfg.gatewayHost || "127.0.0.1") !== "127.0.0.1" ? { ALLOW_REMOTE: "1" } : {}),
+    ...(cfg.corsOrigins ? { CORS_ORIGINS: cfg.corsOrigins } : {}),
     COMFY_URL: comfyUrl,
     ...(cfg.comfyDir ? { COMFYUI_DIR: cfg.comfyDir } : {}),
     ...(cfg.launcherControlUrl ? { LAUNCHER_CONTROL_URL: cfg.launcherControlUrl } : {}),
@@ -543,7 +554,7 @@ function writeRuntimeConfig(cfg, gatewayUrl) {
   } catch {
     origin = cfg.gatewayUrl;
   }
-  runtime.LOCAL_GATEWAY_HOST = "127.0.0.1";
+  runtime.LOCAL_GATEWAY_HOST = cfg.gatewayPublicHost || "127.0.0.1";
   runtime.LOCAL_GATEWAY_PORT = String(cfg.gatewayPort);
   runtime.LOCAL_GATEWAY_URL = `${origin}/v1`;
   fs.writeFileSync(file, `window.__RUNTIME_CONFIG__ = ${JSON.stringify(runtime)};\n`, "utf8");
@@ -1276,7 +1287,7 @@ async function main() {
       return;
     }
     if (DRY_RUN) {
-      log(`[dry-run] 将在 http://127.0.0.1:${cfg.canvasPort} 托管 ${cfg.canvasDist}（SPA fallback → index.html，仅绑 127.0.0.1）`);
+      log(`[dry-run] 将在 http://${cfg.canvasHost || "127.0.0.1"}:${cfg.canvasPort} 托管 ${cfg.canvasDist}（SPA fallback → index.html，绑 ${cfg.canvasHost || "127.0.0.1"}）`);
       canvasResult = { url: cfg.canvasUrl, mode: "planned" };
     } else {
       try {
@@ -1287,7 +1298,7 @@ async function main() {
       const server = createCanvasServer(cfg);
       const listenError = await new Promise((resolve) => {
         server.once("error", (err) => resolve(err));
-        server.listen(cfg.canvasPort, "127.0.0.1", () => resolve(null));
+        server.listen(cfg.canvasPort, cfg.canvasHost || "127.0.0.1", () => resolve(null));
       });
       if (listenError) {
         const hint =
