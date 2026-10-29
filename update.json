@@ -1,16 +1,16 @@
 {
-  "version": "v0.21.23",
+  "version": "v0.21.24",
   "publishedAt": "2026-10-29",
-  "notes": "人物替换不再因源视频超过 15 秒报错：现在硬性跟随源视频全长（按 H3 的 17n+5 向下对齐），参考策略放宽；超过 15 秒后的画质与一致性尚未验证。",
+  "notes": "上传上限从 50 MB 提高到 512 MB，源视频较大的角色替换不再报 File too large；超限时给出中文提示。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.23.zip",
-    "sha256": "64443d5ba8f8e4cc592cca0a5e0763f154117e47875e0462f8d9006ac1741c9a",
-    "size": 37529633
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.24.zip",
+    "sha256": "3f24c8a1df98633fa0148752006bf70a75b532ef257ac8a67e7244d6f614df1d",
+    "size": 37530018
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

@@ -58,7 +58,7 @@ export function loadConfig(overrides = {}) {
     maxStoredTasks: count(overrides.maxStoredTasks ?? process.env.MAX_STORED_TASKS, 0),
     cleanupIntervalMs: num(overrides.cleanupIntervalMs ?? process.env.CLEANUP_INTERVAL_MS, 60 * 60 * 1000),
     sessionStaleSec: num(overrides.sessionStaleSec ?? process.env.SESSION_STALE_SEC, 120),
-    maxUploadBytes: num(overrides.maxUploadBytes ?? process.env.MAX_UPLOAD_BYTES, 50 * 1024 * 1024),
+    maxUploadBytes: num(overrides.maxUploadBytes ?? process.env.MAX_UPLOAD_BYTES, 512 * 1024 * 1024),
     maxWorkflowBytes: num(overrides.maxWorkflowBytes ?? process.env.MAX_WORKFLOW_BYTES, 5 * 1024 * 1024),
     maxImageCount: num(overrides.maxImageCount ?? process.env.MAX_IMAGE_COUNT, 15),
     updateEnabled: overrides.updateEnabled ?? process.env.UPDATE_ENABLED !== "0",

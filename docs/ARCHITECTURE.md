@@ -56,6 +56,7 @@ flowchart LR
 - **图片**：图片节点 → `services/api/image.ts` → `POST /v1/images/generations` / `/edits` → `runner` → `registry` → `bindings` → ComfyUI `/prompt` → 轮询 `/history` → 回传。`count>1` 并发单图；本地加 `X-Request-Id`，取消走 `POST /api/requests/:id/cancel`，进度走 `/api/progress/:requestId`（250ms）。
 - **超分**（v0.21.18）：`POST /v1/images/upscale`、`/v1/videos/upscale`；4 条工作流——ESRGAN 快速放大（x2/x4/anime）、ESRGAN 2×（VHS 取帧/合片 + 核心 `UpscaleModelLoader`/`ImageUpscaleWithModel`，不依赖 WAS 节点）、SeedVR2 图片、SeedVR2 视频。
 - **H3 视频**：`POST /v1/videos`（multipart，`mode=text|frames|reference`）→ 任务制；`GET /v1/videos/:id`、`/content`、`/cancel`。6 个入口 = VDN 三档（默认）+ 无VDN 三档，共 9 NFE（快速 6 低 + 3 高；质量 5 + 4）。源视频走原生 `LoadVideo → GetVideoComponents` 只取帧，`length` 由 ffprobe 帧数写入；音频由 H3 生成，源音频不保留。角色替换没有手选时长，硬性跟随源视频全长（不设上限，只按 H3 的 17n+5 向下对齐；参考视频策略 `model_minimum`），ffprobe 探不到时用前端上报的 `source_duration_seconds × 24fps` 换算，不再回退工作流默认 124 帧。超过官方 15 秒后的画质/一致性未验证。
+- **上传上限**：multer 单文件 512 MB（`MAX_UPLOAD_BYTES` / config `maxUploadBytes` 可调），超限返回 413 中文提示；视频参考直接走内存，不再沿用旧的 50 MB 默认值。
 - **插帧**：`POST /v1/videos/interpolate`（RIFE 2×/3×，任务制，生成右侧子视频节点，不覆盖原片）。
 - **提示词**：`/v1/prompts/optimize`（H3/生图）、`/optimize-image`、`/caption`（`qwen35|florence|cloud`）。本地走 ComfyUI 工作流，云端走 OpenAI 兼容 `/chat/completions`；云端 Key 只在浏览器 localStorage。H3 云端加载官方 skill（`prompts/skills/h3-prompt-writing/`）。
 - **自由卡片**：`/api/free-workflows/*`（导入/扫描/同步/UI 图）+ `/v1/free-workflows/:id/images|videos`；UI 工作流经 `ui-workflow.js` 用 `/object_info` 转成 API 图。

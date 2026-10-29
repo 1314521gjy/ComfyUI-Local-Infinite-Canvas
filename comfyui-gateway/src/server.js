@@ -1500,6 +1500,10 @@ export async function createGatewayApp(overrides = {}) {
   });
 
   app.use((error, req, res, _next) => {
+    if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
+      const limitMb = Math.round(Number(config.maxUploadBytes || 0) / (1024 * 1024));
+      error.message = `上传文件过大：单个文件上限 ${limitMb} MB。请压缩或剪短视频后重试（有需要可在 launcher/config.json 调整 maxUploadBytes）。`;
+    }
     const status = Number(error?.status) || (error instanceof multer.MulterError ? (error.code === "LIMIT_FILE_SIZE" ? 413 : 400) : 500);
     let code = error?.code || (status >= 500 ? "internal_error" : "bad_request");
     if (error?.type === "entity.parse.failed") code = "invalid_json";
