@@ -1,16 +1,16 @@
 {
-  "version": "v0.21.20",
+  "version": "v0.21.21",
   "publishedAt": "2026-10-29",
-  "notes": "资源卡片的「不适用」改为「显存紧张」：这个标记只看本机显存和内存是否够跑该包，和「已齐全」是两个维度，原文案容易被误读。",
+  "notes": "修复：角色替换改为跟随源视频时长（不再固定 5 秒）；模型放大子目录也能识别；已装插件目录名不同不再重复下载；资源卡区分「缺资源/待重启/模型名未匹配」；显卡满载时显存状态条不再消失。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.20.zip",
-    "sha256": "88d0a5d30d6f8930884e85b82bb2aa575f586d2504674d8998d699fa241e68ad",
-    "size": 37522103
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.21.21.zip",
+    "sha256": "a95165835d82b0aba6d17bd6fb3526515ed2f45c85f427ec0cc907028482f79a",
+    "size": 37524999
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
