@@ -1,4 +1,4 @@
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Compass } from "lucide-react";
 import { useEffect, useState } from "react";
 import { App, Button, Image, Tag } from "antd";
 import { useNavigate } from "react-router-dom";
@@ -9,12 +9,15 @@ import { LOCAL_ONLY } from "@/constant/app-mode";
 import { navigationTools } from "@/constant/navigation-tools";
 import i18n from "@/i18n";
 import { cn } from "@/lib/utils";
+import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 
 export default function IndexPage() {
     const { message } = App.useApp();
     const { t } = useTranslation();
     const navigate = useNavigate();
     const [primaryTool] = navigationTools;
+    const projects = useCanvasStore((state) => state.projects);
+    const createProject = useCanvasStore((state) => state.createProject);
     const [promptShowcase, setPromptShowcase] = useState<Prompt[]>([]);
     const [previewIndex, setPreviewIndex] = useState(0);
     const [previewOpen, setPreviewOpen] = useState(false);
@@ -40,6 +43,16 @@ export default function IndexPage() {
                         </Button>
                         <Button size="large" onClick={() => navigate("/canvas")}>
                             {t("home.openCanvas")}
+                        </Button>
+                        <Button
+                            size="large"
+                            icon={<Compass className="size-4" />}
+                            onClick={() => {
+                                const id = createProject(t("onboarding.practiceProject"));
+                                navigate(`/canvas/${id}?guide=1`);
+                            }}
+                        >
+                            {t("onboarding.button")}
                         </Button>
                     </div>
                 </div>

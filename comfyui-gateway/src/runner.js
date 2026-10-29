@@ -27,10 +27,10 @@ function resolveForMode(entry, mode) {
   };
 }
 
-function applyModelAliases(workflow, aliasFor) {
+function applyModelAliases(workflow, aliasFor, specs = MODEL_LOADER_SPECS) {
   if (typeof aliasFor !== "function") return workflow;
   let next = workflow;
-  for (const spec of MODEL_LOADER_SPECS) {
+  for (const spec of specs) {
     for (const [nodeId, node] of Object.entries(next || {})) {
       if (node?.class_type !== spec.classType) continue;
       const value = node.inputs?.[spec.input];
@@ -116,11 +116,11 @@ function collectOutputFiles(history, { includePreview = false } = {}) {
   return files;
 }
 
-export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 * 1000, pollIntervalMs = 750, signal, requestId, onProgress, logger, loraCatalog, modelAliasFor = null, includePreviewOutputs = false }) {
+export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 * 1000, pollIntervalMs = 750, signal, requestId, onProgress, logger, loraCatalog, modelAliasFor = null, loaderSpecs = MODEL_LOADER_SPECS, includePreviewOutputs = false }) {
   if (signal?.aborted) throw new GenerationError("生成已取消", { status: 400, code: "cancelled" });
   const resolved = resolveForMode(entry, context.mode);
   const params = resolved.baseModelParams ? { ...resolved.baseModelParams, ...(context.params || {}) } : context.params;
-  const aliasedWorkflow = applyModelAliases(resolved.workflow, modelAliasFor);
+  const aliasedWorkflow = applyModelAliases(resolved.workflow, modelAliasFor, loaderSpecs);
   const stats = {};
   const bound = applyMainModelFile(applyBindings(aliasedWorkflow, resolved, { ...context, params }, { logger, stats }), resolved.mainModelFile);
   const loraResult = applyLoraChain(bound, params, {
@@ -129,7 +129,7 @@ export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 *
     sourceNode: resolved.lora?.source,
     loaderClass: resolved.lora?.loader || "LoraLoaderModelOnly",
   });
-  const workflow = applyModelAliases(loraResult.workflow, modelAliasFor);
+  const workflow = applyModelAliases(loraResult.workflow, modelAliasFor, loaderSpecs);
   if (loraResult.applied.length) {
     logger?.info?.(`LoRA ${entry.name}: ${loraResult.applied.map((item) => `${path.basename(item.name)}@${item.strength}`).join(" -> ")}`);
   }

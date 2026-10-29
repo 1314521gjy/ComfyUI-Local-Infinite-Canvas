@@ -43,6 +43,7 @@ import { InfiniteCanvas } from "@/components/canvas/infinite-canvas";
 import { Minimap } from "@/components/canvas/canvas-mini-map";
 import { CanvasNode } from "@/components/canvas/canvas-node";
 import { CanvasNodePromptPanel, type CanvasNodeGenerationMode } from "@/components/canvas/canvas-node-prompt-panel";
+import { CanvasOnboarding } from "@/components/onboarding/canvas-onboarding";
 import { CanvasFreeCardPanel, freeCardInfoFromSummary } from "@/components/canvas/canvas-free-card-panel";
 import { CanvasToolbar } from "@/components/canvas/canvas-toolbar";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
@@ -183,7 +184,7 @@ function InfiniteCanvasPage() {
     const nodeRegistryVersion = useNodeRegistryVersion((state) => state.version);
     const params = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
     const projectId = params.id || "";
     const localAgentConnected = useAgentStore((state) => state.connected);
     const localAgentActivity = useAgentStore((state) => state.activity);
@@ -288,6 +289,7 @@ function InfiniteCanvasPage() {
     const [toolbarNodeId, setToolbarNodeId] = useState<string | null>(null);
     const [nodeImageSettingsOpen, setNodeImageSettingsOpen] = useState(false);
     const [dialogNodeId, setDialogNodeId] = useState<string | null>(null);
+    const [onboardingOpen, setOnboardingOpen] = useState(false);
     const [infoNodeId, setInfoNodeId] = useState<string | null>(null);
     const [pluginManagerOpen, setPluginManagerOpen] = useState(false);
     const [cropNodeId, setCropNodeId] = useState<string | null>(null);
@@ -603,6 +605,14 @@ function InfiniteCanvasPage() {
         // Resume once after the current canvas is restored, not on later config identity changes.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [projectLoaded]);
+
+    useEffect(() => {
+        if (!projectLoaded || searchParams.get("guide") !== "1") return;
+        setOnboardingOpen(true);
+        const next = new URLSearchParams(searchParams);
+        next.delete("guide");
+        setSearchParams(next, { replace: true });
+    }, [projectLoaded, searchParams, setSearchParams]);
 
     useEffect(() => {
         if (LOCAL_ONLY) return;
@@ -1738,7 +1748,17 @@ function InfiniteCanvasPage() {
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
             const target = event.target instanceof Element ? event.target : null;
-            if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement || target?.closest("[contenteditable='true'],[data-canvas-no-zoom],[data-canvas-shortcuts-ignore]")) return;
+            const media = target?.closest("video,audio");
+            const noZoom = target?.closest("[data-canvas-no-zoom]");
+            if (
+                event.target instanceof HTMLInputElement ||
+                event.target instanceof HTMLTextAreaElement ||
+                event.target instanceof HTMLSelectElement ||
+                target?.closest("[contenteditable='true'],[data-canvas-shortcuts-ignore],button,a,[role='button']") ||
+                (noZoom && !media)
+            ) {
+                return;
+            }
 
             const key = event.key.toLowerCase();
             const isModifierShortcut = event.metaKey || event.ctrlKey;
@@ -1796,8 +1816,10 @@ function InfiniteCanvasPage() {
 
             if (event.key === "Delete" || event.key === "Backspace") {
                 if (selectedNodeIdsRef.current.size) {
+                    event.preventDefault();
                     deleteNodes(new Set(selectedNodeIdsRef.current));
                 } else if (selectedConnectionId) {
+                    event.preventDefault();
                     deleteConnection(selectedConnectionId);
                 }
             }
@@ -3902,6 +3924,7 @@ function InfiniteCanvasPage() {
                     agentOpen={agentPanelOpen}
                     compactAgentStatus={{ connected: localAgentConnected, enabled: localAgentEnabled, activity: localAgentActivity }}
                     onToggleAgent={toggleAgentPanel}
+                    onOpenGuide={() => setOnboardingOpen(true)}
                 />
 
                 <InfiniteCanvas
@@ -4115,6 +4138,15 @@ function InfiniteCanvasPage() {
                 {isMiniMapOpen ? <Minimap nodes={nodes} viewport={viewport} viewportSize={size} onViewportChange={setViewport} /> : null}
 
                 <CanvasZoomControls scale={viewport.k} onScaleChange={setZoomScale} onReset={resetViewport} isMiniMapOpen={isMiniMapOpen} onToggleMiniMap={() => setIsMiniMapOpen((value) => !value)} />
+
+                <CanvasOnboarding
+                    open={onboardingOpen}
+                    onClose={() => setOnboardingOpen(false)}
+                    nodes={nodes}
+                    imageModel={effectiveConfig.imageModel || effectiveConfig.model}
+                    hasActiveGeneration={hasActiveGeneration}
+                    onCreateImageNode={() => createNode(CanvasNodeType.Image)}
+                />
 
                 {contextMenu ? (
                     <CanvasNodeContextMenu

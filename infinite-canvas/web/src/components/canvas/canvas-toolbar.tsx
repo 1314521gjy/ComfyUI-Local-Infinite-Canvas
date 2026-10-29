@@ -312,6 +312,7 @@ function ToolbarButton({
         <Button
             type="text"
             aria-label={label}
+            data-onboarding={id}
             className="!h-8 !w-8 !min-w-8 !p-0"
             disabled={disabled}
             style={active ? activeStyle : hovered === id && !disabled ? hoverStyle : { color: danger ? "#f87171" : theme.toolbar.item, opacity: disabled ? 0.35 : 1 }}

@@ -15,8 +15,26 @@ function matches(file, pattern) {
   }
 }
 
+// 整个 models 根被映射成 diffusion_models 时，UNETLoader 也会列出其他角色的权重；
+// 这些文件不是 UNet 底模，不能出现在「默认底模」里。
+const NON_UNET_DIR = /(^|[\\/])(loras?|lycoris|vae|vae_approx|clip|text_encoders?|clip_vision|controlnet|t2i_adapter|upscale_models|latent_upscale_models|embeddings|audio_encoders|style_models|gligen|photomaker)([\\/]|$)/i;
+
+function isUnsupportedBaseFile(file) {
+  return NON_UNET_DIR.test(String(file || ""));
+}
+
 function accepted(file, config) {
-  return (!config.filter || matches(file, config.filter)) && !matches(file, config.exclude);
+  return !isUnsupportedBaseFile(file) && (!config.filter || matches(file, config.filter)) && !matches(file, config.exclude);
+}
+
+function uniqueBaseFiles(files) {
+  const seen = new Set();
+  return files.filter((file) => {
+    const key = path.basename(String(file || "")).toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function loaderNodeFor(entry, config) {
@@ -95,9 +113,11 @@ export function listBaseModels(entry, loaderOptions) {
   const config = entry?.baseModels;
   if (!config || !config.param) return [];
   const configured = explicitVariants(config);
-  const files = configured
-    ? configured.map((item) => item.file)
-    : (loaderOptions?.[config.classType || "UNETLoader"] || []).filter((file) => accepted(file, config));
+  const files = uniqueBaseFiles(
+    configured
+      ? configured.map((item) => item.file)
+      : (loaderOptions?.[config.classType || "UNETLoader"] || []).filter((file) => accepted(file, config)),
+  );
   const seen = new Set();
   return files.map((file) => {
     const explicit = configured?.find((item) => item.file === file);
@@ -142,8 +162,8 @@ export function listModelDescriptors(entries, loaderOptions) {
 
 function optionsFor(entry, config, loaderOptions) {
   const configured = explicitVariants(config);
-  if (configured) return configured.map((item) => item.file);
-  return (loaderOptions?.[config.classType || "UNETLoader"] || []).filter((file) => accepted(file, config));
+  if (configured) return uniqueBaseFiles(configured.map((item) => item.file));
+  return uniqueBaseFiles((loaderOptions?.[config.classType || "UNETLoader"] || []).filter((file) => accepted(file, config)));
 }
 
 export function decorateParameters(entry, variant, loaderOptions) {

@@ -315,13 +315,30 @@ export async function createGatewayApp(overrides = {}) {
   const videoInterpolator = createVideoInterpolator({ config, logger });
 
   // 把 parameters.optionsFrom（如 "UpscaleModelLoader.model_name"）替换成 ComfyUI 实时选项。
+  const isUpscaleModelOption = (name) => {
+    const parts = String(name || "").replace(/\\/g, "/").split("/").filter(Boolean);
+    // ComfyUI 的 upscale_models 有时会把整个 models 根也列进来；只保留根文件和真正的放大模型目录。
+    return parts.length === 1 || /^(?:upscale_models?|esrgan|upscalers?|4x)$/i.test(parts[0]);
+  };
+
+  const uniqueByBasename = (options) => {
+    const seen = new Set();
+    return options.filter((name) => {
+      const base = String(name || "").replace(/\\/g, "/").split("/").pop()?.toLowerCase() || "";
+      if (!base || seen.has(base)) return false;
+      seen.add(base);
+      return true;
+    });
+  };
+
   const enrichParameters = (parameters) => {
     const loaders = setup.loaderOptions?.() || {};
     return (Array.isArray(parameters) ? parameters : []).map((parameter) => {
       const source = String(parameter?.optionsFrom || "").trim();
       if (!source) return parameter;
       const [classType] = source.split(".");
-      const options = Array.isArray(loaders[classType]) ? loaders[classType] : [];
+      let options = Array.isArray(loaders[classType]) ? loaders[classType] : [];
+      if (source === "UpscaleModelLoader.model_name") options = uniqueByBasename(options.filter(isUpscaleModelOption));
       return { ...parameter, options };
     });
   };
@@ -665,7 +682,7 @@ export async function createGatewayApp(overrides = {}) {
     const liveFolderPaths = await comfy.folderPaths().catch(() => setup.folderPaths?.() || {});
     const loadReport = directoryLoadReport(saved, { comfyRoot: liveRootBefore, folderPaths: liveFolderPaths });
     const restartRequired = saved.mode === "manual" && (loadReport.restartRequired || Boolean(write.changed));
-    void setup.scan().catch((error) => logger.warn(`directory settings rescan failed: ${error.message}`));
+    await setup.scan().catch((error) => logger.warn(`directory settings rescan failed: ${error.message}`));
     res.json({
       ok: true,
       settings: saved,
@@ -935,6 +952,7 @@ export async function createGatewayApp(overrides = {}) {
         signal: abort.signal,
         requestId: req.id,
         modelAliasFor: setup.modelAliasFor,
+        loaderSpecs: setup.modelLoaderSpecs?.(),
         includePreviewOutputs: true,
         logger,
       });
@@ -1006,6 +1024,7 @@ export async function createGatewayApp(overrides = {}) {
         signal,
         requestId: req.id,
         modelAliasFor: setup.modelAliasFor,
+        loaderSpecs: setup.modelLoaderSpecs?.(),
         includePreviewOutputs: true,
         onProgress: progress,
         logger,
@@ -1057,6 +1076,7 @@ export async function createGatewayApp(overrides = {}) {
         logger,
         loraCatalog: setup.loraNames(),
         modelAliasFor: setup.modelAliasFor,
+        loaderSpecs: setup.modelLoaderSpecs?.(),
       });
     } catch (error) {
       if (abort.signal.aborted) {
@@ -1113,6 +1133,7 @@ export async function createGatewayApp(overrides = {}) {
         logger,
         loraCatalog: setup.loraNames(),
         modelAliasFor: setup.modelAliasFor,
+        loaderSpecs: setup.modelLoaderSpecs?.(),
       });
     } catch (error) {
       if (abort.signal.aborted) {
@@ -1206,6 +1227,7 @@ export async function createGatewayApp(overrides = {}) {
         logger,
         loraCatalog: setup.loraNames(),
         modelAliasFor: setup.modelAliasFor,
+        loaderSpecs: setup.modelLoaderSpecs?.(),
       });
     } catch (error) {
       if (abort.signal.aborted) {
@@ -1380,6 +1402,7 @@ export async function createGatewayApp(overrides = {}) {
         signal,
         requestId: req.id,
         modelAliasFor: setup.modelAliasFor,
+        loaderSpecs: setup.modelLoaderSpecs?.(),
         onProgress: progress,
         logger,
       });
@@ -1566,6 +1589,7 @@ export async function createGatewayApp(overrides = {}) {
         logger,
         loraCatalog: setup.loraNames(),
         modelAliasFor: setup.modelAliasFor,
+        loaderSpecs: setup.modelLoaderSpecs?.(),
       });
       let file = result.files[0];
       if (interpolation !== "off") {

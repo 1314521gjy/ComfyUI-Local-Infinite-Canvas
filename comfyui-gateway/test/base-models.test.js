@@ -44,6 +44,27 @@ test("listBaseModels filters loader options and keeps stable slugs", () => {
   );
 });
 
+test("base models ignore non-UNet folders and collapse duplicate filenames from multiple roots", () => {
+  const krea = { ...entry, baseModels: { ...entry.baseModels, filter: "krea2" } };
+  const options = {
+    UNETLoader: [
+      "Krea2\\a.safetensors",
+      "diffusion_models\\Krea2\\a.safetensors",
+      "loras\\krea2\\x.safetensors",
+      "vae\\krea2\\v.safetensors",
+      "krea2_turbo_fp8_scaled.safetensors",
+      "diffusion_models\\krea2_turbo_fp8_scaled.safetensors",
+      "krea2_turbo_int8_convrot.safetensors",
+    ],
+  };
+  assert.deepEqual(
+    listBaseModels(krea, options).map((item) => item.file),
+    ["Krea2\\a.safetensors", "krea2_turbo_fp8_scaled.safetensors", "krea2_turbo_int8_convrot.safetensors"],
+  );
+  const unet = decorateParameters(krea, null, options).find((item) => item.key === "unet");
+  assert.deepEqual(unet.options, ["Krea2\\a.safetensors", "krea2_turbo_fp8_scaled.safetensors", "krea2_turbo_int8_convrot.safetensors"]);
+});
+
 test("model descriptors expose alternates without duplicating the workflow default", () => {
   const models = listModelDescriptors([entry], loaderOptions);
   assert.equal(models.length, 2);

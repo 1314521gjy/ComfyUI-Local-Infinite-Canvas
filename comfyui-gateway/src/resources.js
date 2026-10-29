@@ -103,8 +103,7 @@ function resolveComfyRoot(config) {
         "C:/ComfyUI",
         "D:/ComfyUI",
         "E:/ComfyUI",
-        "E:/ComfyUI_windows_portable",
-        "E:/ComfyUI/ComfyUI",
+        "C:/ComfyUI_windows_portable",
         path.join(home, "ComfyUI"),
         path.join(home, "Documents", "ComfyUI"),
     ]) {
@@ -746,15 +745,24 @@ export function createResourceManager({ config, setup, registry, logger, workflo
 
     function resourceLoaderSpecs(resource) {
         let dir = "";
+        let file = "";
         try {
-            dir = targetParts(resource.target).dir;
+            ({ dir, file } = targetParts(resource.target));
         } catch {
             return [];
+        }
+        // llama-cpp 的 GGUF 不在标准 MODEL_LOADER_SPECS 里：主模型和 mmproj 是两个不同输入。
+        if (dir === "LLM") {
+            return [{
+                classType: "llama_cpp_model_loader",
+                input: /mmproj/i.test(file) ? "mmproj" : "model",
+                from: file,
+            }];
         }
         return MODEL_LOADER_SPECS.filter((spec) => (spec.dirs || []).includes(dir)).map((spec) => ({
             classType: spec.classType,
             input: spec.input,
-            from: targetParts(resource.target).file,
+            from: file,
         }));
     }
 
@@ -957,8 +965,9 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         const isPip = resource.type === "pip";
         const pip = isPip ? pipStatusFor(resource, root) : null;
         const directMatch = isPip || isNode ? null : resourceMatch(resource, root);
-        // 自动匹配（含相似匹配）优先；手动「自选替换」是最后手段，只有自动匹配不到时才生效。
-        const alias = directMatch?.present ? null : isPip || isNode ? null : resourceAliasFor(resource);
+        // 用户显式「自选替换」是基本功能：无论自动结果是精确、同名、体积还是相似，
+        // 只要用户选过就以用户选择为准；自动匹配只在没有自选时生效。
+        const alias = isPip || isNode ? null : resourceAliasFor(resource);
         const match = alias
             ? { present: true, path: "", rel: alias.to, size: 0, matchedBy: "alias", mismatch: "" }
             : isPip

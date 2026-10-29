@@ -318,14 +318,22 @@ export function baseModelOptions(config: AiConfig, value: string) {
     const found = channelModelOf(config, value);
     const workflowId = found?.model.workflowId;
     if (!found || !workflowId) return [];
+    const seen = new Set<string>();
     return found.channel.models
         .filter((model) => model.workflowId === workflowId)
+        .filter((model) => !/(^|[\\/])loras?([\\/]|$)/i.test(String(model.baseModel || "")))
         .map((model) => ({
             value: encodeChannelModel(found.channel.id, model.name),
             label: model.baseModelLabel || model.label || model.name,
             isDefault: !model.baseModel,
             name: model.name,
-        }));
+        }))
+        .filter((option) => {
+            const key = option.label.toLowerCase();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
 }
 
 export function modelImageInputs(config: AiConfig, value: string) {

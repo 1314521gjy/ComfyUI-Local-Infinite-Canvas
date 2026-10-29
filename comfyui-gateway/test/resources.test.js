@@ -100,7 +100,7 @@ test("resources download falls back to the backup source and verifies sha256", a
 });
 
 
-test("similarity match wins over a manual replacement (manual is the last resort)", async () => {
+test("explicit user replacement overrides an automatic similarity match", async () => {
     const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-similar-priority-"));
     const comfy = path.join(root, "ComfyUI");
     const data = path.join(root, "data");
@@ -135,12 +135,61 @@ test("similarity match wins over a manual replacement (manual is the last resort
     });
     try {
         await manager.init();
+        assert.equal(manager.status().resources[0].matchedBy, "similar");
         await manager.setResourceReplacement("test-vae", "local-vae.safetensors");
         const item = manager.status().resources[0];
         assert.equal(item.status, "present");
-        assert.equal(item.matchedBy, "similar");
-        assert.equal(item.overridden, undefined);
-        assert.equal(item.matchedFile, "test-vae-int8.safetensors");
+        assert.equal(item.matchedBy, "alias");
+        assert.equal(item.overridden, true);
+        assert.equal(item.overriddenBy, "local-vae.safetensors");
+        assert.equal(item.matchedFile, "local-vae.safetensors");
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});
+
+test("user replacement still wins when the expected file is present", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-alias-exact-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(path.join(comfy, "models", "vae"), { recursive: true });
+    await fsp.writeFile(path.join(comfy, "models", "vae", "test-vae.safetensors"), "0123456789");
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    const index = {
+        schema: 1,
+        version: "test-alias-exact-1",
+        packs: [{ id: "test", resources: ["test-vae"] }],
+        resources: [{ id: "test-vae", type: "model", label: "Test VAE", target: "vae/test-vae.safetensors", size: 10 }],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+    let alias = "";
+    const setup = {
+        loaderOptions: () => ({}),
+        status: () => ({ comfyReachable: true }),
+        modelAliasFor: () => alias,
+        userModelAliasFor: () => alias,
+        setModelAliases: async (entries) => {
+            alias = entries[0]?.to || "";
+        },
+        pickModelFile: async () => ({ file: "local-vae.safetensors" }),
+        scan: async () => ({}),
+    };
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup,
+        logger: null,
+    });
+    try {
+        await manager.init();
+        assert.equal(manager.status().resources[0].matchedBy, "path");
+        await manager.setResourceReplacement("test-vae", "local-vae.safetensors");
+        const item = manager.status().resources[0];
+        assert.equal(item.status, "present");
+        assert.equal(item.matchedBy, "alias");
+        assert.equal(item.overridden, true);
+        assert.equal(item.overriddenBy, "local-vae.safetensors");
     } finally {
         await fsp.rm(root, { recursive: true, force: true });
     }

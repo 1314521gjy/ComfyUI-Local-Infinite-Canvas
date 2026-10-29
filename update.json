@@ -1,16 +1,16 @@
 {
-  "version": "v0.22.2",
+  "version": "v0.22.3",
   "publishedAt": "2026-10-30",
-  "notes": "新增局域网 / 多机访问配置（allowLan、canvasHost、gatewayHost、gatewayPublicHost、corsOrigins，默认仍只绑 127.0.0.1，非回环监听需显式开启）；修复 Krea2 等模型把「参考图片编号」协议头画进画面的问题；VDN 缺 Stage-B 适配器会提前提示并给出修复指引；更新补丁不再覆盖运行时 config.js。",
+  "notes": "新增新手引导（圈选设置→资源→选模型→首图）；资源中心增加扫描/识别/缺资源 FAQ 和失败转本机 Agent；修复超分工作流误判、放大模型下拉混入非放大模型、Krea2/Z-Image 底模重复、扫描后状态不刷新；相似匹配与自选替换并存，工作流资源卡齐全即激活。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.22.2.zip",
-    "sha256": "ff68b335f9f7d7a5b0af2385507472051c91d68cc7712edc08dc9f689a8e082b",
-    "size": 37563699
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.22.3.zip",
+    "sha256": "5a09cbe7bb16a6310baa864b7fe898a670932f3ad6b6bf6eadf1835bbd4debf6",
+    "size": 37575084
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

@@ -419,6 +419,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
         <div
             ref={panelRef}
             data-canvas-no-zoom
+            data-onboarding="prompt-panel"
             className="rounded-2xl border p-3 shadow-2xl backdrop-blur"
             style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
             onMouseDown={(event) => event.stopPropagation()}
@@ -438,6 +439,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
             <CanvasResourceMentionTextarea
                 ref={textareaRef}
                 value={draft}
+                data-onboarding="prompt-input"
                 references={mentionReferences}
                 onChange={setDraft}
                 onBlur={() => commitPrompt()}
@@ -486,8 +488,10 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                     ) : null}
                     {mode === "image" ? (
                         <>
-                            <WorkflowModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="image" onMissingConfig={() => openConfigDialog(true)} className="max-w-[190px]" />
-                            <BaseModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} className="max-w-[140px]" />
+                            <div data-onboarding="image-model-picker" className="flex min-w-0 items-center gap-2">
+                                <WorkflowModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} capability="image" onMissingConfig={() => openConfigDialog(true)} className="max-w-[190px]" />
+                                <BaseModelPicker config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} className="max-w-[140px]" />
+                            </div>
                             <CanvasImageSettingsPopover
                                 config={config}
                                 placement="topLeft"
@@ -545,6 +549,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                 </div>
                 <Button
                     type="primary"
+                    data-onboarding="generate-button"
                     className={`ml-auto !h-10 shrink-0 !rounded-full ${isRunning || captionRunning ? "!min-w-10 !px-2" : "!min-w-16 !px-3"}`}
                     danger={isRunning || captionRunning}
                     disabled={!isRunning && !captionRunning && !(captionReady ? imageReferences.length : draft.trim())}

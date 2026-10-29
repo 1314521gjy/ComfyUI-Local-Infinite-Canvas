@@ -89,10 +89,14 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--preset", choices=sorted(PRESETS), default="Balanced")
     parser.add_argument("--strength", type=float, default=1.0)
-    parser.add_argument("--base", default=r"E:/ComfyUI/ComfyUI/models/diffusion_models/moss_image_base_bf16.safetensors")
-    parser.add_argument("--sft", default=r"E:/ComfyUI/ComfyUI/models/diffusion_models/moss_image_sft_bf16.safetensors")
-    parser.add_argument("--out", default=r"E:/ComfyUI/ComfyUI/models/diffusion_models/moss_balanced_s100.safetensors")
+    comfy_root = os.environ.get("COMFYUI_DIR", "").strip()
+    model_root = os.path.join(comfy_root, "models", "diffusion_models") if comfy_root else ""
+    parser.add_argument("--base", default=os.path.join(model_root, "moss_image_base_bf16.safetensors") if model_root else "")
+    parser.add_argument("--sft", default=os.path.join(model_root, "moss_image_sft_bf16.safetensors") if model_root else "")
+    parser.add_argument("--out", default=os.path.join(model_root, "moss_balanced_s100.safetensors") if model_root else "")
     args = parser.parse_args()
+    if not args.base or not args.sft or not args.out:
+        parser.error("请通过 --base/--sft/--out 指定路径，或先设置 COMFYUI_DIR")
     bake(args.base, args.sft, args.out, args.preset, args.strength)
 
 

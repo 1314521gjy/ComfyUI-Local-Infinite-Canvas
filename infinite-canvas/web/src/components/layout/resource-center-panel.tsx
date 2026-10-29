@@ -1,5 +1,5 @@
 import { App, Button, Checkbox, Progress, Select, Tag, Tooltip } from "antd";
-import { AlertTriangle, ChevronDown, Download, HardDriveDownload, RefreshCw, Server, X, XCircle } from "lucide-react";
+import { AlertTriangle, Bot, ChevronDown, Download, HardDriveDownload, RefreshCw, Server, X, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -20,6 +20,9 @@ import {
     type ResourceStatus,
 } from "@/services/api/resources";
 import { isGatewayDown } from "@/services/api/gateway-status";
+import { LOCAL_ONLY } from "@/constant/app-mode";
+import { useAgentStore } from "@/stores/use-agent-store";
+import { useConfigStore } from "@/stores/use-config-store";
 
 const copyByLocale = {
     zh: {
@@ -82,6 +85,9 @@ const copyByLocale = {
         workflowMismatch: "模型名未匹配",
         workflowRuntime: "缺运行库",
         workflowOffline: "未连接",
+        workflowUnscanned: "未扫描",
+        workflowMutedHint: "该工作流已从模型选择中屏蔽；勾选「启用」后才会参与模型选择。",
+        workflowUnscannedHint: "该工作流尚未参与扫描；点「重新扫描」后查看结果。",
         sizeMismatchTag: "大小不一致",
         workflowEnabled: "启用",
         workflowDisabled: "已屏蔽",
@@ -114,6 +120,18 @@ const copyByLocale = {
         compileFailed: "本机编译失败",
         copyHint: "复制给 AI Agent",
         hintCopied: "已复制，直接发给你的 AI Agent",
+        guideTitle: "添加工作流引导",
+        guideBody: "先看扫描结果，缺什么勾选后安装。下载/安装成功不需要 Agent；只有下载失败、VDN 缺 Stage-B、TRT 编译或 MOSS 烘焙失败时，才看页面底部的「下载/编译失败？」。",
+        guideAgent: "交给本机 Agent",
+        guideAgentCopy: "复制给本机 Agent",
+        guideCopyFallback: "复制失败，请手动全选复制下面指令发给本机 Agent。",
+        helpTitle: "扫描不到 / 识别不了 / 缺资源？",
+        helpScan: "扫描不到 ComfyUI：展开上方「ComfyUI 目录与资源扫描」→「手动指定」→ 选择包含 main.py 的 ComfyUI 根目录（里面应有 models、custom_nodes）；保存并扫描。ComfyUI 需要先启动。",
+        helpModel: "模型识别不了：在对应资源卡右侧点「自选替换」，选择本机实际模型文件。同名但大小不一致不是同一版本，建议重新下载或用「自选替换」。",
+        helpMissing: "缺少资源：看「缺少 N / 下载体积」，勾选缺失包后点「安装选中」；可选内容在包内展开勾选。安装后出现「待重启」就重启 ComfyUI。",
+        sizeMismatchHint: "处理：点右侧「自选替换」选本机文件，或重新下载资源包版本。",
+        guideFailureTitle: "下载 / 编译失败？",
+        guideFailureBody: "先完成上面的下载/安装。只有下载失败、VDN 缺 Stage-B、TRT 编译或 MOSS 烘焙失败时，才复制修复指令给本机 Agent；成功下载不需要。",
         notReachable: "ComfyUI 未连接：模型文件仍按已识别的目录扫描；工作流可用性和自定义节点需 ComfyUI 在线后才能确认。",
         indexError: "资源索引读取失败：",
         indexWarning: "资源索引提示：",
@@ -197,6 +215,9 @@ const copyByLocale = {
         workflowMismatch: "Model name not matched",
         workflowRuntime: "Missing runtime",
         workflowOffline: "Offline",
+        workflowUnscanned: "Not scanned",
+        workflowMutedHint: "This workflow is hidden from the model picker; enable it to participate.",
+        workflowUnscannedHint: "This workflow was not included in the scan; click Rescan to check it.",
         sizeMismatchTag: "Size mismatch",
         workflowEnabled: "Enabled",
         workflowDisabled: "Hidden",
@@ -229,6 +250,18 @@ const copyByLocale = {
         compileFailed: "Local compile failed",
         copyHint: "Copy for your AI agent",
         hintCopied: "Copied — paste it to your AI agent",
+        guideTitle: "Adding workflows",
+        guideBody: "Check the scan results, select what is missing and install. A successful download does not need the agent. Only if download, VDN Stage-B, TensorRT compile or MOSS bake fails, look at Download / compile failed? at the bottom.",
+        guideAgent: "Hand to local agent",
+        guideAgentCopy: "Copy for local agent",
+        guideCopyFallback: "Copy failed. Select and copy the instructions below for your local agent.",
+        helpTitle: "ComfyUI not found / model not recognized / missing resources?",
+        helpScan: "ComfyUI not found: open the folder scan above, choose Manual, select the ComfyUI root containing main.py (it should contain models and custom_nodes), then save and scan. ComfyUI must be running.",
+        helpModel: "Model not recognized: click Choose replacement on the resource card and pick the local model file. Same name with a different size is not the same build; re-download it or use Choose replacement.",
+        helpMissing: "Missing resources: check Missing / download size, select the missing pack and click Install selected; optional items are inside the pack. Restart ComfyUI if Restart needed appears.",
+        sizeMismatchHint: "Fix: use Choose replacement on the right, or re-download the resource-pack version.",
+        guideFailureTitle: "Download / compile failed?",
+        guideFailureBody: "Complete the download/install above first. Only if download, VDN Stage-B, TensorRT compile or MOSS bake fails, copy the repair instructions to your local agent; a successful download does not need this.",
         notReachable: "ComfyUI is offline: model files are still scanned from detected folders; workflow availability and custom nodes need ComfyUI online.",
         indexError: "Failed to load the resource index: ",
         indexWarning: "Resource index notice: ",
@@ -301,7 +334,7 @@ function formatSpeed(bytesPerSecond: number) {
     return value > 0 ? `${formatBytes(value)}/s` : "";
 }
 
-const REPLACEABLE_MODEL_DIRS = new Set(["diffusion_models", "text_encoders", "vae", "loras", "checkpoints", "upscale_models", "vdn"]);
+const REPLACEABLE_MODEL_DIRS = new Set(["diffusion_models", "text_encoders", "vae", "loras", "checkpoints", "upscale_models", "vdn", "LLM"]);
 
 function isReplaceableResource(item: ResourceItem) {
     if (item.type !== "model" && item.type !== "bake") return false;
@@ -363,7 +396,12 @@ function ResourceCard({
                             {item.similarScore ? ` · ${Math.round(item.similarScore * 100)}%` : ""}
                         </div>
                     ) : null}
-                    {item.sizeMismatch ? <div className="mt-0.5 text-[10px] leading-4 text-amber-600 dark:text-amber-400">{item.sizeMismatch}</div> : null}
+                    {item.sizeMismatch ? (
+                        <div className="mt-0.5 text-[10px] leading-4 text-amber-600 dark:text-amber-400">
+                            {item.sizeMismatch}
+                            <div className="mt-0.5 text-stone-500 dark:text-stone-400">{copy.sizeMismatchHint}</div>
+                        </div>
+                    ) : null}
                     {item.overridden && item.overriddenBy ? <div className="mt-0.5 text-[10px] leading-4 text-blue-600 dark:text-blue-300">{copy.replacedBy}: {item.overriddenBy}</div> : null}
                     <PipMissingHint item={item} copy={copy} />
                     {item.type === "pip" && item.restartAfterInstall && item.status === "present" ? <div className="mt-0.5 text-[10px] leading-4 text-stone-500 dark:text-stone-400">{copy.pipRestart}</div> : null}
@@ -373,7 +411,7 @@ function ResourceCard({
                     {canReplace ? (
                         <div className="mt-1 flex flex-wrap items-center justify-end gap-1">
                             {item.overridden ? <Button size="small" type="text" disabled={replacing} onClick={() => onRestore?.(item)}>{copy.restoreDefault}</Button> : null}
-                            <Button size="small" type="text" loading={replacing} onClick={() => onReplace?.(item)}>
+                            <Button size="small" type="text" loading={replacing} title={copy.modelAliasHint} onClick={() => onReplace?.(item)}>
                                 {item.overridden ? copy.replaceAgain : copy.replaceModel}
                             </Button>
                         </div>
@@ -416,7 +454,12 @@ function WorkflowResourceRow({
                     <span>{formatBytes(item.size)}</span>
                 </div>
                 {item.matchedBy === "size" && item.matchedFile ? <div className="mt-0.5 text-[10px] text-stone-400 dark:text-stone-500">{copy.matchedBySize}: {item.matchedFile}</div> : null}
-                {item.sizeMismatch ? <div className="mt-0.5 text-[10px] text-amber-600 dark:text-amber-400">{item.sizeMismatch}</div> : null}
+                {item.sizeMismatch ? (
+                    <div className="mt-0.5 text-[10px] text-amber-600 dark:text-amber-400">
+                        {item.sizeMismatch}
+                        <div className="mt-0.5 text-stone-500 dark:text-stone-400">{copy.sizeMismatchHint}</div>
+                    </div>
+                ) : null}
                 {item.overridden && item.overriddenBy ? <div className="mt-0.5 text-[10px] text-blue-600 dark:text-blue-300">{copy.replacedBy}: {item.overriddenBy}</div> : null}
                 <PipMissingHint item={item} copy={copy} />
                 {item.type === "pip" && item.restartAfterInstall && item.status === "present" ? <div className="mt-0.5 text-[10px] leading-4 text-stone-500 dark:text-stone-400">{copy.pipRestart}</div> : null}
@@ -429,7 +472,7 @@ function WorkflowResourceRow({
             {canReplace ? (
                 <div className="ml-auto flex shrink-0 flex-col items-end gap-1">
                     {item.overridden ? <Button size="small" type="text" disabled={replacing} onClick={() => onRestore?.(item)}>{copy.restoreDefault}</Button> : null}
-                    <Button size="small" type="text" loading={replacing} onClick={() => onReplace?.(item)}>
+                    <Button size="small" type="text" loading={replacing} title={copy.modelAliasHint} onClick={() => onReplace?.(item)}>
                         {item.overridden ? copy.replaceAgain : copy.replaceModel}
                     </Button>
                 </div>
@@ -447,6 +490,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
     };
     const { i18n } = useTranslation();
     const copy = i18n.language.startsWith("zh") ? copyByLocale.zh : copyByLocale.en;
+    const setConfigDialogOpen = useConfigStore((state) => state.setConfigDialogOpen);
     const [status, setStatus] = useState<ResourceStatus | null>(null);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -611,6 +655,44 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
             item.pipBroken ? `当前已安装但无法导入，版本：${item.pipVersion || "?"}` : "没有匹配的预编译包。",
             "安装后验证 import sageattention 和 get_cuda_arch_versions，再重启 ComfyUI；失败请把完整报错贴给我。",
         ].join("\n");
+
+    const agentPromptForResource = (detail = "") =>
+        [
+            "请在这台 Windows 机器上帮我处理无界工作台的 ComfyUI 资源安装 / 编译 / 烘焙问题。",
+            `ComfyUI 目录：${status?.comfyRoot || "未知"}；资源索引：${status?.indexVersion || "未知"}`,
+            "如果是 H3 VDN：检查 models/vdn/stage-dmd-step-250 下的 linear_branch/model.safetensors、adapters/default/adapter_model.safetensors、adapters/default/adapter_config.json、adapters/turbo、model_spec.json、metadata.json 是否齐全；缺什么补什么，保留内部目录结构，完成后重启 ComfyUI。",
+            "如果是 H3 TensorRT VAE engine：确认本机 tensorrt 与 CUDA/驱动匹配，再运行 comfyui-gateway/scripts/build-h3-trt-vae.py（使用资源提示里的完整命令）；失败请把完整报错贴给我。",
+            "如果是 MOSS Balanced 本地烘焙：运行 comfyui-gateway/scripts/bake-moss-preset.py，确认 Base/SFT 输入和输出路径。",
+            "不要升级或替换 torch、CUDA、ComfyUI 本体；不要动其他模型；完成后列出改动文件、命令和验证结果。",
+            detail ? `当前错误/提示：\n${detail}` : "",
+        ].filter(Boolean).join("\n");
+
+    const handoffToAgent = async (detail = "") => {
+        const prompt = agentPromptForResource(detail);
+        if (LOCAL_ONLY) {
+            try {
+                await navigator.clipboard.writeText(prompt);
+                message.success(copy.hintCopied);
+            } catch {
+                modal.info({
+                    title: copy.guideAgentCopy,
+                    width: 640,
+                    content: (
+                        <div className="space-y-2 text-sm">
+                            <div className="text-xs leading-5 text-stone-500 dark:text-stone-400">{copy.guideCopyFallback}</div>
+                            <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md bg-stone-100 p-2 text-[11px] leading-4 text-stone-700 dark:bg-stone-900 dark:text-stone-200">{prompt}</pre>
+                        </div>
+                    ),
+                    okText: copy.runtimeManualClose,
+                });
+            }
+            return;
+        }
+        setConfigDialogOpen(false);
+        window.dispatchEvent(new Event("canvas-onboarding-close"));
+        useAgentStore.getState().setAgentState({ prompt, activeTab: "chat" });
+        useAgentStore.getState().openPanel();
+    };
 
     const startInstall = async (input: { ids?: string[]; packs?: string[] }) => {
         if (!input.ids?.length && !input.packs?.length) {
@@ -828,6 +910,21 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
 
     return (
         <div className="space-y-3">
+            <div data-onboarding="resource-center" className="rounded-xl border border-sky-200 bg-sky-50/70 p-3 dark:border-sky-900/60 dark:bg-sky-950/20">
+                <div className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+                    <Bot className="size-4 text-sky-600 dark:text-sky-300" />
+                    {copy.guideTitle}
+                </div>
+                <div className="mt-1 text-xs leading-5 text-stone-600 dark:text-stone-300">{copy.guideBody}</div>
+            </div>
+            <details data-onboarding="resource-help" className="rounded-xl border border-stone-200 bg-white/60 p-3 text-xs dark:border-stone-800 dark:bg-white/[.02]">
+                <summary className="cursor-pointer font-medium text-stone-700 dark:text-stone-200">{copy.helpTitle}</summary>
+                <div className="mt-2 space-y-1.5 leading-5 text-stone-600 dark:text-stone-300">
+                    <p>{copy.helpScan}</p>
+                    <p>{copy.helpModel}</p>
+                    <p>{copy.helpMissing}</p>
+                </div>
+            </details>
             <div className="rounded-xl border border-stone-200 bg-stone-50/70 p-3 dark:border-stone-800 dark:bg-white/[.03]">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0 space-y-1">
@@ -846,10 +943,10 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                         </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
-                        <Button size="small" icon={<RefreshCw className={`size-3.5 ${refreshing ? "animate-spin" : ""}`} />} loading={refreshing} onClick={() => void load(true)}>
+                        <Button size="small" data-onboarding="resource-refresh" icon={<RefreshCw className={`size-3.5 ${refreshing ? "animate-spin" : ""}`} />} loading={refreshing} onClick={() => void load(true)}>
                             {copy.refresh}
                         </Button>
-                        <Button size="small" type="primary" icon={<Download className="size-3.5" />} disabled={!installIds.length || Boolean(job && ["running"].includes(job.status))} onClick={() => void startInstall({ ids: installIds })}>
+                        <Button size="small" type="primary" data-onboarding="resource-install" icon={<Download className="size-3.5" />} disabled={!installIds.length || Boolean(job && ["running"].includes(job.status))} onClick={() => void startInstall({ ids: installIds })}>
                             {copy.installSelected}
                         </Button>
                     </div>
@@ -910,7 +1007,10 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                             <AlertTriangle className="size-3.5 shrink-0" />
                                             <span className="truncate">{copy.compileFailed} · {item.label}</span>
                                         </span>
-                                        <Button size="small" onClick={() => void copyHintText(item.hint || "")}>{copy.copyHint}</Button>
+                                        <div className="flex shrink-0 gap-1">
+                                            <Button size="small" onClick={() => void handoffToAgent(item.hint || "")}>{LOCAL_ONLY ? copy.guideAgentCopy : copy.guideAgent}</Button>
+                                            <Button size="small" onClick={() => void copyHintText(item.hint || "")}>{copy.copyHint}</Button>
+                                        </div>
                                     </div>
                                     <div className="whitespace-pre-wrap break-all text-[10px] leading-4">{item.hint}</div>
                                 </div>
@@ -1040,6 +1140,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                                     const restartOnly = problemTypes.size > 0 && [...problemTypes].every((type) => type === "node" || type === "restart");
                                                     const runtimeMissing = problemTypes.has("runtime");
                                                     const offline = problemTypes.has("offline");
+                                                    const workflowMuted = workflow.enabled === false;
                                                     const workflowTag = workflow.missing
                                                         ? <Tag color="orange">{copy.missing} {workflow.missing}</Tag>
                                                         : workflow.available
@@ -1050,7 +1151,11 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                                                     ? <Tag color="gold">{copy.workflowRestart}</Tag>
                                                                     : runtimeMissing
                                                                         ? <Tag color="red">{copy.workflowRuntime}</Tag>
-                                                                        : <Tag color="gold">{copy.workflowMismatch}</Tag>;
+                                                                        : workflowMuted
+                                                                            ? <Tag title={copy.workflowMutedHint}>{copy.workflowDisabled}</Tag>
+                                                                            : workflow.problems?.length
+                                                                                ? <Tag color="gold">{copy.workflowMismatch}</Tag>
+                                                                                : <Tag title={copy.workflowUnscannedHint}>{copy.workflowUnscanned}</Tag>;
                                                     const problemText = workflow.problems.map((problem) => problem.message).filter(Boolean).join("；");
                                                     return (
                                                         <div
@@ -1222,6 +1327,19 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                         </div>
                     );
                 })}
+            </div>
+
+            <div data-onboarding="resource-problem" className="rounded-xl border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-amber-800 dark:text-amber-200">
+                        <AlertTriangle className="size-4 shrink-0" />
+                        {copy.guideFailureTitle}
+                    </div>
+                    <Button size="small" data-onboarding="resource-agent-help" icon={<Bot className="size-3.5" />} onClick={() => void handoffToAgent()}>
+                        {LOCAL_ONLY ? copy.guideAgentCopy : copy.guideAgent}
+                    </Button>
+                </div>
+                <div className="mt-1 text-xs leading-5 text-stone-600 dark:text-stone-300">{copy.guideFailureBody}</div>
             </div>
 
             {footer}

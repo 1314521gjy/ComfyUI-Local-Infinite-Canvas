@@ -38,6 +38,8 @@ const copyByLocale = {
     zh: {
         title: "ComfyUI 目录与资源扫描",
         description: "自动识别失败时，可以手动指定 ComfyUI、模型、LoRA 和插件目录；保存后会写入 ComfyUI 的 extra_model_paths.yaml（先备份），重启 ComfyUI 生效。",
+        manualTip: "扫描不到 ComfyUI？点「手动指定」，选择包含 main.py 的 ComfyUI 根目录（里面应有 models、custom_nodes）。",
+        manualHelp: "手动指定步骤：1）ComfyUI 目录选包含 main.py 的根目录（例如 E:\\ComfyUI\\ComfyUI）；2）模型/LoRA/插件目录可留空，保存时会按 ComfyUI 目录自动推断；3）点「保存并扫描」；4）如果提示目录不在当前清单，点「重启 ComfyUI 生效」。",
         auto: "自动识别",
         manual: "手动指定",
         autoRoot: "已识别 ComfyUI",
@@ -85,6 +87,8 @@ const copyByLocale = {
     en: {
         title: "ComfyUI folders & resource scan",
         description: "If auto-detection fails, point the canvas at your ComfyUI, model, LoRA and custom-node folders. Saving writes a managed block into ComfyUI's extra_model_paths.yaml (the original is backed up); restart ComfyUI to apply.",
+        manualTip: "ComfyUI not detected? Choose Manual and pick the ComfyUI root containing main.py (it should contain models and custom_nodes).",
+        manualHelp: "Manual steps: 1) pick the ComfyUI root containing main.py (for example E:\\ComfyUI\\ComfyUI); 2) leave model/LoRA/custom-node folders empty to infer them; 3) click Save & scan; 4) if prompted that folders are not in the current list, click Restart ComfyUI.",
         auto: "Auto detect",
         manual: "Manual",
         autoRoot: "Detected ComfyUI",
@@ -382,7 +386,7 @@ export function ConfigDirectories() {
                   .join(" · ");
 
     return (
-        <section className="mb-5 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+        <section data-onboarding="directory-scan" className="mb-5 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
             <div className="flex flex-wrap items-start justify-between gap-3">
                 <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
                     <div className="flex items-center gap-2 text-sm font-semibold">
@@ -391,6 +395,7 @@ export function ConfigDirectories() {
                         <ChevronDown className={`size-4 shrink-0 opacity-60 transition-transform ${open ? "rotate-180" : ""}`} />
                     </div>
                     <div className="mt-1 text-xs leading-5 text-stone-500">{open ? copy.description : summary}</div>
+                    {!open ? <div className="mt-1 text-[11px] leading-4 text-amber-600 dark:text-amber-400">{copy.manualTip}</div> : null}
                 </button>
                 <Radio.Group value={mode} onChange={(event) => switchMode(event.target.value)} optionType="button" buttonStyle="solid" size="small">
                     <Radio.Button value="auto">{copy.auto}</Radio.Button>
@@ -427,6 +432,9 @@ export function ConfigDirectories() {
                 </div>
             ) : (
                 <div className="mt-3 space-y-3">
+                    <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
+                        {copy.manualHelp}
+                    </div>
                     <div>
                         <div className="mb-1 flex items-center justify-between gap-2">
                             <span className="text-xs font-medium">{copy.comfyDir}</span>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Modal, Spin } from "antd";
 import { Gauge } from "lucide-react";
 
@@ -76,12 +76,21 @@ export function CanvasSystemStatus() {
     const [freeError, setFreeError] = useState("");
     const [scanning, setScanning] = useState(false);
     const [scanError, setScanError] = useState("");
+    const lastScanStamp = useRef("");
 
     const refresh = useCallback(async () => {
         try {
             const response = await fetch(`${gatewayRoot}/api/system/stats`);
             if (!response.ok) return;
-            setStats(await response.json());
+            const next = (await response.json()) as SystemStats;
+            setStats(next);
+            const stamp = `${next.setup?.phase || ""}:${next.setup?.scannedAt || ""}`;
+            const previous = lastScanStamp.current;
+            lastScanStamp.current = stamp;
+            if (previous && previous !== stamp && (next.setup?.phase === "ready" || next.setup?.phase === "degraded")) {
+                window.dispatchEvent(new Event("local-gateway-refresh-models"));
+                window.dispatchEvent(new Event("local-gateway-refresh-resources"));
+            }
         } catch {
             /* 网关未就绪时保留上一次数据 */
         }
@@ -154,6 +163,7 @@ export function CanvasSystemStatus() {
             }
             await refresh();
             window.dispatchEvent(new Event("local-gateway-refresh-models"));
+            window.dispatchEvent(new Event("local-gateway-refresh-resources"));
         } catch (error) {
             setScanError(error instanceof Error ? error.message : String(error));
         } finally {
@@ -167,6 +177,7 @@ export function CanvasSystemStatus() {
         <>
             <button
                 type="button"
+                data-onboarding="system-status"
                 className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-[11px] transition-colors hover:bg-black/5 dark:hover:bg-white/10"
                 style={{ color: theme.node.muted, background: "transparent" }}
                 title={stats && !stats.comfy.reachable ? "ComfyUI 未连接，点击查看修复操作" : "查看显存、内存与 ComfyUI 状态"}

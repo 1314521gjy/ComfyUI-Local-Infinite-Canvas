@@ -209,6 +209,23 @@ test("fuzzy alias is runtime-only and never marks a resource as user-replaced", 
   }
 });
 
+test("user replacement wins over a similarity match during execution", async () => {
+  const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-alias-override-"));
+  try {
+    const manager = createAliasManager(dataDir, ["z_image_turbo_int8.safetensors", "local_other.safetensors"], {
+      1: { class_type: "UNETLoader", inputs: { unet_name: "z_image_turbo_bf16.safetensors" } },
+    });
+    await manager.scan();
+    assert.equal(manager.isAvailable(entry.id), true);
+    assert.equal(manager.modelAliasFor("UNETLoader", "unet_name", "z_image_turbo_bf16.safetensors"), "z_image_turbo_int8.safetensors");
+    await manager.setModelAlias({ classType: "UNETLoader", input: "unet_name", from: "z_image_turbo_bf16.safetensors", to: "local_other.safetensors" });
+    assert.equal(manager.modelAliasFor("UNETLoader", "unet_name", "z_image_turbo_bf16.safetensors"), "local_other.safetensors");
+    assert.equal(manager.isAvailable(entry.id), true);
+  } finally {
+    await fsp.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("matches installed model filenames case-insensitively", async () => {
   const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-alias-case-"));
   try {
@@ -273,6 +290,44 @@ test("workflow is unavailable when no matching base model is installed", async (
     await manager.scan();
     assert.equal(manager.isAvailable(entry.id), false);
     assert.ok(manager.workflowStatus(entry.id).problems.some((problem) => problem.type === "model"));
+  } finally {
+    await fsp.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("hidden tool workflows keep availability without entering model counts", async () => {
+  const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-hidden-tool-"));
+  const hidden = {
+    ...entry,
+    id: "image-esrgan-upscale",
+    name: "image-esrgan-upscale",
+    hidden: true,
+    category: "upscale",
+    baseModels: undefined,
+    workflow: { 1: { class_type: "UpscaleModelLoader", inputs: { model_name: "RealESRGAN_x2plus.pth" } } },
+  };
+  const manager = createSetupManager({
+    config: { dataDir, comfyUrl: "http://127.0.0.1:1", comfyWorkflowsDir: "", maxWorkflowBytes: 1024 * 1024 },
+    registry: {
+      list: () => [{ id: hidden.id }],
+      resolve: () => hidden,
+      scan: async () => ({ imported: 0 }),
+      reloadIfChanged: () => {},
+    },
+    comfy: {
+      systemStats: async () => ({}),
+      objectInfo: async () => ({
+        UpscaleModelLoader: { input: { required: { model_name: [["RealESRGAN_x2plus.pth"]] } } },
+      }),
+    },
+    logger: null,
+    mainModelFile: () => "",
+  });
+  try {
+    await manager.scan();
+    assert.equal(manager.isAvailable(hidden.id), true);
+    assert.equal(manager.state.counts.total, 0);
+    assert.equal(manager.state.workflows.length, 0);
   } finally {
     await fsp.rm(dataDir, { recursive: true, force: true });
   }

@@ -318,6 +318,10 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
 
     function modelAliasFor(classType, input, value) {
         if (!value) return "";
+        // 用户显式「自选替换」优先：相似匹配只是没自选时的自动兜底，
+        // 否则资源卡显示“已替换”，实际出图却仍走相似模型。
+        const user = userModelAliasFor(classType, input, value);
+        if (user) return user;
         const auto = autoAliases.get(classType)?.get(normalizeBaseName(value)) || "";
         if (auto && normalizeAliasValue(auto) !== normalizeAliasValue(value)) return auto;
         // 模型放在更深子目录时，ComfyUI 的选项带路径前缀（a/b/x.safetensors）；
@@ -340,8 +344,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
             }
             return similar.file;
         }
-        // 手动「自选替换」是最后手段：只有自动/深目录/相似都匹配不到时才用它。
-        return userModelAliasFor(classType, input, value);
+        return "";
     }
 
     function modelCandidates(classType, value) {
@@ -607,15 +610,16 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 const gatewayScan = await registry.scan();
                 const comfyScan = await importComfyWorkflows();
                 registry.reloadIfChanged?.();
-                // hidden 工作流（如被画布复用的放大工具）不参与可用性统计，避免虚增“不可用”数量。
-                const entries = registry.list().map((entry) => registry.resolve(entry.id)).filter((entry) => entry && !entry.hidden);
+                // hidden 工作流（如被画布复用的放大工具）不计入模型列表和“不可用”统计，
+                // 但仍要计算可用性，否则超分等工具会被误判为不可用。
+                const allEntries = registry.list().map((entry) => registry.resolve(entry.id)).filter(Boolean);
                 const workflows = [];
                 const missingModels = new Set();
                 const missingNodes = new Set();
                 const missingRuntime = new Set();
                 const missingRestart = new Set();
                 availability.clear();
-                for (const entry of entries) {
+                for (const entry of allEntries) {
                     const baseProblems = entry.workflow ? validateWorkflow(entry.workflow, classes, loaders, entry) : [];
                     const variantStatus = {};
                     for (const [mode, variant] of Object.entries(entry.variants || {})) {
@@ -630,10 +634,6 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                         const key = `${problem.type}:${problem.message}`;
                         if (unique.some((item) => `${item.type}:${item.message}` === key)) continue;
                         unique.push(problem);
-                        if (problem.type === "model") missingModels.add(problem.message);
-                        if (problem.type === "node") missingNodes.add(problem.message);
-                        if (problem.type === "runtime") missingRuntime.add(problem.message);
-                        if (problem.type === "restart") missingRestart.add(problem.message);
                     }
                     // 一个 variant 缺模型不应拖着整个入口“不可用”：
                     // 只要有任一 variant 可跑，入口就激活；具体哪档缺模型放在 variants 里。
@@ -642,6 +642,13 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                     const available = runtimeProblems.length === 0 && (baseAvailable || anyVariantAvailable);
                     const variants = Object.fromEntries(Object.entries(variantStatus).map(([mode, list]) => [mode, { available: list.length === 0, problems: list }]));
                     availability.set(entry.id, { available, problems: unique, variants });
+                    if (entry.hidden) continue;
+                    for (const problem of unique) {
+                        if (problem.type === "model") missingModels.add(problem.message);
+                        if (problem.type === "node") missingNodes.add(problem.message);
+                        if (problem.type === "runtime") missingRuntime.add(problem.message);
+                        if (problem.type === "restart") missingRestart.add(problem.message);
+                    }
                     workflows.push({ id: entry.id, name: entry.name, type: entry.type, available, problems: unique, variants });
                 }
                 state.workflows = workflows;

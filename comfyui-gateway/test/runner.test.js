@@ -65,6 +65,41 @@ test("model aliases rewrite loader inputs before submit", async () => {
   assert.equal(submitted["2"].inputs.clip_name, "keep.safetensors");
 });
 
+test("dynamically discovered loaders also receive model aliases", async () => {
+  let submitted = null;
+  const runEntry = {
+    name: "runner-dynamic-alias",
+    type: "image",
+    workflow: {
+      1: { class_type: "llama_cpp_model_loader", inputs: { model: "expected-model.gguf", mmproj: "expected-mmproj.gguf" } },
+    },
+    bindings: {},
+    defaults: {},
+    presets: {},
+  };
+  await runWorkflow({
+    entry: runEntry,
+    context: buildContext({ prompt: "x" }),
+    comfy: fakeComfy((workflow) => {
+      submitted = workflow;
+    }),
+    timeoutMs: 5000,
+    pollIntervalMs: 10,
+    modelAliasFor: (classType, input, value) => {
+      if (classType !== "llama_cpp_model_loader") return "";
+      if (input === "model" && value === "expected-model.gguf") return "local-model.gguf";
+      if (input === "mmproj" && value === "expected-mmproj.gguf") return "local-mmproj.gguf";
+      return "";
+    },
+    loaderSpecs: [
+      { classType: "llama_cpp_model_loader", input: "model" },
+      { classType: "llama_cpp_model_loader", input: "mmproj" },
+    ],
+  });
+  assert.equal(submitted["1"].inputs.model, "local-model.gguf");
+  assert.equal(submitted["1"].inputs.mmproj, "local-mmproj.gguf");
+});
+
 test("aborting a running workflow interrupts ComfyUI", async () => {
   const controller = new AbortController();
   let interrupted = null;
