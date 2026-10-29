@@ -13,6 +13,7 @@
   "closeCanvasStopsBackend": true,
   "stopAdoptedComfyOnCanvasClose": true,
   "canvasIdleGraceSec": 30,
+  "allowLan": false,
   "canvasHost": "127.0.0.1",
   "gatewayHost": "127.0.0.1",
   "gatewayPublicHost": "",

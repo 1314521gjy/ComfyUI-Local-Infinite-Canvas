@@ -2,9 +2,11 @@
 
 ## v0.22.2 - 2026-10-30
 
-+ [新增] 局域网 / 多机访问（issue #1 / PR #3）：`launcher/config.json` 新增 `canvasHost`、`gatewayHost`、`gatewayPublicHost`、`corsOrigins`，默认仍只绑 `127.0.0.1`；工作站跑模型、其他设备浏览器打开画布时不再需要改源码。放开监听前请阅读 README 的安全提示。
++ [新增] 局域网 / 多机访问（issue #1 / PR #3）：`launcher/config.json` 新增 `allowLan`、`canvasHost`、`gatewayHost`、`gatewayPublicHost`、`corsOrigins`，默认仍只绑 `127.0.0.1`；非回环监听必须显式 `allowLan: true`，工作站跑模型、其他设备浏览器打开画布时不再需要改源码。放开监听前请阅读 README 的安全提示。
 
 + [修复] Krea2 等不读取参考图的模型会把「参考图片编号」前缀带进正向提示词，导致画面出现无关文字（issue #2）：非 Qwen 多图编辑现在会剥离这段前端协议头，Qwen 多图编辑仍保留图片顺序说明。
+
++ [修复] VDN 视频模型缺少 Stage-B 适配器时不再等到出片才报 ComfyUI 原始错误：可用性扫描会提前把该工作流标为不可用并提示重新下载完整的 `stage-dmd-step-250` 目录；运行时也会把该错误翻译成中文可行动提示。
 
 + [修复] 更新补丁不再覆盖 `infinite-canvas/web/dist/config.js`，避免应用更新后丢失运行时网关地址。
 

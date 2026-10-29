@@ -76,6 +76,7 @@ start-local.bat
 
 ```json
 {
+  "allowLan": true,
   "canvasHost": "0.0.0.0",
   "gatewayHost": "0.0.0.0",
   "gatewayPublicHost": "192.168.1.10",
@@ -83,10 +84,11 @@ start-local.bat
 }
 ```
 
-- `canvasHost`：画布静态服务监听地址；`gatewayHost`：网关监听地址（非回环时自动设置 `ALLOW_REMOTE=1`）。
+- `allowLan`：必须显式为 `true` 才允许非回环监听；默认 `false`，避免误把服务暴露到局域网。
+- `canvasHost`：画布静态服务监听地址；`gatewayHost`：网关监听地址。
 - `gatewayPublicHost`：写进前端 `config.js` 的对外可达网关地址；留空等于 `127.0.0.1`。
 - `corsOrigins`：允许跨域调用网关的画布来源，逗号分隔，不支持通配符。
-- 放开绑定后相关端口仍没有内置鉴权，只在可信内网使用，**不要映射到公网**；跨机使用前先读下方「安全提示」。
+- 网关 `/api` 和 `/admin` 没有内置鉴权；放开监听后只限可信内网，并配合防火墙限制来源，**不要映射到公网**。跨机使用前先读下方「安全提示」。
 
 ## 网关
 
@@ -117,7 +119,7 @@ start-local.bat
 ## 安全提示
 
 - 网关、ComfyUI、启动器控制接口默认只绑 `127.0.0.1`，**没有鉴权**。
-- 只有显式配置 `canvasHost` / `gatewayHost` 才会放开监听；放开后只限可信内网，并配合防火墙限制来源，**不要映射到公网**。
+- 只有显式设置 `allowLan: true` 并配置 `canvasHost` / `gatewayHost` 才会放开监听；放开后只限可信内网，并配合防火墙限制来源，**不要映射到公网**。网关 `/api` 与 `/admin` 仍无鉴权，CORS 白名单不是访问控制。
 - 不要把 `:8188`、`:8190`、`:8290` 暴露到公网或不可信局域网。
 - 本地渠道默认 API Key 是占位值 `local`，网关不校验该值；仓库不包含真实 API Key、Token 或私钥。
 - 不要提交 `launcher/config.json`、`comfyui-gateway/data/`、任务输出、模型权重、`.env` 或任何密钥。

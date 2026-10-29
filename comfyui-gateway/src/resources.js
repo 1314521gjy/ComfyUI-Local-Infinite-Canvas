@@ -1568,7 +1568,14 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         return value;
     }
 
-    // 可用性扫描补运行期依赖：pip 运行库、TRT 编译产物、自定义节点。
+    // VDN 需要整套目录（model + turbo/default adapter + config），不能只看 loader 里的文件名。
+    function vdnResourcePresent(resource, root = comfyRoot()) {
+        if (!root) return false;
+        const { dir, file } = targetParts(resource.target);
+        return modelRoots(dir, root).some((base) => isFile(path.join(base, file)));
+    }
+
+    // 可用性扫描补运行期依赖：pip 运行库、TRT 编译产物、自定义节点、VDN 整套目录。
     // 普通模型由 setup 的 loader 校验负责，这里不重复报。
     function runtimeProblemsFor(workflowId) {
         if (!index) return [];
@@ -1578,9 +1585,14 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             if (Array.isArray(deps)) for (const id of deps) ids.add(id);
         }
         const problems = [];
+        const missingVdn = [];
         for (const id of ids) {
             const resource = resourceById(id);
             if (!resource) continue;
+            if (String(id).startsWith("h3_vdn_stage_")) {
+                if (!vdnResourcePresent(resource)) missingVdn.push(resource);
+                continue;
+            }
             const type = String(resource.type || "model");
             if (!["pip", "bake", "node"].includes(type)) continue;
             const state = cachedResourceStatus(resource, comfyRoot());
@@ -1590,6 +1602,16 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 type: "runtime",
                 message: `缺少运行期依赖：${state.label}${blocked}`,
                 resourceId: id,
+            });
+        }
+        if (missingVdn.length) {
+            const stageB = missingVdn.find((resource) => resource.id === "h3_vdn_stage_default_adapter");
+            problems.push({
+                type: "model",
+                resourceId: stageB ? stageB.id : missingVdn[0].id,
+                message: stageB
+                    ? "VDN 模型不完整：缺少 Stage-B 适配器（vdn/stage-dmd-step-250/adapters/default/adapter_model.safetensors）。请在资源中心重新下载完整的 stage-dmd-step-250 目录（保留内部结构），重启 ComfyUI 后重试。"
+                    : `VDN 模型不完整：缺少 ${missingVdn.map((resource) => resource.label).join("、")}。请在资源中心重新下载完整的 stage-dmd-step-250 目录（保留内部结构），重启 ComfyUI 后重试。`,
             });
         }
         return problems;

@@ -84,6 +84,9 @@ function failureHint(failure) {
   if (/not in list|value_not_in_list|value not in list/i.test(failure)) {
     hints.push("工作流引用的模型文件在本机不存在：请在资源中心补齐，或在资源卡里替换为本机已有模型。");
   }
+  if (/['"]default['"]\s*\(Stage-B\)\s*adapter\s*is\s*missing|Stage-B.*adapter.*missing|default.*adapter.*missing/i.test(failure)) {
+    hints.push("VDN 模型不完整：stage-dmd-step-250 缺少 default (Stage-B) 适配器。请在资源中心重新下载完整的 stage-dmd-step-250 目录（保留 adapters/default 内部结构），重启 ComfyUI 后重试。");
+  }
   if (/node ['\"]?[^'\"]+['\"]? not found|class_type[^\n]*not found|cannot execute because node/i.test(failure)) {
     hints.push("缺少节点插件：请在资源中心安装对应工作流依赖，重启 ComfyUI 后重试。");
   }

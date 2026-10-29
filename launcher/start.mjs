@@ -50,6 +50,7 @@ const DEFAULT_CONFIG = {
   closeCanvasStopsBackend: true,
   stopAdoptedComfyOnCanvasClose: true,
   canvasIdleGraceSec: 30,
+  allowLan: false,
   canvasHost: "127.0.0.1",
   gatewayHost: "127.0.0.1",
   gatewayPublicHost: "",
@@ -151,14 +152,21 @@ function loadConfig() {
     closeCanvasStopsBackend: process.env.CLOSE_CANVAS_STOPS_BACKEND !== "0" && merged.closeCanvasStopsBackend !== false,
     stopAdoptedComfyOnCanvasClose: process.env.STOP_ADOPTED_COMFY !== "0" && merged.stopAdoptedComfyOnCanvasClose !== false,
     canvasIdleGraceSec: resolveIdleGraceSec(merged),
+    allowLan: merged.allowLan === true,
     canvasHost: normalizeHost(merged.canvasHost, DEFAULT_CONFIG.canvasHost),
     gatewayHost: normalizeHost(merged.gatewayHost, DEFAULT_CONFIG.gatewayHost),
     gatewayPublicHost: normalizeHost(merged.gatewayPublicHost, ""),
     corsOrigins: String(merged.corsOrigins || "").trim(),
     configCreated: created,
   };
-  const gatewayPublicHost = cfg.gatewayPublicHost || "127.0.0.1";
-  cfg.gatewayUrl = `http://${gatewayPublicHost}:${cfg.gatewayPort}`;
+  if (cfg.allowLan !== true && (!isLoopbackHost(cfg.canvasHost) || !isLoopbackHost(cfg.gatewayHost))) {
+    throw new Error("canvasHost/gatewayHost 非回环地址时必须显式设置 allowLan=true；否则可能把无鉴权服务暴露到局域网。");
+  }
+  // 本机健康检查/代理始终走回环，避免 gatewayPublicHost 在本机不可解析时启动失败。
+  cfg.gatewayUrl = `http://127.0.0.1:${cfg.gatewayPort}`;
+  const specificLanHost = !isLoopbackHost(cfg.gatewayHost) && cfg.gatewayHost !== "0.0.0.0" && cfg.gatewayHost !== "::";
+  const publicHost = cfg.allowLan ? (cfg.gatewayPublicHost || (specificLanHost ? cfg.gatewayHost : "127.0.0.1")) : "127.0.0.1";
+  cfg.gatewayPublicUrl = `http://${publicHost}:${cfg.gatewayPort}`;
   cfg.canvasUrl = `http://${browseHostFor(cfg.canvasHost)}:${cfg.canvasPort}`;
   cfg.controlUrl = `http://127.0.0.1:${cfg.controlPort}`;
   return cfg;
@@ -1550,7 +1558,7 @@ async function main() {
       canvasResult = { url: cfg.canvasUrl, mode: "planned" };
     } else {
       try {
-        writeRuntimeConfig(cfg, gatewayResult.url);
+        writeRuntimeConfig(cfg, cfg.gatewayPublicUrl || gatewayResult.url);
       } catch (error) {
         log(`写入运行时网关配置失败：${error.message}`, "WARN");
       }
@@ -1577,6 +1585,7 @@ async function main() {
   log("---------------- 服务状态 ----------------");
   log(`ComfyUI : ${fmtStatus(comfy.mode)}  ${comfyReady ? comfy.url : "（不可用）"}`);
   log(`网关    : ${fmtStatus(gatewayResult.mode)}  ${gatewayResult.url}`);
+  if (cfg.gatewayPublicUrl && cfg.gatewayPublicUrl !== gatewayResult.url) log(`对外网关: ${cfg.gatewayPublicUrl}`);
   log(`画布    : ${fmtStatus(canvasResult.mode)}  ${canvasResult.url}`);
   log("------------------------------------------");
   if (!DRY_RUN) startSessionWatchdog(cfg, gatewayResult.url);

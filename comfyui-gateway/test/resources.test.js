@@ -1507,3 +1507,42 @@ test("a node pack installed under another folder name counts as present", async 
         await fsp.rm(root, { recursive: true, force: true });
     }
 });
+
+test("VDN availability reports a missing Stage-B adapter with an actionable message", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-vdn-stage-b-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    const stage = path.join(comfy, "models", "vdn", "stage-dmd-step-250");
+    await fsp.mkdir(path.join(stage, "linear_branch"), { recursive: true });
+    await fsp.writeFile(path.join(stage, "linear_branch", "model.safetensors"), "model");
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    const index = {
+        schema: 1,
+        version: "test-vdn-stage-b-1",
+        packs: [{ id: "h3", resources: ["h3_vdn_stage_model", "h3_vdn_stage_default_adapter"], workflowDependencies: { "video-h3-ref2va": ["h3_vdn_stage_model", "h3_vdn_stage_default_adapter"] } }],
+        resources: [
+            { id: "h3_vdn_stage_model", type: "model", label: "VDN linear_branch/model.safetensors", target: "vdn/stage-dmd-step-250/linear_branch/model.safetensors" },
+            { id: "h3_vdn_stage_default_adapter", type: "model", label: "VDN adapters/default/adapter_model.safetensors", target: "vdn/stage-dmd-step-250/adapters/default/adapter_model.safetensors" },
+        ],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: { loaderOptions: () => ({}), status: () => ({ comfyReachable: true }), scan: async () => ({}) },
+        logger: null,
+    });
+    try {
+        await manager.init();
+        const missing = manager.runtimeProblemsFor("video-h3-ref2va");
+        assert.equal(missing.length, 1);
+        assert.equal(missing[0].resourceId, "h3_vdn_stage_default_adapter");
+        assert.match(missing[0].message, /Stage-B/);
+        await fsp.mkdir(path.join(stage, "adapters", "default"), { recursive: true });
+        await fsp.writeFile(path.join(stage, "adapters", "default", "adapter_model.safetensors"), "adapter");
+        assert.deepEqual(manager.runtimeProblemsFor("video-h3-ref2va"), []);
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});
