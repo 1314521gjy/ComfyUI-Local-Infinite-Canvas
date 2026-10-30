@@ -298,7 +298,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
         setOptimizeOptionsOpen(false);
         const controller = new AbortController();
         registerPromptOptimizeJob(node.id, controller);
-        onConfigChange(node.id, { promptOptimizeStatus: "running", promptOptimizeKind: "h3", promptOptimizeSource: text, promptOptimizePrompt: undefined, promptOptimizeError: undefined });
+        onConfigChange(node.id, { promptOptimizeStatus: "running", promptOptimizeKind: "h3", promptOptimizeSource: originalPrompt || text, promptOptimizePrompt: undefined, promptOptimizeError: undefined });
         try {
             const images = defaults.selectedRefs.length ? await resolveCanvasReferenceImages(defaults.selectedRefs, nodes) : [];
             const result = await requestPromptOptimize(config, {
@@ -329,7 +329,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
         const useCloud = optimizeEngine === "cloud";
         const controller = new AbortController();
         registerPromptOptimizeJob(node.id, controller);
-        onConfigChange(node.id, { promptOptimizeStatus: "running", promptOptimizeKind: "image", promptOptimizeSource: text, promptOptimizePrompt: undefined, promptOptimizeError: undefined });
+        onConfigChange(node.id, { promptOptimizeStatus: "running", promptOptimizeKind: "image", promptOptimizeSource: originalPrompt || text, promptOptimizePrompt: undefined, promptOptimizeError: undefined });
         try {
             const images = !useCloud && selectedRefs.length ? await resolveCanvasReferenceImages(selectedRefs, nodes) : [];
             const result = await requestImagePromptOptimize(config, {
@@ -347,7 +347,9 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                       }
                     : undefined,
             }, { signal: controller.signal });
-            onConfigChange(node.id, { promptOptimizeStatus: "done", promptOptimizePrompt: result.prompt });
+            // 生图优化没有“追加”语义：直接回填到输入框，原手打提示词继续保留。
+            applyPromptResult(result.prompt);
+            onConfigChange(node.id, { promptOptimizeStatus: undefined, promptOptimizeKind: undefined, promptOptimizePrompt: undefined, promptOptimizeError: undefined, promptOptimizeSource: originalPrompt || text });
         } catch (error) {
             if (controller.signal.aborted) clearOptimizePreview();
             else onConfigChange(node.id, { promptOptimizeStatus: "error", promptOptimizeError: error instanceof Error ? error.message : t("canvas.promptPanel.optimizeFailed") });
@@ -366,13 +368,13 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
         onConfigChange(node.id, { captionStatus: undefined, captionPrompt: undefined, captionError: undefined });
     };
 
-    const clearOptimizePreview = (keepSource = false) => {
+    const clearOptimizePreview = () => {
+        // 原手打提示词不随预览关闭/生成清理；只有下一次优化才会覆盖。
         onConfigChange(node.id, {
             promptOptimizeStatus: undefined,
             promptOptimizeKind: undefined,
             promptOptimizePrompt: undefined,
             promptOptimizeError: undefined,
-            ...(keepSource ? {} : { promptOptimizeSource: undefined }),
         });
     };
 
@@ -626,9 +628,9 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                 const previewError = mode === "text" ? captionError : optimizeError;
                 const previewVisible = Boolean(previewRunning || previewPrompt || previewError) && !(mode !== "text" && optimizeOptionsOpen);
                 if (!previewVisible) return null;
-                const clearPreview = (keepSource = false) => {
+                const clearPreview = () => {
                     if (mode === "text") clearCaptionPreview();
-                    else clearOptimizePreview(keepSource);
+                    else clearOptimizePreview();
                 };
                 return (
                 <div className="mt-2 rounded-xl border p-2" style={{ borderColor: theme.toolbar.border, background: theme.toolbar.panel }}>
@@ -675,7 +677,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                                     size="small"
                                     onClick={() => {
                                         applyPromptResult(draft.trim() ? `${draft.trim()}\n\n${previewPrompt}` : previewPrompt);
-                                        clearPreview(true);
+                                        clearPreview();
                                     }}
                                 >
                                     {t("canvas.promptPanel.appendPrompt")}
@@ -685,7 +687,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                                     type="primary"
                                     onClick={() => {
                                         applyPromptResult(previewPrompt);
-                                        clearPreview(true);
+                                        clearPreview();
                                     }}
                                 >
                                     {t("canvas.promptPanel.replacePrompt")}

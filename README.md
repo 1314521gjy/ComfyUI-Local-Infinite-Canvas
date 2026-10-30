@@ -2,7 +2,7 @@
 
 本地优先的 **Infinite Canvas × ComfyUI** 集成：把开源无限画布、ComfyUI 工作流和本地网关接到一起，不依赖云端 API。
 
-> 当前版本 **v0.22.12**（2026-10-30）。GitHub 仓库 slug 使用 `ComfyUI-Local-Infinite-Canvas`（GitHub 仓库名只支持 ASCII）；项目中文名即 **ComfyUI-本地无限画布**。
+> 当前版本 **v0.23.1**（2026-10-30）。GitHub 仓库 slug 使用 `ComfyUI-Local-Infinite-Canvas`（GitHub 仓库名只支持 ASCII）；项目中文名即 **ComfyUI-本地无限画布**。
 
 ## 功能
 
@@ -11,7 +11,8 @@
 - 图像：Z-Image Turbo、Krea2 Aesthetics、MOSS SFT（8 步极速 / 50 步高质量、区域布局）、Qwen Image 2.1（多图编辑 / 真蒙版局部重绘 / 扩图）。
 - 视频：MiniMax-H3 文生、首尾帧、多参三个入口，共用文戏均衡工作流；支持采样预览、LoRA 卡、首尾帧/多参考素材。
 - 放大：ESRGAN 快速放大、SeedVR2 图片超分、SeedVR2 视频超分（1.5×/2×，保留原音频）。
-- 本地插件卡：LoRA 强度卡、ComfyUI 参数卡；提示词优化（H3 结构化 / 生图单段描述）。
+- 本地插件卡：LoRA 强度卡、ComfyUI 参数卡、画布修复助手卡；提示词优化（H3 结构化 / 生图单段描述）。
+- 画布修复助手（Agent）：完整包内置，按需唤起；可用自己的云端文本 API 在本机定位并修复画布源码，用户确认后自动构建部署；3 分钟无提问自动休眠。应用内小补丁不含 Agent 工作区，卡片会提示下载完整包。
 - 本地反推 / 本地提示词：Qwen3.5-9B（GGUF + 视觉投影）和 Florence-2 PromptGen v2.0 可在「设置 → 添加工作流」按需安装；不装也能用云端反推。
 - 系统面板：显存/内存/GPU/ComfyUI 状态、清理显存、一键重启 ComfyUI。
 - `LOCAL_ONLY` 本地模式：隐藏云端渠道、Agent、WebDAV、提示词库等非本地入口。
@@ -53,7 +54,7 @@ start-local.bat       Windows 一键启动
 
 ### 方式 A：使用完整发布包
 
-1. 解压完整包（自带 Node、网关依赖、随包节点和少量 VAE/LoRA）。
+1. 解压完整包（自带 Node、网关依赖、随包节点和少量 VAE/LoRA；v0.23.1 完整包还带画布修复助手的工作区与构建依赖）。
 2. 双击 `start-local.bat`。
 3. 打开启动器打印的画布地址；默认 `http://127.0.0.1:3000`，3000 被占用时自动使用 3001–3010。
 4. 首次启动按提示安装缺失资源；进画布后点右上角「配置」确认 ComfyUI 连接。
@@ -80,6 +81,16 @@ start-local.bat
 ```
 
 启动器会检测 `8188` 和常见 ComfyUI 目录；找到后接管或拉起 ComfyUI，启动网关，并在 `http://127.0.0.1:3000` 托管画布。首次发现 ComfyUI 后会把路径写入 `launcher/config.json`。
+
+### 画布修复助手（Agent）
+
+v0.23.1 完整包内置「画布修复助手」卡片。它不是只读问答：在用户确认修复方案后，会在本机工作区改源码、typecheck、build，并部署到当前画布 dist。
+
+- **完整包 / 小补丁**：Agent 服务、源码工作区和前端构建依赖只在完整包内，首次启动由启动器自动解压完整包根目录的 `assistant-runtime.zip`；应用内小补丁不携带这些大文件，卡片会提示「需要完整包」，不会启动服务，也不占性能。
+- **按需唤醒**：打开卡片或发第一条消息时，由网关分配空闲端口拉起服务；3 分钟没有提问、且没有在跑的对话/构建时自动休眠，下次发消息或再加卡自动唤起。多张卡共享同一个服务。
+- **修复记录**：应用过的修改记录在 `assistant/data`，整包更新后会自动重放到新源码并重新构建部署；无法重放的冲突会明确提示。部署会保留 `dist/config.js` 和用户自己加的插件文件。
+- **API Key**：只使用浏览器「设置 → 云端 API」里的配置，服务端不保存 Key；发布包、日志、工作区不包含 Key。
+- **构建护栏**：ComfyUI 正在生成或本机可用内存不足时，先拦下修复构建，避免边生成边构建。
 
 ### 局域网 / 多机访问（可选）
 
@@ -115,7 +126,7 @@ start-local.bat
 ## 更新
 
 - 版本弹窗的「检查更新」由网关 `/api/update/check` 提供，读取项目根目录的 `update.json`；Git 克隆安装会从 `origin/main` 获取最新清单（点击检查时执行 `git fetch`）。
-- **文件夹安装**：点击「应用更新」会在软件内下载并校验代码补丁，只替换程序文件；`data/`、模型、`node_modules`、`resources/bundled` 和 `launcher/config.json` 不会被覆盖。更新完成后网关自动重启，新页面自动刷新。
+- **文件夹安装**：点击「应用更新」会在软件内下载并校验代码补丁，只替换程序文件；`data/`、模型、`node_modules`、`resources/bundled`、`assistant/workspace`、`assistant/data` 和 `launcher/config.json` 不会被覆盖。更新完成后网关自动重启，新页面自动刷新。Agent 的工作区和构建依赖不进入小补丁；需要 Agent 的旧用户请下载 v0.23.1 完整包。
 - **Git 克隆**：工作区没有已跟踪修改时执行 `git pull --ff-only`；`package-lock.json` 有变化时先在 `comfyui-gateway` 运行 `npm install`。启动器生成的 `infinite-canvas/web/dist/config.js` 不再被误判为本地修改。
 - **强制更新**：如果确实改过程序源码，更新弹窗会显示「强制更新（保留 data）」；用校验过的补丁覆盖程序文件，保留 `data/`、模型、`node_modules` 和 `launcher/config.json`，失败自动回滚。
 - **旧版本自举**：v0.22.6 及更早的 Git 安装如果被提示“工作区有未提交的修改”，先点「下载更新工具」运行一次，升到 v0.22.7 后即可正常使用应用内更新。
@@ -143,8 +154,8 @@ start-local.bat
 - 网关、ComfyUI、启动器控制接口默认只绑 `127.0.0.1`，**没有鉴权**；设置 `GATEWAY_TOKEN` 后 `/api/*` 与 `/admin` 会校验 `x-gateway-token`。
 - 只有显式设置 `allowLan: true` 并配置 `canvasHost` / `gatewayHost` 才会放开监听；放开后只限可信内网，并配合防火墙限制来源，**不要映射到公网**。网关 `/api` 与 `/admin` 仍无鉴权，CORS 白名单不是访问控制。
 - 不要把 `:8188`、`:8190`、`:8290` 暴露到公网或不可信局域网。
-- 本地渠道默认 API Key 是占位值 `local`，网关不校验该值；仓库不包含真实 API Key、Token 或私钥。
-- 不要提交 `launcher/config.json`、`comfyui-gateway/data/`、任务输出、模型权重、`.env` 或任何密钥。
+- 本地渠道默认 API Key 是占位值 `local`，网关不校验该值；仓库不包含真实 API Key、Token 或私钥。画布修复助手服务的 API Key 只在用户浏览器配置里，服务不落盘。
+- 不要提交 `launcher/config.json`、`comfyui-gateway/data/`、`assistant/data/`、任务输出、模型权重、`.env` 或任何密钥。
 - `launcher/config.json` 含本机路径；仓库只提供 `config.example.json`。
 
 ## 署名与许可证

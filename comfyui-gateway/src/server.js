@@ -10,6 +10,7 @@ import multer from "multer";
 
 import { buildContext } from "./bindings.js";
 import { imageInputCapacity } from "./base-models.js";
+import { createAssistantManager } from "./assistant.js";
 import { createComfyBridge } from "./comfy-bridge.js";
 import { createComfyClient } from "./comfy-client.js";
 import { createLogger, loadConfig } from "./config.js";
@@ -234,7 +235,7 @@ function isLoopbackPeer(address) {
   return raw === "::1" || raw === "localhost" || raw.startsWith("127.");
 }
 
-export async function stopGateway({ tasks, comfy, setup, server, abortActiveRequests, logger } = {}) {
+export async function stopGateway({ tasks, comfy, setup, server, abortActiveRequests, assistant, logger } = {}) {
   try {
     setup?.stop?.();
   } catch {
@@ -244,6 +245,11 @@ export async function stopGateway({ tasks, comfy, setup, server, abortActiveRequ
     abortActiveRequests?.();
   } catch {
     /* 同上 */
+  }
+  try {
+    await assistant?.stop?.("gateway-shutdown");
+  } catch {
+    /* Agent 停机失败不应阻塞网关退出 */
   }
   try {
     server?.close?.();
@@ -259,6 +265,7 @@ export async function stopGateway({ tasks, comfy, setup, server, abortActiveRequ
 export async function createGatewayApp(overrides = {}) {
   const config = loadConfig(overrides);
   const logger = createLogger(overrides.logPrefix || "gateway");
+  const assistant = createAssistantManager({ config, logger, idleMs: config.assistantIdleMs });
   try {
     const recovery = await recoverWorkflowBackups(config);
     if (recovery.restored.length) {
@@ -640,6 +647,19 @@ export async function createGatewayApp(overrides = {}) {
     }
     res.json({ ok: true });
     setTimeout(() => app.locals.requestShutdown(), 30);
+  });
+
+  app.get("/api/assistant/status", async (_req, res) => {
+    res.json(await assistant.status());
+  });
+
+  app.post("/api/assistant/ensure", async (_req, res) => {
+    const result = await assistant.ensure();
+    res.status(result.ok ? 200 : result.needFullPackage ? 409 : 503).json(result);
+  });
+
+  app.post("/api/assistant/stop", async (_req, res) => {
+    res.json(await assistant.stop("api-request"));
   });
 
   app.post("/api/setup/scan", (_req, res) => {
@@ -1786,12 +1806,12 @@ export async function createGatewayApp(overrides = {}) {
     );
   });
 
-  return { app, config, logger, registry, tasks, sessions, setup, comfy, skinUnlocks, abortActiveRequests };
+  return { app, config, logger, registry, tasks, sessions, setup, comfy, skinUnlocks, abortActiveRequests, assistant };
 }
 
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
-  const { app, config, logger, tasks, setup, comfy, abortActiveRequests } = await createGatewayApp();
+  const { app, config, logger, tasks, setup, comfy, abortActiveRequests, assistant } = await createGatewayApp();
   let cleanupTimer = null;
   let stopping = false;
   const cleanup = () =>
@@ -1811,7 +1831,7 @@ if (isMain) {
     stopping = true;
     logger.info("shutting down");
     if (cleanupTimer) clearInterval(cleanupTimer);
-    await stopGateway({ tasks, comfy, setup, server, abortActiveRequests, logger });
+    await stopGateway({ tasks, comfy, setup, server, abortActiveRequests, assistant, logger });
     process.exit(exitCode);
   };
   app.locals.requestShutdown = () => void shutdown();

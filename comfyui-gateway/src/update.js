@@ -76,6 +76,9 @@ const PATCH_PROTECTED = [
   "comfyui-gateway/data",
   "comfyui-gateway/node_modules",
   "comfyui-gateway/resources/bundled",
+  "assistant/node_modules",
+  "assistant/workspace",
+  "assistant/data",
 ];
 
 const PATCH_DELETE_LIST = "PATCH-DELETE.txt";

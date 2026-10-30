@@ -1,16 +1,16 @@
 {
-  "version": "v0.22.12",
+  "version": "v0.23.1",
   "publishedAt": "2026-10-30",
-  "notes": "修复升级覆盖本地工作流、Z-Image/Krea2 子目录模型识别，以及 Qwen 多角度缺节点。",
+  "notes": "新增画布修复助手（完整包按需唤起、3 分钟自动休眠）、生图提示词优化直接替换并保留原手打提示词；Agent 修复可跨整包更新自动重放。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.22.12.zip",
-    "sha256": "010185ad9a884f490b952f2d769951cbfbaf8dc7fb085ce04ad45b76f484b403",
-    "size": 29494556
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.23.1.zip",
+    "sha256": "e02aecc2839db235abb5cd7880d4f71d783b50c2212f2fd6250c5b0110729f09",
+    "size": 29558440
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

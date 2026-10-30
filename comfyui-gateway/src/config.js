@@ -52,6 +52,7 @@ export function loadConfig(overrides = {}) {
     watchWorkflows: overrides.watchWorkflows ?? process.env.WATCH_WORKFLOWS !== "0",
     scanDebounceMs: num(overrides.scanDebounceMs ?? process.env.SCAN_DEBOUNCE_MS, 800),
     workflowDir: path.resolve(overrides.workflowDir ?? process.env.WORKFLOW_DIR ?? path.join(rootDir, "workflows")),
+    canvasDist: path.resolve(overrides.canvasDist ?? process.env.CANVAS_DIST ?? path.join(appRoot, "infinite-canvas", "web", "dist")),
     dataDir: path.resolve(overrides.dataDir ?? process.env.DATA_DIR ?? path.join(rootDir, "data")),
     outputDir: path.resolve(overrides.outputDir ?? process.env.OUTPUT_DIR ?? path.join(rootDir, "data", "outputs")),
     publicBaseUrl: String(overrides.publicBaseUrl ?? process.env.PUBLIC_BASE_URL ?? `http://${host}:${port}`).replace(/\/+$/, ""),
@@ -92,6 +93,7 @@ export function loadConfig(overrides = {}) {
     resourceConcurrency: num(overrides.resourceConcurrency ?? process.env.RESOURCE_CONCURRENCY, 2),
     allowRemote,
     gatewayToken: String(process.env.GATEWAY_TOKEN || "").trim(),
+    assistantIdleMs: num(overrides.assistantIdleMs ?? process.env.ASSISTANT_IDLE_MS, 180 * 1000),
     version: readVersion(appRoot),
   };
   if (config.corsOrigins.includes("*") && !allowRemote) {

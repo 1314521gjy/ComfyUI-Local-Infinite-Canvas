@@ -2,6 +2,15 @@
 node_modules/
 **/node_modules/
 
+# assistant runtime (full package only; workspace/deps are large and local)
+assistant/workspace/
+assistant/data/
+assistant/backups/
+assistant/runtime.zip
+assistant/runtime.json
+assistant-runtime.zip
+assistant/*.log
+
 # local runtime state
 launcher/config.json
 launcher/launcher.log

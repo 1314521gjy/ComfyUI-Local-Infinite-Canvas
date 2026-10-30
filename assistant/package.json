@@ -1,0 +1,11 @@
+{
+  "name": "wujie-canvas-assistant",
+  "private": true,
+  "version": "0.3.1",
+  "type": "module",
+  "description": "无界工作台画布修复 Agent 服务（pi-agent-core）",
+  "dependencies": {
+    "@mariozechner/pi-agent-core": "0.73.1",
+    "@mariozechner/pi-ai": "0.73.1"
+  }
+}
