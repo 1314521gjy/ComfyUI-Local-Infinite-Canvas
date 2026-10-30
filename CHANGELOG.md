@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## v0.22.12 - 2026-10-30
+
++ [修复] 升级不再覆盖用户改过的工作流：更新时保留并备份本地修改，只用官方基线升级未改过的文件；v0.22.11 升级留下的备份会在新网关启动时自动恢复本地修改，避免 Z-Image/Krea2 等子目录路径每次升级后失效。
+
++ [修复] 模型放在 ComfyUI 模型子目录（如 unet\zimage、unet\krea2）时识别不到：UNET/CLIP/VAE 统一按唯一同名跨子目录匹配，兼容 required/optional loader 选项，并在提交前改写为 ComfyUI 真实值。
+
++ [修复] Qwen Image 2.1 多角度提示「缺少节点 CR Prompt Text」：改为随包 QwenAnglePromptConcat，去掉 ComfyRoll / StringConcatenate 依赖；重启工作台后生效。
+
++ [维护] 资源索引 2026.10.30-30（71 资源，新增随包角度提示词节点）。
+
 ## v0.22.11 - 2026-10-30
 
 + [修复] ComfyUI 安装在中文路径时识别失败：手动选择目录返回的路径、以及反查 ComfyUI 的 Python 路径都会被 Windows 控制台代码页转成乱码。两处改用 UTF-8 Base64 回传，中文目录可正常识别。

@@ -1,8 +1,8 @@
 # 无界工作台 · 程序架构
 
-> 截至 2026-10-30，对应发布版本 **v0.22.11**（发布树 `07842353-release-staging`）。
+> 截至 2026-10-30，对应发布版本 **v0.22.12**（发布树 `07842353-release-staging`）。
 > 本文件是架构层权威说明，已纳入 staging git（`docs/ARCHITECTURE.md`），不进发布包。状态与待办见 `docs/HANDOFF.md`，历史见 `docs/RELEASE-HISTORY.md`。
-> 版本/索引/路由/包数等数字为 2026-10-30 实测（网关单测 186/186、启动器 9/9；v0.22.11 含中文路径识别修复；v0.22.10 含关停取消在途任务、引导退出清理与 /health 版本修复）；`docs/` 不入发布包。
+> 版本/索引/路由/包数等数字为 2026-10-30 实测（网关单测 189/189、启动器 9/9；v0.22.12 含升级保护工作流、子目录模型识别与多角度随包节点；v0.22.10 含关停取消在途任务、引导退出清理与 /health 版本修复）；`docs/` 不入发布包。
 
 ## 1. 定位
 
@@ -82,7 +82,7 @@ flowchart LR
 
 ## 7. 资源安装
 
-- 索引 `resources/index.json` 版本 **2026.10.30-29**：**8 包 / 70 资源**——`core`（0 资源，按工作流依赖）、`moss` 6/4 工作流、`qwen21` 4/2、`zimage` 4/1、`krea2` 4/1、`h3` 21/7、`prompt-local` 4、`upscale` 11/4（6 权重 + 5 运行库）。
+- 索引 `resources/index.json` 版本 **2026.10.30-30**：**8 包 / 71 资源**（含随包 `QwenAnglePromptConcat` 节点）——`core`（0 资源，按工作流依赖）、`moss` 6/4 工作流、`qwen21` 4/2、`zimage` 4/1、`krea2` 4/1、`h3` 21/7、`prompt-local` 4、`upscale` 11/4（6 权重 + 5 运行库）。
 - 依赖以 `workflowDependencies` 按工作流展开，共享资源去重；模型选择器只列 setup 判定可用的工作流，缺资源即从 `/v1/models` 移除。
 - **不变量：节点只随包，不写进 `workflowDependencies`**（单测强制）；节点由启动器 `bootstrap-nodes.mjs` 复制到 `custom_nodes/`。节点“已装”的判定：目标目录存在，**或** `provides` 里的类全部出现在 ComfyUI `/object_info`（用户装了同插件的另一个目录名也算已装）；启动器复制前同样按类检查，避免重复安装。
 - 资源卡模型判定顺序：用户显式别名（最高，标 `alias`）→ 精确相对路径 / 同名文件（大小一致优先）→ 唯一体积匹配 → 相似匹配（标 `similar` + 相似度）；主模型覆盖与同族底模回退在资源状态里单独计算。执行期改写顺序见 §4.7。
@@ -123,7 +123,7 @@ flowchart LR
 # 整套启动
 start-local.bat            # 保持画布页打开；关页 30s 后停后台，见 §4 第 10 条
 
-# 网关单测（2026-10-30 实测 186/186）
+# 网关单测（2026-10-30 实测 189/189）
 cd 07842353-release-staging/comfyui-gateway
 COMFYUI_DIR=C:/ComfyUI node --test --test-timeout=120000 test/*.test.js
 

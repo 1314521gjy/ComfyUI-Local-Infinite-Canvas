@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -6,7 +7,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { test } from "node:test";
 
-import { applyUpdate, checkForUpdate, compareVersions, getUpdateProgress } from "../src/update.js";
+import { applyUpdate, checkForUpdate, compareVersions, getUpdateProgress, recoverWorkflowBackups } from "../src/update.js";
 
 function git(cwd, ...args) {
   return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
@@ -294,5 +295,91 @@ test("git install auto-detects master when the configured branch is main", async
     assert.equal(check.updateAvailable, true);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("archive update preserves user-modified workflows and updates untouched ones", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "gateway-update-workflows-"));
+  const payload = path.join(root, "payload");
+  const patchFile = path.join(root, "patch.zip");
+  const write = (rel, content) => {
+    const file = path.join(payload, rel);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, content);
+  };
+  const sha = (value) => crypto.createHash("sha256").update(value).digest("hex");
+  const relModified = "comfyui-gateway/workflows/modified.json";
+  const relClean = "comfyui-gateway/workflows/clean.json";
+  const oldOfficialModified = JSON.stringify({ v: 1 });
+  const localModified = JSON.stringify({ v: 1, user: true });
+  const oldOfficialClean = JSON.stringify({ v: 1 });
+  const newOfficial = JSON.stringify({ v: 2 });
+  fs.mkdirSync(path.join(root, "comfyui-gateway", "workflows"), { recursive: true });
+  fs.writeFileSync(path.join(root, relModified), localModified);
+  fs.writeFileSync(path.join(root, relClean), oldOfficialClean);
+  write(relModified, newOfficial);
+  write(relClean, newOfficial);
+  write(
+    "comfyui-gateway/workflow-baseline.json",
+    JSON.stringify({ schema: 1, previous: { [relModified]: [sha(oldOfficialModified)], [relClean]: [sha(oldOfficialClean)] }, current: {} }),
+  );
+  write("VERSION", "v0.20.1\n");
+  execFileSync("tar", ["-a", "-c", "-f", "patch.zip", "-C", "payload", "."], { cwd: root, stdio: "ignore" });
+  const bytes = fs.readFileSync(patchFile);
+  const patchSha = sha(bytes);
+  const server = http.createServer((req, res) => {
+    if (req.url === "/update.json") {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ version: "v0.20.1", notes: "workflow preserve test", patch: { url: `http://127.0.0.1:${server.address().port}/patch.zip`, sha256: patchSha, size: bytes.length } }));
+      return;
+    }
+    if (req.url === "/patch.zip") {
+      res.setHeader("content-type", "application/zip");
+      res.end(bytes);
+      return;
+    }
+    res.statusCode = 404;
+    res.end("not found");
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const config = { ...configFor(root), updateManifestUrl: `http://127.0.0.1:${server.address().port}/update.json` };
+  try {
+    await checkForUpdate(config, { fetchRemote: true });
+    const result = await applyUpdate(config);
+    assert.equal(result.ok, true);
+    assert.equal(fs.readFileSync(path.join(root, relModified), "utf8"), localModified);
+    assert.equal(fs.readFileSync(path.join(root, relClean), "utf8"), newOfficial);
+    assert.deepEqual(result.preservedWorkflows, [relModified]);
+    assert.equal(fs.readFileSync(path.join(root, ".update-backup", "v0.20.1", relModified), "utf8"), localModified);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("startup recovery restores user-modified workflows from .update-backup", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "gateway-workflow-recovery-"));
+  const sha = (value) => crypto.createHash("sha256").update(value).digest("hex");
+  const relative = "comfyui-gateway/workflows/modified.json";
+  const oldOfficial = JSON.stringify({ v: 1 });
+  const localModified = JSON.stringify({ v: 1, user: true });
+  const newOfficial = JSON.stringify({ v: 2 });
+  fs.mkdirSync(path.join(root, "comfyui-gateway", "workflows"), { recursive: true });
+  fs.writeFileSync(path.join(root, "comfyui-gateway", "workflow-baseline.json"), JSON.stringify({ schema: 1, previous: { [relative]: [sha(oldOfficial)] } }));
+  fs.writeFileSync(path.join(root, relative), newOfficial);
+  const backupRoot = path.join(root, ".update-backup", "v0.20.1", "comfyui-gateway", "workflows");
+  fs.mkdirSync(backupRoot, { recursive: true });
+  fs.writeFileSync(path.join(backupRoot, "modified.json"), localModified);
+  const config = { ...configFor(root), rootDir: path.join(root, "comfyui-gateway"), version: "v0.20.1" };
+  try {
+    const result = await recoverWorkflowBackups(config);
+    assert.deepEqual(result.restored, [relative]);
+    assert.equal(fs.readFileSync(path.join(root, relative), "utf8"), localModified);
+    const official = path.join(root, ".update-backup", "v0.20.1", "official-new", relative);
+    assert.equal(fs.readFileSync(official, "utf8"), newOfficial);
+    const again = await recoverWorkflowBackups(config);
+    assert.deepEqual(again.restored, []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });

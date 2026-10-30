@@ -1,0 +1,88 @@
+{
+  "schema": 1,
+  "generatedAt": "2026-10-30T13:32:59.155Z",
+  "previous": {
+    "comfyui-gateway/workflows/h3-character-swap-vdn.json": [
+      "55fb6d9b341b47862ab610541fa9bcf3fd5ed96138b166d497f4ca8f399019f5"
+    ],
+    "comfyui-gateway/workflows/h3-ref2va-drama-vdn.json": [
+      "3e92bb313b2675ac080a5ab4790354e4f28c59dd45d862afe56ac3e293fa2900"
+    ],
+    "comfyui-gateway/workflows/h3-ref2va-drama.json": [
+      "b0a79682b4edea2a437538204f5b6f35ad6d7c6424a6c0a9eee1b5f7bdd4d9c8"
+    ],
+    "comfyui-gateway/workflows/image-esrgan-upscale.json": [
+      "6086d9c86b94708267419540b1fca3f036a2e6545d52df6540119842353a96eb"
+    ],
+    "comfyui-gateway/workflows/image-krea2-aesthetics.json": [
+      "1110539cdd373ed8a6c98d7697025099b67b1ba4c0f3a2b3ba5192c427bc2ee0"
+    ],
+    "comfyui-gateway/workflows/image-krea2-turbo.json": [
+      "0094d578bb7af178317a4cadb396cae016ab5463d6d4cf6921985151f71de40b"
+    ],
+    "comfyui-gateway/workflows/image-moss-sft-50step.json": [
+      "4511143095ab171a0e2fc24f293440526d83b6b51589013d0a697c27cc5fb8ce"
+    ],
+    "comfyui-gateway/workflows/image-moss-sft-8step.json": [
+      "9e7996ce86e6c9b0befa1db1f4b05dc5f13d4ed5e94c0d89ce2eb21fd02e1152"
+    ],
+    "comfyui-gateway/workflows/image-moss-sft-int8-50step.json": [
+      "f8f5e669b71db14ff9a8d76bb5cac875129e650d648f8e4731d7057dfae3425f"
+    ],
+    "comfyui-gateway/workflows/image-moss-sft-int8-8step.json": [
+      "a6b850192480e7e3f55063c4a18988110095d877fbe78b2dbaf88e4bd1fc28f0"
+    ],
+    "comfyui-gateway/workflows/image-qwen21-angle.json": [
+      "ea388f07fd3e9695aa9afaaf0f18f06b147ab5ee45af0c85e945030e86c2b48c"
+    ],
+    "comfyui-gateway/workflows/image-qwen21-edit-turbo.json": [
+      "fe9a7cf093d884463e4010b29d3d7fc17ff628585660ac34ead8e9ef61c83e76"
+    ],
+    "comfyui-gateway/workflows/image-qwen21-inpaint.json": [
+      "aeaaebcc63b2680dcc82d0141560b3402e8ad03f7ff7d6f4f1a572d571c7bc4b"
+    ],
+    "comfyui-gateway/workflows/image-qwen21-outpaint.json": [
+      "796471e55491249ad339410802a7050192992a15cb504569754e39cbbdc7faf5"
+    ],
+    "comfyui-gateway/workflows/image-qwen21-t2i.json": [
+      "c0ad8fe0d3e727c30eaf6c45564cb30bddb1a3e26ffb31e0dd3f4cf279c8fd19"
+    ],
+    "comfyui-gateway/workflows/image-seedvr2-upscale.json": [
+      "eec2b3d98c15c540c7a0e852265666198dd3c8d2654a2c93320b5e03e0d11654"
+    ],
+    "comfyui-gateway/workflows/registry.json": [
+      "12523e58b49015675efa6887b895e9f45c4ef185e09596cde3b1a5cd5734f40e"
+    ],
+    "comfyui-gateway/workflows/video-esrgan_2x.json": [
+      "5a1f1375d6a994b69a12bcef4f01c16052805582b30943f58e65649d905644c3"
+    ],
+    "comfyui-gateway/workflows/video-seedvr2-upscale.json": [
+      "3b84f582a6b6dc341566201636bbc3b1c77b39996460b54262b56e89a3f294de"
+    ],
+    "comfyui-gateway/workflows/z-image-turbo.json": [
+      "406a09d3ae9c7e5d2c4f422efc08f1dfc98c1ccc1463db01931be0849016596c"
+    ]
+  },
+  "current": {
+    "comfyui-gateway/workflows/h3-character-swap-vdn.json": "55fb6d9b341b47862ab610541fa9bcf3fd5ed96138b166d497f4ca8f399019f5",
+    "comfyui-gateway/workflows/h3-ref2va-drama-vdn.json": "3e92bb313b2675ac080a5ab4790354e4f28c59dd45d862afe56ac3e293fa2900",
+    "comfyui-gateway/workflows/h3-ref2va-drama.json": "b0a79682b4edea2a437538204f5b6f35ad6d7c6424a6c0a9eee1b5f7bdd4d9c8",
+    "comfyui-gateway/workflows/image-esrgan-upscale.json": "6086d9c86b94708267419540b1fca3f036a2e6545d52df6540119842353a96eb",
+    "comfyui-gateway/workflows/image-krea2-aesthetics.json": "1110539cdd373ed8a6c98d7697025099b67b1ba4c0f3a2b3ba5192c427bc2ee0",
+    "comfyui-gateway/workflows/image-krea2-turbo.json": "0094d578bb7af178317a4cadb396cae016ab5463d6d4cf6921985151f71de40b",
+    "comfyui-gateway/workflows/image-moss-sft-50step.json": "4511143095ab171a0e2fc24f293440526d83b6b51589013d0a697c27cc5fb8ce",
+    "comfyui-gateway/workflows/image-moss-sft-8step.json": "9e7996ce86e6c9b0befa1db1f4b05dc5f13d4ed5e94c0d89ce2eb21fd02e1152",
+    "comfyui-gateway/workflows/image-moss-sft-int8-50step.json": "f8f5e669b71db14ff9a8d76bb5cac875129e650d648f8e4731d7057dfae3425f",
+    "comfyui-gateway/workflows/image-moss-sft-int8-8step.json": "a6b850192480e7e3f55063c4a18988110095d877fbe78b2dbaf88e4bd1fc28f0",
+    "comfyui-gateway/workflows/image-qwen21-angle.json": "4debe25aaeec76084cff73a466391868961f3a50e8a0e22565b33944bf11246d",
+    "comfyui-gateway/workflows/image-qwen21-edit-turbo.json": "fe9a7cf093d884463e4010b29d3d7fc17ff628585660ac34ead8e9ef61c83e76",
+    "comfyui-gateway/workflows/image-qwen21-inpaint.json": "aeaaebcc63b2680dcc82d0141560b3402e8ad03f7ff7d6f4f1a572d571c7bc4b",
+    "comfyui-gateway/workflows/image-qwen21-outpaint.json": "796471e55491249ad339410802a7050192992a15cb504569754e39cbbdc7faf5",
+    "comfyui-gateway/workflows/image-qwen21-t2i.json": "c0ad8fe0d3e727c30eaf6c45564cb30bddb1a3e26ffb31e0dd3f4cf279c8fd19",
+    "comfyui-gateway/workflows/image-seedvr2-upscale.json": "eec2b3d98c15c540c7a0e852265666198dd3c8d2654a2c93320b5e03e0d11654",
+    "comfyui-gateway/workflows/registry.json": "946d2d2cfba4d9bd61382e9ec012e50b681d0a80d3c2435f282f3a70951467bc",
+    "comfyui-gateway/workflows/video-esrgan_2x.json": "5a1f1375d6a994b69a12bcef4f01c16052805582b30943f58e65649d905644c3",
+    "comfyui-gateway/workflows/video-seedvr2-upscale.json": "3b84f582a6b6dc341566201636bbc3b1c77b39996460b54262b56e89a3f294de",
+    "comfyui-gateway/workflows/z-image-turbo.json": "406a09d3ae9c7e5d2c4f422efc08f1dfc98c1ccc1463db01931be0849016596c"
+  }
+}

@@ -1,16 +1,16 @@
 {
-  "version": "v0.22.11",
+  "version": "v0.22.12",
   "publishedAt": "2026-10-30",
-  "notes": "修复 ComfyUI 安装在中文路径时识别失败（手动选目录与反查 Python 路径的编码问题）。",
+  "notes": "修复升级覆盖本地工作流、Z-Image/Krea2 子目录模型识别，以及 Qwen 多角度缺节点。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.22.11.zip",
-    "sha256": "ffb91f3fba94b3b101dc1a1ec088ce67cec3c2784cd0b1312abe3e2f31ea5edb",
-    "size": 29490430
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.22.12.zip",
+    "sha256": "010185ad9a884f490b952f2d769951cbfbaf8dc7fb085ce04ad45b76f484b403",
+    "size": 29494556
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

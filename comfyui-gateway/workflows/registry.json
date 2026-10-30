@@ -2270,7 +2270,7 @@
       "bindings": {
         "prompt": {
           "node": "21",
-          "input": "prompt",
+          "input": "base_prompt",
           "default": "保持主体、颜色、材质和画面风格一致，只改变相机视角与构图。"
         },
         "horizontal": {

@@ -77,6 +77,49 @@ test("auto-recognizes the same model file in a different subfolder", async () =>
   }
 });
 
+
+test("resolves bare UNET/CLIP/VAE names to Windows subfolders and optional inputs", async () => {
+  const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-subdir-all-"));
+  const subdirEntry = {
+    id: "subdir-all",
+    name: "subdir-all",
+    type: "image",
+    workflow: {
+      1: { class_type: "UNETLoader", inputs: { unet_name: "z_image_turbo_bf16.safetensors" } },
+      2: { class_type: "CLIPLoader", inputs: { clip_name: "qwen_3_4b.safetensors" } },
+      3: { class_type: "VAELoader", inputs: { vae_name: "ae.safetensors" } },
+    },
+  };
+  try {
+    const manager = createSetupManager({
+      config: { dataDir, comfyUrl: "http://127.0.0.1:1", comfyWorkflowsDir: "", maxWorkflowBytes: 1024 * 1024 },
+      registry: {
+        list: () => [{ id: subdirEntry.id }],
+        resolve: () => subdirEntry,
+        scan: async () => ({ imported: 0 }),
+        reloadIfChanged: () => {},
+      },
+      comfy: {
+        systemStats: async () => ({}),
+        objectInfo: async () => ({
+          UNETLoader: { input: { required: { unet_name: [["zimage\\z_image_turbo_bf16.safetensors"]] } } },
+          CLIPLoader: { input: { optional: { clip_name: ["COMBO", { options: ["text_encoders\\zimage\\qwen_3_4b.safetensors"] }] } } },
+          VAELoader: { input: { required: { vae_name: [["vae\\zimage\\ae.safetensors"]] } } },
+        }),
+      },
+      logger: null,
+      mainModelFile: () => "",
+    });
+    await manager.scan();
+    assert.equal(manager.isAvailable("subdir-all"), true);
+    assert.equal(manager.modelAliasFor("UNETLoader", "unet_name", "z_image_turbo_bf16.safetensors"), "zimage\\z_image_turbo_bf16.safetensors");
+    assert.equal(manager.modelAliasFor("CLIPLoader", "clip_name", "qwen_3_4b.safetensors"), "text_encoders\\zimage\\qwen_3_4b.safetensors");
+    assert.equal(manager.modelAliasFor("VAELoader", "vae_name", "ae.safetensors"), "vae\\zimage\\ae.safetensors");
+  } finally {
+    await fsp.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("base model alternatives must use the same file format", async () => {
   const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-base-format-"));
   try {

@@ -31,7 +31,7 @@ import { runImage, runVideo, runWorkflow } from "./runner.js";
 import { createSkinUnlockStore } from "./skin-unlocks.js";
 import { readSystemStats } from "./system-stats.js";
 import { createTaskStore } from "./tasks.js";
-import { applyUpdate, checkForUpdate, getUpdateProgress } from "./update.js";
+import { applyUpdate, checkForUpdate, getUpdateProgress, recoverWorkflowBackups } from "./update.js";
 import { uploadImages } from "./uploads.js";
 import { createWorkflowVisibilityStore } from "./workflow-visibility.js";
 import { alignH3Frames, capH3ReferenceFrames, framesFromSeconds, extFromMime, jsonError, nowIso, parseSize, randomId, safeFileName, sleep } from "./util.js";
@@ -259,6 +259,14 @@ export async function stopGateway({ tasks, comfy, setup, server, abortActiveRequ
 export async function createGatewayApp(overrides = {}) {
   const config = loadConfig(overrides);
   const logger = createLogger(overrides.logPrefix || "gateway");
+  try {
+    const recovery = await recoverWorkflowBackups(config);
+    if (recovery.restored.length) {
+      logger.warn(`升级后恢复 ${recovery.restored.length} 个本地修改的工作流；新版官方文件保存在 .update-backup/${config.version}/official-new`);
+    }
+  } catch (error) {
+    logger.warn(`恢复升级前工作流失败：${error.message}`);
+  }
   const previewHub = createPreviewHub({ comfyUrl: () => comfy.baseUrl(), logger });
   const comfy = createComfyClient({
     baseUrl: config.comfyUrl,

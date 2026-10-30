@@ -55,6 +55,7 @@ const INCLUDE = [
     "comfyui-gateway/scripts",
     "comfyui-gateway/prompts",
     "comfyui-gateway/workflows",
+    "comfyui-gateway/workflow-baseline.json",
     "comfyui-gateway/resources/index.json",
     "comfyui-gateway/resources/nodes",
     "comfyui-gateway/package.json",

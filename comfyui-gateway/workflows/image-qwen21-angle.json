@@ -48,7 +48,7 @@
         0
       ],
       "prompt": [
-        "22",
+        "21",
         0
       ],
       "negative_prompt": "artifacts, low quality, blurry, deformed, watermark",
@@ -157,26 +157,13 @@
     }
   },
   "21": {
-    "class_type": "CR Prompt Text",
+    "class_type": "QwenAnglePromptConcat",
     "inputs": {
-      "prompt": "保持主体、颜色、材质和画面风格一致，只改变相机视角与构图。"
-    },
-    "_meta": {
-      "title": "Angle base prompt"
-    }
-  },
-  "22": {
-    "class_type": "StringConcatenate",
-    "inputs": {
-      "string_a": [
-        "21",
-        0
-      ],
-      "string_b": [
+      "base_prompt": "保持主体、颜色、材质和画面风格一致，只改变相机视角与构图。",
+      "camera_text": [
         "20",
         0
-      ],
-      "delimiter": "\n"
+      ]
     },
     "_meta": {
       "title": "Angle prompt concat"

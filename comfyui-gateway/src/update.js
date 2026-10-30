@@ -107,6 +107,53 @@ function isProtectedPath(relative) {
   return PATCH_PROTECTED.some((entry) => normalized === entry || normalized.startsWith(`${entry}/`));
 }
 
+const WORKFLOW_BASELINE_FILE = "comfyui-gateway/workflow-baseline.json";
+
+function isWorkflowJson(relative) {
+  const normalized = String(relative || "").replace(/\\/g, "/");
+  return /^comfyui-gateway\/workflows\/[^/]+\.json$/i.test(normalized) && !/^comfyui-gateway\/workflows\/registry\.json$/i.test(normalized);
+}
+
+// v0.22.11 及更早的更新器会先备份再覆盖 workflows。
+// 新版本启动时用官方基线判断备份里哪些是用户改过的，自动恢复，避免升级后又丢 Z/K 的路径修复。
+export async function recoverWorkflowBackups(config) {
+  const baselinePath = path.join(config.rootDir, "workflow-baseline.json");
+  let baseline;
+  try {
+    baseline = JSON.parse(await fsp.readFile(baselinePath, "utf8"));
+  } catch {
+    return { restored: [] };
+  }
+  const backupRoot = path.join(config.appRoot, ".update-backup", String(config.version || ""));
+  const workflowsBackup = path.join(backupRoot, "comfyui-gateway", "workflows");
+  if (!fs.existsSync(workflowsBackup)) return { restored: [] };
+  const marker = path.join(backupRoot, ".workflow-recovery.json");
+  if (fs.existsSync(marker)) return { restored: [] };
+  const officialDir = path.join(backupRoot, "official-new");
+  const restored = [];
+  const entries = await fsp.readdir(workflowsBackup, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".json") || /^registry\.json$/i.test(entry.name)) continue;
+    const relative = `comfyui-gateway/workflows/${entry.name}`;
+    const backupFile = path.join(workflowsBackup, entry.name);
+    const liveFile = path.join(config.appRoot, ...relative.split("/"));
+    if (!fs.existsSync(liveFile)) continue;
+    const backupHash = await sha256File(backupFile);
+    const known = Array.isArray(baseline.previous?.[relative]) ? baseline.previous[relative] : [];
+    if (known.includes(backupHash)) continue;
+    const liveHash = await sha256File(liveFile);
+    if (liveHash === backupHash) continue;
+    const officialFile = path.join(officialDir, ...relative.split("/"));
+    await fsp.mkdir(path.dirname(officialFile), { recursive: true });
+    await fsp.copyFile(liveFile, officialFile);
+    await fsp.copyFile(backupFile, liveFile);
+    restored.push(relative);
+  }
+  await fsp.mkdir(backupRoot, { recursive: true });
+  await fsp.writeFile(marker, JSON.stringify({ at: new Date().toISOString(), restored }, null, 2), "utf8");
+  return { restored };
+}
+
 function sha256File(file) {
   return new Promise((resolve, reject) => {
     const hash = crypto.createHash("sha256");
@@ -377,6 +424,13 @@ async function applyArchivePatch(config, { patch, version, dryRun = false }) {
     const candidates = files.filter(
       (file) => !isProtectedPath(file.rel) && file.rel !== PATCH_DELETE_LIST && !deleteSet.has(file.rel.toLowerCase()),
     );
+    let workflowBaseline = null;
+    try {
+      const baselineFile = files.find((file) => file.rel === WORKFLOW_BASELINE_FILE);
+      if (baselineFile) workflowBaseline = JSON.parse(await fsp.readFile(baselineFile.full, "utf8"));
+    } catch {
+      workflowBaseline = null;
+    }
     if (!candidates.length && !deleteList.length) throw updateError("补丁内没有可更新的文件", "patch_empty");
     if (dryRun) return { files: candidates.map((file) => file.rel), deleted: deleteList };
 
@@ -384,6 +438,7 @@ async function applyArchivePatch(config, { patch, version, dryRun = false }) {
 
     const written = [];
     const backups = [];
+    const preserved = [];
     try {
       for (const relative of deleteList) {
         if (isProtectedPath(relative)) continue;
@@ -405,6 +460,15 @@ async function applyArchivePatch(config, { patch, version, dryRun = false }) {
           await fsp.copyFile(target, backup);
           backups.push({ target, backup });
         }
+        // 官方基线和本地不一致 = 用户改过模型路径/TRT/编码；保留本地，更新后仍可用。
+        if (workflowBaseline && isWorkflowJson(file.rel) && fs.existsSync(target)) {
+          const localHash = await sha256File(target);
+          const known = Array.isArray(workflowBaseline.previous?.[file.rel]) ? workflowBaseline.previous[file.rel] : [];
+          if (!known.includes(localHash)) {
+            preserved.push(file.rel);
+            continue;
+          }
+        }
         await fsp.mkdir(path.dirname(target), { recursive: true });
         await fsp.copyFile(file.full, target);
         written.push(target);
@@ -422,7 +486,7 @@ async function applyArchivePatch(config, { patch, version, dryRun = false }) {
     await syncLocalManifest(config);
     await fsp.rm(staging, { recursive: true, force: true }).catch(() => {});
     setUpdateProgress({ phase: "done", percent: 100, speed: 0, message: "更新完成" });
-    return { files: candidates.map((file) => file.rel), deleted: deleteList, changedFiles: candidates.length };
+    return { files: candidates.map((file) => file.rel), deleted: deleteList, changedFiles: candidates.length, preserved };
   } finally {
     await fsp.rm(payload, { recursive: true, force: true }).catch(() => {});
   }
@@ -562,19 +626,22 @@ export async function applyUpdate(config, { dryRun = false, force = false } = {}
       }
       const restarting = scheduleGatewayRestart(config);
       const launcherChanged = result.files.some((file) => file.startsWith("launcher/"));
+      const preserved = result.preserved || [];
       return {
         ok: true,
         dryRun: false,
         currentVersion: check.currentVersion,
         latestVersion: check.latestVersion,
         changedFiles: result.files,
+        preservedWorkflows: preserved,
         deletedFiles: result.deleted || [],
         launcherChanged,
         restartRequired: true,
         restarting,
-        message: restarting
+        message: (restarting
           ? "更新完成，网关正在重启，页面将自动刷新…"
-          : "更新完成，请关闭工作台窗口后重新双击 start-local.bat",
+          : "更新完成，请关闭工作台窗口后重新双击 start-local.bat") +
+          (preserved.length ? `；保留 ${preserved.length} 个本地修改的工作流（已备份）` : ""),
       };
     }
     if (check.dirty || check.gitError) {
@@ -586,6 +653,7 @@ export async function applyUpdate(config, { dryRun = false, force = false } = {}
       }
       const restarting = scheduleGatewayRestart(config);
       const launcherChanged = result.files.some((file) => file.startsWith("launcher/"));
+      const preserved = result.preserved || [];
       return {
         ok: true,
         dryRun: false,
@@ -593,13 +661,15 @@ export async function applyUpdate(config, { dryRun = false, force = false } = {}
         currentVersion: check.currentVersion,
         latestVersion: check.latestVersion,
         changedFiles: result.files,
+        preservedWorkflows: preserved,
         deletedFiles: result.deleted || [],
         launcherChanged,
         restartRequired: true,
         restarting,
-        message: restarting
+        message: (restarting
           ? "已强制更新，网关正在重启，页面将自动刷新…"
-          : "已强制更新，请关闭工作台窗口后重新双击 start-local.bat",
+          : "已强制更新，请关闭工作台窗口后重新双击 start-local.bat") +
+          (preserved.length ? `；保留 ${preserved.length} 个本地修改的工作流（已备份）` : ""),
       };
     }
 

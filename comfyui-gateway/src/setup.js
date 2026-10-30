@@ -232,7 +232,9 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
     function collectLoaderOptions(objectInfo, specs = LOADER_SPECS) {
         const loaders = new Map();
         for (const spec of specs) {
-            const definition = objectInfo?.[spec.classType]?.input?.required?.[spec.input];
+            const info = objectInfo?.[spec.classType]?.input;
+            // 不同 ComfyUI 版本把 loader 选项放在 required 或 optional；两种都收。
+            const definition = info?.required?.[spec.input] ?? info?.optional?.[spec.input];
             // 旧版 object_info 把选项放在 [0]，新版 COMBO 放在 ["COMBO", { options }]。
             const options = Array.isArray(definition?.[0]) ? definition[0] : Array.isArray(definition?.[1]?.options) ? definition[1].options : null;
             if (Array.isArray(options)) loaders.set(`${spec.classType}\u0000${spec.input}`, { ...spec, options: new Set(options) });
@@ -354,6 +356,11 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         // （4B/8B、turbo/raw）会被互相顶替，工作流可能显示可用但运行时必崩。
         const installed = findInstalledOption(classType, value, input);
         if (installed) return installed === value ? "" : installed;
+        // 同 basename、不同子目录（Windows 常见反斜杠）优先按唯一同名认；
+        // 不依赖 autoAliases 是否已重建，覆盖 Z-Image/Krea2 这类只有一套文件的模型。
+        const baseName = normalizeBaseName(value);
+        const sameBase = loaderOptionsFor(classType, input).filter((item) => isModelOption(item) && normalizeBaseName(item) === baseName);
+        if (sameBase.length === 1) return sameBase[0];
         const auto = autoAliases.get(`${classType}\u0000${input}`)?.get(normalizeBaseName(value)) || "";
         if (auto && normalizeAliasValue(auto) !== normalizeAliasValue(value)) return auto;
         // 模型放在更深子目录时，ComfyUI 的选项带路径前缀（a/b/x.safetensors）；
@@ -548,10 +555,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
             if (typeof file !== "string") continue;
             // 格式是红线：要求的底模是 .safetensors，就不能拿 .gguf/.ckpt 顶替。
             if (requiredExt && path.extname(normalizeBaseName(file)).toLowerCase() !== requiredExt) continue;
-            if (exact) {
-                if (exact.has(normalizeAliasValue(file).toLowerCase())) return true;
-                continue;
-            }
+            if (exact && exact.has(normalizeAliasValue(file).toLowerCase())) return true;
             if (names?.has(normalizeBaseName(file))) return true;
             if (!isBaseModelFile(file)) continue;
             if (config.filter) {

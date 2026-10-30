@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026.10.30-29",
+  "version": "2026.10.30-30",
   "channel": "stable",
   "updatedAt": "2026-10-30",
   "packs": [
@@ -1742,6 +1742,27 @@
         {
           "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/upscale_models/RealESRGAN_x4plus.pth",
           "label": "魔搭镜像"
+        }
+      ]
+    },
+    {
+      "id": "qwen_angle_prompt",
+      "type": "node",
+      "label": "Qwen 多角度提示词拼接节点",
+      "target": "custom_nodes/QwenAnglePrompt",
+      "autoInstall": true,
+      "bundleDir": "resources/nodes/unpacked/QwenAnglePrompt",
+      "size": 1200,
+      "license": "MIT",
+      "note": "随包安装；供 Qwen 多角度工作流使用，替代 ComfyRoll CR Prompt Text / StringConcatenate。安装后需重启 ComfyUI。",
+      "provides": [
+        "QwenAnglePromptConcat"
+      ],
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/unpacked/QwenAnglePrompt",
+          "label": "随包"
         }
       ]
     }
