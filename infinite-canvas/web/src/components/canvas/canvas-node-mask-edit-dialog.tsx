@@ -11,8 +11,11 @@ export type CanvasImageMaskEditPayload = {
     prompt: string;
     maskDataUrl: string;
     binaryMaskDataUrl: string;
+    count: number;
     generate: boolean;
 };
+
+const COUNT_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8];
 
 type DrawMode = "paint" | "erase";
 type Point = { x: number; y: number };
@@ -36,6 +39,7 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
     const [prompt, setPrompt] = useState("");
     const [brushSize, setBrushSize] = useState(defaultBrushSize);
     const [mode, setMode] = useState<DrawMode>("paint");
+    const [count, setCount] = useState(1);
     const [error, setError] = useState("");
     const [historySize, setHistorySize] = useState(0);
     const [redoSize, setRedoSize] = useState(0);
@@ -47,6 +51,7 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
         setPrompt("");
         setBrushSize(defaultBrushSize);
         setMode("paint");
+        setCount(1);
         setError("");
         setHistorySize(0);
         setRedoSize(0);
@@ -211,7 +216,7 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
         if (!nextPrompt) return setError(t("canvas.editors.maskPromptRequired"));
         if (!canvas || !element) return;
         if (!canvasHasPaint(canvas)) return setError(t("canvas.editors.maskRequired"));
-        onConfirm({ prompt: nextPrompt, maskDataUrl: buildMaskOverlay(element, canvas), binaryMaskDataUrl: buildBinaryMask(canvas), generate });
+        onConfirm({ prompt: nextPrompt, maskDataUrl: buildMaskOverlay(element, canvas), binaryMaskDataUrl: buildBinaryMask(canvas), count, generate });
     };
 
     return (
@@ -305,6 +310,22 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
                             <span className="font-semibold">{brushSize}px</span>
                         </div>
                         <Slider min={8} max={160} step={2} value={brushSize} onChange={setBrushSize} />
+                    </div>
+
+                    <div className="space-y-2">
+                        <div className="text-sm font-medium opacity-75">{t("canvas.editors.imageCount")}</div>
+                        <div className="grid grid-cols-4 gap-2">
+                            {COUNT_OPTIONS.map((value) => (
+                                <button
+                                    key={value}
+                                    type="button"
+                                    className={`h-8 cursor-pointer rounded-full border px-2 text-xs transition hover:opacity-80 ${count === value ? "border-black/80 font-semibold dark:border-white/80" : "border-black/10 dark:border-white/10"}`}
+                                    onClick={() => setCount(value)}
+                                >
+                                    {value} 张
+                                </button>
+                            ))}
+                        </div>
                     </div>
 
                     <div className="space-y-2">
