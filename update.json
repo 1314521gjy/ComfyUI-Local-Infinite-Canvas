@@ -1,16 +1,16 @@
 {
-  "version": "v0.22.8",
+  "version": "v0.22.9",
   "publishedAt": "2026-10-30",
-  "notes": "启用工作流后模型下拉立即更新（SSE + 本地渠道同步）；含 BanZhang_IgnoreGroups 等前端组控制节点的 UI 工作流不再被误报缺少自定义节点。",
+  "notes": "修复 H3 视频生成后再次编辑提示词时光标与文字错位（@参考高亮层排版与滚动同步）。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.22.8.zip",
-    "sha256": "69dc7ddef612bb2a3d16d991f3a2fd0ddfb1a1f4ca31fe4e40ba373eb8b29663",
-    "size": 37580237
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.22.9.zip",
+    "sha256": "312c90e738d56b45eb8500c6048cf124772c7986e708a203690bae7402b0282a",
+    "size": 37580619
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

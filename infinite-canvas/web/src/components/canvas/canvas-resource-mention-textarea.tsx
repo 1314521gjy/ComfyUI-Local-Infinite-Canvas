@@ -1,4 +1,4 @@
-import { forwardRef, useMemo, useRef, useState } from "react";
+import { forwardRef, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent, PointerEvent, TextareaHTMLAttributes } from "react";
 import { createPortal } from "react-dom";
 import { FileText, Image as ImageIcon, Music2, Video } from "lucide-react";
@@ -92,13 +92,22 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
         cursor: "text",
         // The highlight layer covers the textarea when showOverlay is active, so keep the textarea above it to preserve the native caret.
         ...(showOverlay ? { position: "relative", zIndex: 1, background: "transparent", backgroundColor: "transparent" } : {}),
+        scrollbarGutter: "stable",
+        whiteSpace: "pre-wrap",
+        overflowWrap: "break-word",
     } as CSSProperties;
     const menu = mention && candidates.length && textareaRef.current ? <MentionMenu textarea={textareaRef.current} caretIndex={mention.start} references={candidates} activeIndex={Math.min(activeIndex, candidates.length - 1)} theme={theme} onSelect={insertReference} /> : null;
+
+    // Value can change programmatically (generated prompt / expanded editor); keep the
+    // highlight layer at the same scroll offset as the transparent textarea.
+    useLayoutEffect(() => {
+        syncOverlayScroll();
+    }, [value, showOverlay]);
 
     return (
         <div className={`relative h-full w-full ${containerClassName || ""}`}>
             {showOverlay ? (
-                <div ref={overlayRef} className={`${className || ""} pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words`} style={{ ...style, color: theme.node.text }}>
+                <div ref={overlayRef} className={`${className || ""} pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words`} style={{ ...style, color: theme.node.text, scrollbarGutter: "stable", overflowWrap: "break-word" }}>
                     <MentionHighlightText value={value || props.placeholder?.toString() || ""} labels={activeLabels} placeholder={!value} />
                 </div>
             ) : null}
@@ -123,7 +132,12 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
                 }}
                 onSelect={(event) => {
                     updateSelectionState();
+                    requestAnimationFrame(syncOverlayScroll);
                     props.onSelect?.(event);
+                }}
+                onFocus={(event) => {
+                    requestAnimationFrame(syncOverlayScroll);
+                    props.onFocus?.(event);
                 }}
                 onKeyUp={(event) => {
                     updateSelectionState();
@@ -202,7 +216,7 @@ function MentionHighlightText({ value, labels, placeholder }: { value: string; l
         <>
             {value.split(pattern).map((part, index) =>
                 labels.includes(part) ? (
-                    <span key={`${part}-${index}`} className="rounded-md bg-[#2f80ff]/16 px-1 py-0.5 font-medium text-[#2f80ff] ring-1 ring-[#2f80ff]/24">
+                    <span key={`${part}-${index}`} className="rounded-md bg-[#2f80ff]/16 text-[#2f80ff] ring-1 ring-[#2f80ff]/24">
                         {part}
                     </span>
                 ) : (
