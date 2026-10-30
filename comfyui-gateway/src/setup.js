@@ -47,7 +47,7 @@ function readAliasFile(file) {
     }
 }
 
-export function createSetupManager({ config, registry, comfy, logger, mainModelFile = () => "" } = {}) {
+export function createSetupManager({ config, registry, comfy, logger, mainModelFile = () => "", onScanComplete = null } = {}) {
     const statusFile = path.join(config.dataDir, "setup-status.json");
     const aliasFile = path.join(config.dataDir, "model-aliases.json");
     let aliases = readAliasFile(aliasFile);
@@ -726,6 +726,11 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 if (typeof comfy.baseUrl === "function") lastComfyBase = comfy.baseUrl() || lastComfyBase;
                 await persist();
                 scanPromise = null;
+                try {
+                    onScanComplete?.(state);
+                } catch (error) {
+                    logger?.warn?.(`setup scan callback failed: ${error.message}`);
+                }
             }
         })();
         return scanPromise;

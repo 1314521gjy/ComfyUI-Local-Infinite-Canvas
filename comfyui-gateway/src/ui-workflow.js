@@ -14,6 +14,16 @@ const REROUTE_TYPE = "Reroute";
 const PRIMITIVE_TYPE = "PrimitiveNode";
 const BYPASS_MODE = 4;
 const MUTE_MODE = 2;
+
+// 组开关/旁路器是前端辅助节点，不参与 ComfyUI 后端执行；不能因为
+// object_info 里没有它就把整张 UI 工作流判成“缺自定义节点”。
+function isUiOnlyNode(node) {
+  const type = String(node?.type || "");
+  if (NOTE_TYPES.has(type)) return true;
+  if (!/ignore.*group|group.*ignore|fast.*group|group.*bypass|group.*mute/i.test(type)) return false;
+  const links = [...(node.inputs || []), ...(node.outputs || [])];
+  return !links.some((item) => item?.link !== null && item?.link !== undefined);
+}
 function isImageOutputClass(classType) {
   return /^SaveImage$/i.test(classType) || /PreviewImage$/i.test(classType) || /(?:save|output).*(?:image|img)/i.test(classType) || /(?:image|img).*(?:save|output)/i.test(classType);
 }
@@ -222,6 +232,10 @@ export function convertUiWorkflow(ui, objectInfo = {}) {
     if (NOTE_TYPES.has(node.type) || node.type === REROUTE_TYPE || node.type === PRIMITIVE_TYPE) continue;
     const mode = Number(node.mode || 0);
     if (mode === MUTE_MODE || mode === BYPASS_MODE) continue;
+    if (isUiOnlyNode(node)) {
+      warnings.push(`已忽略 UI 辅助节点「${node.title || node.type}」`);
+      continue;
+    }
     const specs = inputSpecs(objectInfo, node.type);
     if (!specs.length) {
       missingClasses.add(node.type);

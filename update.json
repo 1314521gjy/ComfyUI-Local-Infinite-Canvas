@@ -1,16 +1,16 @@
 {
-  "version": "v0.22.7",
+  "version": "v0.22.8",
   "publishedAt": "2026-10-30",
-  "notes": "节点信息新增实际媒体分辨率，卡片尺寸单独显示；Git 安装不再把启动器生成的 config.js 误判为未提交修改；检测到真实本地改动时提供「强制更新（保留 data）」。v0.22.6 及更早的 Git 安装若被提示工作区有修改，请点「下载更新工具」升级。",
+  "notes": "启用工作流后模型下拉立即更新（SSE + 本地渠道同步）；含 BanZhang_IgnoreGroups 等前端组控制节点的 UI 工作流不再被误报缺少自定义节点。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.22.7.zip",
-    "sha256": "8c1d8a723e78ecc6050264fccc563d3297a91e2550c5a8fa8045d9278d66ccff",
-    "size": 37578025
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.22.8.zip",
+    "sha256": "69dc7ddef612bb2a3d16d991f3a2fd0ddfb1a1f4ca31fe4e40ba373eb8b29663",
+    "size": 37580237
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

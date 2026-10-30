@@ -286,3 +286,16 @@ test("a stray SaveImage chain is dropped in favour of the main output", () => {
   assert.equal(next["1"], undefined, "unused LoadImage dropped");
   assert.equal(Object.keys(next).length, 5);
 });
+
+test("UI conversion skips frontend-only group control nodes", () => {
+  const ui = {
+    nodes: [
+      uiNode(1, "SaveImage", [["images", "IMAGE", null], ["filename_prefix", "STRING", null]], { filename_prefix: "out" }),
+      { id: 2, type: "BanZhang_IgnoreGroups", mode: 0, inputs: [], outputs: [], widgets_values: [] },
+    ],
+    links: [],
+  };
+  const result = convertUiWorkflow(ui, objectInfo);
+  assert.equal(result.workflow["2"], undefined);
+  assert.ok(result.warnings.some((warning) => warning.includes("UI 辅助节点")));
+});

@@ -1,8 +1,8 @@
 # 无界工作台 · 程序架构
 
-> 截至 2026-10-30，对应发布版本 **v0.22.7**（发布树 `07842353-release-staging`）。
+> 截至 2026-10-30，对应发布版本 **v0.22.8**（发布树 `07842353-release-staging`）。
 > 本文件是架构层权威说明，已纳入 staging git（`docs/ARCHITECTURE.md`），不进发布包。状态与待办见 `docs/HANDOFF.md`，历史见 `docs/RELEASE-HISTORY.md`。
-> 版本/索引/路由/包数等数字为 2026-10-30 实测（网关单测 182/182、启动器 8/8）；`docs/` 不入发布包。
+> 版本/索引/路由/包数等数字为 2026-10-30 实测（网关单测 184/184、启动器 8/8；v0.22.8 含工作流推送与 UI 辅助节点修复）；`docs/` 不入发布包。
 
 ## 1. 定位
 
@@ -50,6 +50,7 @@ flowchart LR
    - **执行期模型匹配顺序（自选最高）**：用户显式「自选替换」→ 精确命中 → 自动同名 → 深目录唯一后缀 → 相似匹配。
    - **精确命中短路**：原文件已在 ComfyUI 列表里时直接返回，不再做相似替换，避免 4B/8B、turbo/raw 互相顶替。
    - **相似匹配**：格式相同、名称相似度 ≥50%、家族词加权；禁止跨规模、跨家族、turbo/raw 互顶；同族不同量化允许；候选分数接近时不猜。
+   - **模型列表推送（2026-10-30 修复）**：`GET /api/models/events` 通过 SSE 广播 `models` 事件；工作流启用/隐藏和 `setup.scan()` 完成后触发，前端订阅并重新拉 `/v1/models`。`useLocalGatewaySync` 不再依赖 `LOCAL_ONLY`，只要存在本地渠道就同步，窗口聚焦/可见时补拉，8 秒轮询兜底。
    - **激活规则**：`validateWorkflow` 逐 variant 校验，**任一 variant 可跑入口就可用**；精确、相似、自选都算齐全；`phase=degraded` 时不可用；磁盘有文件但 `/object_info` 未列出 → 标「待重启」而不是缺模型。
    - **不做周期性全量扫描**：2026-10-29 曾加过模型目录 mtime 轮询与 10 分钟兜底重扫，评估后撤掉；只保留 10s 连通性检查。扫描成本交给用户手动触发，避免周期性拖慢 ComfyUI。
    - **扫描维度**：节点类名 + 模型文件 + 运行期依赖（pip 运行库 / TRT 编译产物 / 自定义节点，由 `resources.runtimeProblemsFor()` 提供，带 30s 缓存）；ComfyUI `workflows/` 下 `*-draft*`、`*副本*`、`*test*` 等草稿不再导入 registry，已导入的旧草稿会在扫描时移除登记（不动文件）。
@@ -122,7 +123,7 @@ flowchart LR
 # 整套启动
 start-local.bat            # 保持画布页打开；关页 30s 后停后台，见 §4 第 10 条
 
-# 网关单测（2026-10-30 实测 182/182）
+# 网关单测（2026-10-30 实测 184/184）
 cd 07842353-release-staging/comfyui-gateway
 COMFYUI_DIR=C:/ComfyUI node --test --test-timeout=120000 test/*.test.js
 
@@ -130,7 +131,7 @@ COMFYUI_DIR=C:/ComfyUI node --test --test-timeout=120000 test/*.test.js
 cd ../infinite-canvas/web && npm run typecheck && npm run build
 
 # 构建补丁（必须在最后一次 build 之后）
-node ../../tools/build-patch.mjs --root ../.. --out ../../patches/v0.22.7.zip --write-manifest
+node ../../tools/build-patch.mjs --root ../.. --out ../../patches/v0.22.8.zip --write-manifest
 ```
 
 端口：画布 3000、启动器控制 8290、网关 8190、ComfyUI 8188（探测 8188–8199）。
