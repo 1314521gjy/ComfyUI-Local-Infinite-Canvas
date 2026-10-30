@@ -33,10 +33,10 @@ Infinite Canvas :3000
 
 ## 工作流
 
-`workflows/registry.json` 当前包含 12 个条目，分为：
+`workflows/registry.json` 当前包含 20 个条目，分为：
 
-- 图像生成：Z-Image Turbo、Krea2 Aesthetics、MOSS SFT 8 步 / 50 步、Qwen Image 2.1（edit / inpaint / outpaint）。
-- 视频：MiniMax-H3 文生、首尾帧、多参三个入口，共用文戏均衡工作流。
+- 图像生成：Z-Image Turbo、Krea2 Turbo / Aesthetics、MOSS SFT 8 步 / 50 步、MOSS INT8 8 步 / 50 步、Qwen Image 2.1（t2i / edit / inpaint / outpaint，多角度隐藏）。
+- 视频：MiniMax-H3 文生、首尾帧、多参三个入口（VDN / 无 VDN 各一套），以及角色替换。
 - 放大/超分：ESRGAN、SeedVR2 图片、SeedVR2 视频。
 - 自动发现的诊断工作流标记为 hidden，不进入 `/v1/models`。
 
@@ -72,8 +72,8 @@ node src/server.js
 | `UPDATE_MANIFEST_PATH` | `<项目根>/update.json` | 本地更新清单 |
 | `UPDATE_MANIFEST_URL` | 空 | 非 Git 安装的远端清单地址 |
 | `UPDATE_REMOTE` / `UPDATE_BRANCH` | `origin` / `main` | Git 更新远端与分支 |
-| `UPDATE_FETCH_TIMEOUT_MS` | `15000` | `git fetch` / 清单请求超时 |
-| `UPDATE_APPLY_TIMEOUT_MS` | `120000` | `git pull` 超时 |
+| `UPDATE_FETCH_TIMEOUT_MS` | `30000` | `git fetch` / 清单请求超时 |
+| `UPDATE_APPLY_TIMEOUT_MS` | `600000` | 补丁下载 / `git pull` 超时 |
 
 ## 无 GPU 联调
 
@@ -91,7 +91,13 @@ Mock 只验证协议与占位图，不验证真实出图质量。
 
 ## 更新
 
-`GET /api/update/check` 比较项目根目录的 `VERSION` / `update.json` 与远端（Git 安装读 `origin/main`，压缩包安装可配 `UPDATE_MANIFEST_URL`）。`POST /api/update/apply` 只对 Git 克隆且工作区干净时执行 `git pull --ff-only`；有任务运行、工作区有修改或非 Git 安装会拒绝。更新后需重启 `start-local.bat`。
+`GET /api/update/check` 比较项目根目录的 `VERSION` / `update.json` 与远端（Git 安装读 `origin/main`，压缩包安装可配 `UPDATE_MANIFEST_URL`）。
+
+- **Git 安装**：工作区干净时 `POST /api/update/apply` 执行 `fetch` + `pull --ff-only`；脏树拒绝。启动器生成的 `infinite-canvas/web/dist/config.js` 不计入“未提交修改”。
+- **强制更新**：真脏或 Git 不可用时，`POST /api/update/apply` 带 `{"force":true}` 会改用已签名补丁覆盖程序文件，保留 data/models/node_modules/config，失败回滚；前端有二次确认。
+- **压缩包 / 文件夹安装**：下载 `update.json.patch` 指向的代码补丁，校验 `size` + `sha256`，支持 `PATCH-DELETE.txt` 与 `PATCH_PROTECTED` 白名单，失败回滚；成功后网关自动重启，新页面自动刷新。
+- 下载进度：`GET /api/update/progress` 返回阶段、百分比、已下载 / 总量和速度。
+- 有任务在跑时返回 409；更新器优先用 Windows `System32\tar.exe` 解压，PowerShell 兜底。
 
 ## 测试
 

@@ -179,6 +179,93 @@ test("git install fetches, dry-runs and fast-forwards an update", async () => {
   }
 });
 
+test("runtime config.js does not block git updates; real edits can force a patch", async () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "gateway-update-dirty-"));
+  const remote = path.join(base, "remote.git");
+  const seed = path.join(base, "seed");
+  const app = path.join(base, "app");
+  const payload = path.join(base, "payload");
+  const patchFile = path.join(base, "patch.zip");
+  const write = (rootDir, rel, content) => {
+    const file = path.join(rootDir, rel);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, content);
+  };
+  write(payload, "VERSION", "v0.20.1\n");
+  write(payload, "comfyui-gateway/src/new.js", "export const updated = true;\n");
+  write(payload, "data/keep.txt", "overwritten-by-patch");
+  write(payload, "PATCH-DELETE.txt", "comfyui-gateway/src/old.js\n");
+  execFileSync("tar", ["-a", "-c", "-f", "patch.zip", "-C", "payload", "."], { cwd: base, stdio: "ignore" });
+  const bytes = fs.readFileSync(patchFile);
+  const sha = (await import("node:crypto")).createHash("sha256").update(bytes).digest("hex");
+  const server = http.createServer((req, res) => {
+    if (req.url === "/patch.zip") {
+      res.setHeader("content-type", "application/zip");
+      res.end(bytes);
+      return;
+    }
+    res.statusCode = 404;
+    res.end("not found");
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const patchUrl = `http://127.0.0.1:${server.address().port}/patch.zip`;
+  try {
+    execFileSync("git", ["init", "--bare", "--initial-branch=main", remote], { stdio: "ignore" });
+    execFileSync("git", ["init", "--initial-branch=main", seed], { stdio: "ignore" });
+    writeVersion(seed, "v0.20.0");
+    write(seed, "update.json", JSON.stringify({ version: "v0.20.0", notes: "initial" }, null, 2));
+    write(seed, "README.md", "seed\n");
+    write(seed, "infinite-canvas/web/dist/config.js", "window.__RUNTIME_CONFIG__ = {};\n");
+    write(seed, "comfyui-gateway/src/old.js", "export const retired = true;\n");
+    git(seed, "add", ".");
+    git(seed, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "initial");
+    git(seed, "remote", "add", "origin", remote);
+    git(seed, "push", "-u", "origin", "main");
+    execFileSync("git", ["clone", remote, app], { stdio: "ignore" });
+
+    // 启动器每次启动都会改写 config.js；这不应再被当成“未提交的修改”。
+    write(app, "infinite-canvas/web/dist/config.js", 'window.__RUNTIME_CONFIG__ = {"LOCAL_GATEWAY_PORT":"8190"};\n');
+    write(app, "data/keep.txt", "keep");
+
+    writeVersion(seed, "v0.20.1");
+    write(seed, "update.json", JSON.stringify({
+      version: "v0.20.1",
+      notes: "force test",
+      patch: { url: patchUrl, sha256: sha, size: bytes.length },
+    }, null, 2));
+    git(seed, "add", ".");
+    git(seed, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "v0.20.1");
+    git(seed, "push", "origin", "main");
+
+    let check = await checkForUpdate(configFor(app), { fetchRemote: true });
+    assert.equal(check.updateAvailable, true);
+    assert.equal(check.dirty, false);
+    assert.deepEqual(check.dirtyFiles, []);
+    assert.deepEqual(check.ignoredDirtyFiles, ["infinite-canvas/web/dist/config.js"]);
+    assert.equal(check.canApply, true);
+
+    fs.appendFileSync(path.join(app, "README.md"), "local edit\n");
+    check = await checkForUpdate(configFor(app), { fetchRemote: true });
+    assert.equal(check.dirty, true);
+    assert.ok(check.dirtyFiles.includes("README.md"));
+    assert.equal(check.canApply, false);
+    assert.equal(check.forceAvailable, true);
+    await assert.rejects(() => applyUpdate(configFor(app)), (error) => error.code === "dirty_worktree");
+
+    const result = await applyUpdate(configFor(app), { force: true });
+    assert.equal(result.forced, true);
+    assert.equal(fs.readFileSync(path.join(app, "VERSION"), "utf8").trim(), "v0.20.1");
+    assert.equal(fs.readFileSync(path.join(app, "infinite-canvas/web/dist/config.js"), "utf8"), 'window.__RUNTIME_CONFIG__ = {"LOCAL_GATEWAY_PORT":"8190"};\n');
+    assert.equal(fs.readFileSync(path.join(app, "README.md"), "utf8").replace(/\r\n/g, "\n"), "seed\nlocal edit\n");
+    assert.equal(fs.readFileSync(path.join(app, "data/keep.txt"), "utf8"), "keep");
+    assert.equal(fs.existsSync(path.join(app, "comfyui-gateway/src/old.js")), false);
+    assert.equal(fs.existsSync(path.join(app, "comfyui-gateway/src/new.js")), true);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test("git install auto-detects master when the configured branch is main", async () => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "gateway-update-master-"));
   const remote = path.join(base, "remote.git");

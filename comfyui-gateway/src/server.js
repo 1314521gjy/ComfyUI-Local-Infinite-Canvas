@@ -560,7 +560,7 @@ export async function createGatewayApp(overrides = {}) {
     if (active) {
       throw new HttpError("有正在运行的生成任务，请等待完成或取消后再更新", { status: 409, code: "tasks_running" });
     }
-    res.json(await applyUpdate(config, { dryRun: req.body?.dryRun === true }));
+    res.json(await applyUpdate(config, { dryRun: req.body?.dryRun === true, force: req.body?.force === true }));
   });
 
   app.post("/api/system/restart-comfy", async (_req, res) => {

@@ -80,6 +80,28 @@ const PATCH_PROTECTED = [
 
 const PATCH_DELETE_LIST = "PATCH-DELETE.txt";
 
+// 启动器每次启动都会重写这个文件；它被 git 跟踪时会让所有 git 安装永远显示“未提交修改”。
+const RUNTIME_DIRTY_PATHS = ["infinite-canvas/web/dist/config.js"];
+
+function isRuntimeDirtyPath(relative) {
+  return RUNTIME_DIRTY_PATHS.includes(String(relative || "").replace(/\\/g, "/").replace(/^\/+/, ""));
+}
+
+function parseGitStatusPaths(output) {
+  return String(output || "")
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter(Boolean)
+    .map((line) => {
+      let relative = line.slice(3).trim();
+      if (relative.startsWith('"') && relative.endsWith('"')) relative = relative.slice(1, -1);
+      const rename = relative.lastIndexOf(" -> ");
+      if (rename >= 0) relative = relative.slice(rename + 4);
+      return relative.replace(/\\/g, "/");
+    })
+    .filter(Boolean);
+}
+
 function isProtectedPath(relative) {
   const normalized = String(relative || "").replace(/\\/g, "/").replace(/^\/+/, "");
   return PATCH_PROTECTED.some((entry) => normalized === entry || normalized.startsWith(`${entry}/`));
@@ -417,6 +439,8 @@ export async function checkForUpdate(config, { fetchRemote = false } = {}) {
   let manifest = readLocalManifest(config);
   let source = manifest ? "local" : "none";
   let dirty = false;
+  let dirtyFiles = [];
+  let ignoredDirtyFiles = [];
   let gitError = "";
   let branch = config.updateBranch;
 
@@ -424,7 +448,10 @@ export async function checkForUpdate(config, { fetchRemote = false } = {}) {
     branch = await resolveBranch(config);
     try {
       const status = await git(config, ["status", "--porcelain", "--untracked-files=no"], 8000);
-      dirty = status.stdout.trim().length > 0;
+      const changedPaths = parseGitStatusPaths(status.stdout);
+      ignoredDirtyFiles = changedPaths.filter(isRuntimeDirtyPath);
+      dirtyFiles = changedPaths.filter((relative) => !isRuntimeDirtyPath(relative));
+      dirty = dirtyFiles.length > 0;
     } catch (error) {
       gitError = describeGitError(error);
       dirty = true;
@@ -478,6 +505,8 @@ export async function checkForUpdate(config, { fetchRemote = false } = {}) {
   else if (installType !== "git" && !patchAvailable) applyReason = "当前安装不是 Git 克隆，且此版本没有代码补丁；请下载完整包";
 
   const canApply = config.updateEnabled && updateAvailable && (installType === "git" ? !dirty && !gitError : patchAvailable);
+  // 真脏或 Git 不可用时，仍可用已签名的代码补丁强制更新；补丁只覆盖程序文件。
+  const forceAvailable = Boolean(config.updateEnabled && updateAvailable && installType === "git" && patchAvailable && (dirty || gitError));
   return {
     ok: true,
     checkedAt: new Date().toISOString(),
@@ -489,6 +518,10 @@ export async function checkForUpdate(config, { fetchRemote = false } = {}) {
     installType,
     source,
     dirty,
+    dirtyFiles,
+    ignoredDirtyFiles,
+    gitError,
+    forceAvailable,
     patch,
     patchAvailable,
     notes: String(manifest?.notes || ""),
@@ -512,7 +545,7 @@ function scheduleGatewayRestart(config) {
  * Apply an update. Git installs fast-forward; archive installs apply a signed code patch.
  * Config/data/models/bundled weights are never touched; a restart is required.
  */
-export async function applyUpdate(config, { dryRun = false } = {}) {
+export async function applyUpdate(config, { dryRun = false, force = false } = {}) {
   if (applying) throw updateError("更新正在进行中", "update_in_progress");
   if (!config.updateEnabled) throw updateError("自动更新已关闭", "update_disabled");
 
@@ -544,7 +577,31 @@ export async function applyUpdate(config, { dryRun = false } = {}) {
           : "更新完成，请关闭工作台窗口后重新双击 start-local.bat",
       };
     }
-    if (check.dirty) throw updateError(check.applyReason || "工作区有未提交的修改", "dirty_worktree");
+    if (check.dirty || check.gitError) {
+      if (!check.patch) throw updateError("工作区有未提交的修改，且此版本没有代码补丁；请先处理本地改动或下载完整包", "dirty_no_patch");
+      if (!force) throw updateError(check.applyReason || "工作区有未提交的修改", "dirty_worktree");
+      const result = await applyArchivePatch(config, { patch: check.patch, version: check.latestVersion, dryRun });
+      if (dryRun) {
+        return { ok: true, dryRun: true, forced: true, currentVersion: check.currentVersion, latestVersion: check.latestVersion, files: result.files };
+      }
+      const restarting = scheduleGatewayRestart(config);
+      const launcherChanged = result.files.some((file) => file.startsWith("launcher/"));
+      return {
+        ok: true,
+        dryRun: false,
+        forced: true,
+        currentVersion: check.currentVersion,
+        latestVersion: check.latestVersion,
+        changedFiles: result.files,
+        deletedFiles: result.deleted || [],
+        launcherChanged,
+        restartRequired: true,
+        restarting,
+        message: restarting
+          ? "已强制更新，网关正在重启，页面将自动刷新…"
+          : "已强制更新，请关闭工作台窗口后重新双击 start-local.bat",
+      };
+    }
 
     const branch = check.remote?.branch || config.updateBranch;
     const commands = [`git fetch ${config.updateRemote} ${branch}`, `git pull --ff-only ${config.updateRemote} ${branch}`];

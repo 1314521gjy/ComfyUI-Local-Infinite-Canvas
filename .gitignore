@@ -33,6 +33,7 @@ tmp-*
 docs/HANDOFF.md
 docs/PROJECT_LOG.md
 docs/FEEDBACK-BACKLOG.md
+docs/RELEASE-HISTORY.md
 
 # local release artifacts
 /patches/

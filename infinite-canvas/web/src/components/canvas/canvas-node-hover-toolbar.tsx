@@ -226,8 +226,12 @@ export function CanvasNodeInfoModal({ node, open, onClose }: { node: CanvasNodeD
     const theme = useCanvasTheme();
     const { t } = useTranslation();
     const [view, setView] = useState<"info" | "json">("info");
-    const imageBytes = node?.type === CanvasNodeType.Image && node.metadata?.content ? getDataUrlByteSize(node.metadata.content) : 0;
+    const primaryImage = node?.metadata?.images?.find((image) => image.id === node.metadata?.primaryImageId) || node?.metadata?.images?.find((image) => image.status === "success") || node?.metadata?.images?.[0];
+    const imageBytes = node?.type === CanvasNodeType.Image ? Number(primaryImage?.bytes || node.metadata?.bytes) || (node.metadata?.content ? getDataUrlByteSize(node.metadata.content) : 0) : 0;
     const batchCount = node?.type === CanvasNodeType.Image ? node.metadata?.images?.length || 0 : 0;
+    const mediaWidth = Math.round(Number(primaryImage?.naturalWidth || node?.metadata?.naturalWidth) || 0);
+    const mediaHeight = Math.round(Number(primaryImage?.naturalHeight || node?.metadata?.naturalHeight) || 0);
+    const hasMediaSize = (node?.type === CanvasNodeType.Image || node?.type === CanvasNodeType.Video) && mediaWidth > 0 && mediaHeight > 0;
     const json = useMemo(() => {
         if (!node) return "";
         return JSON.stringify(
@@ -270,7 +274,8 @@ export function CanvasNodeInfoModal({ node, open, onClose }: { node: CanvasNodeD
                             <InfoRow label="ID" value={node.id} />
                             <InfoRow label={t("canvas.nodeToolbar.name")} value={node.title || t("canvas.node.untitled")} />
                             <InfoRow label={t("canvas.nodeToolbar.type")} value={node.type === CanvasNodeType.Group ? t("canvas.node.group") : node.type === CanvasNodeType.Config ? t("canvas.configNode.title") : [CanvasNodeType.Image, CanvasNodeType.Video, CanvasNodeType.Audio, CanvasNodeType.Text].includes(node.type as CanvasNodeType) ? t(`assets.kinds.${node.type}`) : getNodeDefinition(node.type)?.title || node.type} />
-                            <InfoRow label={t("canvas.nodeToolbar.size")} value={`${Math.round(node.width)} x ${Math.round(node.height)}`} />
+                            {hasMediaSize ? <InfoRow label={t("canvas.nodeToolbar.mediaSize")} value={`${mediaWidth} × ${mediaHeight}`} /> : null}
+                            <InfoRow label={t("canvas.nodeToolbar.size")} value={`${Math.round(node.width)} × ${Math.round(node.height)}`} />
                             <InfoRow label={t("canvas.nodeToolbar.position")} value={`${Math.round(node.position.x)}, ${Math.round(node.position.y)}`} />
                             <InfoRow label={t("canvas.nodeToolbar.status")} value={node.metadata?.status || "idle"} />
                             {batchCount > 1 ? <InfoRow label={t("canvas.nodeToolbar.imageGroup")} value={t("canvas.configNode.images", { count: batchCount })} /> : null}

@@ -2,7 +2,7 @@
 
 本地优先的 **Infinite Canvas × ComfyUI** 集成：把开源无限画布、ComfyUI 工作流和本地网关接到一起，不依赖云端 API。
 
-> GitHub 仓库 slug 使用 `ComfyUI-Local-Infinite-Canvas`（GitHub 仓库名只支持 ASCII）；项目中文名即 **ComfyUI-本地无限画布**。
+> 当前版本 **v0.22.7**（2026-10-30）。GitHub 仓库 slug 使用 `ComfyUI-Local-Infinite-Canvas`（GitHub 仓库名只支持 ASCII）；项目中文名即 **ComfyUI-本地无限画布**。
 
 ## 功能
 
@@ -28,6 +28,8 @@ start-local.bat
 画布 :3000  →  网关 :8190  →  ComfyUI :8188
 ```
 
+以上是默认端口；画布 3000 被占用时会回退到 3001–3010，实际地址以启动器窗口输出为准。网关端口由 `gatewayPort`（默认 8190）决定；改成其他端口时，若 8190 空闲，启动器会起兼容转发，旧页面无需刷新。
+
 ## 目录
 
 ```text
@@ -47,7 +49,16 @@ start-local.bat       Windows 一键启动
 - **Git 源码仓库不包含模型权重、自定义节点和 ComfyUI 本体。** 完整发布包会附带运行所必需的预解压节点、H3 VAE ONNX、预览 VAE 与观澜 LoRA；其余模型/LoRA 由资源中心按工作流下载，并遵守各自许可证。
 - 画布 `dist/` 已随仓库提供；修改前端源码后需要重新构建。
 
-## 安装与启动
+## 快速开始
+
+### 方式 A：使用完整发布包
+
+1. 解压完整包（自带 Node、网关依赖、随包节点和少量 VAE/LoRA）。
+2. 双击 `start-local.bat`。
+3. 打开启动器打印的画布地址；默认 `http://127.0.0.1:3000`，3000 被占用时自动使用 3001–3010。
+4. 首次启动按提示安装缺失资源；进画布后点右上角「配置」确认 ComfyUI 连接。
+
+### 方式 B：从源码运行
 
 ```bat
 :: 1. 安装网关依赖
@@ -88,7 +99,7 @@ start-local.bat
 - `canvasHost`：画布静态服务监听地址；`gatewayHost`：网关监听地址。
 - `gatewayPublicHost`：写进前端 `config.js` 的对外可达网关地址；留空等于 `127.0.0.1`。
 - `corsOrigins`：允许跨域调用网关的画布来源，逗号分隔，不支持通配符。
-- 网关 `/api` 和 `/admin` 没有内置鉴权；放开监听后只限可信内网，并配合防火墙限制来源，**不要映射到公网**。跨机使用前先读下方「安全提示」。
+- 网关 `/api` 和 `/admin` 默认没有鉴权；显式设置 `GATEWAY_TOKEN` 后，`/api/*` 与 `/admin` 会校验 `x-gateway-token`。放开监听后只限可信内网，并配合防火墙限制来源，**不要映射到公网**。跨机使用前先读下方「安全提示」。
 
 ## 网关
 
@@ -105,9 +116,20 @@ start-local.bat
 
 - 版本弹窗的「检查更新」由网关 `/api/update/check` 提供，读取项目根目录的 `update.json`；Git 克隆安装会从 `origin/main` 获取最新清单（点击检查时执行 `git fetch`）。
 - **文件夹安装**：点击「应用更新」会在软件内下载并校验代码补丁，只替换程序文件；`data/`、模型、`node_modules`、`resources/bundled` 和 `launcher/config.json` 不会被覆盖。更新完成后网关自动重启，新页面自动刷新。
-- **Git 克隆**：工作区没有已跟踪修改时执行 `git pull --ff-only`；`package-lock.json` 有变化时先在 `comfyui-gateway` 运行 `npm install`。
+- **Git 克隆**：工作区没有已跟踪修改时执行 `git pull --ff-only`；`package-lock.json` 有变化时先在 `comfyui-gateway` 运行 `npm install`。启动器生成的 `infinite-canvas/web/dist/config.js` 不再被误判为本地修改。
+- **强制更新**：如果确实改过程序源码，更新弹窗会显示「强制更新（保留 data）」；用校验过的补丁覆盖程序文件，保留 `data/`、模型、`node_modules` 和 `launcher/config.json`，失败自动回滚。
+- **旧版本自举**：v0.22.6 及更早的 Git 安装如果被提示“工作区有未提交的修改”，先点「下载更新工具」运行一次，升到 v0.22.7 后即可正常使用应用内更新。
 - **v0.21.0–v0.21.2 旧版本**：这些版本里没有新的更新器。请从发布页下载 `update-bridge.zip`，解压后双击 `update.bat`，脚本会自动找到工作台并升级到最新版；之后即可使用应用内更新。不会把用户送到网页手动替换文件。
 - 发布新版本：同时更新根目录 `VERSION`、`update.json`、`CHANGELOG.md`，重新构建 `infinite-canvas/web`，提交 `web/dist`，并生成 `patches/vX.zip` 与 `update.json.patch`。
+
+## 常见问题
+
+- **页面打不开，或地址不是 3000**：看启动器窗口打印的实际画布地址；3000 被占用时会自动用 3001–3010。
+- **找不到 ComfyUI**：确认 ComfyUI 已启动；仍识别不到时进「设置 → 偏好设置 → ComfyUI 目录与资源扫描」，手动选包含 `main.py` 的根目录，保存后重新扫描。
+- **工作流显示不可用 / 缺资源**：资源中心看缺多少、多大，勾选后「安装选中」；模型识别不了点「自选替换」；提示「待重启」说明文件已装但 ComfyUI 还没加载，重启 ComfyUI。
+- **更新失败**：把弹窗里的完整错误（阶段 + 原因）反馈；先别删 `.update` / `.update-backup`，方便定位。应用内更新不需要手动替换文件。
+- **关掉页面后后台还在跑**：默认关页 30 秒后停后台；启动参数设了 `CLOSE_CANVAS_STOPS_BACKEND=0` 或 `STOP_ADOPTED_COMFY=0` 时会保持运行。
+- **局域网访问**：按下方「局域网 / 多机访问」显式设置 `allowLan`；默认只绑 `127.0.0.1`，不要映射到公网。
 
 ## 国内镜像
 
@@ -118,7 +140,7 @@ start-local.bat
 
 ## 安全提示
 
-- 网关、ComfyUI、启动器控制接口默认只绑 `127.0.0.1`，**没有鉴权**。
+- 网关、ComfyUI、启动器控制接口默认只绑 `127.0.0.1`，**没有鉴权**；设置 `GATEWAY_TOKEN` 后 `/api/*` 与 `/admin` 会校验 `x-gateway-token`。
 - 只有显式设置 `allowLan: true` 并配置 `canvasHost` / `gatewayHost` 才会放开监听；放开后只限可信内网，并配合防火墙限制来源，**不要映射到公网**。网关 `/api` 与 `/admin` 仍无鉴权，CORS 白名单不是访问控制。
 - 不要把 `:8188`、`:8190`、`:8290` 暴露到公网或不可信局域网。
 - 本地渠道默认 API Key 是占位值 `local`，网关不校验该值；仓库不包含真实 API Key、Token 或私钥。

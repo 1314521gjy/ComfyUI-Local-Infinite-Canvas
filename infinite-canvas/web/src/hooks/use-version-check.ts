@@ -75,7 +75,7 @@ export function useVersionCheck() {
 
     const checkLatestRelease = useCallback((showMessage = false) => checkLatest(true, showMessage), [checkLatest]);
 
-    const applyUpdate = useCallback(async () => {
+    const applyUpdate = useCallback(async (force = false) => {
         setApplying(true);
         setUpdateProgress(null);
         let timer = 0;
@@ -91,7 +91,7 @@ export function useVersionCheck() {
             void poll();
         }, 400);
         try {
-            const result = await requestApplyUpdate(false);
+            const result = await requestApplyUpdate(false, force);
             setApplyResult(result);
             message.success(result.message || t("version.applySuccess"));
             if (result.restarting) {

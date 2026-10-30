@@ -44,14 +44,15 @@ export function VersionReleaseModal({ className, style }: VersionReleaseModalPro
         return () => window.removeEventListener("open-version-release", handler);
     }, [openReleaseModal]);
 
-    const confirmApply = () => {
+    const confirmApply = (force = false) => {
         modal.confirm({
-            title: t("version.applyConfirmTitle"),
-            content: t("version.applyConfirmContent"),
-            okText: t("version.apply"),
+            title: t(force ? "version.forceApplyTitle" : "version.applyConfirmTitle"),
+            content: t(force ? "version.forceApplyContent" : "version.applyConfirmContent"),
+            okText: t(force ? "version.forceApply" : "version.apply"),
+            okButtonProps: force ? { danger: true } : undefined,
             cancelText: t("common.cancel"),
             onOk: () => {
-                void applyUpdate().catch(() => undefined);
+                void applyUpdate(force).catch(() => undefined);
             },
         });
     };
@@ -124,14 +125,26 @@ export function VersionReleaseModal({ className, style }: VersionReleaseModalPro
                                     </a>
                                 ) : null}
                                 {updateInfo.canApply ? (
-                                    <Button size="small" type="primary" loading={applying} onClick={confirmApply}>
+                                    <Button size="small" type="primary" loading={applying} onClick={() => confirmApply(false)}>
                                         {t(applying ? "version.applying" : "version.apply")}
+                                    </Button>
+                                ) : null}
+                                {updateInfo.forceAvailable ? (
+                                    <Button size="small" danger loading={applying} onClick={() => confirmApply(true)}>
+                                        {t("version.forceApply")}
                                     </Button>
                                 ) : null}
                             </div>
                         </div>
                         {updateInfo.notes ? <div className="mt-2 text-xs leading-5 text-stone-600 dark:text-stone-300">{updateInfo.notes}</div> : null}
                         {!updateInfo.canApply && updateInfo.applyReason ? <div className="mt-2 text-xs leading-5 text-stone-500 dark:text-stone-400">{updateInfo.applyReason}</div> : null}
+                        {updateInfo.dirtyFiles?.length ? (
+                            <div className="mt-1 break-all text-[11px] leading-5 text-stone-400 dark:text-stone-500">
+                                {t("version.dirtyFilesHint", {
+                                    files: `${updateInfo.dirtyFiles.slice(0, 5).join("、")}${updateInfo.dirtyFiles.length > 5 ? " …" : ""}`,
+                                })}
+                            </div>
+                        ) : null}
                         {updateInfo.warnings?.length ? <div className="mt-1 text-[11px] leading-5 text-stone-400 dark:text-stone-500">{updateInfo.warnings.join("；")}</div> : null}
                     </div>
                 ) : null}

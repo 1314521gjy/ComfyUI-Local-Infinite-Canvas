@@ -1,20 +1,20 @@
 {
-  "version": "v0.22.6",
+  "version": "v0.22.7",
   "publishedAt": "2026-10-30",
-  "notes": "修复 LLM 视觉投影 mmproj 自选替换被误报未安装；ComfyUI 个人工作流自动导入按内容去重，image-json-2-2-2 等重复副本只保留一条。",
+  "notes": "节点信息新增实际媒体分辨率，卡片尺寸单独显示；Git 安装不再把启动器生成的 config.js 误判为未提交修改；检测到真实本地改动时提供「强制更新（保留 data）」。v0.22.6 及更早的 Git 安装若被提示工作区有修改，请点「下载更新工具」升级。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.22.6.zip",
-    "sha256": "9d1dd36625b350f387cf0e7323d5461878a458c6a073848b21d01af02ccbf850",
-    "size": 37575123
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.22.7.zip",
+    "sha256": "8c1d8a723e78ecc6050264fccc563d3297a91e2550c5a8fa8045d9278d66ccff",
+    "size": 37578025
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
-    "sha256": "e0715b8e7a1658dfa7316497920c9265e88523ad970711e1c5a14cfad732e298",
-    "size": 5945
+    "sha256": "7d4cf0abfad8ad48d59d536200cd64b07c5ce408036ad1d7dfbe69c7afdc620a",
+    "size": 6063
   }
 }

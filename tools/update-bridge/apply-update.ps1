@@ -14,11 +14,13 @@ $Protected = @(
     "data",
     "models",
     "node",
+    "PATCH-DELETE.txt",
     "launcher/config.json",
     "launcher/launcher.log",
     "comfyui-gateway/data",
     "comfyui-gateway/node_modules",
-    "comfyui-gateway/resources/bundled"
+    "comfyui-gateway/resources/bundled",
+    "infinite-canvas/web/dist/config.js"
 )
 
 $ManifestUrls = @(
@@ -256,7 +258,7 @@ try {
     }
     Write-Host "已更新 $($written.Count) 个文件（跳过 $skipped 个受保护文件）" -ForegroundColor Green
 
-    if ($patch.url) {
+    if ($patch.url -and -not (Test-Path -LiteralPath (Join-Path $appRoot ".git"))) {
         try {
             $manifestJson = $manifest | ConvertTo-Json -Depth 10
             [IO.File]::WriteAllText((Join-Path $appRoot "update.json"), $manifestJson, (New-Object Text.UTF8Encoding($false)))
