@@ -122,17 +122,38 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
 
     async function importComfyWorkflows() {
         if (!config.comfyWorkflowsDir || !fs.existsSync(config.comfyWorkflowsDir)) return { imported: 0, ui: 0, samples: [] };
+        const comfyRoot = path.resolve(config.comfyWorkflowsDir);
         const importedComfyNames = new Set();
-        for (const entry of registry.list()) {
-            const internal = registry.resolve(entry.id);
-            const sourcePath = internal?.source?.path;
-            if (sourcePath) importedComfyPaths.add(path.isAbsolute(sourcePath) ? path.resolve(sourcePath) : path.resolve(config.comfyWorkflowsDir, sourcePath));
-            if (internal?.source?.kind === "comfyui" && internal.source.name) importedComfyNames.add(path.basename(String(internal.source.name)));
+        const seenContent = new Map();
+        // 有 source.path 的是自动导入/复制进 registry 的条目；官方条目 source 为空。
+        // 官方条目优先保留，副本按内容去重，只移除 registry 登记，不删用户文件。
+        const isAutoImport = (internal) => Boolean(internal?.source?.path);
+        // 同一份 ComfyUI 工作流被保存成 image-2/image-2-2-2 时只保留一条；
+        // 官方 workflow 优先，自动导入的重复副本只移除 registry 登记，不删用户文件。
+        const existing = registry.list()
+            .map((entry) => ({ entry, internal: registry.resolve(entry.id) }))
+            .filter((item) => item.internal?.workflow);
+        existing.sort((a, b) => Number(isAutoImport(a.internal)) - Number(isAutoImport(b.internal)));
+        let removed = 0;
+        const duplicateIds = [];
+        for (const { entry, internal } of existing) {
+            const key = JSON.stringify(internal.workflow);
+            if (isAutoImport(internal) && seenContent.has(key)) {
+                duplicateIds.push(entry.id);
+                continue;
+            }
+            if (!seenContent.has(key)) seenContent.set(key, entry.id);
+            const sourcePath = internal.source?.path;
+            if (sourcePath) importedComfyPaths.add(path.isAbsolute(sourcePath) ? path.resolve(sourcePath) : path.resolve(comfyRoot, sourcePath));
+            if (internal.source?.kind === "comfyui" && internal.source.name) importedComfyNames.add(path.basename(String(internal.source.name)));
+        }
+        for (const id of duplicateIds) {
+            await registry.remove(id);
+            removed += 1;
         }
         const entries = await fsp.readdir(config.comfyWorkflowsDir);
         let imported = 0;
         let ui = 0;
-        let removed = 0;
         const samples = [];
         for (const name of entries) {
             if (!name.toLowerCase().endsWith(".json")) continue;
@@ -167,13 +188,19 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 }
                 comfyFileCache.set(file, { signature, kind: "api" });
                 if (importedComfyPaths.has(file)) continue;
+                const contentKey = JSON.stringify(workflow);
+                if (seenContent.has(contentKey)) {
+                    importedComfyPaths.add(file);
+                    continue;
+                }
                 try {
-                    await registry.importWorkflow({
+                    const result = await registry.importWorkflow({
                         path: file,
                         name: path.basename(name, ".json"),
                         overwrite: false,
                     });
                     importedComfyPaths.add(file);
+                    seenContent.set(contentKey, result.workflow.id);
                     imported += 1;
                 } catch (error) {
                     logger?.warn?.(`自动导入 ComfyUI 工作流失败 ${name}: ${error.message}`);
@@ -184,13 +211,13 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
             }
         }
         // 之前版本已经把草稿导进 registry 的，这里顺手清掉（只移除登记，不动用户文件）。
-        const comfyRoot = path.resolve(config.comfyWorkflowsDir) + path.sep;
+        const comfyRootPrefix = path.resolve(config.comfyWorkflowsDir) + path.sep;
         for (const entry of registry.list()) {
             const internal = registry.resolve(entry.id);
             const sourcePath = internal?.source?.path || entry.source?.path;
             if (!sourcePath) continue;
             const absolute = path.isAbsolute(sourcePath) ? path.resolve(sourcePath) : path.resolve(config.comfyWorkflowsDir, sourcePath);
-            if (!absolute.startsWith(comfyRoot)) continue;
+            if (!absolute.startsWith(comfyRootPrefix)) continue;
             if (!isSkippedComfyWorkflow(path.basename(absolute))) continue;
             if (await registry.remove(entry.id)) removed += 1;
         }
@@ -208,13 +235,14 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
             const definition = objectInfo?.[spec.classType]?.input?.required?.[spec.input];
             // 旧版 object_info 把选项放在 [0]，新版 COMBO 放在 ["COMBO", { options }]。
             const options = Array.isArray(definition?.[0]) ? definition[0] : Array.isArray(definition?.[1]?.options) ? definition[1].options : null;
-            if (Array.isArray(options)) loaders.set(spec.classType, { ...spec, options: new Set(options) });
+            if (Array.isArray(options)) loaders.set(`${spec.classType}\u0000${spec.input}`, { ...spec, options: new Set(options) });
         }
         return loaders;
     }
 
-    function loaderOptionsFor(classType) {
-        const list = loaderCatalog?.[classType];
+    function loaderOptionsFor(classType, input = "") {
+        const keyed = input ? loaderCatalog?.[`${classType}\u0000${input}`] : null;
+        const list = Array.isArray(keyed) ? keyed : loaderCatalog?.[classType];
         return Array.isArray(list) ? list : [];
     }
 
@@ -223,7 +251,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
     function rebuildAutoAliases() {
         autoAliases.clear();
         for (const spec of currentLoaderSpecs) {
-            const options = loaderOptionsFor(spec.classType);
+            const options = loaderOptionsFor(spec.classType, spec.input);
             if (!options.length) continue;
             const byBase = new Map();
             for (const option of options) {
@@ -237,7 +265,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
             for (const [base, list] of byBase) {
                 if (list.length === 1) map.set(base, list[0]);
             }
-            autoAliases.set(spec.classType, map);
+            autoAliases.set(`${spec.classType}\u0000${spec.input}`, map);
         }
     }
 
@@ -291,16 +319,16 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         return null;
     }
 
-    function findInstalledOption(classType, value) {
+    function findInstalledOption(classType, value, input = "") {
         const normalized = normalizeAliasValue(value).toLowerCase();
-        return loaderOptionsFor(classType).find((item) => isModelOption(item) && normalizeAliasValue(item).toLowerCase() === normalized) || "";
+        return loaderOptionsFor(classType, input).find((item) => isModelOption(item) && normalizeAliasValue(item).toLowerCase() === normalized) || "";
     }
 
-    function aliasTargetExists(classType, value) {
-        if (findInstalledOption(classType, value)) return true;
+    function aliasTargetExists(classType, value, input = "") {
+        if (findInstalledOption(classType, value, input)) return true;
         const normalized = normalizeAliasValue(value);
         if (!normalized || path.isAbsolute(normalized) || normalized.split("/").includes("..")) return false;
-        const spec = currentLoaderSpecs.find((item) => item.classType === classType);
+        const spec = currentLoaderSpecs.find((item) => item.classType === classType && (!input || item.input === input));
         if (!spec || !(spec.dirs || []).length) return false;
         return (spec.dirs || []).some((dir) => modelRootsForDir(dir).some((root) => safeStat(path.join(root, normalized))?.isFile()));
     }
@@ -313,7 +341,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         if (!user) return "";
         // 只有 ComfyUI 当前 loader 列表里真有的文件才算生效；
         // 仅磁盘存在但未加载的文件交给 pendingModelFile 标“待重启”，不能伪造可用。
-        return findInstalledOption(classType, user);
+        return findInstalledOption(classType, user, input);
     }
 
     function modelAliasFor(classType, input, value) {
@@ -324,14 +352,14 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         if (user) return user;
         // 原文件已经在 ComfyUI 列表里时绝不能再自动相似匹配；否则同族不同规格
         // （4B/8B、turbo/raw）会被互相顶替，工作流可能显示可用但运行时必崩。
-        const installed = findInstalledOption(classType, value);
+        const installed = findInstalledOption(classType, value, input);
         if (installed) return installed === value ? "" : installed;
-        const auto = autoAliases.get(classType)?.get(normalizeBaseName(value)) || "";
+        const auto = autoAliases.get(`${classType}\u0000${input}`)?.get(normalizeBaseName(value)) || "";
         if (auto && normalizeAliasValue(auto) !== normalizeAliasValue(value)) return auto;
         // 模型放在更深子目录时，ComfyUI 的选项带路径前缀（a/b/x.safetensors）；
         // 唯一后缀匹配视为同一文件，避免“放深一层就检测不到”。
         const wanted = normalizeAliasValue(value).toLowerCase();
-        const deep = loaderOptionsFor(classType).filter((item) => {
+        const deep = loaderOptionsFor(classType, input).filter((item) => {
             if (!isModelOption(item)) return false;
             const normalized = normalizeAliasValue(item).toLowerCase();
             return normalized !== wanted && normalized.endsWith(`/${wanted}`);
@@ -339,7 +367,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         if (deep.length === 1) return deep[0];
         // 格式相同、名称相似度 ≥50% 的同类模型（不同量化/版本）自动认；
         // 两个候选分数接近时不猜，留给资源卡「自选替换」。
-        const similar = findSimilarModel(value, loaderOptionsFor(classType).filter(isModelOption));
+        const similar = findSimilarModel(value, loaderOptionsFor(classType, input).filter(isModelOption));
         if (similar.file) {
             const key = `${classType}|${value}|${similar.file}`;
             if (!fuzzyAliasLogged.has(key)) {
@@ -351,9 +379,9 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         return "";
     }
 
-    function modelCandidates(classType, value) {
+    function modelCandidates(classType, value, input = "") {
         const base = normalizeBaseName(value);
-        return loaderOptionsFor(classType)
+        return loaderOptionsFor(classType, input)
             .filter((item) => isModelOption(item) && normalizeAliasValue(item) !== normalizeAliasValue(value))
             .sort((a, b) => {
                 const aSame = normalizeBaseName(a) === base ? 0 : 1;
@@ -368,7 +396,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
             const input = String(entry?.input || "");
             const spec = currentLoaderSpecs.find((item) => item.classType === classType && item.input === input);
             // 动态发现的第三方 loader 没有静态目录信息，但只要能枚举出模型文件就允许设别名。
-            if (!spec && !loaderOptionsFor(classType).length) throw new Error("不支持的模型输入");
+            if (!spec && !loaderOptionsFor(classType, input).length) throw new Error("不支持的模型输入");
             const source = String(entry?.from || "").trim();
             if (!source) throw new Error("缺少原模型名");
             const target = String(entry?.to || "").trim();
@@ -377,12 +405,12 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 delete aliases[key];
                 continue;
             }
-            const actual = findInstalledOption(classType, target);
+            const actual = findInstalledOption(classType, target, input);
             if (actual) {
                 aliases[key] = actual;
                 continue;
             }
-            if (aliasTargetExists(classType, target)) {
+            if (aliasTargetExists(classType, target, input)) {
                 aliases[key] = normalizeAliasValue(target);
                 continue;
             }
@@ -553,10 +581,10 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 problems.push({ type: "node", message: `缺少节点 ${classType || "?"}（节点 ${nodeId}）` });
                 continue;
             }
-            const loader = loaders.get(classType);
-            if (!loader) continue;
-            const value = node.inputs?.[loader.input];
-            if (typeof value === "string" && value && !loader.options.has(value)) {
+            const nodeLoaders = [...loaders.values()].filter((item) => item.classType === classType);
+            for (const loader of nodeLoaders) {
+                const value = node.inputs?.[loader.input];
+                if (typeof value !== "string" || !value || loader.options.has(value)) continue;
                 const override = mainModelFile(entry?.id);
                 const overrideLower = normalizeAliasValue(override).toLowerCase();
                 const overrideInstalled = Boolean(override) && [...loader.options].some((option) => normalizeAliasValue(option).toLowerCase() === overrideLower);
@@ -581,7 +609,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                     classType,
                     input: loader.input,
                     value,
-                    candidates: modelCandidates(classType, value),
+                    candidates: modelCandidates(classType, value, loader.input),
                 });
             }
         }
@@ -607,9 +635,19 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 nodeClasses = classes;
                 currentLoaderSpecs = discoverModelLoaderSpecs(objectInfo);
                 const loaders = collectLoaderOptions(objectInfo, currentLoaderSpecs);
-                loaderCatalog = Object.fromEntries([...loaders.entries()].map(([classType, loader]) => [classType, [...loader.options].sort()]));
+                const catalog = {};
+                for (const loader of loaders.values()) {
+                    const sorted = [...loader.options].sort();
+                    catalog[`${loader.classType}\u0000${loader.input}`] = sorted;
+                    const aggregate = catalog[loader.classType] || [];
+                    catalog[loader.classType] = [...new Set([...aggregate, ...sorted])].sort();
+                }
+                loaderCatalog = catalog;
                 rebuildAutoAliases();
-                const loraOptions = loaders.get("LoraLoaderModelOnly")?.options || loaders.get("LoraLoader")?.options || new Set();
+                const loraOptions = new Set([
+                    ...(loaderOptionsFor("LoraLoaderModelOnly", "lora_name") || []),
+                    ...(loaderOptionsFor("LoraLoader", "lora_name") || []),
+                ]);
                 state.loras = [...loraOptions].sort();
                 const gatewayScan = await registry.scan();
                 const comfyScan = await importComfyWorkflows();

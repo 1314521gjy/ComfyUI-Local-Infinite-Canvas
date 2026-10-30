@@ -10,6 +10,9 @@ export const MODEL_LOADER_SPECS = [
     { classType: "LoraLoader", input: "lora_name", key: "loras", dirs: ["loras"] },
     { classType: "LoraLoaderModelOnly", input: "lora_name", key: "lorasModelOnly", dirs: ["loras"] },
     { classType: "ApplyVDNH3Advanced", input: "vdn_checkpoint", key: "vdn", dirs: ["vdn"] },
+    // llama-cpp 的 LLM 权重和视觉投影是两个不同输入，不能共用一个选项列表。
+    { classType: "llama_cpp_model_loader", input: "model", key: "llmModel", dirs: ["LLM"] },
+    { classType: "llama_cpp_model_loader", input: "mmproj", key: "llmMmproj", dirs: ["LLM"] },
 ];
 
 const MODEL_FILE_PATTERN = /\.(safetensors|ckpt|pt|pth|bin|gguf|onnx)$/i;

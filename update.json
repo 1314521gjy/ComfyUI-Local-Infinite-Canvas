@@ -1,16 +1,16 @@
 {
-  "version": "v0.22.5",
+  "version": "v0.22.6",
   "publishedAt": "2026-10-30",
-  "notes": "修复 Krea2 文本编码器被相似匹配链式替换（4B→8B）导致工作流显示可用但运行报错；原文件已存在时精确命中不再替换，并禁止跨规模/家族/turbo-raw 自动互顶。",
+  "notes": "修复 LLM 视觉投影 mmproj 自选替换被误报未安装；ComfyUI 个人工作流自动导入按内容去重，image-json-2-2-2 等重复副本只保留一条。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.22.5.zip",
-    "sha256": "9cfc12a5f36098279b007c645a80ab33b02febfa1cf75bf142311d3a0690e461",
-    "size": 37574067
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.22.6.zip",
+    "sha256": "9d1dd36625b350f387cf0e7323d5461878a458c6a073848b21d01af02ccbf850",
+    "size": 37575123
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

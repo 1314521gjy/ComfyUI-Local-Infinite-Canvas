@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## v0.22.6 - 2026-10-30
+
++ [修复] LLM 视觉投影 `mmproj` 自选替换被误报“未安装或不在 ComfyUI 列表中”：`llama_cpp_model_loader` 的 `model` 和 `mmproj` 现在分别读取各自的 ComfyUI 选项，不再互相覆盖。
+
++ [修复] 个人 ComfyUI 工作流被反复导入成 `image-json`、`image-json-2`、`image-json-2-2-2` 等多个模型：自动导入按工作流内容去重，只保留一条；官方工作流优先。只移除 registry 重复登记，不删除 ComfyUI 文件。
+
 ## v0.22.5 - 2026-10-30
 
 + [修复] Krea2 的文本编码器被相似匹配链式替换：`qwen3vl_4b_fp8` 先被换成 4B bf16、再被换成 8B bf16，工作流显示可用但运行时报 `Krea2 expects conditioning with 12x2560=30720 features`。现在原文件已经在 ComfyUI 列表中时精确命中直接返回，不再做任何相似替换；同时去掉 runner 的重复别名应用。

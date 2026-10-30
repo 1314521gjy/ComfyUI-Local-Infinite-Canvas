@@ -381,3 +381,47 @@ test("an installed model value is never rewritten by similar matching", async ()
     await fsp.rm(dataDir, { recursive: true, force: true });
   }
 });
+
+test("LLM mmproj replacement uses the mmproj option list, not the model list", async () => {
+  const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-llm-mmproj-"));
+  const custom = {
+    id: "prompt-qwen",
+    name: "prompt-qwen",
+    type: "image",
+    workflow: {
+      1: { class_type: "llama_cpp_model_loader", inputs: { model: "Qwen3.5-9B-Q4_K_M.gguf", mmproj: "mmproj-BF16.gguf" } },
+    },
+  };
+  const manager = createSetupManager({
+    config: { dataDir, comfyUrl: "http://127.0.0.1:1", comfyWorkflowsDir: "", maxWorkflowBytes: 1 << 20 },
+    registry: {
+      list: () => [{ id: custom.id }],
+      resolve: () => custom,
+      scan: async () => ({ imported: 0 }),
+      reloadIfChanged: () => {},
+    },
+    comfy: {
+      systemStats: async () => ({}),
+      objectInfo: async () => ({
+        llama_cpp_model_loader: {
+          input: {
+            required: {
+              model: [["Qwen3.5-9B-Q4_K_M.gguf", "other-model.gguf"]],
+              mmproj: [["mmproj-BF16.gguf", "mmproj-27B.gguf"]],
+            },
+          },
+        },
+      }),
+    },
+    logger: null,
+  });
+  try {
+    await manager.scan();
+    await manager.setModelAlias({ classType: "llama_cpp_model_loader", input: "mmproj", from: "mmproj-BF16.gguf", to: "mmproj-27B.gguf" });
+    assert.equal(manager.userModelAliasFor("llama_cpp_model_loader", "mmproj", "mmproj-BF16.gguf"), "mmproj-27B.gguf");
+    assert.equal(manager.modelAliasFor("llama_cpp_model_loader", "mmproj", "mmproj-BF16.gguf"), "mmproj-27B.gguf");
+    assert.equal(manager.modelAliasFor("llama_cpp_model_loader", "model", "Qwen3.5-9B-Q4_K_M.gguf"), "");
+  } finally {
+    await fsp.rm(dataDir, { recursive: true, force: true });
+  }
+});
