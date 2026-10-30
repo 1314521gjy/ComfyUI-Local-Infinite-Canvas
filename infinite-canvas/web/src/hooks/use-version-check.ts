@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { App } from "antd";
 import { useTranslation } from "react-i18next";
 import { APP_VERSION } from "@/constant/env";
-import { requestApplyUpdate, requestUpdateCheck, type ApplyUpdateResult, type UpdateCheckResult } from "@/services/api/update";
+import { requestApplyUpdate, requestUpdateCheck, requestUpdateProgress, type ApplyUpdateResult, type UpdateCheckResult, type UpdateProgress } from "@/services/api/update";
 import { isGatewayDown } from "@/services/api/gateway-status";
 import type { ReleaseInfo } from "@/lib/release";
 
@@ -33,6 +33,7 @@ export function useVersionCheck() {
     const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
     const [applyResult, setApplyResult] = useState<ApplyUpdateResult | null>(null);
     const [applying, setApplying] = useState(false);
+    const [updateProgress, setUpdateProgress] = useState<UpdateProgress | null>(null);
 
     const checkLatest = useCallback(
         async (fetchRemote: boolean, showMessage = false) => {
@@ -76,6 +77,19 @@ export function useVersionCheck() {
 
     const applyUpdate = useCallback(async () => {
         setApplying(true);
+        setUpdateProgress(null);
+        let timer = 0;
+        const poll = async () => {
+            try {
+                setUpdateProgress(await requestUpdateProgress());
+            } catch {
+                // 进度接口短暂失败不阻断更新本身。
+            }
+        };
+        void poll();
+        timer = window.setInterval(() => {
+            void poll();
+        }, 400);
         try {
             const result = await requestApplyUpdate(false);
             setApplyResult(result);
@@ -89,6 +103,8 @@ export function useVersionCheck() {
             if (!isGatewayDown()) message.error(error instanceof Error ? error.message : t("version.applyFailed"));
             throw error;
         } finally {
+            if (timer) window.clearInterval(timer);
+            await poll();
             setApplying(false);
         }
     }, [checkLatest, message, t]);
@@ -109,6 +125,7 @@ export function useVersionCheck() {
         updateInfo,
         applyResult,
         applying,
+        updateProgress,
         applyUpdate,
     };
 }

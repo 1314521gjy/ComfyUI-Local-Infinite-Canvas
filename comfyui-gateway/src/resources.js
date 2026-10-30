@@ -1039,7 +1039,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             matchedFile: match.rel || "",
             matchedBy: match.matchedBy || "",
             similarScore: Number(match.similarScore) || 0,
-            sizeMismatch: match.mismatch || "",
+            sizeMismatch: resource.type === "bake" ? "" : match.mismatch || "",
             actualSize: size,
             installed,
             missingRequires,
@@ -1082,7 +1082,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         const resolved = workflowIds.map((id) => ({ id, entry: registry?.resolve?.(id) })).filter((item) => item.entry);
         const files = [...new Set(resolved.map(({ entry }) => findUnetLoader(entry.workflow)?.file).filter(Boolean))];
         if (!files.length) return null;
-        // 烘焙产物（如 MOSS Balanced）不是可替换的底模，主模型覆盖不能套到它上面
+        // 编译产物不是可替换的底模，主模型覆盖不能套到它上面
         const bakeFiles = new Set((index?.resources || []).filter((item) => item.type === "bake").map((item) => resourceFile(item)).filter(Boolean));
         const overrideIds = resolved.filter(({ entry }) => !bakeFiles.has(findUnetLoader(entry.workflow)?.file || "")).map((item) => item.id);
         const selected = mainModels?.fileForPack?.(pack.id) || "";
@@ -2288,38 +2288,27 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         if (!python) throw new Error("未找到 ComfyUI 的 Python");
         const target = targetPath(resource, root);
         const h3Trt = resource.builder?.kind === "h3-trt-vae";
-        // TRT 编译先写 .part，成功后再改名；避免取消或磁盘写满留下被当成已装的半成品 engine
-        const bakeOutput = h3Trt ? `${target}.part` : target;
+        if (!h3Trt) throw new Error("不支持的本地编译类型");
+        // 先写 .part，成功后再改名；避免取消或磁盘写满留下被当成已装的半成品 engine
+        const bakeOutput = `${target}.part`;
         let args;
         let trtInput = "";
         let trtCompiler = "";
-        if (h3Trt) {
-            const script = path.join(config.rootDir, "scripts", "build-h3-trt-vae.py");
-            if (!isFile(script)) throw new Error("缺少编译脚本 scripts/build-h3-trt-vae.py");
-            const inputResource = resourceById(resource.builder?.input || resource.requires?.[0]);
-            if (!inputResource) throw new Error("TRT 编译缺少 ONNX 输入资源");
-            const input = existingPath(inputResource, root);
-            if (!input) throw new Error("TRT 编译依赖的 ONNX 尚未就绪");
-            const compiler = path.join(root, "custom_nodes", "ComfyUI-H3VAE_TRT", "compile.py");
-            if (!isFile(compiler)) throw new Error("缺少 ComfyUI-H3VAE_TRT/compile.py，请先安装 H3 TRT VAE 节点");
-            trtInput = input;
-            trtCompiler = compiler;
-            args = [script, "--compiler", compiler, "--input", input, "--output", bakeOutput, "--device", String(resource.builder?.device ?? 0)];
-        } else {
-            const script = path.join(config.rootDir, "scripts", "bake-moss-preset.py");
-            if (!isFile(script)) throw new Error("缺少烘焙脚本 scripts/bake-moss-preset.py");
-            const baseResource = resourceById(resource.requires?.[0]);
-            const sftResource = resourceById(resource.requires?.[1]);
-            if (!baseResource || !sftResource) throw new Error("烘焙缺少 Base/SFT 依赖");
-            const basePath = existingPath(baseResource, root);
-            const sftPath = existingPath(sftResource, root);
-            if (!basePath || !sftPath) throw new Error("烘焙依赖的 Base/SFT 尚未就绪");
-            args = [script, "--base", basePath, "--sft", sftPath, "--out", target, "--preset", resource.builder?.preset || "Balanced", "--strength", String(resource.builder?.strength ?? 1)];
-        }
+        const script = path.join(config.rootDir, "scripts", "build-h3-trt-vae.py");
+        if (!isFile(script)) throw new Error("缺少编译脚本 scripts/build-h3-trt-vae.py");
+        const inputResource = resourceById(resource.builder?.input || resource.requires?.[0]);
+        if (!inputResource) throw new Error("TRT 编译缺少 ONNX 输入资源");
+        const input = existingPath(inputResource, root);
+        if (!input) throw new Error("TRT 编译依赖的 ONNX 尚未就绪");
+        const compiler = path.join(root, "custom_nodes", "ComfyUI-H3VAE_TRT", "compile.py");
+        if (!isFile(compiler)) throw new Error("缺少 ComfyUI-H3VAE_TRT/compile.py，请先安装 H3 TRT VAE 节点");
+        trtInput = input;
+        trtCompiler = compiler;
+        args = [script, "--compiler", compiler, "--input", input, "--output", bakeOutput, "--device", String(resource.builder?.device ?? 0)];
         jobItem.status = "baking";
-        jobItem.source = h3Trt ? "本机编译 TRT Engine" : "本地烘焙";
+        jobItem.source = "本机编译 TRT Engine";
         await fsp.mkdir(path.dirname(target), { recursive: true });
-        if (h3Trt) await fsp.rm(bakeOutput, { force: true }).catch(() => {});
+        await fsp.rm(bakeOutput, { force: true }).catch(() => {});
         try {
             await new Promise((resolve, reject) => {
                 const child = spawn(python, args, { cwd: config.rootDir, windowsHide: true });
@@ -2338,10 +2327,10 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                     resolve();
                 });
             });
-            if (h3Trt) await fsp.rename(bakeOutput, target);
+            await fsp.rename(bakeOutput, target);
         } catch (error) {
-            if (h3Trt) await fsp.rm(bakeOutput, { force: true }).catch(() => {});
-            if (h3Trt && !signal?.aborted) {
+            await fsp.rm(bakeOutput, { force: true }).catch(() => {});
+            if (!signal?.aborted) {
                 error.hint = buildTrtCompileHint({ python, compiler: trtCompiler, input: trtInput, output: target, device: resource.builder?.device ?? 0 });
             }
             throw error;

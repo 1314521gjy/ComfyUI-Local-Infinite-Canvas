@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "version": "2026.10.29-28",
+  "version": "2026.10.30-29",
   "channel": "stable",
-  "updatedAt": "2026-10-29",
+  "updatedAt": "2026-10-30",
   "packs": [
     {
       "id": "core",
@@ -17,22 +17,18 @@
     {
       "id": "moss",
       "label": "MOSS-Image",
-      "description": "BF16 与 INT8 两套精度按显卡选择：大显存推荐 BF16（SFT 8/50、Balanced 8/50），小显存推荐 INT8（SFT 8/50）。TE 统一 INT8；按工作流安装，已具备的资源不会重复下载。",
+      "description": "BF16 与 INT8 两套精度按显卡选择：大显存推荐 BF16（SFT 8/50），小显存推荐 INT8（SFT 8/50）。TE 统一 INT8；按工作流安装，已具备的资源不会重复下载。",
       "resources": [
-        "moss_image_base_bf16",
         "moss_image_sft_bf16",
         "moss_image_sft_int8_convrot",
         "qwen3.5_9b_int8_convrot",
         "flux2-vae",
         "moss_image_sft_8steps_lora",
-        "moss_balanced_s100",
         "moss_guanlan_lora"
       ],
       "workflows": [
         "image-moss-sft-8step",
         "image-moss-sft-50step",
-        "image-moss-balanced-8step",
-        "image-moss-balanced-50step",
         "image-moss-sft-int8-8step",
         "image-moss-sft-int8-50step"
       ],
@@ -53,9 +49,7 @@
           "tier": "balanced",
           "workflows": [
             "image-moss-sft-8step",
-            "image-moss-sft-50step",
-            "image-moss-balanced-8step",
-            "image-moss-balanced-50step"
+            "image-moss-sft-50step"
           ],
           "requirements": {
             "vramFloorGb": 8,
@@ -84,13 +78,11 @@
         }
       ],
       "optionalResources": [
-        "moss_image_base_bf16",
         "moss_image_sft_bf16",
         "moss_image_sft_int8_convrot",
         "qwen3.5_9b_int8_convrot",
         "flux2-vae",
         "moss_image_sft_8steps_lora",
-        "moss_balanced_s100",
         "moss_guanlan_lora"
       ],
       "workflowDependencies": {
@@ -102,17 +94,6 @@
         ],
         "image-moss-sft-50step": [
           "moss_image_sft_bf16",
-          "qwen3.5_9b_int8_convrot",
-          "flux2-vae"
-        ],
-        "image-moss-balanced-8step": [
-          "moss_balanced_s100",
-          "qwen3.5_9b_int8_convrot",
-          "flux2-vae",
-          "moss_image_sft_8steps_lora"
-        ],
-        "image-moss-balanced-50step": [
-          "moss_balanced_s100",
           "qwen3.5_9b_int8_convrot",
           "flux2-vae"
         ],
@@ -549,19 +530,6 @@
   ],
   "resources": [
     {
-      "id": "moss_image_base_bf16",
-      "type": "model",
-      "label": "MOSS-Image Base bf16",
-      "target": "diffusion_models/moss_image_base_bf16.safetensors",
-      "size": 10164655808,
-      "sha256": "cacd158728a1fb9e57c408a922b54752ec71fceb566b3821269927964e62b41f",
-      "license": "MOSS-Image",
-      "sources": [
-        "https://www.modelscope.cn/models/Comfy-Org/MOSS-Image/resolve/master/diffusion_models/moss_image_base_bf16.safetensors",
-        "https://hf-mirror.com/Comfy-Org/MOSS-Image/resolve/main/diffusion_models/moss_image_base_bf16.safetensors"
-      ]
-    },
-    {
       "id": "moss_image_sft_bf16",
       "type": "model",
       "label": "MOSS-Image SFT bf16",
@@ -599,22 +567,6 @@
         "https://www.modelscope.cn/models/Comfy-Org/MOSS-Image/resolve/master/vae/flux2-vae.safetensors",
         "https://hf-mirror.com/Comfy-Org/MOSS-Image/resolve/main/vae/flux2-vae.safetensors"
       ]
-    },
-    {
-      "id": "moss_balanced_s100",
-      "type": "bake",
-      "label": "MOSS Balanced 融合模型（本地烘焙）",
-      "target": "diffusion_models/moss_balanced_s100.safetensors",
-      "size": 10164655808,
-      "requires": [
-        "moss_image_base_bf16",
-        "moss_image_sft_bf16"
-      ],
-      "builder": {
-        "preset": "Balanced",
-        "strength": 1
-      },
-      "license": "MOSS-Image"
     },
     {
       "id": "qwen_image_2.1_turbo_int8_convrot",

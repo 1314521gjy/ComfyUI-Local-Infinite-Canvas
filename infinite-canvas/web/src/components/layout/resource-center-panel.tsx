@@ -82,6 +82,7 @@ const copyByLocale = {
         replacedBy: "已替换为",
         workflowReady: "可用",
         workflowRestart: "待重启",
+        workflowNode: "缺节点",
         workflowMismatch: "模型名未匹配",
         workflowRuntime: "缺运行库",
         workflowOffline: "未连接",
@@ -121,7 +122,7 @@ const copyByLocale = {
         copyHint: "复制给 AI Agent",
         hintCopied: "已复制，直接发给你的 AI Agent",
         guideTitle: "添加工作流引导",
-        guideBody: "先看扫描结果，缺什么勾选后安装。下载/安装成功不需要 Agent；只有下载失败、VDN 缺 Stage-B、TRT 编译或 MOSS 烘焙失败时，才看页面底部的「下载/编译失败？」。",
+        guideBody: "先看扫描结果，缺什么勾选后安装。下载/安装成功不需要 Agent；只有下载失败、VDN 缺 Stage-B 或 TRT 编译失败时，才看页面底部的「下载/编译失败？」。",
         guideAgent: "交给本机 Agent",
         guideAgentCopy: "复制给本机 Agent",
         guideCopyFallback: "复制失败，请手动全选复制下面指令发给本机 Agent。",
@@ -131,7 +132,7 @@ const copyByLocale = {
         helpMissing: "缺少资源：看「缺少 N / 下载体积」，勾选缺失包后点「安装选中」；可选内容在包内展开勾选。安装后出现「待重启」就重启 ComfyUI。",
         sizeMismatchHint: "处理：点右侧「自选替换」选本机文件，或重新下载资源包版本。",
         guideFailureTitle: "下载 / 编译失败？",
-        guideFailureBody: "先完成上面的下载/安装。只有下载失败、VDN 缺 Stage-B、TRT 编译或 MOSS 烘焙失败时，才复制修复指令给本机 Agent；成功下载不需要。",
+        guideFailureBody: "先完成上面的下载/安装。只有下载失败、VDN 缺 Stage-B 或 TRT 编译失败时，才复制修复指令给本机 Agent；成功下载不需要。",
         notReachable: "ComfyUI 未连接：模型文件仍按已识别的目录扫描；工作流可用性和自定义节点需 ComfyUI 在线后才能确认。",
         indexError: "资源索引读取失败：",
         indexWarning: "资源索引提示：",
@@ -212,6 +213,7 @@ const copyByLocale = {
         replacedBy: "Replaced with",
         workflowReady: "Ready",
         workflowRestart: "Restart needed",
+        workflowNode: "Missing nodes",
         workflowMismatch: "Model name not matched",
         workflowRuntime: "Missing runtime",
         workflowOffline: "Offline",
@@ -251,7 +253,7 @@ const copyByLocale = {
         copyHint: "Copy for your AI agent",
         hintCopied: "Copied — paste it to your AI agent",
         guideTitle: "Adding workflows",
-        guideBody: "Check the scan results, select what is missing and install. A successful download does not need the agent. Only if download, VDN Stage-B, TensorRT compile or MOSS bake fails, look at Download / compile failed? at the bottom.",
+        guideBody: "Check the scan results, select what is missing and install. A successful download does not need the agent. Only if download, VDN Stage-B or TensorRT compile fails, look at Download / compile failed? at the bottom.",
         guideAgent: "Hand to local agent",
         guideAgentCopy: "Copy for local agent",
         guideCopyFallback: "Copy failed. Select and copy the instructions below for your local agent.",
@@ -261,7 +263,7 @@ const copyByLocale = {
         helpMissing: "Missing resources: check Missing / download size, select the missing pack and click Install selected; optional items are inside the pack. Restart ComfyUI if Restart needed appears.",
         sizeMismatchHint: "Fix: use Choose replacement on the right, or re-download the resource-pack version.",
         guideFailureTitle: "Download / compile failed?",
-        guideFailureBody: "Complete the download/install above first. Only if download, VDN Stage-B, TensorRT compile or MOSS bake fails, copy the repair instructions to your local agent; a successful download does not need this.",
+        guideFailureBody: "Complete the download/install above first. Only if download, VDN Stage-B or TensorRT compile fails, copy the repair instructions to your local agent; a successful download does not need this.",
         notReachable: "ComfyUI is offline: model files are still scanned from detected folders; workflow availability and custom nodes need ComfyUI online.",
         indexError: "Failed to load the resource index: ",
         indexWarning: "Resource index notice: ",
@@ -658,11 +660,10 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
 
     const agentPromptForResource = (detail = "") =>
         [
-            "请在这台 Windows 机器上帮我处理无界工作台的 ComfyUI 资源安装 / 编译 / 烘焙问题。",
+            "请在这台 Windows 机器上帮我处理无界工作台的 ComfyUI 资源安装 / 编译问题。",
             `ComfyUI 目录：${status?.comfyRoot || "未知"}；资源索引：${status?.indexVersion || "未知"}`,
             "如果是 H3 VDN：检查 models/vdn/stage-dmd-step-250 下的 linear_branch/model.safetensors、adapters/default/adapter_model.safetensors、adapters/default/adapter_config.json、adapters/turbo、model_spec.json、metadata.json 是否齐全；缺什么补什么，保留内部目录结构，完成后重启 ComfyUI。",
             "如果是 H3 TensorRT VAE engine：确认本机 tensorrt 与 CUDA/驱动匹配，再运行 comfyui-gateway/scripts/build-h3-trt-vae.py（使用资源提示里的完整命令）；失败请把完整报错贴给我。",
-            "如果是 MOSS Balanced 本地烘焙：运行 comfyui-gateway/scripts/bake-moss-preset.py，确认 Base/SFT 输入和输出路径。",
             "不要升级或替换 torch、CUDA、ComfyUI 本体；不要动其他模型；完成后列出改动文件、命令和验证结果。",
             detail ? `当前错误/提示：\n${detail}` : "",
         ].filter(Boolean).join("\n");
@@ -1137,7 +1138,9 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                                 {workflowDependencies.map((workflow, index) => {
                                                     const workflowExpanded = expandedWorkflows.has(workflow.id);
                                                     const problemTypes = new Set((workflow.problems || []).map((problem) => problem.type));
-                                                    const restartOnly = problemTypes.size > 0 && [...problemTypes].every((type) => type === "node" || type === "restart");
+                                                    const problemText = workflow.problems.map((problem) => problem.message).filter(Boolean).join("；");
+                                                    const nodeMissing = problemTypes.has("node");
+                                                    const restartOnly = problemTypes.size > 0 && [...problemTypes].every((type) => type === "restart");
                                                     const runtimeMissing = problemTypes.has("runtime");
                                                     const offline = problemTypes.has("offline");
                                                     const workflowMuted = workflow.enabled === false;
@@ -1147,16 +1150,17 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                                             ? <Tag color="green">{copy.workflowReady}</Tag>
                                                             : offline
                                                                 ? <Tag color="red">{copy.workflowOffline}</Tag>
-                                                                : restartOnly
-                                                                    ? <Tag color="gold">{copy.workflowRestart}</Tag>
-                                                                    : runtimeMissing
-                                                                        ? <Tag color="red">{copy.workflowRuntime}</Tag>
-                                                                        : workflowMuted
-                                                                            ? <Tag title={copy.workflowMutedHint}>{copy.workflowDisabled}</Tag>
-                                                                            : workflow.problems?.length
-                                                                                ? <Tag color="gold">{copy.workflowMismatch}</Tag>
-                                                                                : <Tag title={copy.workflowUnscannedHint}>{copy.workflowUnscanned}</Tag>;
-                                                    const problemText = workflow.problems.map((problem) => problem.message).filter(Boolean).join("；");
+                                                                : workflowMuted
+                                                                    ? <Tag title={copy.workflowMutedHint}>{copy.workflowDisabled}</Tag>
+                                                                    : nodeMissing
+                                                                        ? <Tag color="red" title={problemText}>{copy.workflowNode}</Tag>
+                                                                        : restartOnly
+                                                                            ? <Tag color="gold" title={problemText}>{copy.workflowRestart}</Tag>
+                                                                            : runtimeMissing
+                                                                                ? <Tag color="red" title={problemText}>{copy.workflowRuntime}</Tag>
+                                                                                : workflow.problems?.length
+                                                                                    ? <Tag color="gold" title={problemText}>{copy.workflowMismatch}</Tag>
+                                                                                    : <Tag title={copy.workflowUnscannedHint}>{copy.workflowUnscanned}</Tag>;
                                                     return (
                                                         <div
                                                             key={workflow.id}
@@ -1176,6 +1180,9 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                                                         {workflowTag}
                                                                     </div>
                                                                     <div className={`truncate text-[10px] ${workflow.enabled === false ? "text-stone-400 dark:text-stone-500" : "text-emerald-700/70 dark:text-emerald-300/60"}`}>{workflow.id}</div>
+                                                                    {!workflow.available && problemText ? (
+                                                                        <div className="mt-0.5 truncate text-[10px] leading-4 text-amber-600 dark:text-amber-400" title={problemText}>{problemText}</div>
+                                                                    ) : null}
                                                                     {Object.values(workflow.variantLabels || {}).length ? (
                                                                         <div className="mt-0.5 truncate text-[10px] text-stone-400 dark:text-stone-500">{Object.values(workflow.variantLabels || {}).join(" · ")}</div>
                                                                     ) : null}

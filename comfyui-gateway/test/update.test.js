@@ -6,7 +6,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { test } from "node:test";
 
-import { applyUpdate, checkForUpdate, compareVersions } from "../src/update.js";
+import { applyUpdate, checkForUpdate, compareVersions, getUpdateProgress } from "../src/update.js";
 
 function git(cwd, ...args) {
   return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
@@ -128,6 +128,9 @@ test("archive install applies a verified code patch and preserves local data", a
     assert.equal(fs.existsSync(path.join(root, ".update-backup", "v0.20.1", "comfyui-gateway", "src", "old.js")), true);
     assert.equal(JSON.parse(fs.readFileSync(path.join(root, "update.json"), "utf8")).version, "v0.20.1");
     assert.equal(result.launcherChanged, false);
+    const progress = getUpdateProgress();
+    assert.equal(progress.phase, "done");
+    assert.equal(progress.percent, 100);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(root, { recursive: true, force: true });

@@ -68,8 +68,8 @@ export function loadConfig(overrides = {}) {
     updateManifestUrlBackup: String(overrides.updateManifestUrlBackup ?? process.env.UPDATE_MANIFEST_URL_BACKUP ?? "https://raw.githubusercontent.com/1314521gjy/ComfyUI-Local-Infinite-Canvas/main/update.json").trim(),
     updateRemote: String(overrides.updateRemote ?? process.env.UPDATE_REMOTE ?? "origin").trim(),
     updateBranch: String(overrides.updateBranch ?? process.env.UPDATE_BRANCH ?? "main").trim(),
-    updateFetchTimeoutMs: num(overrides.updateFetchTimeoutMs ?? process.env.UPDATE_FETCH_TIMEOUT_MS, 15000),
-    updateApplyTimeoutMs: num(overrides.updateApplyTimeoutMs ?? process.env.UPDATE_APPLY_TIMEOUT_MS, 120000),
+    updateFetchTimeoutMs: num(overrides.updateFetchTimeoutMs ?? process.env.UPDATE_FETCH_TIMEOUT_MS, 30000),
+    updateApplyTimeoutMs: num(overrides.updateApplyTimeoutMs ?? process.env.UPDATE_APPLY_TIMEOUT_MS, 600000),
     resourcesIndexUrl: String(
         overrides.resourcesIndexUrl ??
             process.env.RESOURCES_INDEX_URL ??

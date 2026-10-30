@@ -1,16 +1,16 @@
 {
-  "version": "v0.22.3",
+  "version": "v0.22.4",
   "publishedAt": "2026-10-30",
-  "notes": "新增新手引导（圈选设置→资源→选模型→首图）；资源中心增加扫描/识别/缺资源 FAQ 和失败转本机 Agent；修复超分工作流误判、放大模型下拉混入非放大模型、Krea2/Z-Image 底模重复、扫描后状态不刷新；相似匹配与自选替换并存，工作流资源卡齐全即激活。",
+  "notes": "应用内更新新增下载进度条和速度显示，并加固补丁解压与慢网超时；修复 H3 工作流误显示「待重启」、TRT 编译引擎误报体积不一致；移除 MOSS Balanced 工作流和本地烘焙，已下载文件不受影响。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.22.3.zip",
-    "sha256": "5a09cbe7bb16a6310baa864b7fe898a670932f3ad6b6bf6eadf1835bbd4debf6",
-    "size": 37575084
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.22.4.zip",
+    "sha256": "552804443a777d7f445695bf08d5203fe7caf3cc134e05010a090dec719873a4",
+    "size": 37572857
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

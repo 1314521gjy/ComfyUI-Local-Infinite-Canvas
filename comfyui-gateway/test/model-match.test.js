@@ -27,7 +27,7 @@ test("different components or qualifiers never match", () => {
 });
 
 test("findSimilarModel prefers the highest score and refuses ambiguous ties", () => {
-    const best = findSimilarModel("moss_image_sft_bf16.safetensors", ["moss_image_sft_int8.safetensors", "moss_balanced_8step.safetensors", "qwen_3_4b.safetensors"]);
+    const best = findSimilarModel("moss_image_sft_bf16.safetensors", ["moss_image_sft_int8.safetensors", "moss_alt_8step.safetensors", "qwen_3_4b.safetensors"]);
     assert.equal(best.file, "moss_image_sft_int8.safetensors");
     const ambiguous = findSimilarModel("moss_image_sft_bf16.safetensors", ["moss_image_sft_x.safetensors", "moss_image_sft_y.safetensors"]);
     assert.equal(ambiguous.file, "");

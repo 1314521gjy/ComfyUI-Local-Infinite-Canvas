@@ -563,7 +563,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 if (pending) {
                     problems.push({
                         type: "restart",
-                        message: `模型已在本机（${pending.file}），但 ComfyUI 尚未加载；重启 ComfyUI 后生效`,
+                        message: `模型已在本机（${pending.file}），但 ComfyUI 尚未加载；重启 ComfyUI 后生效。若重启后仍提示，请检查文件是否在 ComfyUI 模型目录、格式是否受支持，或点「自选替换」`,
                         classType,
                         input: loader.input,
                         value,

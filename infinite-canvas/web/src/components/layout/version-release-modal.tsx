@@ -1,12 +1,18 @@
 import type { CSSProperties } from "react";
 import { useEffect } from "react";
 import { GithubOutlined } from "@ant-design/icons";
-import { App, Button, Modal, Tag, Timeline } from "antd";
+import { App, Button, Modal, Progress, Tag, Timeline } from "antd";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { useVersionCheck } from "@/hooks/use-version-check";
 import { LOCAL_ONLY } from "@/constant/app-mode";
 import { APP_VERSION, GITHUB_REPO_URL } from "@/constant/env";
+import { formatBytes } from "@/lib/image-utils";
+
+function formatSpeed(bytesPerSecond: number) {
+    const value = Math.max(0, Number(bytesPerSecond) || 0);
+    return value > 0 ? `${formatBytes(value)}/s` : "";
+}
 
 function getTagColor(type: string) {
     if (type === "新增" || type === "Added") return "green";
@@ -29,7 +35,7 @@ type VersionReleaseModalProps = {
 export function VersionReleaseModal({ className, style }: VersionReleaseModalProps) {
     const { t } = useTranslation();
     const { modal } = App.useApp();
-    const { open, setOpen, openReleaseModal, latestVersion, releases, checking, hasNewVersion, pageStale, checkLatestRelease, updateInfo, applyResult, applying, applyUpdate } =
+    const { open, setOpen, openReleaseModal, latestVersion, releases, checking, hasNewVersion, pageStale, checkLatestRelease, updateInfo, applyResult, applying, updateProgress, applyUpdate } =
         useVersionCheck();
 
     useEffect(() => {
@@ -44,11 +50,17 @@ export function VersionReleaseModal({ className, style }: VersionReleaseModalPro
             content: t("version.applyConfirmContent"),
             okText: t("version.apply"),
             cancelText: t("common.cancel"),
-            onOk: async () => {
-                await applyUpdate().catch(() => undefined);
+            onOk: () => {
+                void applyUpdate().catch(() => undefined);
             },
         });
     };
+
+    const progress = updateProgress;
+    const progressVisible = Boolean(applying || (progress && !["idle", "done"].includes(progress.phase)));
+    const progressPhase = progress?.phase || (applying ? "checking" : "idle");
+    const progressPercent = Math.max(0, Math.min(100, Number(progress?.percent) || 0));
+    const progressLabel = t(`version.updatePhases.${progressPhase}`, { defaultValue: progress?.message || t("version.applying") });
 
     return (
         <>
@@ -121,6 +133,22 @@ export function VersionReleaseModal({ className, style }: VersionReleaseModalPro
                         {updateInfo.notes ? <div className="mt-2 text-xs leading-5 text-stone-600 dark:text-stone-300">{updateInfo.notes}</div> : null}
                         {!updateInfo.canApply && updateInfo.applyReason ? <div className="mt-2 text-xs leading-5 text-stone-500 dark:text-stone-400">{updateInfo.applyReason}</div> : null}
                         {updateInfo.warnings?.length ? <div className="mt-1 text-[11px] leading-5 text-stone-400 dark:text-stone-500">{updateInfo.warnings.join("；")}</div> : null}
+                    </div>
+                ) : null}
+                {progressVisible ? (
+                    <div className="mb-4 rounded-lg border border-stone-200 bg-stone-50/60 p-3 dark:border-stone-800 dark:bg-white/[.02]">
+                        <div className="mb-1 flex items-center justify-between gap-2 text-xs text-stone-600 dark:text-stone-300">
+                            <span>{progressLabel}</span>
+                            {progress?.speed ? <span className="shrink-0 text-stone-400 dark:text-stone-500">{formatSpeed(progress.speed)}</span> : null}
+                        </div>
+                        <Progress percent={progressPercent} size="small" showInfo={false} status={progressPhase === "error" ? "exception" : "active"} />
+                        <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-stone-400 dark:text-stone-500">
+                            <span>
+                                {progress?.downloaded && progress?.total ? `${formatBytes(progress.downloaded)} / ${formatBytes(progress.total)}` : progress?.message || ""}
+                            </span>
+                            <span>{progressPercent}%</span>
+                        </div>
+                        {progressPhase === "error" && progress?.message ? <div className="mt-1 text-[11px] leading-5 text-red-600 dark:text-red-400">{progress.message}</div> : null}
                     </div>
                 ) : null}
                 {applyResult?.ok ? (

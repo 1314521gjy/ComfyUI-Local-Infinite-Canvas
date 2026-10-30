@@ -689,7 +689,49 @@ test("krea2 pack matches the zimage shape with no bundled LoRAs", () => {
     assert.ok(!pack.workflowDependencies["image-krea2-turbo"].includes("krea2_turbo_int8_convrot"));
     assert.equal(index.resources.some((item) => item.id === "krea2_darkbrush_lora"), false);
     assert.equal(index.resources.some((item) => item.id === "krea2_retroanime_lora"), false);
-    assert.equal(index.resources.length, 72);
+    assert.equal(index.resources.length, 70);
+});
+
+test("moss pack no longer ships Balanced workflows or the local bake resource", () => {
+    const index = JSON.parse(fs.readFileSync(new URL("../resources/index.json", import.meta.url), "utf8"));
+    const pack = index.packs.find((item) => item.id === "moss");
+    assert.ok(pack, "moss pack is missing");
+    assert.equal(pack.workflows.includes("image-moss-balanced-8step"), false);
+    assert.equal(pack.workflows.includes("image-moss-balanced-50step"), false);
+    assert.equal(pack.workflowDependencies["image-moss-balanced-8step"], undefined);
+    assert.equal(index.resources.some((item) => item.id === "moss_balanced_s100"), false);
+    assert.equal(index.resources.some((item) => item.id === "moss_image_base_bf16"), false);
+});
+
+test("compiled bake outputs do not report a same-name size mismatch", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-bake-size-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(path.join(comfy, "models", "diffusion_models"), { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    await fsp.writeFile(path.join(comfy, "models", "diffusion_models", "engine.safetensors"), "12345");
+    const index = {
+        schema: 1,
+        version: "bake-size-test",
+        packs: [{ id: "test", resources: ["engine"] }],
+        resources: [{ id: "engine", type: "bake", label: "Engine", target: "diffusion_models/engine.safetensors", size: 999 }],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: { loaderOptions: () => ({}), status: () => ({ comfyReachable: true }), scan: async () => ({}) },
+        logger: null,
+    });
+    try {
+        await manager.init();
+        const item = manager.status().resources[0];
+        assert.equal(item.status, "present");
+        assert.equal(item.sizeMismatch, "");
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
 });
 
 test("upscale pack ships the node with the app and downloads ESRGAN/SeedVR2 weights per workflow", () => {

@@ -23,6 +23,16 @@ export type UpdateCheckResult = {
     error?: string;
 };
 
+export type UpdateProgress = {
+    phase: string;
+    percent: number;
+    downloaded: number;
+    total: number;
+    speed: number;
+    message: string;
+    updatedAt?: number;
+};
+
 export type ApplyUpdateResult = {
     ok: boolean;
     dryRun?: boolean;
@@ -56,6 +66,15 @@ export async function requestUpdateCheck(fetchRemote = false): Promise<UpdateChe
     const data = await readJson(response);
     if (!response.ok) throw new Error(errorMessage(data, `检查更新失败（HTTP ${response.status}）`));
     return data as UpdateCheckResult;
+}
+
+export async function requestUpdateProgress(): Promise<UpdateProgress> {
+    const response = await gatewayFetch(`${gatewayRoot}/api/update/progress`, {
+        headers: { Accept: "application/json" },
+    });
+    const data = await readJson(response);
+    if (!response.ok) throw new Error(errorMessage(data, `读取更新进度失败（HTTP ${response.status}）`));
+    return data.progress as UpdateProgress;
 }
 
 export async function requestApplyUpdate(dryRun = false): Promise<ApplyUpdateResult> {

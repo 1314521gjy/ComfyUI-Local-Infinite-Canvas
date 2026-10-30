@@ -68,10 +68,10 @@ flowchart LR
 
 ## 6. 工作流与模型
 
-- **注册表 22 条**（实测）：H3 7（`ref2va/t2v/frames` × VDN/无VDN + `character-swap`）、MOSS 6（SFT 8/50、Balanced 8/50、INT8 SFT 8/50）、千问 2.1 4（t2i / edit / inpaint / outpaint，`angle` 隐藏）、Krea2 2（`aesthetics` 隐藏、保留作质量二采）、Z-Image 1、超分 4。
+- **注册表 20 条**（实测）：H3 7（`ref2va/t2v/frames` × VDN/无VDN + `character-swap`）、MOSS 4（SFT 8/50、INT8 SFT 8/50；Balanced 已移除）、千问 2.1 2（t2i / edit / inpaint / outpaint 走 variants，`angle` 隐藏）、Krea2 2（`aesthetics` 隐藏、保留作质量二采）、Z-Image 1、超分 4。
 - 工作流是 ComfyUI **API 格式** JSON；`registry.json` 存绑定、参数预设、`baseModels`、可见性默认值；FLUX.2 Klein 在 `workflows/_archive`，未注册。
 - `model-paths.js` 统一 10 类模型目录（`MODEL_DIRS`/`MODEL_DIR_KEYS`，含 `upscale_models`、`SEEDVR2`、`vae_approx`、`vdn`）；v0.21.18 起可经 ComfyUI `/internal/folder_paths` 反推安装根，并按 `extra_model_paths` 匹配已装模型。
-- 模型权重不进仓库；轮换与烘焙脚本在 `comfyui-gateway/scripts/`（如 `bake-moss-preset.py`）。
+- 模型权重不进仓库；轮换与 TRT 编译脚本在 `comfyui-gateway/scripts/`（如 `build-h3-trt-vae.py`）。
 
 ## 7. 资源安装
 
