@@ -8,9 +8,9 @@
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.22.10.zip",
-    "sha256": "2680eb397fbfecef7a2b7c29bae5be869bd1e9c91884482d6999e08162fdf153",
-    "size": 29489796
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.22.11.zip",
+    "sha256": "ffb91f3fba94b3b101dc1a1ec088ce67cec3c2784cd0b1312abe3e2f31ea5edb",
+    "size": 29490430
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
