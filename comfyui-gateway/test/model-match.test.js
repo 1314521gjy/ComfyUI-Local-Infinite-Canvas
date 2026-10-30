@@ -33,3 +33,10 @@ test("findSimilarModel prefers the highest score and refuses ambiguous ties", ()
     assert.equal(ambiguous.file, "");
     assert.equal(ambiguous.ambiguous, true);
 });
+
+test("does not cross model sizes or turbo/raw variants", () => {
+    assert.equal(findSimilarModel("qwen3vl_4b_fp8_scaled.safetensors", ["qwen3vl_8b_bf16.safetensors"]).file, "");
+    assert.equal(findSimilarModel("krea2_turbo_fp8_scaled.safetensors", ["krea2_raw_fp8_scaled.safetensors"]).file, "");
+    assert.equal(findSimilarModel("qwen3vl_4b_fp8_scaled.safetensors", ["qwen3vl_4b_bf16.safetensors"]).file, "qwen3vl_4b_bf16.safetensors");
+    assert.equal(findSimilarModel("qwen_image_2.1_turbo_int8_convrot.safetensors", ["z_image_turbo_int8_convrot.safetensors"]).file, "");
+});

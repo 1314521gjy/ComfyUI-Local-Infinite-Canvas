@@ -1,16 +1,16 @@
 {
-  "version": "v0.22.4",
+  "version": "v0.22.5",
   "publishedAt": "2026-10-30",
-  "notes": "应用内更新新增下载进度条和速度显示，并加固补丁解压与慢网超时；修复 H3 工作流误显示「待重启」、TRT 编译引擎误报体积不一致；移除 MOSS Balanced 工作流和本地烘焙，已下载文件不受影响。",
+  "notes": "修复 Krea2 文本编码器被相似匹配链式替换（4B→8B）导致工作流显示可用但运行报错；原文件已存在时精确命中不再替换，并禁止跨规模/家族/turbo-raw 自动互顶。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.22.4.zip",
-    "sha256": "552804443a777d7f445695bf08d5203fe7caf3cc134e05010a090dec719873a4",
-    "size": 37572857
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.22.5.zip",
+    "sha256": "9cfc12a5f36098279b007c645a80ab33b02febfa1cf75bf142311d3a0690e461",
+    "size": 37574067
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

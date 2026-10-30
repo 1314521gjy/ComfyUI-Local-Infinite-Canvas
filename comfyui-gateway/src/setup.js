@@ -322,6 +322,10 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         // 否则资源卡显示“已替换”，实际出图却仍走相似模型。
         const user = userModelAliasFor(classType, input, value);
         if (user) return user;
+        // 原文件已经在 ComfyUI 列表里时绝不能再自动相似匹配；否则同族不同规格
+        // （4B/8B、turbo/raw）会被互相顶替，工作流可能显示可用但运行时必崩。
+        const installed = findInstalledOption(classType, value);
+        if (installed) return installed === value ? "" : installed;
         const auto = autoAliases.get(classType)?.get(normalizeBaseName(value)) || "";
         if (auto && normalizeAliasValue(auto) !== normalizeAliasValue(value)) return auto;
         // 模型放在更深子目录时，ComfyUI 的选项带路径前缀（a/b/x.safetensors）；

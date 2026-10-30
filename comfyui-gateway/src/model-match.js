@@ -97,6 +97,24 @@ function qualifiers(tokens) {
     return tokens.filter((token) => QUALIFIER_TOKENS.has(token));
 }
 
+function sizeTokens(tokens) {
+    return tokens.filter((token) => /^\d+(?:\.\d+)?b$/i.test(token));
+}
+
+function hasToken(tokens, name) {
+    return tokens.includes(name);
+}
+
+function familyRoots(tokens, compact) {
+    const roots = new Set();
+    for (const family of FAMILY_TOKENS) {
+        if (tokens.some((token) => token === family || token.startsWith(family)) || compact.includes(family)) {
+            roots.add(family.replace(/\d+$/, ""));
+        }
+    }
+    return [...roots];
+}
+
 function sameSet(a, b) {
     const left = new Set(a);
     const right = new Set(b);
@@ -113,6 +131,19 @@ export function modelNameSimilarity(required, candidate) {
     // 角色和语义限定词必须一致：VAE/CLIP/TE/LoRA 不能互顶，audio/video/vision/image 不能互顶。
     if (!sameSet(roles(left.tokens), roles(right.tokens))) return { ok: false, score: 0, reason: "role" };
     if (!sameSet(qualifiers(left.tokens), qualifiers(right.tokens))) return { ok: false, score: 0, reason: "qualifier" };
+    // 规模不能跨规格顶替：4B/8B、9B/27B 不是同一模型。只有两边都带规模时才硬拦，
+    // 兼容没有写参数量的文件名。
+    const sizes = [sizeTokens(left.tokens), sizeTokens(right.tokens)];
+    if (sizes[0].length && sizes[1].length && !sameSet(sizes[0], sizes[1])) return { ok: false, score: 0, reason: "size" };
+    // turbo / raw 是不同训练规格，不能自动互顶；量化差异（fp8/bf16/int8）仍允许相似匹配。
+    if (hasToken(left.tokens, "turbo") !== hasToken(right.tokens, "turbo")) return { ok: false, score: 0, reason: "variant" };
+    if (hasToken(left.tokens, "raw") !== hasToken(right.tokens, "raw")) return { ok: false, score: 0, reason: "variant" };
+    // 不同模型家族不能互顶（Qwen / Z-Image / Krea2 / MOSS 等）。
+    const leftRoots = familyRoots(left.tokens, left.compact);
+    const rightRoots = familyRoots(right.tokens, right.compact);
+    if (leftRoots.length && rightRoots.length && !leftRoots.some((root) => rightRoots.includes(root))) {
+        return { ok: false, score: 0, reason: "family" };
+    }
     const dice = diceCoefficient(left.compact, right.compact);
     const jac = jaccard(left.tokens, right.tokens);
     let score = 0.65 * dice + 0.35 * jac;

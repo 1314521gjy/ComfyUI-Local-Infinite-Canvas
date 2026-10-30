@@ -120,9 +120,8 @@ export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 *
   if (signal?.aborted) throw new GenerationError("生成已取消", { status: 400, code: "cancelled" });
   const resolved = resolveForMode(entry, context.mode);
   const params = resolved.baseModelParams ? { ...resolved.baseModelParams, ...(context.params || {}) } : context.params;
-  const aliasedWorkflow = applyModelAliases(resolved.workflow, modelAliasFor, loaderSpecs);
   const stats = {};
-  const bound = applyMainModelFile(applyBindings(aliasedWorkflow, resolved, { ...context, params }, { logger, stats }), resolved.mainModelFile);
+  const bound = applyMainModelFile(applyBindings(resolved.workflow, resolved, { ...context, params }, { logger, stats }), resolved.mainModelFile);
   const loraResult = applyLoraChain(bound, params, {
     available: loraCatalog,
     filter: resolved.lora?.filter,
