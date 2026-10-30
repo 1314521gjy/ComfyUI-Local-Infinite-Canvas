@@ -869,14 +869,14 @@ function createCanvasServer(cfg) {
 
       // 运行时配置由服务端直接生成：npm run build 清空 dist 后也不会丢网关地址。
       if (pathname === "/config.js") {
-        let origin = cfg.gatewayUrl;
+        let origin = cfg.gatewayPublicUrl || cfg.gatewayUrl;
         try {
-          origin = new URL(cfg.gatewayUrl).origin;
+          origin = new URL(origin).origin;
         } catch {
           /* 保持原样 */
         }
         const runtime = {
-          LOCAL_GATEWAY_HOST: "127.0.0.1",
+          LOCAL_GATEWAY_HOST: cfg.gatewayPublicHost || "127.0.0.1",
           LOCAL_GATEWAY_PORT: String(cfg.gatewayPort),
           LOCAL_GATEWAY_URL: `${origin}/v1`,
         };
