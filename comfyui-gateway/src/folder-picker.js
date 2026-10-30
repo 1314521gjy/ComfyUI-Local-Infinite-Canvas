@@ -46,13 +46,17 @@ export function pickFolder({ title = "选择文件夹", initial = "", timeoutMs 
     initialDir ? `$d.SelectedPath = ${psQuote(initialDir)}` : "",
     "$r = $d.ShowDialog($owner)",
     "$owner.Close()",
-    "if ($r -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($d.SelectedPath) }",
+    // 控制台输出按系统代码页走，中文路径会被读成乱码；用 UTF-8 Base64 回传。
+    "if ($r -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write([Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($d.SelectedPath))) }",
   ]
     .filter(Boolean)
     .join("\n");
 
+  // -EncodedCommand 用 UTF-16LE，避免含中文的初始路径在命令行解析时损坏。
+  const encodedScript = Buffer.from(script, "utf16le").toString("base64");
+
   return new Promise((resolve, reject) => {
-    const child = spawn(powershellPath(), ["-NoProfile", "-STA", "-WindowStyle", "Hidden", "-Command", script], {
+    const child = spawn(powershellPath(), ["-NoProfile", "-STA", "-WindowStyle", "Hidden", "-EncodedCommand", encodedScript], {
       windowsHide: true,
     });
     let stdout = "";
@@ -85,7 +89,8 @@ export function pickFolder({ title = "选择文件夹", initial = "", timeoutMs 
         finish(reject, new Error(message || `选择目录失败（退出码 ${code}）`));
         return;
       }
-      const selected = String(stdout || "").trim();
+      const encodedPath = String(stdout || "").trim();
+      const selected = encodedPath ? Buffer.from(encodedPath, "base64").toString("utf8").trim() : "";
       finish(resolve, selected ? { canceled: false, path: selected } : { canceled: true, path: "" });
     });
   });

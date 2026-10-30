@@ -175,7 +175,8 @@ function pythonFromRunningComfy(config) {
         `$conn = Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1`,
         "if ($conn) {",
         "  $proc = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $conn.OwningProcess)",
-        "  if ($proc) { $proc.ExecutablePath }",
+        // 控制台按系统代码页输出，中文路径会被读成乱码；用 UTF-8 Base64 回传。
+        "  if ($proc) { [Console]::Out.Write([Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($proc.ExecutablePath))) }",
         "}",
     ].join("\n");
     let found = "";
@@ -186,7 +187,8 @@ function pythonFromRunningComfy(config) {
             encoding: "utf8",
             maxBuffer: 64 * 1024,
         });
-        const first = String(output || "").split(/\r?\n/).map((line) => line.trim()).find(Boolean) || "";
+        const encoded = String(output || "").split(/\r?\n/).map((line) => line.trim()).find(Boolean) || "";
+        const first = encoded ? Buffer.from(encoded, "base64").toString("utf8").trim() : "";
         if (first && /python(?:w)?\.exe$/i.test(first) && isFile(first)) found = first;
     } catch {
         found = "";

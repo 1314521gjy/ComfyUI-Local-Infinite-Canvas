@@ -1,7 +1,7 @@
 {
-  "version": "v0.22.10",
+  "version": "v0.22.11",
   "publishedAt": "2026-10-30",
-  "notes": "修复网关关停时在途任务继续占用显存、引导退出残留配置弹窗，以及 /health 版本号写死 0.1.0。",
+  "notes": "修复 ComfyUI 安装在中文路径时识别失败（手动选目录与反查 Python 路径的编码问题）。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
