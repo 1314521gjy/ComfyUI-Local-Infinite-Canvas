@@ -250,6 +250,23 @@ export function createTaskStore({ dataDir, publicBaseUrl, logger, retentionDays 
     return publicTask(task);
   }
 
+  async function cancelInFlight(comfy, { timeoutMs = 2500 } = {}) {
+    const active = [...tasks.values()].filter((task) => task.status === "running" || task.status === "queued");
+    if (!active.length) return { total: 0, timedOut: false };
+    let timer = null;
+    const guard = new Promise((resolve) => {
+      timer = setTimeout(() => resolve("timeout"), Math.max(0, Number(timeoutMs) || 0));
+    });
+    const work = Promise.allSettled(active.map((task) => cancel(task.id, comfy))).then(() => "done");
+    let outcome = "done";
+    try {
+      outcome = await Promise.race([work, guard]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    return { total: active.length, timedOut: outcome === "timeout" };
+  }
+
   function contentPath(id) {
     const task = tasks.get(id);
     if (!task?.file) return null;
@@ -258,5 +275,5 @@ export function createTaskStore({ dataDir, publicBaseUrl, logger, retentionDays 
     return resolved.startsWith(`${root}${path.sep}`) && fs.existsSync(resolved) ? resolved : null;
   }
 
-  return { load, create, enqueue, get, list, cancel, contentPath, publicTask, saveOutput, persistNow, cleanup };
+  return { load, create, enqueue, get, list, cancel, cancelInFlight, contentPath, publicTask, saveOutput, persistNow, cleanup };
 }

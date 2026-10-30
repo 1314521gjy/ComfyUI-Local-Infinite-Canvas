@@ -229,6 +229,33 @@ function requireModel(registry, setup, model, expectedType) {
   return found.entry;
 }
 
+function isLoopbackPeer(address) {
+  const raw = String(address || "").replace(/^::ffff:/i, "");
+  return raw === "::1" || raw === "localhost" || raw.startsWith("127.");
+}
+
+export async function stopGateway({ tasks, comfy, setup, server, abortActiveRequests, logger } = {}) {
+  try {
+    setup?.stop?.();
+  } catch {
+    /* 关停清理失败不应阻塞退出 */
+  }
+  try {
+    abortActiveRequests?.();
+  } catch {
+    /* 同上 */
+  }
+  try {
+    server?.close?.();
+  } catch {
+    /* 同上 */
+  }
+  const result = await tasks.cancelInFlight(comfy, { timeoutMs: 2500 });
+  if (result.total) logger?.info?.(`关停取消 ${result.total} 个在途任务${result.timedOut ? "（等待超时）" : ""}`);
+  await tasks.persistNow();
+  return result;
+}
+
 export async function createGatewayApp(overrides = {}) {
   const config = loadConfig(overrides);
   const logger = createLogger(overrides.logPrefix || "gateway");
@@ -312,6 +339,16 @@ export async function createGatewayApp(overrides = {}) {
     return () => {
       if (activeRequests.get(key) === controller) activeRequests.delete(key);
     };
+  };
+  const abortActiveRequests = () => {
+    for (const controller of activeRequests.values()) {
+      try {
+        controller.abort();
+      } catch {
+        /* 单个请求取消失败不影响关停 */
+      }
+    }
+    activeRequests.clear();
   };
   const promptOptimizer = createPromptOptimizer({ config, comfy, logger });
   const videoInterpolator = createVideoInterpolator({ config, logger });
@@ -584,6 +621,17 @@ export async function createGatewayApp(overrides = {}) {
       if (error instanceof HttpError) throw error;
       throw new HttpError(`无法联系启动器：${error.message}`, { status: 503, code: "launcher_unreachable" });
     }
+  });
+
+  app.post("/api/system/shutdown", (req, res) => {
+    if (!isLoopbackPeer(req.socket.remoteAddress)) {
+      throw new HttpError("仅允许本机发起关停请求", { status: 403, code: "shutdown_forbidden" });
+    }
+    if (typeof app.locals.requestShutdown !== "function") {
+      throw new HttpError("当前网关不是由启动器托管的主进程，无法自动关停", { status: 409, code: "shutdown_unavailable" });
+    }
+    res.json({ ok: true });
+    setTimeout(() => app.locals.requestShutdown(), 30);
   });
 
   app.post("/api/setup/scan", (_req, res) => {
@@ -1730,13 +1778,14 @@ export async function createGatewayApp(overrides = {}) {
     );
   });
 
-  return { app, config, logger, registry, tasks, sessions, setup, comfy, skinUnlocks };
+  return { app, config, logger, registry, tasks, sessions, setup, comfy, skinUnlocks, abortActiveRequests };
 }
 
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
-  const { app, config, logger, tasks, setup } = await createGatewayApp();
+  const { app, config, logger, tasks, setup, comfy, abortActiveRequests } = await createGatewayApp();
   let cleanupTimer = null;
+  let stopping = false;
   const cleanup = () =>
     tasks.cleanup({ retentionDays: config.taskRetentionDays, maxTasks: config.maxStoredTasks }).catch((error) => logger.warn(`清理任务失败：${error.message}`));
   const server = app.listen(config.port, config.host, () => {
@@ -1749,14 +1798,15 @@ if (isMain) {
       if (typeof cleanupTimer.unref === "function") cleanupTimer.unref();
     }
   });
-  const shutdown = async () => {
+  const shutdown = async (exitCode = 0) => {
+    if (stopping) return;
+    stopping = true;
     logger.info("shutting down");
-    setup.stop();
     if (cleanupTimer) clearInterval(cleanupTimer);
-    server.close();
-    await tasks.persistNow();
-    process.exit(0);
+    await stopGateway({ tasks, comfy, setup, server, abortActiveRequests, logger });
+    process.exit(exitCode);
   };
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  app.locals.requestShutdown = () => void shutdown();
+  process.on("SIGINT", () => void shutdown());
+  process.on("SIGTERM", () => void shutdown());
 }

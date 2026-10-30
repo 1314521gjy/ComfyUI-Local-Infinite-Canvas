@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import fsp from "node:fs/promises";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { browseHostFor, comfyInstallInfo, comfyPortCandidates, isLoopbackHost, listenCanvasServer, normalizeHost, probeAnyComfy, resolveLaunchPlan } from "../start.mjs";
+import { browseHostFor, comfyInstallInfo, comfyPortCandidates, isLoopbackHost, listenCanvasServer, normalizeHost, probeAnyComfy, requestGatewayShutdown, resolveLaunchPlan } from "../start.mjs";
 
 async function fake(files) {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), "launch-plan-"));
@@ -124,5 +125,32 @@ test("canvas server falls back to a free port when 3000 is occupied", async () =
     }
   } finally {
     blocker.close();
+  }
+});
+
+test("gateway shutdown request posts to the local stop endpoint with the token", async () => {
+  let captured;
+  const server = http.createServer((req, res) => {
+    let raw = "";
+    req.on("data", (chunk) => {
+      raw += chunk;
+    });
+    req.on("end", () => {
+      captured = { method: req.method, path: req.url, token: req.headers["x-gateway-token"], body: raw };
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ ok: true }));
+    });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const result = await requestGatewayShutdown(`http://127.0.0.1:${server.address().port}`, { token: "test-token" });
+    assert.equal(result.ok, true);
+    assert.equal(result.status, 200);
+    assert.equal(captured.method, "POST");
+    assert.equal(captured.path, "/api/system/shutdown");
+    assert.equal(captured.token, "test-token");
+    assert.equal(captured.body, "{}");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
   }
 });

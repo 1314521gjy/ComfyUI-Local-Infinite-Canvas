@@ -6,6 +6,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const rootDir = path.resolve(__dirname, "..");
 const appRoot = path.resolve(rootDir, "..");
 
+function readVersion(root) {
+  try {
+    return fs.readFileSync(path.join(root, "VERSION"), "utf8").trim() || "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
 function num(value, fallback) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -84,7 +92,7 @@ export function loadConfig(overrides = {}) {
     resourceConcurrency: num(overrides.resourceConcurrency ?? process.env.RESOURCE_CONCURRENCY, 2),
     allowRemote,
     gatewayToken: String(process.env.GATEWAY_TOKEN || "").trim(),
-    version: "0.1.0",
+    version: readVersion(appRoot),
   };
   if (config.corsOrigins.includes("*") && !allowRemote) {
     throw new Error("CORS_ORIGINS 不能使用通配符；请列出本地画布地址，或设置 ALLOW_REMOTE=1。");

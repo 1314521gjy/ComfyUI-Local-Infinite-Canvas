@@ -1,16 +1,16 @@
 {
-  "version": "v0.22.9",
+  "version": "v0.22.10",
   "publishedAt": "2026-10-30",
-  "notes": "修复 H3 视频生成后再次编辑提示词时光标与文字错位（@参考高亮层排版与滚动同步）。",
+  "notes": "修复网关关停时在途任务继续占用显存、引导退出残留配置弹窗，以及 /health 版本号写死 0.1.0。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.22.9.zip",
-    "sha256": "312c90e738d56b45eb8500c6048cf124772c7986e708a203690bae7402b0282a",
-    "size": 37580619
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.22.10.zip",
+    "sha256": "29b36e56e4a90e03f6545e99c823582b3ada44b4a4fd5e798dd6d2a4b5bd202e",
+    "size": 29263692
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

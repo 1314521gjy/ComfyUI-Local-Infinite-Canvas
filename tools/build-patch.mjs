@@ -78,6 +78,7 @@ const EXCLUDE = [
     /^infinite-canvas\/web\/dist\/config\.js$/i,
     /node_modules(\/|$)/i,
     /^comfyui-gateway\/resources\/nodes\/unpacked\/TE_MAN\/data(\/|$)/i,
+    /^comfyui-gateway\/resources\/nodes\/unpacked\/TE_MAN\/te_bernini_backend\/text_embed_cache(\/|$)/i,
     /^comfyui-gateway\/resources\/nodes\/unpacked\/TE_MAN\/config[^/]*\.ini$/i,
     /\.db(?:-wal|-shm|-journal)?$/i,
     /resources\/bundled(\/|$)/i,

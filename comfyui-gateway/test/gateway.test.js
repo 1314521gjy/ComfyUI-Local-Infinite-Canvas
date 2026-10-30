@@ -67,6 +67,7 @@ test("health reports mock ComfyUI and registry", async () => {
   assert.equal(data.status, "ok");
   assert.equal(data.comfy.reachable, true);
   assert.equal(data.workflows.count, 3);
+  assert.equal(data.version, fs.readFileSync(path.join(root, "..", "VERSION"), "utf8").trim());
 });
 
 test("session endpoints expose the canvas lifecycle", async () => {

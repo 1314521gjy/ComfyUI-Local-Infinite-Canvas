@@ -63,6 +63,7 @@ export function CanvasOnboarding({ open, onClose, nodes, imageModel, hasActiveGe
     const [guideNodeId, setGuideNodeId] = useState<string | null>(null);
     const [rect, setRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
     const [setup, setSetup] = useState<SetupInfo>({ reachable: false, phase: "idle", available: 0, total: 0 });
+    const guideWasOpen = useRef(false);
 
     useEffect(() => {
         if (!open) return;
@@ -199,7 +200,17 @@ export function CanvasOnboarding({ open, onClose, nodes, imageModel, hasActiveGe
         };
         document.addEventListener("keydown", onKeyDown);
         return () => document.removeEventListener("keydown", onKeyDown);
-    }, [open]);
+    }, [open, current.id]);
+
+    useEffect(() => {
+        if (open) {
+            guideWasOpen.current = true;
+            return;
+        }
+        if (!guideWasOpen.current) return;
+        guideWasOpen.current = false;
+        setConfigDialogOpen(false);
+    }, [open, setConfigDialogOpen]);
 
     useEffect(() => {
         if (!open || current.id !== "prompt" || !guideNodeId) return;
@@ -239,7 +250,7 @@ export function CanvasOnboarding({ open, onClose, nodes, imageModel, hasActiveGe
     }, [onClose, open, setConfigDialogOpen]);
 
     const finish = (status: "completed" | "skipped") => {
-        if (current.id === "resources" || current.id === "resource-problem") setConfigDialogOpen(false);
+        setConfigDialogOpen(false);
         try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify({ status, at: Date.now() }));
         } catch {

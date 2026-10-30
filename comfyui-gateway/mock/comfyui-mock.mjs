@@ -383,6 +383,7 @@ export function createMockComfyServer(options = {}) {
 
   /** prompt_id -> { prompt, graph, isVideo, number, createdAt, completeAt, completed } */
   const runs = new Map();
+  const cancelRequests = [];
   let promptCounter = 0;
 
   function isComplete(run) {
@@ -569,7 +570,14 @@ export function createMockComfyServer(options = {}) {
       }
 
       if (method === 'POST' && pathname === '/interrupt') {
-        await readBody(req).catch(() => Buffer.alloc(0));
+        const raw = await readBody(req).catch(() => Buffer.alloc(0));
+        let body = {};
+        try {
+          body = JSON.parse(raw.toString('utf8') || '{}');
+        } catch {
+          body = {};
+        }
+        cancelRequests.push({ type: 'interrupt', body });
         json(res, 200, {});
         return;
       }
@@ -580,7 +588,14 @@ export function createMockComfyServer(options = {}) {
           return;
         }
         if (method === 'POST') {
-          await readBody(req).catch(() => Buffer.alloc(0));
+          const raw = await readBody(req).catch(() => Buffer.alloc(0));
+          let body = {};
+          try {
+            body = JSON.parse(raw.toString('utf8') || '{}');
+          } catch {
+            body = {};
+          }
+          cancelRequests.push({ type: 'queue', body });
           json(res, 200, {});
           return;
         }
@@ -655,6 +670,7 @@ export function createMockComfyServer(options = {}) {
     delayMs,
     // test escape hatches
     runs,
+    cancelRequests,
     objectInfo: OBJECT_INFO,
   };
 }

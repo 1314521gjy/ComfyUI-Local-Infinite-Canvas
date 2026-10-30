@@ -965,6 +965,7 @@ const state = {
   adoptedComfyUrl: null,
   comfyUrl: null,
   gatewayChild: null,
+  gatewayUrl: "",
   legacyProxy: null,
   canvasServer: null,
   controlServer: null,
@@ -1078,6 +1079,73 @@ function killOurChild(child, label) {
   }
 }
 
+function requestGatewayShutdown(gatewayUrl, { timeoutMs = 1500, token = "" } = {}) {
+  return new Promise((resolve, reject) => {
+    let target;
+    try {
+      target = new URL("/api/system/shutdown", gatewayUrl);
+    } catch (error) {
+      reject(error);
+      return;
+    }
+    const body = "{}";
+    const headers = { "content-type": "application/json", "content-length": Buffer.byteLength(body) };
+    if (token) headers["x-gateway-token"] = token;
+    const req = http.request(
+      { hostname: target.hostname, port: target.port || 80, path: target.pathname, method: "POST", headers, timeout: timeoutMs },
+      (res) => {
+        let raw = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => {
+          raw += chunk;
+        });
+        res.on("end", () => resolve({ ok: res.statusCode === 200, status: res.statusCode, body: raw }));
+      },
+    );
+    req.on("timeout", () => req.destroy(new Error("网关停机请求超时")));
+    req.on("error", reject);
+    req.end(body);
+  });
+}
+
+function waitChildExit(child, timeoutMs) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve(false);
+    }, timeoutMs);
+    const onExit = () => {
+      cleanup();
+      resolve(true);
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      child.off("exit", onExit);
+    };
+    child.once("exit", onExit);
+  });
+}
+
+async function stopGatewayChild(child, cfg) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  try {
+    const response = await requestGatewayShutdown(cfg.gatewayUrl, { token: process.env.GATEWAY_TOKEN || "" });
+    if (response.ok) {
+      if (await waitChildExit(child, 3500)) {
+        log(`网关已优雅停止（PID ${child.pid}）`);
+        return;
+      }
+      log("网关未在超时内退出，改为强制结束", "WARN");
+    } else {
+      log(`网关拒绝优雅停机（HTTP ${response.status}），改为强制结束`, "WARN");
+    }
+  } catch (error) {
+    log(`网关优雅停机请求失败：${error.message}`, "WARN");
+  }
+  killOurChild(child, "网关");
+}
+
 async function shutdown(exitCode = 0, reason = "", { stopAdoptedComfy = false } = {}) {
   if (shuttingDown) return;
   shuttingDown = true;
@@ -1107,7 +1175,12 @@ async function shutdown(exitCode = 0, reason = "", { stopAdoptedComfy = false } 
     log("画布静态服务已关闭");
     state.canvasServer = null;
   }
-  killOurChild(state.gatewayChild, "网关");
+  if (state.gatewayChild) {
+    const gatewayChild = state.gatewayChild;
+    state.gatewayChild = null;
+    if (state.gatewayUrl) await stopGatewayChild(gatewayChild, { gatewayUrl: state.gatewayUrl });
+    else killOurChild(gatewayChild, "网关");
+  }
   killOurChild(state.comfyChild, "ComfyUI");
   const adoptedComfyStopped = !state.comfyChild && stopAdoptedComfy && state.adoptedComfyUrl ? stopAdoptedComfyProcess("ComfyUI") : false;
   if (adoptedComfyStopped) log("已退出。接管的网关未被触碰；接管的 ComfyUI 已按要求停止。");
@@ -1297,8 +1370,8 @@ async function startControlServer(cfg) {
         await ensureGatewayDeps(cfg);
         const previous = state.gatewayChild;
         state.gatewayChild = null;
-        killOurChild(previous, "网关");
-        await delay(600);
+        await stopGatewayChild(previous, cfg);
+        await delay(200);
         state.gatewayChild = spawnGateway(cfg, state.gatewayComfyUrl || cfg.comfyUrl, state.gatewayWorkflowsDir || "");
         res.end(JSON.stringify({ ok: true, pid: state.gatewayChild.pid }));
         return;
@@ -1377,6 +1450,7 @@ async function main() {
   log(`Node：${process.execPath} (${process.version})`);
 
   const cfg = loadConfig();
+  state.gatewayUrl = cfg.gatewayUrl;
   log(`配置：${CONFIG_PATH}${cfg.configCreated ? "（已创建默认配置）" : "（已加载）"}`);
   log(
     `参数：comfyUrl=${cfg.comfyUrl} gatewayPort=${cfg.gatewayPort} controlPort=${cfg.controlPort} canvasPort=${cfg.canvasPort} ` +
@@ -1634,4 +1708,4 @@ if (invokedDirectly) {
   });
 }
 
-export { comfyInstallInfo, resolveLaunchPlan, comfyPortCandidates, detectComfy, probeAnyComfy, listenCanvasServer, isLoopbackHost, normalizeHost, browseHostFor };
+export { comfyInstallInfo, resolveLaunchPlan, comfyPortCandidates, detectComfy, probeAnyComfy, listenCanvasServer, isLoopbackHost, normalizeHost, browseHostFor, requestGatewayShutdown };

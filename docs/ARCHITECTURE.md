@@ -1,8 +1,8 @@
 # 无界工作台 · 程序架构
 
-> 截至 2026-10-30，对应发布版本 **v0.22.9**（发布树 `07842353-release-staging`）。
+> 截至 2026-10-30，对应发布版本 **v0.22.10**（发布树 `07842353-release-staging`）。
 > 本文件是架构层权威说明，已纳入 staging git（`docs/ARCHITECTURE.md`），不进发布包。状态与待办见 `docs/HANDOFF.md`，历史见 `docs/RELEASE-HISTORY.md`。
-> 版本/索引/路由/包数等数字为 2026-10-30 实测（网关单测 184/184、启动器 8/8；v0.22.8 含工作流推送与 UI 辅助节点修复）；`docs/` 不入发布包。
+> 版本/索引/路由/包数等数字为 2026-10-30 实测（网关单测 186/186、启动器 9/9；v0.22.10 含关停取消在途任务、引导退出清理与 /health 版本修复）；`docs/` 不入发布包。
 
 ## 1. 定位
 
@@ -55,7 +55,7 @@ flowchart LR
    - **不做周期性全量扫描**：2026-10-29 曾加过模型目录 mtime 轮询与 10 分钟兜底重扫，评估后撤掉；只保留 10s 连通性检查。扫描成本交给用户手动触发，避免周期性拖慢 ComfyUI。
    - **扫描维度**：节点类名 + 模型文件 + 运行期依赖（pip 运行库 / TRT 编译产物 / 自定义节点，由 `resources.runtimeProblemsFor()` 提供，带 30s 缓存）；ComfyUI `workflows/` 下 `*-draft*`、`*副本*`、`*test*` 等草稿不再导入 registry，已导入的旧草稿会在扫描时移除登记（不动文件）。
 8. 画布由启动器在 `:3000` 托管 dist（SPA 回退、`/assets` 长缓存、路径逃逸 403），每次启动重写 `dist/config.js` 注入网关地址。
-9. 控制口 `:8290`：`GET /health`、`POST /restart-gateway`（接管来的网关返回 409）、`POST /restart-comfy`（taskkill 全部监听 PID → 等端口释放与显存回落 → 按同一套启动计划重新拉起 → 重探端口列表）。网关以 `/api/system/restart-comfy` 暴露同一能力。
+9. 控制口 `:8290`：`GET /health`、`POST /restart-gateway`（接管来的网关返回 409）、`POST /restart-comfy`（taskkill 全部监听 PID → 等端口释放与显存回落 → 按同一套启动计划重新拉起 → 重探端口列表）。网关以 `/api/system/restart-comfy` 暴露同一能力。重启/退出前，启动器先请求网关 `POST /api/system/shutdown`：取消 running/queued 任务的 ComfyUI promptId（queue delete + interrupt，2.5s 上限）、abort 在途请求；3.5s 未退出再 taskkill。网关自身的 SIGINT/SIGTERM 走同一清理。
 10. 看门狗 5s：时钟跳变 >60s 先静默 120s；要求见过会话、`count==0`、`activeTasks==0`；**只有页面显式关闭**（pagehide/beacon → 网关记录 `closedAt`）且关闭时间在 10 分钟内、空闲 ≥`canvasIdleGraceSec`（默认 30s）才停后台；心跳缺失（后台标签节流/冻结、浏览器崩溃）一律不停，避免挂机被误杀。
 11. 显式关闭语义（2026-10-29 补齐）：`sessions.js` 在 `status()` 中返回 `startedAt`/`closedAt`（此前只删会话、不记录关闭时间，导致启动器 `closedAt` 判定永远为假、自动退出实际不生效）；网关重启后 `startedAt` 变化会让启动器重置 `seen`，重新等待画布心跳。旧配置里残留的 15s 默认值会按 30s 处理，需要 15s 可显式设 `CANVAS_IDLE_GRACE_SEC=15`。
 12. 状态条数据：`GET /api/system/stats` 由网关调 `nvidia-smi`（8s 超时，`System32` 兜底）；显卡满载导致读取超时时沿用上次读数并标记 `gpuStale`，界面注明「读取超时，显示上次读数」，不再变成「显存 --」。ComfyUI 离线时状态条显示「ComfyUI 离线 · 点击修复」，弹窗内可重新检测或一键重启。
@@ -101,7 +101,7 @@ flowchart LR
 - 应用内：`GET /api/update/check?fetch=1`、`POST /api/update/apply`（有任务在跑返回 409）。git 安装走 `fetch` + `pull --ff-only`（脏树拒绝）；归档安装校验 `size`+`sha256`，支持 `PATCH-DELETE.txt`、`PATCH_PROTECTED` 白名单保护，失败回滚，成功后 1.5s 调 launcher `/restart-gateway`。
 - 脏工作区：`git status --porcelain --untracked-files=no` 解析后忽略启动器生成的 `infinite-canvas/web/dist/config.js`；真实源码改动仍返回 `dirty`/`dirtyFiles`。真脏或 Git 不可用时，`POST /api/update/apply` 带 `force:true` 可改用已签名补丁覆盖程序文件，保留 data/models/node_modules/config，失败回滚；前端提供「强制更新（保留 data）」二次确认。
 - 归档补丁：更新器优先用 Windows `System32\tar.exe` 解压，PowerShell `Expand-Archive` 兜底并保留两边错误；默认清单超时 30s、补丁下载/应用 600s；`GET /api/update/progress` 提供下载进度、总量与速度。
-- 旧客户端：`patches/update-bridge.zip`（5,945 B）——解析版本 → 下载补丁 → 校验 → 解压时跳过受保护路径 → 备份到 `.update-backup` → 重启。
+- 旧客户端：`patches/update-bridge.zip`（6,063 B）——解析版本 → 下载补丁 → 校验 → 解压时跳过受保护路径 → 备份到 `.update-backup` → 重启。
 - 前端：`use-version-check` 每会话检查一次；`UpdateAvailableBanner` 每 10 分钟重查；只提示，不做静默下载/自动重启（用户已否决）。
 
 ## 9. 存储
@@ -123,7 +123,7 @@ flowchart LR
 # 整套启动
 start-local.bat            # 保持画布页打开；关页 30s 后停后台，见 §4 第 10 条
 
-# 网关单测（2026-10-30 实测 184/184）
+# 网关单测（2026-10-30 实测 186/186）
 cd 07842353-release-staging/comfyui-gateway
 COMFYUI_DIR=C:/ComfyUI node --test --test-timeout=120000 test/*.test.js
 
