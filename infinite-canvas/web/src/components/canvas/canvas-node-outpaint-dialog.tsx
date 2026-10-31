@@ -13,8 +13,11 @@ export type CanvasOutpaintPayload = {
     bottom: number;
     width: number;
     height: number;
+    count: number;
     generate: boolean;
 };
+
+const COUNT_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8];
 
 type CanvasNodeOutpaintDialogProps = {
     dataUrl: string;
@@ -63,8 +66,13 @@ export function CanvasNodeOutpaintDialog({ dataUrl, open, promptDefault = "", on
     const [image, setImage] = useState<HTMLImageElement | null>(null);
     const [prompt, setPrompt] = useState(promptDefault);
     const [ratioKey, setRatioKey] = useState("original");
+    const [count, setCount] = useState(1);
     const [canvas, setCanvas] = useState<CanvasState>({ width: 1024, height: 1024, x: 0, y: 0 });
     const [error, setError] = useState("");
+
+    useEffect(() => {
+        if (open) setCount(1);
+    }, [open]);
 
     useEffect(() => {
         if (!open || !dataUrl) {
@@ -176,6 +184,7 @@ export function CanvasNodeOutpaintDialog({ dataUrl, open, promptDefault = "", on
             bottom: bottomPad,
             width: canvas.width,
             height: canvas.height,
+            count,
             generate: true,
         });
     };
@@ -254,6 +263,22 @@ export function CanvasNodeOutpaintDialog({ dataUrl, open, promptDefault = "", on
                         <Button size="small" icon={<Minimize2 className="size-3.5" />} onClick={() => setCanvas((previous) => ({ ...previous, x: (previous.width - imageWidth) / 2, y: (previous.height - imageHeight) / 2 }))}>
                             居中
                         </Button>
+                    </div>
+                    <div className="space-y-2">
+                        <div className="text-xs font-medium" style={{ color: theme.node.muted }}>生成张数</div>
+                        <div className="grid grid-cols-4 gap-2">
+                            {COUNT_OPTIONS.map((value) => (
+                                <button
+                                    key={value}
+                                    type="button"
+                                    className="h-8 cursor-pointer rounded-full border px-2 text-xs transition hover:opacity-80"
+                                    style={{ borderColor: count === value ? theme.node.text : theme.node.stroke, background: "transparent", color: theme.node.text }}
+                                    onClick={() => setCount(value)}
+                                >
+                                    {value} 张
+                                </button>
+                            ))}
+                        </div>
                     </div>
                     <div className="space-y-2">
                         <div className="text-xs font-medium" style={{ color: theme.node.muted }}>提示词</div>
