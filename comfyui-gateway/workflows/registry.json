@@ -1629,6 +1629,13 @@
           "from": "params.cfg",
           "default": 1
         },
+        "steps": {
+          "node": "9",
+          "input": "sigmas",
+          "from": "params.steps",
+          "transform": "qwenSigmas",
+          "default": 8
+        },
         "seed": {
           "node": "7",
           "input": "noise_seed",
@@ -1674,6 +1681,16 @@
           "default": 1
         },
         {
+          "key": "steps",
+          "label": "步数",
+          "type": "number",
+          "min": 4,
+          "max": 50,
+          "step": 1,
+          "default": 8,
+          "description": "8 步为默认 Turbo 调度；更高步数按官方 8 步 sigma 轨迹插值"
+        },
+        {
           "key": "resolution",
           "label": "参考图分辨率",
           "type": "number",
@@ -1715,6 +1732,13 @@
               "input": "cfg",
               "from": "params.cfg",
               "default": 1
+            },
+            "steps": {
+              "node": "12",
+              "input": "sigmas",
+              "from": "params.steps",
+              "transform": "qwenSigmas",
+              "default": 8
             },
             "seed": {
               "node": "10",
@@ -1765,6 +1789,13 @@
               "input": "cfg",
               "from": "params.cfg",
               "default": 1
+            },
+            "steps": {
+              "node": "14",
+              "input": "sigmas",
+              "from": "params.steps",
+              "transform": "qwenSigmas",
+              "default": 8
             },
             "seed": {
               "node": "12",
@@ -1863,6 +1894,13 @@
               "input": "cfg",
               "from": "params.cfg",
               "default": 1
+            },
+            "steps": {
+              "node": "9",
+              "input": "sigmas",
+              "from": "params.steps",
+              "transform": "qwenSigmas",
+              "default": 8
             },
             "seed": {
               "node": "7",

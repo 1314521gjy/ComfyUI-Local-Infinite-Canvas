@@ -831,15 +831,16 @@
       "target": "loras/Krea2-功能-角色四视图.safetensors",
       "size": 914160176,
       "sha256": "9435005af21cadaed16f79ef1eca9b76b8497789644eeb7f2475b826bb480fbc",
-      "license": "Krea 2 Community License（社区 LoRA，未单独声明）",
-      "note": "Krea2 四视图生成必需；随完整包提供，补丁用户从资源卡安装。",
+      "license": "Krea 2 Community License（CharacterSheet 社区 LoRA）",
+      "note": "Krea2 四视图生成必需；公开源 Alissonerdx/CharacterSheet 的 QuadView_krea2_v1，SHA256 与本机一致。",
       "sources": [
         {
           "kind": "bundled",
           "path": "resources/loras/Krea2-功能-角色四视图.safetensors",
           "label": "随包"
         },
-        "https://www.modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/comfyui-gateway/resources/loras/Krea2-%E5%8A%9F%E8%83%BD-%E8%A7%92%E8%89%B2%E5%9B%9B%E8%A7%86%E5%9B%BE.safetensors"
+        "https://www.modelscope.cn/models/Alissonerdx/CharacterSheet/resolve/master/QuadView_krea2_v1.safetensors",
+        "https://hf-mirror.com/Alissonerdx/CharacterSheet/resolve/main/QuadView_krea2_v1.safetensors"
       ]
     },
     {

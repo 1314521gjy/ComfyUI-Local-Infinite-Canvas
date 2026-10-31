@@ -819,9 +819,10 @@ export async function createGatewayApp(overrides = {}) {
 
   app.get("/v1/models", async (_req, res) => {
     await registry.reloadIfChanged();
+    const degraded = setup.status?.().phase === "degraded";
     const data = registry
       .listModels((setup.loaderOptions?.() || {}))
-      .filter((model) => setup.isAvailable(model.baseId) && !model.entry.hidden && model.entry.category !== "upscale" && !workflowVisibility.isHidden(model.entry.id))
+      .filter((model) => (setup.isAvailable(model.baseId) || (degraded && setup.isKnownAvailable?.(model.baseId))) && !model.entry.hidden && model.entry.category !== "upscale" && !workflowVisibility.isHidden(model.entry.id))
       .map((model) => ({
         id: model.modelId,
         object: "model",

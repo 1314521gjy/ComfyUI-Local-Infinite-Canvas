@@ -1721,6 +1721,39 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         return hash.digest("hex");
     }
 
+    async function repairUnderscoredTarget(resource, root, target, jobItem, signal) {
+        if (!root || resource.type === "node" || resource.type === "dir" || resource.type === "custom_nodes") return false;
+        const { dir, file } = targetParts(resource.target);
+        const names = [`${file}_`, `${path.basename(file)}_`];
+        const candidates = [];
+        for (const base of modelRoots(dir, root)) {
+            for (const name of names) {
+                const candidate = path.join(base, name);
+                if (isFile(candidate) && !candidates.includes(candidate)) candidates.push(candidate);
+            }
+        }
+        for (const candidate of candidates) {
+            const actualSize = fs.statSync(candidate).size;
+            if (resource.size && actualSize !== Number(resource.size)) continue;
+            if (resource.sha256) {
+                if (signal?.aborted) throw new Error("已取消");
+                const digest = await sha256File(candidate, signal);
+                if (digest.toLowerCase() !== String(resource.sha256).toLowerCase()) continue;
+            }
+            await fsp.rename(candidate, target);
+            jobItem.status = "done";
+            jobItem.bytes = actualSize;
+            jobItem.hint = `已把 ${path.basename(candidate)} 恢复为正式文件名。`;
+            lock.installed = lock.installed || {};
+            lock.installed[resource.id] = { version: index?.version || "", target: resource.target, sha256: resource.sha256 || "", size: actualSize, installedAt: nowIso() };
+            lock.updatedAt = nowIso();
+            await saveLock();
+            logger?.info?.(`资源文件名修复：${path.basename(candidate)} -> ${path.basename(target)}`);
+            return true;
+        }
+        return false;
+    }
+
     async function downloadResource(resource, jobItem, signal) {
         const root = comfyRoot();
         const existing = resourceStatus(resource, root);
@@ -1732,6 +1765,10 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             return;
         }
         const target = targetPath(resource, root);
+        // 有些第三方下载器/杀软会把最终文件留成 xxx.safetensors_；用户点安装时
+        // 先尝试把同大小/同哈希的临时名恢复成正式名，避免重复下载 1GB。
+        const repaired = await repairUnderscoredTarget(resource, root, target, jobItem, signal);
+        if (repaired) return;
         const part = `${target}.part`;
         await fsp.mkdir(path.dirname(target), { recursive: true });
         const sources = normalizeSources(resource);

@@ -205,6 +205,40 @@ test("a model on disk but not in ComfyUI's loader list is reported as restart, n
   }
 });
 
+test("degraded scans keep the last known availability for stale model lists", async () => {
+  const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-stale-"));
+  let down = false;
+  try {
+    const manager = createSetupManager({
+      config: { dataDir, comfyUrl: "http://127.0.0.1:1", comfyWorkflowsDir: "", maxWorkflowBytes: 1024 * 1024 },
+      registry: {
+        list: () => [{ id: entry.id }],
+        resolve: () => entry,
+        scan: async () => ({ imported: 0 }),
+        reloadIfChanged: () => {},
+      },
+      comfy: {
+        systemStats: async () => {
+          if (down) throw new Error("ComfyUI down");
+          return {};
+        },
+        objectInfo: async () => objectInfo(["z_image_turbo_bf16.safetensors"]),
+      },
+      logger: null,
+      mainModelFile: () => "",
+    });
+    await manager.scan();
+    assert.equal(manager.isAvailable(entry.id), true);
+    down = true;
+    await manager.scan();
+    assert.equal(manager.isAvailable(entry.id), false);
+    assert.equal(manager.isKnownAvailable(entry.id), true);
+    assert.equal(manager.workflowStatus(entry.id).stale, true);
+  } finally {
+    await fsp.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("degraded scans do not keep workflows marked available", async () => {
   const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-degraded-"));
   try {

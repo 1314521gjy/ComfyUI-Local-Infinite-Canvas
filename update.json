@@ -1,7 +1,7 @@
 {
   "version": "v0.24.0",
   "publishedAt": "2026-10-31",
-  "notes": "新增 Krea2 图片卡「四视图」快捷生成（完整包随包 LoRA，补丁用户可在 Krea2 资源卡安装）；修复视频 @ 已连接参考、Z-Image/Krea2 子目录底模、第三方 loader、校验详情、插帧超时取消、云端 temperature 重试和补丁漏打 comfyui-bridge。",
+  "notes": "新增 Krea2 图片卡「四视图」及 Qwen 2.1 可选步数；视频卡只有播放按钮才播放；修复自动新卡把上一张结果当参考、扫描离线清空模型、safetensors_ 临时文件、视频 @ 已连接参考、Z-Image/Krea2 子目录底模、第三方 loader、校验详情、插帧超时取消、云端 temperature 重试和补丁漏打 comfyui-bridge。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
@@ -9,8 +9,8 @@
   },
   "patch": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.24.0.zip",
-    "sha256": "b8cadbc8eb094e41159b224ce38d980ba4053fa0df0c812095f5aa556389580b",
-    "size": 29567685
+    "sha256": "2306f1084677bb6dbf16f6f8ab46a478349cfa7fd92a50b4e15e0f5babd8c68a",
+    "size": 29570790
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

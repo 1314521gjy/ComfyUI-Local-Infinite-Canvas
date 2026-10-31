@@ -140,6 +140,7 @@ function ImageSettingsPortal({
     const qwenMode = String(config.imageMode || "t2i");
     const refResolution = String((config.params as Record<string, unknown> | undefined)?.resolution ?? 1024);
     const editCanvasRatio = String((config.params as Record<string, unknown> | undefined)?.editCanvasRatio || "auto");
+    const qwenSteps = Math.max(4, Math.min(50, Math.round(Number((config.params as Record<string, unknown> | undefined)?.steps) || 8)));
     const width = 356;
     const gap = 8;
     const margin = 12;
@@ -194,6 +195,19 @@ function ImageSettingsPortal({
                         </div>
                         <div className="text-xs leading-4" style={{ color: theme.node.muted }}>
                             {qwenModeHints[qwenMode] || qwenModeHints.t2i}
+                        </div>
+                        <div className="space-y-2 rounded-xl border p-3" style={{ borderColor: theme.node.stroke }}>
+                            <SettingTitle color={theme.node.muted}>采样步数</SettingTitle>
+                            <div className="grid grid-cols-4 gap-2">
+                                {[8, 16, 25, 32].map((step) => (
+                                    <OptionPill key={step} selected={qwenSteps === step} theme={theme} onClick={() => onParamsChange?.({ steps: step })}>
+                                        {step} 步
+                                    </OptionPill>
+                                ))}
+                            </div>
+                            <div className="text-xs leading-4" style={{ color: theme.node.muted }}>
+                                8 步为默认 Turbo 调度；更高步数按官方 8 步 sigma 轨迹插值，耗时和显存会随步数增加。
+                            </div>
                         </div>
                         {qwenMode === "t2i" ? (
                             <ImageSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" maxCount={10} />

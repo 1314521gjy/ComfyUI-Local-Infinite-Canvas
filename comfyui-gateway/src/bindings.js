@@ -56,8 +56,28 @@ function secondsToFrames17(seconds, fps = 24) {
   return raw + ((5 - (raw % 17) + 17) % 17);
 }
 
+const QWEN21_BASE_SIGMAS = [1, 0.978453, 0.95418, 0.926626, 0.89508, 0.845148, 0.704534, 0.414568, 0];
+
+function qwen21Sigmas(value) {
+  const steps = Math.max(1, Math.min(50, Math.trunc(Number(value) || 8)));
+  if (steps === QWEN21_BASE_SIGMAS.length - 1) return QWEN21_BASE_SIGMAS.join(", ");
+  // 用户自定义步数时，按 8 步官方 sigma 轨迹做线性插值；不改变 8 步默认路径。
+  const last = QWEN21_BASE_SIGMAS.length - 1;
+  const sigmas = [];
+  for (let index = 0; index <= steps; index += 1) {
+    const position = (index / steps) * last;
+    const lower = Math.floor(position);
+    const upper = Math.min(last, lower + 1);
+    const fraction = position - lower;
+    sigmas.push(QWEN21_BASE_SIGMAS[lower] + (QWEN21_BASE_SIGMAS[upper] - QWEN21_BASE_SIGMAS[lower]) * fraction);
+  }
+  return sigmas.map((item) => Number(item.toFixed(6))).join(", ");
+}
+
 function applyTransform(value, binding) {
   switch (binding.transform) {
+    case "qwenSigmas":
+      return qwen21Sigmas(value);
     case "secondsToFrames":
       return secondsToFrames(value, binding.fps || 16);
     case "secondsToFrames17":

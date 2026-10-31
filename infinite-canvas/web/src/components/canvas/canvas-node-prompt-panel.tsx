@@ -88,19 +88,6 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     const imageModeValue = String(config.imageMode || "").trim();
     const textOnlyImageMode = isImage && (imageModeValue === "t2i" || (!imageModeValue && workflowId === "image-qwen21"));
     const usesImageReferences = textOnlyImageMode ? false : imageInputLimit === undefined ? !isH3T2V : imageInputLimit > 0;
-    const sourceImageReference: CanvasResourceReference | null =
-        usesImageReferences && node.type === CanvasNodeType.Image && node.metadata?.content && config.nodeRegenerateBehavior !== "overwrite" && !imageReferences.length
-            ? {
-                  id: `canvas:${node.id}`,
-                  nodeId: node.id,
-                  kind: "image",
-                  label: t("canvas.references.source"),
-                  title: node.title || t("canvas.references.source"),
-                  previewUrl: node.metadata.content,
-                  active: true,
-              }
-            : null;
-    const promptImageReferences = sourceImageReference ? [sourceImageReference, ...imageReferences.filter((reference) => reference.nodeId !== node.id)] : imageReferences;
     const optimizeStatus = node.metadata?.promptOptimizeStatus;
     const optimizeRunning = optimizeStatus === "running";
     const optimizeResult = node.metadata?.promptOptimizePrompt || "";
@@ -325,7 +312,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
         if (!text || optimizeRunning) return;
         commitPrompt(draft);
         setOptimizeOptionsOpen(false);
-        const selectedRefs = usesImageReferences ? promptImageReferences.slice(0, Math.max(1, imageInputLimit ?? 8)) : [];
+        const selectedRefs = usesImageReferences ? imageReferences.slice(0, Math.max(1, imageInputLimit ?? 8)) : [];
         const useCloud = optimizeEngine === "cloud";
         const controller = new AbortController();
         registerPromptOptimizeJob(node.id, controller);
@@ -428,7 +415,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
             onPointerDown={(event) => event.stopPropagation()}
             onWheel={(event) => event.stopPropagation()}
         >
-            <CanvasNodeReferenceBar nodeId={node.id} nodes={nodes} connectedNodes={connectedNodes} leadingNode={sourceImageReference ? node : undefined} onDisconnect={onDisconnectReference} onStartSelection={onStartReferenceSelection} addDisabled={isH3T2V} addDisabledHint={t("canvas.promptPanel.videoTextAddDisabled")} />
+            <CanvasNodeReferenceBar nodeId={node.id} nodes={nodes} connectedNodes={connectedNodes} onDisconnect={onDisconnectReference} onStartSelection={onStartReferenceSelection} addDisabled={isH3T2V} addDisabledHint={t("canvas.promptPanel.videoTextAddDisabled")} />
             {textVideoHasReferences && !refsWarningDismissed ? (
                 <div className="mb-2 flex items-start gap-2 rounded-lg bg-amber-500/10 px-2 py-1 text-xs leading-4 text-amber-700 dark:text-amber-300">
                     <span className="min-w-0 flex-1">{t("canvas.promptPanel.videoTextRefsWarning")}</span>
@@ -703,7 +690,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
             ) : null}
             <Modal title={t("canvas.promptPanel.editorTitle")} open={expanded} centered width={760} footer={null} onCancel={() => { commitPrompt(); setExpanded(false); }} destroyOnHidden>
                 <div data-canvas-no-zoom className="pt-2" onWheelCapture={(event) => event.stopPropagation()}>
-                    <CanvasNodeReferenceBar nodeId={node.id} nodes={nodes} connectedNodes={connectedNodes} leadingNode={sourceImageReference ? node : undefined} onDisconnect={onDisconnectReference} onStartSelection={(nodeId) => { setExpanded(false); onStartReferenceSelection?.(nodeId); }} addDisabled={isH3T2V} addDisabledHint={t("canvas.promptPanel.videoTextAddDisabled")} />
+                    <CanvasNodeReferenceBar nodeId={node.id} nodes={nodes} connectedNodes={connectedNodes} onDisconnect={onDisconnectReference} onStartSelection={(nodeId) => { setExpanded(false); onStartReferenceSelection?.(nodeId); }} addDisabled={isH3T2V} addDisabledHint={t("canvas.promptPanel.videoTextAddDisabled")} />
                     {textVideoHasReferences && !refsWarningDismissed ? (
                         <div className="mb-2 flex items-start gap-2 rounded-lg bg-amber-500/10 px-2 py-1 text-xs leading-4 text-amber-700 dark:text-amber-300">
                             <span className="min-w-0 flex-1">{t("canvas.promptPanel.videoTextRefsWarning")}</span>

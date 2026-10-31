@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
-import { ChevronRight, Copy, Download, Group, Image as ImageIcon, Music2, Puzzle, RefreshCw, Sparkles, Star, Trash2, Video } from "lucide-react";
+import { ChevronRight, Copy, Download, Group, Image as ImageIcon, Music2, Pause, Play, Puzzle, RefreshCw, Sparkles, Star, Trash2, Video, Volume2, VolumeX } from "lucide-react";
 
 import { canvasThemes, getCardBackground } from "@/lib/canvas-theme";
 import { useCanvasTheme, useEffectiveCardSkin } from "@/lib/canvas/use-canvas-theme";
@@ -930,29 +930,105 @@ function EmptyImageContent({ theme }: NodeContentRendererProps) {
     );
 }
 
+function formatVideoClock(value: number) {
+    if (!Number.isFinite(value) || value < 0) return "0:00";
+    const total = Math.floor(value);
+    const minutes = Math.floor(total / 60);
+    return `${minutes}:${String(total % 60).padStart(2, "0")}`;
+}
+
 function VideoNodeContent({ node, theme, onVideoDimensions }: NodeContentRendererProps) {
     const { t } = useTranslation();
-    if (!node.metadata?.content)
+    const videoRef = useRef<HTMLVideoElement | null>(null);
+    const [playing, setPlaying] = useState(false);
+    const [currentTime, setCurrentTime] = useState(0);
+    const [duration, setDuration] = useState(0);
+    const [muted, setMuted] = useState(false);
+    const content = node.metadata?.content;
+
+    useEffect(() => {
+        setPlaying(false);
+        setCurrentTime(0);
+        setDuration(0);
+    }, [content]);
+
+    if (!content)
         return (
             <div className="flex h-full w-full flex-col items-center justify-center gap-3" style={{ color: theme.node.placeholder }}>
                 <Video className="size-7 opacity-35" />
                 <span className="text-sm">{t("canvas.node.emptyVideo")}</span>
             </div>
         );
+    const togglePlayback = () => {
+        const video = videoRef.current;
+        if (!video) return;
+        if (video.paused) {
+            void video.play().catch(() => undefined);
+        } else {
+            video.pause();
+        }
+    };
+    const toggleMuted = () => {
+        const video = videoRef.current;
+        if (!video) return;
+        video.muted = !video.muted;
+        setMuted(video.muted);
+    };
     return (
-        <video
-            src={node.metadata.content}
-            controls
-            draggable={false}
-            onDragStart={(event) => event.preventDefault()}
-            onLoadedMetadata={(event) => {
-                const video = event.currentTarget;
-                if (video.videoWidth && video.videoHeight) onVideoDimensions?.(node.id, video.videoWidth, video.videoHeight);
-            }}
-            className="h-full w-full rounded-[18px] bg-black object-contain"
-            data-canvas-video={node.id}
-            data-canvas-no-zoom
-        />
+        <div className="relative h-full w-full overflow-hidden rounded-[18px] bg-black" data-canvas-no-zoom>
+            <video
+                key={content}
+                ref={videoRef}
+                src={content}
+                playsInline
+                preload="metadata"
+                draggable={false}
+                onDragStart={(event) => event.preventDefault()}
+                onLoadedMetadata={(event) => {
+                    const video = event.currentTarget;
+                    setDuration(Number.isFinite(video.duration) ? video.duration : 0);
+                    if (video.videoWidth && video.videoHeight) onVideoDimensions?.(node.id, video.videoWidth, video.videoHeight);
+                }}
+                onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+                onPlay={() => setPlaying(true)}
+                onPause={() => setPlaying(false)}
+                onEnded={() => setPlaying(false)}
+                onVolumeChange={(event) => setMuted(event.currentTarget.muted)}
+                className="pointer-events-none h-full w-full rounded-[18px] bg-black object-contain"
+                data-canvas-video={node.id}
+            />
+            <div
+                className="absolute inset-x-0 bottom-0 flex items-center gap-2 bg-gradient-to-t from-black/80 via-black/35 to-transparent px-2.5 pb-2 pt-7 text-white"
+                data-canvas-no-zoom
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+            >
+                <button type="button" className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white/15 hover:bg-white/25" aria-label={playing ? t("canvas.videoControls.pause") : t("canvas.videoControls.play")} onClick={togglePlayback}>
+                    {playing ? <Pause className="size-3.5" /> : <Play className="size-3.5 fill-current" />}
+                </button>
+                <span className="shrink-0 text-[10px] tabular-nums opacity-85">
+                    {formatVideoClock(currentTime)} / {formatVideoClock(duration)}
+                </span>
+                <input
+                    type="range"
+                    min={0}
+                    max={duration || 0}
+                    step="any"
+                    value={Math.min(currentTime, duration || 0)}
+                    aria-label={t("canvas.videoControls.seek")}
+                    onChange={(event) => {
+                        const video = videoRef.current;
+                        if (!video) return;
+                        video.currentTime = Number(event.target.value);
+                        setCurrentTime(video.currentTime);
+                    }}
+                    className="h-1 min-w-0 flex-1 cursor-pointer accent-white"
+                />
+                <button type="button" className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white/15 hover:bg-white/25" aria-label={muted ? t("canvas.videoControls.unmute") : t("canvas.videoControls.mute")} onClick={toggleMuted}>
+                    {muted ? <VolumeX className="size-3.5" /> : <Volume2 className="size-3.5" />}
+                </button>
+            </div>
+        </div>
     );
 }
 

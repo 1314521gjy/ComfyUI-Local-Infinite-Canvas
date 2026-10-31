@@ -1644,3 +1644,48 @@ test("VDN availability reports a missing Stage-B adapter with an actionable mess
         await fsp.rm(root, { recursive: true, force: true });
     }
 });
+
+test("install repairs a model file left with a trailing underscore", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-underscore-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    const vaeDir = path.join(comfy, "models", "vae");
+    await fsp.mkdir(vaeDir, { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    const payload = crypto.randomBytes(4096);
+    const digest = crypto.createHash("sha256").update(payload).digest("hex");
+    await fsp.writeFile(path.join(vaeDir, "test.bin_"), payload);
+    const index = {
+        schema: 1,
+        version: "test-underscore",
+        packs: [{ id: "test", label: "Test", resources: ["underscore-file"] }],
+        resources: [{
+            id: "underscore-file",
+            type: "model",
+            label: "Underscore file",
+            target: "vae/test.bin",
+            size: payload.length,
+            sha256: digest,
+            sources: [],
+        }],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: { loaderOptions: () => ({}), status: () => ({ comfyReachable: true }), scan: async () => ({}) },
+        logger: null,
+    });
+    try {
+        await manager.init();
+        const job = manager.install({ ids: ["underscore-file"] });
+        const finished = await waitForJob(manager, job.id);
+        assert.equal(finished.status, "done", JSON.stringify(finished));
+        assert.equal(fs.existsSync(path.join(vaeDir, "test.bin")), true);
+        assert.equal(fs.existsSync(path.join(vaeDir, "test.bin_")), false);
+        assert.deepEqual(await fsp.readFile(path.join(vaeDir, "test.bin")), payload);
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});

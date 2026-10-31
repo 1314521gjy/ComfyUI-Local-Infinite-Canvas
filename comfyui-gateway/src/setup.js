@@ -844,6 +844,12 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         return entry ? entry.available : false;
     }
 
+    // 离线时模型列表保留上一次扫描结果（前端会标 stale），避免整个下拉瞬间清空。
+    function isKnownAvailable(id) {
+        const entry = availability.get(id);
+        return entry ? entry.available : false;
+    }
+
     function workflowStatus(id) {
         if (state.phase === "degraded") {
             return {
@@ -899,6 +905,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         start,
         stop,
         isAvailable,
+        isKnownAvailable,
         workflowStatus,
         hasNodeClass,
         setRuntimeProblemProvider,

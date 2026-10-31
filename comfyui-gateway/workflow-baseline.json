@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "generatedAt": "2026-10-31T14:34:38.836Z",
+  "generatedAt": "2026-10-31T15:16:22.520Z",
   "previous": {
     "comfyui-gateway/workflows/h3-character-swap-vdn.json": [
       "55fb6d9b341b47862ab610541fa9bcf3fd5ed96138b166d497f4ca8f399019f5"
@@ -81,7 +81,7 @@
     "comfyui-gateway/workflows/image-qwen21-outpaint.json": "796471e55491249ad339410802a7050192992a15cb504569754e39cbbdc7faf5",
     "comfyui-gateway/workflows/image-qwen21-t2i.json": "c0ad8fe0d3e727c30eaf6c45564cb30bddb1a3e26ffb31e0dd3f4cf279c8fd19",
     "comfyui-gateway/workflows/image-seedvr2-upscale.json": "eec2b3d98c15c540c7a0e852265666198dd3c8d2654a2c93320b5e03e0d11654",
-    "comfyui-gateway/workflows/registry.json": "6ef95cc879c1fb8264ca3826bf39e49565507d592b3b965bbb16c3d7ee54a2fe",
+    "comfyui-gateway/workflows/registry.json": "83fb0b0c539b95f7511f9e942608c5e915edab2df090f0b38de4695171d723ec",
     "comfyui-gateway/workflows/video-esrgan_2x.json": "5a1f1375d6a994b69a12bcef4f01c16052805582b30943f58e65649d905644c3",
     "comfyui-gateway/workflows/video-seedvr2-upscale.json": "3b84f582a6b6dc341566201636bbc3b1c77b39996460b54262b56e89a3f294de",
     "comfyui-gateway/workflows/z-image-turbo.json": "406a09d3ae9c7e5d2c4f422efc08f1dfc98c1ccc1463db01931be0849016596c"
