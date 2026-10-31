@@ -4,6 +4,7 @@ import { ArrowDown, ArrowUp, Trash2 } from "lucide-react";
 
 
 import { useCanvasTheme } from "@/lib/canvas/use-canvas-theme";
+import { randomId } from "@/lib/utils";
 import type { CanvasMossLayout, CanvasMossLayoutRegion } from "@/types/canvas";
 
 export type CanvasMossLayoutPayload = CanvasMossLayout;
@@ -136,7 +137,7 @@ export function CanvasNodeMossLayoutDialog({ open, dataUrl, promptDefault = "", 
             return;
         }
         const region: CanvasMossLayoutRegion = {
-            id: crypto.randomUUID(),
+            id: randomId(),
             label: "object",
             caption: "",
             x: draft.x,

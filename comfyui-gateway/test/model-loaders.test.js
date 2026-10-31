@@ -42,5 +42,6 @@ test("does not duplicate static loader specs", () => {
   });
   const matches = specs.filter((spec) => spec.classType === "UNETLoader" && spec.input === "unet_name");
   assert.equal(matches.length, 1);
-  assert.equal(MODEL_LOADER_SPECS.length, 12);
+  const keys = MODEL_LOADER_SPECS.map((spec) => `${spec.classType}\u0000${spec.input}`);
+  assert.equal(new Set(keys).size, keys.length);
 });

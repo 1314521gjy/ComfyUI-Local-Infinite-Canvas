@@ -38,6 +38,17 @@ function modelAliasKey(classType, input, from) {
     return `${classType}\u0000${input}\u0000${normalizeAliasValue(from)}`;
 }
 
+// 同一个 LLM 文件在 llama.cpp / QwenTE / 图像 PE 节点里的输入名不同。
+// 跨节点回退只允许这一组等价 loader，且必须得到唯一候选；不能按文件名取第一个。
+const LLM_LOADER_CLASSES = new Set(["llama_cpp_model_loader", "QwenTE_ModelLoader", "TE_Qwen_Image_2_1_Prompt_Enhancer"]);
+
+function loaderModelRole(input) {
+    const name = String(input || "");
+    if (name === "model" || name === "主模型") return "model";
+    if (name === "mmproj" || name === "视觉投影mmproj") return "mmproj";
+    return "";
+}
+
 function readAliasFile(file) {
     try {
         const parsed = JSON.parse(fs.readFileSync(file, "utf8").replace(/^\uFEFF/, ""));
@@ -335,15 +346,41 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         return (spec.dirs || []).some((dir) => modelRootsForDir(dir).some((root) => safeStat(path.join(root, normalized))?.isFile()));
     }
 
+    function crossClassUserAliasFor(classType, input, value) {
+        const role = loaderModelRole(input);
+        if (!role || !LLM_LOADER_CLASSES.has(classType)) return "";
+        const wanted = normalizeAliasValue(value).toLowerCase();
+        const candidates = new Map();
+        for (const [key, target] of Object.entries(aliases)) {
+            const [sourceClass, sourceInput, source] = key.split("\u0000");
+            if (!LLM_LOADER_CLASSES.has(sourceClass) || !target) continue;
+            if (loaderModelRole(sourceInput) !== role) continue;
+            if (normalizeAliasValue(source).toLowerCase() !== wanted) continue;
+            const installed = findInstalledOption(classType, target, input);
+            if (installed) candidates.set(normalizeAliasValue(installed).toLowerCase(), installed);
+        }
+        if (candidates.size === 1) {
+            const chosen = [...candidates.values()][0];
+            logger?.info?.(`模型别名跨节点匹配：${classType}.${input} ${value} → ${chosen}`);
+            return chosen;
+        }
+        if (candidates.size > 1) {
+            logger?.warn?.(`模型别名跨节点存在多个候选，已跳过：${classType}.${input} ${value}（${[...candidates.values()].join("、")}）`);
+        }
+        return "";
+    }
+
     // 只返回用户显式点过「自选替换」的别名；资源卡用它判断“已用自选”，
     // 自动/相似匹配不能伪造这个状态。
     function userModelAliasFor(classType, input, value) {
         if (!value) return "";
         const user = aliases[modelAliasKey(classType, input, value)] || "";
-        if (!user) return "";
-        // 只有 ComfyUI 当前 loader 列表里真有的文件才算生效；
-        // 仅磁盘存在但未加载的文件交给 pendingModelFile 标“待重启”，不能伪造可用。
-        return findInstalledOption(classType, user, input);
+        if (user) {
+            // 只有 ComfyUI 当前 loader 列表里真有的文件才算生效；
+            // 仅磁盘存在但未加载的文件交给 pendingModelFile 标“待重启”，不能伪造可用。
+            return findInstalledOption(classType, user, input);
+        }
+        return crossClassUserAliasFor(classType, input, value);
     }
 
     function modelAliasFor(classType, input, value) {
@@ -860,7 +897,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         }
         const entry = availability.get(id);
         if (entry) return entry;
-        return { available: !hasScanned, problems: [] };
+        return { available: !hasScanned, checking: !hasScanned, problems: [] };
     }
 
     function loraNames() {

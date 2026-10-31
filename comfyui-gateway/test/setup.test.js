@@ -502,3 +502,83 @@ test("LLM mmproj replacement uses the mmproj option list, not the model list", a
     await fsp.rm(dataDir, { recursive: true, force: true });
   }
 });
+
+function aliasObjectInfo() {
+  const modelOptions = ["Qwen3.5-9B-Q4_K_M.gguf", "Qwen3.5-9B-Q5_K.gguf", "Qwen3.5-9B-Q6_K.gguf"];
+  const mmprojOptions = ["无", "mmproj-BF16.gguf", "mmproj-Custom-BF16.gguf"];
+  return {
+    UNETLoader: { input: { required: { unet_name: [["z_image_turbo_bf16.safetensors", "Qwen3.5-9B-Q6_K.gguf"]] } } },
+    llama_cpp_model_loader: { input: { required: { model: [modelOptions], mmproj: [mmprojOptions] } } },
+    QwenTE_ModelLoader: { input: { required: { 主模型: [modelOptions], 视觉投影mmproj: [mmprojOptions] } } },
+    TE_Qwen_Image_2_1_Prompt_Enhancer: { input: { required: { 主模型: [modelOptions], mmproj: [mmprojOptions] } } },
+  };
+}
+
+function createAliasFileManager(dataDir, aliases) {
+  const aliasFile = path.join(dataDir, "model-aliases.json");
+  return fsp.writeFile(aliasFile, JSON.stringify({ version: 1, aliases })).then(() =>
+    createSetupManager({
+      config: { dataDir, comfyUrl: "http://127.0.0.1:1", comfyWorkflowsDir: "", maxWorkflowBytes: 1024 * 1024 },
+      registry: { list: () => [], resolve: () => null, scan: async () => ({ imported: 0 }), reloadIfChanged: () => {} },
+      comfy: { systemStats: async () => ({}), objectInfo: async () => aliasObjectInfo() },
+      logger: { info() {}, warn() {} },
+      mainModelFile: () => "",
+    }),
+  );
+}
+
+test("cross-class aliases apply only when a single installed target is unambiguous", async () => {
+  const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-alias-cross-"));
+  try {
+    const manager = await createAliasFileManager(dataDir, {
+      "llama_cpp_model_loader\u0000model\u0000Qwen3.5-9B-Q4_K_M.gguf": "Qwen3.5-9B-Q6_K.gguf",
+      "llama_cpp_model_loader\u0000mmproj\u0000mmproj-BF16.gguf": "mmproj-Custom-BF16.gguf",
+    });
+    await manager.scan();
+    assert.equal(manager.userModelAliasFor("QwenTE_ModelLoader", "主模型", "Qwen3.5-9B-Q4_K_M.gguf"), "Qwen3.5-9B-Q6_K.gguf");
+    assert.equal(manager.userModelAliasFor("TE_Qwen_Image_2_1_Prompt_Enhancer", "mmproj", "mmproj-BF16.gguf"), "mmproj-Custom-BF16.gguf");
+    assert.equal(manager.userModelAliasFor("UNETLoader", "unet_name", "Qwen3.5-9B-Q4_K_M.gguf"), "");
+  } finally {
+    await fsp.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("cross-class aliases never guess when two targets are installed", async () => {
+  const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-alias-ambiguous-"));
+  try {
+    const manager = await createAliasFileManager(dataDir, {
+      "llama_cpp_model_loader\u0000model\u0000Qwen3.5-9B-Q4_K_M.gguf": "Qwen3.5-9B-Q6_K.gguf",
+      "QwenTE_ModelLoader\u0000主模型\u0000Qwen3.5-9B-Q4_K_M.gguf": "Qwen3.5-9B-Q5_K.gguf",
+    });
+    await manager.scan();
+    assert.equal(manager.userModelAliasFor("TE_Qwen_Image_2_1_Prompt_Enhancer", "主模型", "Qwen3.5-9B-Q4_K_M.gguf"), "");
+  } finally {
+    await fsp.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("an exact class alias wins over an equivalent-class alias", async () => {
+  const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-alias-exact-"));
+  try {
+    const manager = await createAliasFileManager(dataDir, {
+      "llama_cpp_model_loader\u0000model\u0000Qwen3.5-9B-Q4_K_M.gguf": "Qwen3.5-9B-Q6_K.gguf",
+      "QwenTE_ModelLoader\u0000主模型\u0000Qwen3.5-9B-Q4_K_M.gguf": "Qwen3.5-9B-Q5_K.gguf",
+    });
+    await manager.scan();
+    assert.equal(manager.userModelAliasFor("QwenTE_ModelLoader", "主模型", "Qwen3.5-9B-Q4_K_M.gguf"), "Qwen3.5-9B-Q5_K.gguf");
+  } finally {
+    await fsp.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("workflowStatus marks the pre-scan state as checking", async () => {
+  const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-checking-"));
+  try {
+    const manager = createManager(dataDir, ["z_image_turbo_bf16.safetensors"]);
+    assert.equal(manager.workflowStatus(entry.id).checking, true);
+    await manager.scan();
+    assert.equal(manager.workflowStatus(entry.id).checking, undefined);
+  } finally {
+    await fsp.rm(dataDir, { recursive: true, force: true });
+  }
+});

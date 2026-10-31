@@ -32,9 +32,10 @@ import { runImage, runVideo, runWorkflow } from "./runner.js";
 import { createSkinUnlockStore } from "./skin-unlocks.js";
 import { readSystemStats } from "./system-stats.js";
 import { createTaskStore } from "./tasks.js";
-import { applyUpdate, checkForUpdate, getUpdateProgress, recoverWorkflowBackups } from "./update.js";
+import { applyUpdate, checkForUpdate, detectInterruptedUpdate, getUpdateProgress, recoverWorkflowBackups, restoreInterruptedUpdate } from "./update.js";
 import { uploadImages } from "./uploads.js";
 import { createWorkflowVisibilityStore } from "./workflow-visibility.js";
+import { workflowAvailabilityProblem } from "./workflow-availability.js";
 import { alignH3Frames, capH3ReferenceFrames, framesFromSeconds, extFromMime, jsonError, nowIso, parseSize, randomId, safeFileName, sleep } from "./util.js";
 
 class HttpError extends Error {
@@ -221,13 +222,20 @@ function applyBackgroundPrompt(prompt, background, entry) {
   return `${RGBA_PROMPT_PREFIX} ${text} ${RGBA_PROMPT_SUFFIX}`.trim();
 }
 
-function requireModel(registry, setup, model, expectedType) {
+function requireModel(registry, setup, model, expectedType, { mode = "", allowUnavailable = false } = {}) {
   const name = String(model || "").trim();
   if (!name) throw new HttpError("缺少 model 参数", { status: 400, code: "missing_model" });
   const found = registry.resolveModel(name, (setup.loaderOptions?.() || {}));
   if (!found) throw new HttpError(`未找到模型：${name}。请先在网关注册工作流，或在画布渠道里拉取模型列表。`, { status: 404, code: "model_not_found" });
   if (expectedType && found.entry.type !== expectedType) throw new HttpError(`模型 ${name} 的类型是 ${found.entry.type}，不是 ${expectedType}`, { status: 400, code: "model_type_mismatch" });
+  const unavailable = workflowAvailabilityProblem(setup, found.entry, { mode, allowUnavailable });
+  if (unavailable) throw new HttpError(unavailable.message, { status: 409, code: unavailable.code, details: unavailable.details });
   return found.entry;
+}
+
+function requireWorkflowMode(setup, entry, mode) {
+  const unavailable = workflowAvailabilityProblem(setup, entry, { mode });
+  if (unavailable) throw new HttpError(unavailable.message, { status: 409, code: unavailable.code, details: unavailable.details });
 }
 
 function isLoopbackPeer(address) {
@@ -268,6 +276,10 @@ export async function createGatewayApp(overrides = {}) {
   const assistant = createAssistantManager({ config, logger, idleMs: config.assistantIdleMs });
   try {
     const recovery = await recoverWorkflowBackups(config);
+    const interruptedUpdate = await detectInterruptedUpdate(config).catch(() => ({ pending: false }));
+    if (interruptedUpdate.pending) {
+      logger.warn(`检测到未完成的更新 v${interruptedUpdate.version}（当前 v${interruptedUpdate.currentVersion}）；可调用 POST /api/update/recovery/restore 回滚，或重新应用完整包。`);
+    }
     if (recovery.restored.length) {
       logger.warn(`升级后恢复 ${recovery.restored.length} 个本地修改的工作流；新版官方文件保存在 .update-backup/${config.version}/official-new`);
     }
@@ -365,7 +377,13 @@ export async function createGatewayApp(overrides = {}) {
     }
     activeRequests.clear();
   };
-  const promptOptimizer = createPromptOptimizer({ config, comfy, logger });
+  const promptOptimizer = createPromptOptimizer({
+    config,
+    comfy,
+    logger,
+    modelAliasFor: setup.modelAliasFor,
+    loaderSpecs: () => setup.modelLoaderSpecs?.(),
+  });
   const videoInterpolator = createVideoInterpolator({ config, logger });
 
   // 把 parameters.optionsFrom（如 "UpscaleModelLoader.model_name"）替换成 ComfyUI 实时选项。
@@ -452,9 +470,11 @@ export async function createGatewayApp(overrides = {}) {
   app.get("/health", async (_req, res) => {
     const reachable = await Promise.race([comfy.isReachable(), sleep(1500).then(() => false)]);
     const setupStatus = setup.status();
+    const interrupted = await detectInterruptedUpdate(config).catch(() => ({ pending: false }));
     res.json({
       status: "ok",
       version: config.version,
+      updateRecovery: interrupted.pending ? { pending: true, version: interrupted.version, files: interrupted.files?.length || 0 } : null,
       comfy: { url: comfy.baseUrl(), reachable },
       // 与设置页一致：hidden 的辅助工作流不计入可用性统计。
       workflows: { count: setupStatus.counts?.total || registry.list().length },
@@ -607,6 +627,15 @@ export async function createGatewayApp(overrides = {}) {
 
   app.get("/api/update/progress", (_req, res) => {
     res.json({ ok: true, progress: getUpdateProgress() });
+  });
+
+  app.get("/api/update/recovery", async (_req, res) => {
+    const { backupDir: _backupDir, ...info } = await detectInterruptedUpdate(config);
+    res.json({ ok: true, ...info });
+  });
+
+  app.post("/api/update/recovery/restore", async (_req, res) => {
+    res.json({ ok: true, ...(await restoreInterruptedUpdate(config)) });
   });
 
   app.post("/api/update/apply", async (req, res) => {
@@ -1134,6 +1163,7 @@ export async function createGatewayApp(overrides = {}) {
     const body = req.body || {};
     const baseEntry = requireModel(registry, setup, body.model, "image");
     const mode = String(body.mode || body.imageMode || "").trim();
+    requireWorkflowMode(setup, baseEntry, mode);
     const entry = mode ? registry.resolveForMode(baseEntry, mode) : baseEntry;
     if (body.background && !entry.bindings?.background && !entry.backgroundPrompt) {
       throw new HttpError(`工作流 ${entry.name} 没有 background 绑定，不能保证透明背景。`, { status: 400, code: "unsupported_background" });
@@ -1193,7 +1223,7 @@ export async function createGatewayApp(overrides = {}) {
   app.post("/v1/images/upscale", upload.any(), async (req, res) => {
     await registry.reloadIfChanged();
     const body = req.body || {};
-    const entry = requireModel(registry, setup, body.model || "image-esrgan-upscale", "image");
+    const entry = requireModel(registry, setup, body.model || "image-esrgan-upscale", "image", { allowUnavailable: true });
     if (entry.category !== "upscale") {
       throw new HttpError(`模型 ${entry.name} 不是超分工作流`, { status: 400, code: "not_upscale_workflow" });
     }
@@ -1257,6 +1287,7 @@ export async function createGatewayApp(overrides = {}) {
     if (entry.variants && !entry.variants[mode]) {
       throw new HttpError(`模型 ${entry.name} 不支持功能：${mode || "（空）"}`, { status: 400, code: "unsupported_image_mode" });
     }
+    requireWorkflowMode(setup, entry, mode);
     if (entry.id === "image-qwen21") {
       if (mode === "inpaint" && files.length !== 2) {
         throw new HttpError("Qwen 局部重绘需要 2 张图：原图 + 二值蒙版", { status: 400, code: "invalid_inpaint_media" });
@@ -1443,7 +1474,7 @@ export async function createGatewayApp(overrides = {}) {
   app.post("/v1/videos/upscale", upload.any(), async (req, res) => {
     await registry.reloadIfChanged();
     const body = req.body || {};
-    const entry = requireModel(registry, setup, body.model || "video-seedvr2-upscale", "video");
+    const entry = requireModel(registry, setup, body.model || "video-seedvr2-upscale", "video", { allowUnavailable: true });
     if (entry.category !== "upscale") {
       throw new HttpError(`模型 ${entry.name} 不是视频超分工作流`, { status: 400, code: "not_upscale_workflow" });
     }
@@ -1566,6 +1597,7 @@ export async function createGatewayApp(overrides = {}) {
     else if (entry.id === "video-h3-frames") videoMode = "frames";
     else if (entry.id === "video-h3-fast") videoMode = videoMode === "text" ? "text" : "frames";
     else if (entry.id === "video-h3-ref2va") videoMode = "reference";
+    if (entry.variants) requireWorkflowMode(setup, entry, videoMode);
     let requiredImageCount = Object.values(entry.bindings || {}).reduce((max, binding) => {
       if (!binding) return max;
       if (binding.from === "image" && binding.array) return Math.max(max, Number(binding.min ?? 0));

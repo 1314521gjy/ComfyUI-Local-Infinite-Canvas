@@ -437,6 +437,18 @@ async function applyArchivePatch(config, { patch, version, dryRun = false }) {
     if (!candidates.length && !deleteList.length) throw updateError("补丁内没有可更新的文件", "patch_empty");
     if (dryRun) return { files: candidates.map((file) => file.rel), deleted: deleteList };
 
+    const pendingFile = path.join(backupDir, ".pending.json");
+    const completeFile = path.join(backupDir, ".complete.json");
+    const candidateFiles = candidates.map((file) => file.rel);
+    const existing = [];
+    for (const relative of candidateFiles) {
+      const target = path.resolve(config.appRoot, relative);
+      if (!target.startsWith(`${path.resolve(config.appRoot)}${path.sep}`)) continue;
+      if (fs.existsSync(target)) existing.push(relative);
+    }
+    await fsp.mkdir(backupDir, { recursive: true });
+    await fsp.writeFile(pendingFile, JSON.stringify({ version, startedAt: new Date().toISOString(), files: candidateFiles, deleteList, existing }, null, 2), "utf8");
+
     setUpdateProgress({ phase: "applying", percent: 95, speed: 0 });
 
     const written = [];
@@ -484,9 +496,12 @@ async function applyArchivePatch(config, { patch, version, dryRun = false }) {
         await fsp.mkdir(path.dirname(item.target), { recursive: true }).catch(() => {});
         await fsp.copyFile(item.backup, item.target).catch(() => {});
       }
+      await fsp.rm(pendingFile, { force: true }).catch(() => {});
       throw updateError(`补丁应用失败，已回滚：${error.message}`, "patch_apply_failed");
     }
     await syncLocalManifest(config);
+    await fsp.writeFile(completeFile, JSON.stringify({ version, finishedAt: new Date().toISOString(), files: candidateFiles, deleted: deleteList }, null, 2), "utf8");
+    await fsp.rm(pendingFile, { force: true }).catch(() => {});
     await fsp.rm(staging, { recursive: true, force: true }).catch(() => {});
     setUpdateProgress({ phase: "done", percent: 100, speed: 0, message: "更新完成" });
     return { files: candidates.map((file) => file.rel), deleted: deleteList, changedFiles: candidates.length, preserved };
@@ -499,6 +514,88 @@ async function applyArchivePatch(config, { patch, version, dryRun = false }) {
  * Compare the local manifest with the remote/tracking manifest.
  * A git install fetches only when fetchRemote is true; a plain archive install can use UPDATE_MANIFEST_URL.
  */
+// 更新进程在复制文件中途被杀时，.pending.json 会留下；启动/健康检查可据此提示。
+export async function detectInterruptedUpdate(config) {
+  const root = path.join(config.appRoot, ".update-backup");
+  let entries = [];
+  try {
+    entries = await fsp.readdir(root, { withFileTypes: true });
+  } catch {
+    return { pending: false };
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const backupDir = path.join(root, entry.name);
+    const pendingFile = path.join(backupDir, ".pending.json");
+    const completeFile = path.join(backupDir, ".complete.json");
+    if (!fs.existsSync(pendingFile)) continue;
+    if (fs.existsSync(completeFile)) continue;
+    try {
+      const pending = JSON.parse(await fsp.readFile(pendingFile, "utf8"));
+      return {
+        pending: true,
+        version: String(pending.version || entry.name),
+        currentVersion: String(config.version || ""),
+        backupDir,
+        files: Array.isArray(pending.files) ? pending.files : [],
+        deleteList: Array.isArray(pending.deleteList) ? pending.deleteList : [],
+        existing: Array.isArray(pending.existing) ? pending.existing : [],
+        startedAt: pending.startedAt || "",
+      };
+    } catch {
+      return {
+        pending: true,
+        version: entry.name,
+        currentVersion: String(config.version || ""),
+        backupDir,
+        files: [],
+        deleteList: [],
+        existing: [],
+        startedAt: "",
+        unreadable: true,
+      };
+    }
+  }
+  return { pending: false };
+}
+
+// 手动恢复入口：只回滚 pending 记录的补丁文件，不碰 data/models/config。
+export async function restoreInterruptedUpdate(config) {
+  const info = await detectInterruptedUpdate(config);
+  if (!info.pending) return { restored: false, reason: "没有待恢复的更新" };
+  const root = path.resolve(config.appRoot);
+  const backupRoot = path.resolve(info.backupDir);
+  let restored = 0;
+  let removed = 0;
+  const existing = new Set(info.existing);
+  for (const relative of info.files) {
+    const target = path.resolve(root, relative);
+    if (!target.startsWith(`${root}${path.sep}`)) continue;
+    const backup = path.resolve(backupRoot, relative);
+    if (!backup.startsWith(`${backupRoot}${path.sep}`)) continue;
+    if (fs.existsSync(backup)) {
+      await fsp.mkdir(path.dirname(target), { recursive: true });
+      await fsp.copyFile(backup, target);
+      restored += 1;
+    } else if (!existing.has(relative) && fs.existsSync(target)) {
+      await fsp.rm(target, { force: true });
+      removed += 1;
+    }
+  }
+  for (const relative of info.deleteList) {
+    const target = path.resolve(root, relative);
+    if (!target.startsWith(`${root}${path.sep}`)) continue;
+    const backup = path.resolve(backupRoot, relative);
+    if (!backup.startsWith(`${backupRoot}${path.sep}`) || !fs.existsSync(backup)) continue;
+    await fsp.mkdir(path.dirname(target), { recursive: true });
+    await fsp.copyFile(backup, target);
+    restored += 1;
+  }
+  await fsp.writeFile(path.join(info.backupDir, ".recovered.json"), JSON.stringify({ at: new Date().toISOString(), restored, removed }, null, 2), "utf8").catch(() => {});
+  await fsp.rm(path.join(info.backupDir, ".pending.json"), { force: true }).catch(() => {});
+  return { restored: true, version: info.version, files: restored, removed };
+}
+
 export async function checkForUpdate(config, { fetchRemote = false } = {}) {
   const currentVersion = readCurrentVersion(config);
   const installType = isGitRepo(config) ? "git" : "archive";

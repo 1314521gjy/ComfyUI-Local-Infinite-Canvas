@@ -392,3 +392,77 @@ test("cloud H3 retries with temperature=1 when the provider rejects 0.6", async 
         await new Promise((resolve) => server.close(resolve));
     }
 });
+
+test("local caption applies explicit model aliases before submitting", async () => {
+    let submitted = null;
+    const optimizer = createPromptOptimizer({
+        config: { rootDir },
+        comfy: {
+            submit: async (workflow) => {
+                submitted = workflow;
+                return { promptId: "caption-alias" };
+            },
+            history: async () => ({ status: { completed: true }, outputs: { "4": { text: ["一只猫"] } } }),
+        },
+        logger: { info() {} },
+        loaderSpecs: [
+            { classType: "llama_cpp_model_loader", input: "model" },
+            { classType: "llama_cpp_model_loader", input: "mmproj" },
+        ],
+        modelAliasFor: (classType, input, value) => {
+            if (classType !== "llama_cpp_model_loader") return "";
+            if (input === "model" && value === "Qwen3.5-9B-Q4_K_M.gguf") return "Qwen3.5-9B-Q6_K.gguf";
+            if (input === "mmproj" && value === "mmproj-BF16.gguf") return "mmproj-Custom-BF16.gguf";
+            return "";
+        },
+    });
+    await optimizer.captionImage({ uploadedImages: [{ name: "cat.png" }] });
+    assert.equal(submitted["2"].inputs.model, "Qwen3.5-9B-Q6_K.gguf");
+    assert.equal(submitted["2"].inputs.mmproj, "mmproj-Custom-BF16.gguf");
+});
+
+test("local image optimize applies aliases for the Qwen PE loader inputs", async () => {
+    let submitted = null;
+    const optimizer = createPromptOptimizer({
+        config: { rootDir },
+        comfy: {
+            submit: async (workflow) => {
+                submitted = workflow;
+                return { promptId: "image-alias" };
+            },
+            history: async () => ({ status: { completed: true }, outputs: { "2": { text: ["a quiet bookstore at night, warm light"] } } }),
+        },
+        logger: { info() {} },
+        loaderSpecs: [
+            { classType: "TE_Qwen_Image_2_1_Prompt_Enhancer", input: "主模型" },
+            { classType: "TE_Qwen_Image_2_1_Prompt_Enhancer", input: "mmproj" },
+        ],
+        modelAliasFor: (classType, input, value) => {
+            if (classType !== "TE_Qwen_Image_2_1_Prompt_Enhancer") return "";
+            if (input === "主模型" && value === "Qwen3.5-9B-Q4_K_M.gguf") return "Qwen3.5-9B-Q6_K.gguf";
+            if (input === "mmproj" && value === "mmproj-BF16.gguf") return "mmproj-Custom-BF16.gguf";
+            return "";
+        },
+    });
+    await optimizer.optimizeImage({ prompt: "a bookstore", engine: "local" });
+    assert.equal(submitted["1"].inputs["主模型"], "Qwen3.5-9B-Q6_K.gguf");
+    assert.equal(submitted["1"].inputs.mmproj, "mmproj-Custom-BF16.gguf");
+});
+
+test("templates stay untouched when no alias function is provided", async () => {
+    let submitted = null;
+    const optimizer = createPromptOptimizer({
+        config: { rootDir },
+        comfy: {
+            submit: async (workflow) => {
+                submitted = workflow;
+                return { promptId: "no-alias" };
+            },
+            history: async () => ({ status: { completed: true }, outputs: { "4": { text: ["一只猫"] } } }),
+        },
+        logger: null,
+    });
+    await optimizer.captionImage({ uploadedImages: [{ name: "cat.png" }] });
+    assert.equal(submitted["2"].inputs.model, "Qwen3.5-9B-Q4_K_M.gguf");
+    assert.equal(submitted["2"].inputs.mmproj, "mmproj-BF16.gguf");
+});

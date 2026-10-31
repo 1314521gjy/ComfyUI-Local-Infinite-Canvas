@@ -910,6 +910,39 @@ async function startLegacyGatewayProxy(cfg, gatewayUrl) {
   return server;
 }
 
+function hostForUrl(hostname) {
+  const host = String(hostname || "").trim();
+  if (!host) return "";
+  return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+}
+
+// 同一份 config.js 会发给本机和远程浏览器：本机继续走回环，远程按请求 Host
+// 推导可达网关，避免把 127.0.0.1 发给另一台设备。
+export function runtimeGatewayForRequest(cfg, hostHeader = "") {
+  let pageHost = "";
+  try {
+    pageHost = new URL(`http://${hostHeader || "127.0.0.1"}`).hostname || "";
+  } catch {
+    pageHost = "";
+  }
+  if (!pageHost || isLoopbackHost(pageHost)) {
+    return { host: "127.0.0.1", url: `${new URL(cfg.gatewayUrl).origin}/v1` };
+  }
+  if (cfg.gatewayPublicUrl && cfg.gatewayPublicUrl !== cfg.gatewayUrl) {
+    try {
+      const publicUrl = new URL(cfg.gatewayPublicUrl);
+      return { host: publicUrl.hostname, url: `${publicUrl.origin}/v1` };
+    } catch {
+      /* 配置不合法时回退到请求 Host */
+    }
+  }
+  if (cfg.allowLan && !isLoopbackHost(cfg.gatewayHost || "127.0.0.1")) {
+    const host = pageHost;
+    return { host, url: `http://${hostForUrl(host)}:${cfg.gatewayPort}/v1` };
+  }
+  return { host: "127.0.0.1", url: `${new URL(cfg.gatewayUrl).origin}/v1` };
+}
+
 function createCanvasServer(cfg) {
   const distDir = path.resolve(cfg.canvasDist);
   const indexPath = path.join(distDir, "index.html");
@@ -932,17 +965,13 @@ function createCanvasServer(cfg) {
       }
 
       // 运行时配置由服务端直接生成：npm run build 清空 dist 后也不会丢网关地址。
+      // 回环请求始终返回回环地址；远程请求才使用 public 地址，避免本机访问被公网域名拖死。
       if (pathname === "/config.js") {
-        let origin = cfg.gatewayUrl;
-        try {
-          origin = new URL(cfg.gatewayUrl).origin;
-        } catch {
-          /* 保持原样 */
-        }
+        const gateway = runtimeGatewayForRequest(cfg, req.headers.host);
         const runtime = {
-          LOCAL_GATEWAY_HOST: "127.0.0.1",
+          LOCAL_GATEWAY_HOST: gateway.host,
           LOCAL_GATEWAY_PORT: String(cfg.gatewayPort),
-          LOCAL_GATEWAY_URL: `${origin}/v1`,
+          LOCAL_GATEWAY_URL: gateway.url,
         };
         res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store" });
         res.end(`window.__RUNTIME_CONFIG__ = ${JSON.stringify(runtime)};\n`);
@@ -1520,6 +1549,9 @@ async function main() {
     `参数：comfyUrl=${cfg.comfyUrl} gatewayPort=${cfg.gatewayPort} controlPort=${cfg.controlPort} canvasPort=${cfg.canvasPort} ` +
       `gatewayDir=${cfg.gatewayDir} canvasDist=${cfg.canvasDist}`
   );
+  if (cfg.allowLan && !isLoopbackHost(cfg.gatewayHost || "127.0.0.1") && !cfg.corsOrigins) {
+    log("已放开局域网监听但未配置 corsOrigins：远程浏览器可能被网关 CORS 拒绝。请在 launcher/config.json 填写画布来源，或仅在本机使用。", "WARN");
+  }
   if (DRY_RUN) log("dry-run：只做检测与打印，不启动任何进程，不监听端口");
   cfg.launcherControlUrl = "";
   if (!DRY_RUN) {
@@ -1772,4 +1804,4 @@ if (invokedDirectly) {
   });
 }
 
-export { comfyInstallInfo, resolveLaunchPlan, comfyPortCandidates, detectComfy, probeAnyComfy, listenCanvasServer, isLoopbackHost, normalizeHost, browseHostFor, requestGatewayShutdown };
+export { comfyInstallInfo, resolveLaunchPlan, comfyPortCandidates, detectComfy, probeAnyComfy, listenCanvasServer, isLoopbackHost, normalizeHost, browseHostFor, requestGatewayShutdown, createCanvasServer };

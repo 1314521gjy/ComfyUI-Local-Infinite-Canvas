@@ -848,14 +848,16 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         return version;
     }
 
-    function pipImportStatus(python, module, { fresh = false, distribution = "" } = {}) {
+    function pipImportStatus(python, module, { fresh = false, distribution = "", deep = false } = {}) {
         if (!python || !module) return { present: false, version: "", reason: "未找到 ComfyUI 的 Python" };
         const key = `${python}|${module}`.toLowerCase();
         const cached = pipCheckCache.get(key);
-        if (!fresh && cached && Date.now() - cached.at < (cached.present ? 600000 : 60000)) return cached;
-        try {
-            const distributionName = String(distribution || module).trim() || module;
-            const code = [
+        if (!fresh && cached && Date.now() - cached.at < (cached.present ? 600000 : cached.unknown ? 15000 : 60000)) return cached;
+        const distributionName = String(distribution || module).trim() || module;
+        // 资源状态只需快速确认“装没装”：find_spec 不 import torch，冷启动时不会因为
+        // 和 ComfyUI 抢磁盘/CPU 而误报缺失。真实 import 只在安装后验证时做。
+        const code = deep
+            ? [
                 `import ${module} as _m`,
                 "import importlib.metadata as _md",
                 "try:",
@@ -863,19 +865,46 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 "except Exception:",
                 '    _v = ""',
                 'print(getattr(_m, "__version__", "") or _v)',
+            ].join("\n")
+            : [
+                "import importlib.util",
+                "import importlib.metadata as _md",
+                `_spec = importlib.util.find_spec(${JSON.stringify(module)})`,
+                "if _spec is None:",
+                "    raise SystemExit(3)",
+                "try:",
+                `    print(_md.version(${JSON.stringify(distributionName)}))`,
+                "except Exception:",
+                '    print("")',
             ].join("\n");
+        try {
             const stdout = execFileSync(python, ["-c", code], {
-                timeout: 15000,
+                timeout: deep ? 60000 : 8000,
                 windowsHide: true,
                 encoding: "utf8",
             });
-            // import 时第三方库可能往 stdout 打日志，版本号取最后一行。
+            // 第三方库可能在 stdout 打日志，版本号取最后一行。
             const lines = String(stdout || "").trim().split(/\r?\n/).filter(Boolean);
-            const result = { present: true, version: lines.pop() || "", reason: "", at: Date.now() };
+            const result = { present: true, version: lines.pop() || "", reason: "", method: deep ? "import" : "spec", at: Date.now() };
             pipCheckCache.set(key, result);
             return result;
-        } catch {
-            const result = { present: false, version: "", reason: `Python 环境缺少 ${module}`, at: Date.now() };
+        } catch (error) {
+            const timedOut = error?.code === "ETIMEDOUT" || error?.killed === true || error?.signal === "SIGTERM";
+            const missing = !deep && Number(error?.status) === 3;
+            const reason = timedOut
+                ? "运行库检测超时（Python 环境繁忙或 ComfyUI 正在启动）"
+                : missing
+                  ? `Python 环境缺少 ${module}`
+                  : `无法确认 ${module} 状态：${truncate(String(error?.stderr || error?.message || error), 200)}`;
+            const result = {
+                present: false,
+                version: "",
+                reason,
+                method: deep ? "import" : "spec",
+                unknown: !missing,
+                timedOut,
+                at: Date.now(),
+            };
             pipCheckCache.set(key, result);
             return result;
         }
@@ -886,7 +915,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         const module = String(resource.module || resource.importName || "").trim();
         const distribution = String(resource.pipName || module).trim();
         const imported = pipImportStatus(python, module, { distribution });
-        const distributionVersion = imported.present ? "" : pipDistributionVersion(python, distribution);
+        const distributionVersion = imported.present || imported.unknown ? "" : pipDistributionVersion(python, distribution);
         return { python, ...imported, distributionVersion };
     }
 
@@ -1051,7 +1080,9 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                       pythonRuntime: pip.python || "",
                       pythonVersion,
                       pipVersion: pip.present ? pip.version || "" : pip.distributionVersion || "",
-                      pipBroken: Boolean(!pip.present && pip.distributionVersion),
+                      pipBroken: Boolean(!pip.present && pip.distributionVersion && !pip.unknown),
+                      pipChecking: Boolean(pip.unknown),
+                      pipTimedOut: Boolean(pip.timedOut),
                       pipReason: pip.reason || "",
                       pipName: String(resource.pipName || resource.module || ""),
                       wheelVersions,
@@ -1607,13 +1638,26 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             const type = String(resource.type || "model");
             if (!["pip", "bake", "node"].includes(type)) continue;
             const state = cachedResourceStatus(resource, comfyRoot());
-            if (state.present) continue;
+            // 快速探测超时/无法确认时不把工作流判死；用户仍可重扫或直接运行。
+            if (state.present || state.pipChecking) continue;
             const blocked = state.missingRequires?.length ? `（先安装 ${state.missingRequires.join("、")}）` : "";
             problems.push({
                 type: "runtime",
                 message: `缺少运行期依赖：${state.label}${blocked}`,
                 resourceId: id,
             });
+        }
+        if (String(workflowId).startsWith("video-h3-")) {
+            const python = comfyPythonForBake(comfyRoot());
+            const tensorrt = python ? pipImportStatus(python, "tensorrt", { distribution: "tensorrt" }) : null;
+            // 快速探测超时/无法确认时不误杀；只有明确未安装才给出可执行提示。
+            if (tensorrt && !tensorrt.present && !tensorrt.unknown) {
+                problems.push({
+                    type: "runtime",
+                    resourceId: "h3_trt_vae_decoder_engine",
+                    message: "缺少 TensorRT Python 运行库（H3 TRT VAE 必需）。请在 ComfyUI 使用同一个 Python 环境安装与本机 CUDA/驱动匹配的 tensorrt，然后重启 ComfyUI；画布不会自动替换 torch/CUDA。",
+                });
+            }
         }
         if (missingVdn.length) {
             const stageB = missingVdn.find((resource) => resource.id === "h3_vdn_stage_default_adapter");
@@ -2173,7 +2217,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         const module = String(resource.module || resource.importName || "").trim();
         if (!module) throw new Error("运行库资源缺少 module 字段");
         const distribution = String(resource.pipName || module).trim();
-        const imported = pipImportStatus(python, module, { fresh: true, distribution });
+        const imported = pipImportStatus(python, module, { fresh: true, distribution, deep: true });
         if (imported.present) {
             jobItem.status = "skipped";
             jobItem.skipped = true;
@@ -2269,7 +2313,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             throw error;
         }
         pipCheckCache.delete(`${python}|${module}`.toLowerCase());
-        const recheck = pipImportStatus(python, module, { fresh: true, distribution });
+        const recheck = pipImportStatus(python, module, { fresh: true, distribution, deep: true });
         if (!recheck.present) {
             const error = new Error(`运行库安装后仍无法导入 ${module}：${recheck.reason || "未知原因"}`);
             await revertPipInstall(python, module, distribution, backupDir);

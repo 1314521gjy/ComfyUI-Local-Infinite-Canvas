@@ -60,7 +60,9 @@ export function createVideoInterpolator({ config, logger } = {}) {
           }
           if (status.completed) throw new Error("插帧工作流没有返回视频");
         }
-        onProgress?.({ phase: "interpolating", progress: 0.97, elapsedMs: Date.now() - started });
+        // 插帧没有逐帧预览，至少让进度条随耗时缓慢前进，避免用户误以为卡死。
+        const elapsedMs = Date.now() - started;
+        onProgress?.({ phase: "interpolating", progress: Math.min(0.99, 0.97 + elapsedMs / 60000 / 100), elapsedMs });
         await sleep(1500);
       }
       await comfy.cancel?.(promptId).catch(() => undefined);

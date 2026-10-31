@@ -13,9 +13,18 @@ export const MODEL_LOADER_SPECS = [
     // llama-cpp 的 LLM 权重和视觉投影是两个不同输入，不能共用一个选项列表。
     { classType: "llama_cpp_model_loader", input: "model", key: "llmModel", dirs: ["LLM"] },
     { classType: "llama_cpp_model_loader", input: "mmproj", key: "llmMmproj", dirs: ["LLM"] },
+    // 同一套 LLM 文件在这些节点里的输入名不同；静态登记一份，扫描未完成时也能套别名。
+    { classType: "QwenTE_ModelLoader", input: "主模型", key: "qwenTeModel", dirs: ["LLM"] },
+    { classType: "QwenTE_ModelLoader", input: "视觉投影mmproj", key: "qwenTeMmproj", dirs: ["LLM"] },
+    { classType: "TE_Qwen_Image_2_1_Prompt_Enhancer", input: "主模型", key: "qwenImagePeModel", dirs: ["LLM"] },
+    { classType: "TE_Qwen_Image_2_1_Prompt_Enhancer", input: "mmproj", key: "qwenImagePeMmproj", dirs: ["LLM"] },
+    { classType: "TE_Qwen_Image_2_1_Prompt_Enhancer", input: "文生图PE模型", key: "qwenImagePeT2i", dirs: [] },
+    { classType: "TE_Qwen_Image_2_1_Prompt_Enhancer", input: "图生图PE模型", key: "qwenImagePeI2i", dirs: [] },
 ];
 
 const MODEL_FILE_PATTERN = /\.(safetensors|ckpt|pt|pth|bin|gguf|onnx)$/i;
+// 模型下拉常混一个“不使用”占位项（无/None）；它仍是模型选择输入。
+const MODEL_PLACEHOLDER = /^(无|none|null)$/i;
 const NON_MODEL_INPUT = /^(image|images|video|videos|audio|audios|file|filename|mask|prompt|text)$/i;
 const NON_MODEL_CLASS = /LoadImage|LoadVideo|LoadAudio|Upload|Preview|Save|VHS_/i;
 
@@ -32,7 +41,8 @@ export function discoverModelLoaderSpecs(objectInfo, baseSpecs = MODEL_LOADER_SP
                 if (NON_MODEL_INPUT.test(input)) continue;
                 const options = Array.isArray(definition?.[0]) ? definition[0] : Array.isArray(definition?.[1]?.options) ? definition[1].options : null;
                 if (!options?.length) continue;
-                if (!options.every((value) => typeof value === "string" && MODEL_FILE_PATTERN.test(value))) continue;
+                if (!options.some((value) => typeof value === "string" && MODEL_FILE_PATTERN.test(value))) continue;
+                if (!options.every((value) => typeof value === "string" && (MODEL_FILE_PATTERN.test(value) || MODEL_PLACEHOLDER.test(value)))) continue;
                 const key = `${classType}\u0000${input}`;
                 if (seen.has(key)) continue;
                 seen.add(key);

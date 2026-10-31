@@ -119,21 +119,47 @@ const archivePath = path.join(tempRoot, archiveName);
 try {
     for (const entry of INCLUDE) {
         const source = path.join(root, entry);
-        if (!fs.existsSync(source)) {
-            console.warn(`跳过不存在的项：${entry}`);
-            continue;
-        }
+        if (!fs.existsSync(source)) throw new Error(`缺少待打包文件：${entry}`);
         await copyEntry(source, path.join(patchRoot, entry));
     }
     if (deleteFile) {
         const content = await fsp.readFile(path.resolve(deleteFile), "utf8");
         await fsp.writeFile(path.join(patchRoot, "PATCH-DELETE.txt"), content.replace(/\r?\n/g, "\n"), "utf8");
     }
+    // 补丁必须包含所有运行时入口；缺一个都可能让用户升级后打不开。
+    for (const required of [
+        "VERSION",
+        "launcher/start.mjs",
+        "comfyui-gateway/src/server.js",
+        "comfyui-gateway/workflows/registry.json",
+        "infinite-canvas/web/dist/index.html",
+    ]) {
+        if (!fs.existsSync(path.join(patchRoot, required))) throw new Error(`补丁缺少运行时文件：${required}`);
+    }
+    // dist 入口引用的 JS/CSS 必须真的在补丁里，避免只发 index.html 或漏 asset。
+    const patchIndex = await fsp.readFile(path.join(patchRoot, "infinite-canvas", "web", "dist", "index.html"), "utf8");
+    for (const match of patchIndex.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)) {
+        const rel = match[1].replace(/^\/+/, "");
+        if (!fs.existsSync(path.join(patchRoot, "infinite-canvas", "web", "dist", rel))) {
+            throw new Error(`补丁缺少 dist 资源：${match[1]}`);
+        }
+    }
     await fsp.mkdir(path.dirname(out), { recursive: true });
     await fsp.rm(out, { force: true });
     const tar = process.env.SystemRoot ? path.join(process.env.SystemRoot, "System32", "tar.exe") : "tar";
     // 输出必须放在 patch-root 之外，否则压缩包会把自己也打进去。
     execFileSync(tar, ["-a", "-c", "-f", archiveName, "-C", patchRoot, "."], { cwd: tempRoot, timeout: 300000 });
+    // 解压后仍不能出现用户数据/依赖/运行时配置；PATCH_PROTECTED 不是唯一防线。
+    const archiveList = execFileSync(tar, ["-tf", archivePath], { cwd: tempRoot, encoding: "utf8", timeout: 300000 })
+        .split(/\r?\n/)
+        .map((line) => line.replace(/^\.\//, "").replace(/\\/g, "/"))
+        .filter(Boolean);
+    const forbidden = archiveList.filter((rel) =>
+        /^(data|models|node|comfyui-gateway\/data|comfyui-gateway\/node_modules|launcher\/config\.json|infinite-canvas\/web\/dist\/config\.js)(\/|$)/i.test(rel) ||
+        /(^|\/)node_modules(\/|$)/i.test(rel) ||
+        /\.env(?:\.|$)/i.test(rel)
+    );
+    if (forbidden.length) throw new Error(`补丁包含禁止发布的路径：${forbidden.slice(0, 8).join(", ")}`);
     await fsp.copyFile(archivePath, out);
 } finally {
     await fsp.rm(tempRoot, { recursive: true, force: true }).catch(() => {});

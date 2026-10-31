@@ -27,7 +27,7 @@ function resolveForMode(entry, mode) {
   };
 }
 
-function applyModelAliases(workflow, aliasFor, specs = MODEL_LOADER_SPECS) {
+export function applyModelAliases(workflow, aliasFor, specs = MODEL_LOADER_SPECS) {
   if (typeof aliasFor !== "function") return workflow;
   let next = workflow;
   for (const spec of specs) {

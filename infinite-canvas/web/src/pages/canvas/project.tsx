@@ -3329,6 +3329,8 @@ function InfiniteCanvasPage() {
                           size: savedImageMetadata.size || effectiveConfig.size,
                           background: savedImageMetadata.background ?? effectiveConfig.background,
                           params: savedImageMetadata.params,
+                          ...(savedImageMetadata.imageMode ? { imageMode: savedImageMetadata.imageMode } : {}),
+                          ...(savedImageMetadata.outpaint ? { outpaint: savedImageMetadata.outpaint } : {}),
                           count: "1",
                       }
                     : { ...buildGenerationConfig(effectiveConfig, sourceNode, node.type === CanvasNodeType.Text ? "text" : node.type === CanvasNodeType.Video ? "video" : node.type === CanvasNodeType.Audio ? "audio" : "image"), count: "1" };

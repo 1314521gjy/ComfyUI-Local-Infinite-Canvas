@@ -44,6 +44,9 @@ export type ResourceItem = {
     pipMinVersion?: string;
     pipOutdated?: boolean;
     pipBroken?: boolean;
+    pipChecking?: boolean;
+    pipTimedOut?: boolean;
+    pipReason?: string;
     restartAfterInstall?: boolean;
 };
 

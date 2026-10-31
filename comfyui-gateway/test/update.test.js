@@ -7,7 +7,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { test } from "node:test";
 
-import { applyUpdate, checkForUpdate, compareVersions, getUpdateProgress, recoverWorkflowBackups } from "../src/update.js";
+import { applyUpdate, checkForUpdate, compareVersions, detectInterruptedUpdate, getUpdateProgress, recoverWorkflowBackups, restoreInterruptedUpdate } from "../src/update.js";
 
 function git(cwd, ...args) {
   return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
@@ -127,6 +127,8 @@ test("archive install applies a verified code patch and preserves local data", a
     assert.equal(fs.existsSync(path.join(root, "comfyui-gateway", "src", "old.js")), false);
     assert.equal(fs.existsSync(path.join(root, "PATCH-DELETE.txt")), false);
     assert.equal(fs.existsSync(path.join(root, ".update-backup", "v0.20.1", "comfyui-gateway", "src", "old.js")), true);
+    assert.equal(fs.existsSync(path.join(root, ".update-backup", "v0.20.1", ".pending.json")), false);
+    assert.equal(fs.existsSync(path.join(root, ".update-backup", "v0.20.1", ".complete.json")), true);
     assert.equal(JSON.parse(fs.readFileSync(path.join(root, "update.json"), "utf8")).version, "v0.20.1");
     assert.equal(result.launcherChanged, false);
     const progress = getUpdateProgress();
@@ -379,6 +381,45 @@ test("startup recovery restores user-modified workflows from .update-backup", as
     assert.equal(fs.readFileSync(official, "utf8"), newOfficial);
     const again = await recoverWorkflowBackups(config);
     assert.deepEqual(again.restored, []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("interrupted update can be detected and restored without touching data", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "gateway-update-recovery-"));
+  try {
+    writeVersion(root, "v0.20.0");
+    const backup = path.join(root, ".update-backup", "v0.20.1");
+    fs.mkdirSync(path.join(root, "comfyui-gateway", "src"), { recursive: true });
+    fs.mkdirSync(path.join(root, "data"), { recursive: true });
+    fs.writeFileSync(path.join(root, "comfyui-gateway", "src", "app.js"), "new");
+    fs.writeFileSync(path.join(root, "comfyui-gateway", "src", "added.js"), "partial");
+    fs.writeFileSync(path.join(root, "data", "keep.txt"), "keep");
+    fs.mkdirSync(path.join(backup, "comfyui-gateway", "src"), { recursive: true });
+    fs.writeFileSync(path.join(backup, "comfyui-gateway", "src", "app.js"), "old");
+    fs.writeFileSync(path.join(backup, "comfyui-gateway", "src", "deleted.js"), "restore-me");
+    fs.writeFileSync(path.join(backup, ".pending.json"), JSON.stringify({
+      version: "v0.20.1",
+      files: ["comfyui-gateway/src/app.js", "comfyui-gateway/src/added.js"],
+      existing: ["comfyui-gateway/src/app.js"],
+      deleteList: ["comfyui-gateway/src/deleted.js"],
+    }));
+
+    const detected = await detectInterruptedUpdate(configFor(root));
+    assert.equal(detected.pending, true);
+    assert.equal(detected.version, "v0.20.1");
+    assert.equal(detected.files.length, 2);
+
+    const restored = await restoreInterruptedUpdate(configFor(root));
+    assert.equal(restored.restored, true);
+    assert.equal(fs.readFileSync(path.join(root, "comfyui-gateway", "src", "app.js"), "utf8"), "old");
+    assert.equal(fs.existsSync(path.join(root, "comfyui-gateway", "src", "added.js")), false);
+    assert.equal(fs.readFileSync(path.join(root, "comfyui-gateway", "src", "deleted.js"), "utf8"), "restore-me");
+    assert.equal(fs.readFileSync(path.join(root, "data", "keep.txt"), "utf8"), "keep");
+    assert.equal(fs.existsSync(path.join(backup, ".pending.json")), false);
+    assert.equal(fs.existsSync(path.join(backup, ".recovered.json")), true);
+    assert.equal((await detectInterruptedUpdate(configFor(root))).pending, false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
