@@ -139,20 +139,23 @@ export function resolveCanvasBaseImage(
 }
 
 export function getMentionResourceNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
-    const configInputs = expandGroupResourceNodes(getConnectedConfigInputNodes(nodeId, nodes, connections), nodes);
-    if (configInputs.length) return configInputs;
-    const ownInputs = expandGroupResourceNodes(getContextInputNodes(nodeId, nodes, connections), nodes);
-    if (ownInputs.length) return ownInputs;
-    const node = nodes.find((item) => item.id === nodeId);
-    return node && isResourceNode(node) ? [node] : [];
+  const inputs = mergedInputNodes(nodeId, nodes, connections);
+  if (inputs.length) return expandGroupResourceNodes(inputs, nodes);
+  const node = nodes.find((item) => item.id === nodeId);
+  return node && isResourceNode(node) ? [node] : [];
 }
 
 export function getGenerationResourceNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
-    const configInputs = getConnectedConfigInputNodes(nodeId, nodes, connections);
-    if (configInputs.length) return configInputs;
-    const ownInputs = getContextInputNodes(nodeId, nodes, connections);
-    if (ownInputs.length) return ownInputs;
-    return [];
+  return mergedInputNodes(nodeId, nodes, connections);
+}
+
+// 配置节点是「组装提示词」的入口，但画布也允许把图片/视频直接连到生成节点。
+// 两者同时存在时必须合并，不能因为接了配置节点就丢掉直接连接的参考图。
+function mergedInputNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
+  const configInputs = getConnectedConfigInputNodes(nodeId, nodes, connections);
+  const ownInputs = getContextInputNodes(nodeId, nodes, connections);
+  const merged = [...configInputs, ...ownInputs].filter((node) => node.id !== nodeId);
+  return [...new Map(merged.map((node) => [node.id, node])).values()];
 }
 
 function getContextInputNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {

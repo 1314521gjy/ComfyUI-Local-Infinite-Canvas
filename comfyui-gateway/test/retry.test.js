@@ -57,8 +57,28 @@ test("POST submissions are never retried", async () => {
   }
 });
 
-test("4xx responses are not retried", async () => {
-  let calls = 0;
+test("validation errors include node-level ComfyUI messages", async () => {
+  const { server, port } = await listen((_req, res) => {
+    res.writeHead(400, { "content-type": "application/json" });
+    res.end(JSON.stringify({
+      error: { message: "Prompt outputs failed validation" },
+      node_errors: {
+        "16": { errors: [{ message: "Value not in list: lora_name: 'Krea2-功能-角色四视图.safetensors'" }] },
+      },
+    }));
+  });
+  const comfy = createComfyClient({ baseUrl: `http://127.0.0.1:${port}`, retryAttempts: 1 });
+  try {
+    await assert.rejects(
+      () => comfy.submit({ 16: { class_type: "LoraLoaderModelOnly", inputs: {} } }),
+      (error) => error.code === "comfy_http_error" && error.message.includes("节点 16") && error.message.includes("lora_name"),
+    );
+  } finally {
+    await close(server);
+  }
+});
+
+test("4xx responses are not retried", async () => {  let calls = 0;
   const { server, port } = await listen((_req, res) => {
     calls += 1;
     res.writeHead(404, { "content-type": "application/json" });

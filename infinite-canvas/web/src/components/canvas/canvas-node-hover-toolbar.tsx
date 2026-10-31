@@ -11,7 +11,7 @@ import { useCopyText } from "@/hooks/use-copy-text";
 import { CanvasNodeType, type CanvasNodeData, type ViewportTransform } from "@/types/canvas";
 import type { CanvasNodeToolbarItem } from "@/types/canvas-plugin";
 import { ImageToolSettingsModal, type ImageToolbarSettingsTool } from "./canvas-image-toolbar-settings-modal";
-import { IMAGE_QUICK_TOOLS_STORAGE_KEY, buildImageToolbarTools, defaultImageQuickToolIds, readImageQuickToolsConfig, type ImageQuickToolId } from "./canvas-image-toolbar-tools";
+import { IMAGE_QUICK_TOOLS_STORAGE_KEY, LEGACY_IMAGE_QUICK_TOOLS_STORAGE_KEY, buildImageToolbarTools, defaultImageQuickToolIds, readImageQuickToolsConfig, type ImageQuickToolId } from "./canvas-image-toolbar-tools";
 
 type CanvasNodeHoverToolbarProps = {
     node: CanvasNodeData | null;
@@ -34,6 +34,7 @@ type CanvasNodeHoverToolbarProps = {
     onUpscale: (node: CanvasNodeData) => void;
     onSuperResolve: (node: CanvasNodeData) => void;
     onAngle: (node: CanvasNodeData) => void;
+    onFourView: (node: CanvasNodeData) => void;
     onViewImage: (node: CanvasNodeData) => void;
     onReversePrompt: (node: CanvasNodeData) => void;
     onRetry: (node: CanvasNodeData) => void;
@@ -74,6 +75,7 @@ export function CanvasNodeHoverToolbar({
     onUpscale,
     onSuperResolve,
     onAngle,
+    onFourView,
     onViewImage,
     onReversePrompt,
     onRetry,
@@ -93,7 +95,16 @@ export function CanvasNodeHoverToolbar({
 
     useEffect(() => {
         try {
-            const stored = window.localStorage.getItem(IMAGE_QUICK_TOOLS_STORAGE_KEY);
+            let stored = window.localStorage.getItem(IMAGE_QUICK_TOOLS_STORAGE_KEY);
+            if (!stored) {
+                const legacy = window.localStorage.getItem(LEGACY_IMAGE_QUICK_TOOLS_STORAGE_KEY);
+                if (legacy) {
+                    const config = readImageQuickToolsConfig(JSON.parse(legacy) as unknown);
+                    const ids = config.ids.includes("fourView") ? config.ids : [...config.ids, "fourView"];
+                    stored = JSON.stringify({ ...config, ids });
+                    window.localStorage.setItem(IMAGE_QUICK_TOOLS_STORAGE_KEY, stored);
+                }
+            }
             if (!stored) return;
             const parsed = JSON.parse(stored) as unknown;
             const config = readImageQuickToolsConfig(parsed);
@@ -132,7 +143,7 @@ export function CanvasNodeHoverToolbar({
         }
         copyText(prompt, t("common.promptCopied"));
     };
-    const imageTools = buildImageToolbarTools(node, { onUpload, onToggleFreeResize, onMaskEdit, onCrop, onSplit, onUpscale, onSuperResolve, onAngle, onViewImage, onCopyPrompt: copyImagePrompt, onReversePrompt });
+    const imageTools = buildImageToolbarTools(node, { onUpload, onToggleFreeResize, onMaskEdit, onCrop, onSplit, onUpscale, onSuperResolve, onAngle, onFourView, onViewImage, onCopyPrompt: copyImagePrompt, onReversePrompt });
 
     function openImageToolSettings() {
         onKeep(activeNode.id);

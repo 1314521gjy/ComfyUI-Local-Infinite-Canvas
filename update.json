@@ -1,16 +1,16 @@
 {
-  "version": "v0.23.1",
-  "publishedAt": "2026-10-30",
-  "notes": "新增画布修复助手（完整包按需唤起、3 分钟自动休眠）、生图提示词优化直接替换并保留原手打提示词；Agent 修复可跨整包更新自动重放。",
+  "version": "v0.24.0",
+  "publishedAt": "2026-10-31",
+  "notes": "新增 Krea2 图片卡「四视图」快捷生成（完整包随包 LoRA，补丁用户可在 Krea2 资源卡安装）；修复视频 @ 已连接参考、Z-Image/Krea2 子目录底模、第三方 loader、校验详情、插帧超时取消、云端 temperature 重试和补丁漏打 comfyui-bridge。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.23.1.zip",
-    "sha256": "e02aecc2839db235abb5cd7880d4f71d783b50c2212f2fd6250c5b0110729f09",
-    "size": 29558440
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.24.0.zip",
+    "sha256": "b8cadbc8eb094e41159b224ce38d980ba4053fa0df0c812095f5aa556389580b",
+    "size": 29567685
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

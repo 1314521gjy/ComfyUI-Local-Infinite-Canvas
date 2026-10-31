@@ -968,6 +968,41 @@ export async function requestImageAngle(
     }
 }
 
+export async function requestImageFourView(
+    config: AiConfig,
+    prompt: string,
+    references: ReferenceImage[],
+    options?: RequestOptions,
+): Promise<Array<{ id: string; dataUrl: string }>> {
+    const baseConfig = resolveModelRequestConfig(config, config.imageModel || config.model);
+    const requestConfig = { ...baseConfig, baseUrl: LOCAL_GATEWAY_BASE_URL, apiKey: "local", apiFormat: "openai" as const, model: "image-krea2-four-view" };
+    const formData = new FormData();
+    formData.set("model", "image-krea2-four-view");
+    formData.set("prompt", prompt);
+    formData.set("n", "1");
+    formData.set("response_format", "b64_json");
+    formData.set("output_format", IMAGE_OUTPUT_FORMAT);
+    const files = await Promise.all(references.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
+    files.forEach((file) => formData.append("image", file));
+
+    const requestId = `img_${nanoid()}`;
+    const detachCancel = attachLocalCancel(requestConfig, requestId, options?.signal);
+    const detachProgress = attachLocalProgress(requestConfig, requestId, options?.signal);
+    try {
+        const response = await axios.post<ImageApiResponse>(aiApiUrl(requestConfig, "/images/edits"), formData, {
+            headers: { ...aiHeaders(requestConfig), ...(detachCancel ? { "X-Request-Id": requestId } : {}) },
+            signal: options?.signal,
+            timeout: IMAGE_REQUEST_TIMEOUT_MS,
+        });
+        return await parseImagePayload(response.data);
+    } catch (error) {
+        throw new Error(readAxiosError(error, apiText("requestFailed")));
+    } finally {
+        detachCancel?.();
+        detachProgress?.();
+    }
+}
+
 export type PromptOptimizeResult = { prompt: string; mode: string; duration: number };
 
 export async function requestPromptOptimize(

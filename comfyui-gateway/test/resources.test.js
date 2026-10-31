@@ -668,7 +668,7 @@ test("zimage pack keeps one default base and exposes int8 as an optional base mo
     assert.equal(index.resources.some((item) => item.id === "z_image_turbo_distill_lora"), false);
 });
 
-test("krea2 pack matches the zimage shape with no bundled LoRAs", () => {
+test("krea2 pack lists the four-view LoRA as an optional resource", () => {
     const index = JSON.parse(fs.readFileSync(new URL("../resources/index.json", import.meta.url), "utf8"));
     const pack = index.packs.find((item) => item.id === "krea2");
     assert.ok(pack, "krea2 pack is missing");
@@ -685,11 +685,18 @@ test("krea2 pack matches the zimage shape with no bundled LoRAs", () => {
         "qwen_image_vae",
         "krea2_turbo_int8_convrot",
     ]);
-    assert.deepEqual(pack.optionalResources, pack.resources);
+    assert.deepEqual(pack.optionalResources, [
+        "krea2_turbo_fp8_scaled",
+        "qwen3vl_4b_fp8_scaled",
+        "qwen_image_vae",
+        "krea2_turbo_int8_convrot",
+        "krea2_four_view_lora",
+    ]);
     assert.ok(!pack.workflowDependencies["image-krea2-turbo"].includes("krea2_turbo_int8_convrot"));
     assert.equal(index.resources.some((item) => item.id === "krea2_darkbrush_lora"), false);
     assert.equal(index.resources.some((item) => item.id === "krea2_retroanime_lora"), false);
-    assert.equal(index.resources.length, 71);
+    assert.equal(index.resources.some((item) => item.id === "krea2_four_view_lora"), true);
+    assert.equal(index.resources.length, 72);
 });
 
 test("moss pack no longer ships Balanced workflows or the local bake resource", () => {

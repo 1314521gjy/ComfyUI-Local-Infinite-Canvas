@@ -2,7 +2,7 @@
 
 本地优先的 **Infinite Canvas × ComfyUI** 集成：把开源无限画布、ComfyUI 工作流和本地网关接到一起，不依赖云端 API。
 
-> 当前版本 **v0.23.1**（2026-10-30）。GitHub 仓库 slug 使用 `ComfyUI-Local-Infinite-Canvas`（GitHub 仓库名只支持 ASCII）；项目中文名即 **ComfyUI-本地无限画布**。
+> 当前版本 **v0.24.0**（2026-10-31）。GitHub 仓库 slug 使用 `ComfyUI-Local-Infinite-Canvas`（GitHub 仓库名只支持 ASCII）；项目中文名即 **ComfyUI-本地无限画布**。
 
 ## 功能
 
@@ -54,7 +54,7 @@ start-local.bat       Windows 一键启动
 
 ### 方式 A：使用完整发布包
 
-1. 解压完整包（自带 Node、网关依赖、随包节点和少量 VAE/LoRA；v0.23.1 完整包还带画布修复助手的工作区与构建依赖）。
+1. 解压完整包（自带 Node、网关依赖、随包节点和少量 VAE/LoRA；v0.23.1 完整包还带画布修复助手的工作区与构建依赖；v0.24.0 额外带 Krea2 四视图 LoRA）。
 2. 双击 `start-local.bat`。
 3. 打开启动器打印的画布地址；默认 `http://127.0.0.1:3000`，3000 被占用时自动使用 3001–3010。
 4. 首次启动按提示安装缺失资源；进画布后点右上角「配置」确认 ComfyUI 连接。

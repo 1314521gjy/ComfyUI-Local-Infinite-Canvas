@@ -52,6 +52,7 @@ const INCLUDE = [
     "start-local.bat",
     "launcher",
     "comfyui-gateway/src",
+    "comfyui-gateway/comfyui-bridge",
     "comfyui-gateway/scripts",
     "comfyui-gateway/prompts",
     "comfyui-gateway/workflows",
@@ -104,7 +105,7 @@ async function copyEntry(source, destination) {
         }
         return;
     }
-    if (stat.isSymbolicLink()) return;
+    if (stat.isSymbolicLink()) throw new Error(`待打包路径是符号链接，补丁可能会缺文件：${source}`);
     const rel = path.relative(root, source).replace(/\\/g, "/");
     if (EXCLUDE.some((pattern) => pattern.test(rel))) return;
     await fsp.mkdir(path.dirname(destination), { recursive: true });

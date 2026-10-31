@@ -93,8 +93,24 @@ function loaderFiles(config, loaderOptions) {
   return loaderOptions?.[config?.classType || "UNETLoader"] || [];
 }
 
+// ComfyUI 的 loader 列表可能是子目录路径（如 Krea2/krea2_turbo_fp8_scaled.safetensors），
+// 而工作流里保存的默认值往往只有文件名。只在同名文件唯一时做兼容匹配，避免误配到别的模型。
+function matchLoaderFile(config, loaderOptions, file) {
+  const target = String(file || "");
+  if (!target) return "";
+  const files = loaderFiles(config, loaderOptions);
+  if (files.includes(target)) return target;
+  const base = path.basename(target).toLowerCase();
+  const matches = files.filter((item) => path.basename(String(item || "")).toLowerCase() === base);
+  return matches.length === 1 ? matches[0] : "";
+}
+
 function filePresent(config, loaderOptions, file) {
-  return loaderFiles(config, loaderOptions).includes(file);
+  return Boolean(matchLoaderFile(config, loaderOptions, file));
+}
+
+export function resolveBaseModelFile(config, loaderOptions, file) {
+  return matchLoaderFile(config, loaderOptions, file);
 }
 
 function explicitVariants(config) {
@@ -112,7 +128,11 @@ function explicitVariants(config) {
 export function listBaseModels(entry, loaderOptions) {
   const config = entry?.baseModels;
   if (!config || !config.param) return [];
-  const configured = explicitVariants(config);
+  const configuredRaw = explicitVariants(config);
+  const configured = configuredRaw?.map((item) => ({
+    ...item,
+    file: matchLoaderFile(config, loaderOptions, item.file) || item.file,
+  }));
   const files = uniqueBaseFiles(
     configured
       ? configured.map((item) => item.file)
@@ -145,14 +165,22 @@ export function modelIdFor(entry, variant) {
   return `${entry.name}__${variant.id}`;
 }
 
+function sameBaseFile(a, b) {
+  return path.basename(String(a || "")).toLowerCase() === path.basename(String(b || "")).toLowerCase();
+}
+
 export function listModelDescriptors(entries, loaderOptions) {
   const descriptors = [];
   for (const entry of entries) {
     const defaultFile = baseModelDefault(entry);
     const defaultPresent = !entry.baseModels || !defaultFile || filePresent(entry.baseModels, loaderOptions, defaultFile);
-    if (defaultPresent) descriptors.push({ modelId: entry.name, baseId: entry.id, entry, variant: null, defaultFile });
+    const fallback = !defaultPresent
+      ? listBaseModels(entry, loaderOptions).find((variant) => filePresent(entry.baseModels, loaderOptions, variant.file))
+      : null;
+    // 默认底模缺失时，仍保留工作流级入口并回退到第一个可用底模，避免整个模型从下拉里消失。
+    if (defaultPresent || fallback) descriptors.push({ modelId: entry.name, baseId: entry.id, entry, variant: null, defaultFile: fallback?.file || defaultFile });
     for (const variant of listBaseModels(entry, loaderOptions)) {
-      if (variant.file === defaultFile) continue;
+      if (sameBaseFile(variant.file, fallback?.file || defaultFile)) continue;
       if (entry.baseModels && !filePresent(entry.baseModels, loaderOptions, variant.file)) continue;
       descriptors.push({ modelId: modelIdFor(entry, variant), baseId: entry.id, entry, variant, defaultFile });
     }
@@ -162,7 +190,7 @@ export function listModelDescriptors(entries, loaderOptions) {
 
 function optionsFor(entry, config, loaderOptions) {
   const configured = explicitVariants(config);
-  if (configured) return uniqueBaseFiles(configured.map((item) => item.file));
+  if (configured) return uniqueBaseFiles(configured.map((item) => matchLoaderFile(config, loaderOptions, item.file) || item.file));
   return uniqueBaseFiles((loaderOptions?.[config.classType || "UNETLoader"] || []).filter((file) => accepted(file, config)));
 }
 
@@ -171,7 +199,8 @@ export function decorateParameters(entry, variant, loaderOptions) {
   const config = entry?.baseModels;
   if (!config) return parameters;
   const options = optionsFor(entry, config, loaderOptions);
-  const defaultFile = variant?.file || baseModelDefault(entry, config);
+  const configuredDefault = variant?.file || baseModelDefault(entry, config);
+  const defaultFile = matchLoaderFile(config, loaderOptions, configuredDefault) || configuredDefault;
   const existing = parameters.find((item) => item.key === config.param);
   if (existing) {
     existing.type = "select";
@@ -208,7 +237,7 @@ export function decorateEntry(entry, variant, loaderOptions) {
   if (!variant) return { ...entry, parameters };
   return {
     ...entry,
-    name: variant.modelId,
+    name: variant.modelId || entry.name,
     baseModel: variant.file,
     baseModelLabel: variant.label,
     baseModelParams: { [entry.baseModels.param]: variant.file, ...(variant.params || {}) },

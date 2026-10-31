@@ -60,6 +60,7 @@ export function loadConfig(overrides = {}) {
     corsOrigins: overrides.corsOrigins ?? list(process.env.CORS_ORIGINS, "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8188,http://127.0.0.1:8188"),
     requestTimeoutMs: num(overrides.requestTimeoutMs ?? process.env.REQUEST_TIMEOUT_MS, 10 * 60 * 1000),
     videoTimeoutMs: num(overrides.videoTimeoutMs ?? process.env.VIDEO_TIMEOUT_MS, 0),
+    interpolationTimeoutMs: num(overrides.interpolationTimeoutMs ?? process.env.INTERPOLATION_TIMEOUT_MS, 30 * 60 * 1000),
     pollIntervalMs: num(overrides.pollIntervalMs ?? process.env.POLL_INTERVAL_MS, 750),
     comfyRetryAttempts: num(overrides.comfyRetryAttempts ?? process.env.COMFY_RETRY_ATTEMPTS, 3),
     comfyRetryDelayMs: num(overrides.comfyRetryDelayMs ?? process.env.COMFY_RETRY_DELAY_MS, 500),

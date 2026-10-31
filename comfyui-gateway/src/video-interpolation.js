@@ -10,7 +10,7 @@ export function createVideoInterpolator({ config, logger } = {}) {
     return JSON.parse(fs.readFileSync(workflowPath, "utf8"));
   }
 
-  async function interpolate({ comfy, buffer, filename, multiplier, sourceFps = 24, requestId, signal, timeoutMs = 10 * 60 * 1000 }) {
+  async function interpolate({ comfy, buffer, filename, multiplier, sourceFps = 24, requestId, signal, timeoutMs = 30 * 60 * 1000, onProgress }) {
     const factor = Number(multiplier);
     if (factor !== 2 && factor !== 3) throw new Error("插帧倍率仅支持 2× 或 3×");
     if (!buffer?.length) throw new Error("插帧缺少输入视频");
@@ -27,40 +27,49 @@ export function createVideoInterpolator({ config, logger } = {}) {
     const promptId = submitted.promptId;
     const started = Date.now();
     const deadline = started + timeoutMs;
-    while (Date.now() < deadline) {
-      if (signal?.aborted) {
-        await comfy.cancel?.(promptId).catch(() => undefined);
-        throw new Error("插帧已取消");
-      }
-      const history = await comfy.history(promptId);
-      const item = history?.[promptId] || history;
-      if (item) {
-        const status = item.status || {};
-        if (status.status_str === "error") {
-          const messages = Array.isArray(status.messages) ? status.messages.flat() : [];
-          const detail = messages
-            .map((entry) => (typeof entry === "string" ? entry : entry?.message || ""))
-            .filter(Boolean)
-            .join("；");
-          throw new Error(`插帧失败：${detail || "ComfyUI 执行错误"}`);
+    try {
+      while (Date.now() < deadline) {
+        if (signal?.aborted) {
+          await comfy.cancel?.(promptId).catch(() => undefined);
+          throw new Error("插帧已取消");
         }
-        const files = [];
-        for (const output of Object.values(item.outputs || {})) {
-          for (const key of ["gifs", "videos"]) {
-            for (const file of output?.[key] || []) files.push(file);
+        const history = await comfy.history(promptId);
+        const item = history?.[promptId] || history;
+        if (item) {
+          const status = item.status || {};
+          if (status.status_str === "error") {
+            const messages = Array.isArray(status.messages) ? status.messages.flat() : [];
+            const detail = messages
+              .map((entry) => (typeof entry === "string" ? entry : entry?.message || ""))
+              .filter(Boolean)
+              .join("；");
+            throw new Error(`插帧失败：${detail || "ComfyUI 执行错误"}`);
           }
+          const files = [];
+          for (const output of Object.values(item.outputs || {})) {
+            for (const key of ["gifs", "videos"]) {
+              for (const file of output?.[key] || []) files.push(file);
+            }
+          }
+          if (files.length) {
+            const file = files[0];
+            const viewed = await comfy.view({ filename: file.filename, subfolder: file.subfolder || "", type: file.type || "output" });
+            logger?.info?.(`video interpolation ${factor}x ${promptId} ${Date.now() - started}ms`);
+            onProgress?.({ phase: "completed", progress: 0.99 });
+            return { buffer: viewed.buffer, filename: file.filename, mimeType: viewed.contentType || "video/mp4" };
+          }
+          if (status.completed) throw new Error("插帧工作流没有返回视频");
         }
-        if (files.length) {
-          const file = files[0];
-          const viewed = await comfy.view({ filename: file.filename, subfolder: file.subfolder || "", type: file.type || "output" });
-          logger?.info?.(`video interpolation ${factor}x ${promptId} ${Date.now() - started}ms`);
-          return { buffer: viewed.buffer, filename: file.filename, mimeType: viewed.contentType || "video/mp4" };
-        }
-        if (status.completed) throw new Error("插帧工作流没有返回视频");
+        onProgress?.({ phase: "interpolating", progress: 0.97, elapsedMs: Date.now() - started });
+        await sleep(1500);
       }
-      await sleep(1500);
+      await comfy.cancel?.(promptId).catch(() => undefined);
+      throw new Error("插帧超时，已取消 ComfyUI 中的任务");
+    } catch (error) {
+      // 超时/中断时要主动停掉 ComfyUI 任务，否则前端已经报错，显卡还在继续跑。
+      if (/超时|取消/.test(String(error?.message || ""))) await comfy.cancel?.(promptId).catch(() => undefined);
+      throw error;
     }
-    throw new Error("插帧超时");
   }
 
   return { interpolate };

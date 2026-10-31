@@ -63,6 +63,44 @@ test("interpolation follows the source frame rate", async () => {
   }
 });
 
+test("interpolation timeout cancels the running ComfyUI task", async () => {
+  const root = await fixture();
+  try {
+    let cancelled = "";
+    const comfy = {
+      async uploadImage() {
+        return { name: "input.mp4", subfolder: "" };
+      },
+      async submit() {
+        return { promptId: "p-timeout" };
+      },
+      async cancel(promptId) {
+        cancelled = promptId;
+      },
+      async history() {
+        return null;
+      },
+      async view() {
+        return { buffer: Buffer.from("video"), contentType: "video/mp4" };
+      },
+    };
+    const interpolator = createVideoInterpolator({ config: { workflowDir: root } });
+    await assert.rejects(
+      () => interpolator.interpolate({
+        comfy,
+        buffer: Buffer.from("input"),
+        multiplier: 2,
+        requestId: "req-timeout",
+        timeoutMs: 1,
+      }),
+      (error) => /插帧超时/.test(error.message),
+    );
+    assert.equal(cancelled, "p-timeout");
+  } finally {
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+});
+
 test("falls back to 24fps when the source rate is unknown", async () => {
   const root = await fixture();
   try {

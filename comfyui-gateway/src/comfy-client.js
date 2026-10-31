@@ -125,8 +125,11 @@ export function createComfyClient({ baseUrl, timeoutMs = 10 * 60 * 1000, retryAt
         data = { raw: text };
       }
       if (!response.ok) {
-        const message = data?.error?.message || data?.error || data?.raw || `ComfyUI ${pathname} 返回 ${response.status}`;
-        throw new ComfyUIError(truncate(typeof message === "string" ? message : JSON.stringify(message), 1200), {
+        const rawMessage = data?.error?.message || data?.error || data?.raw || `ComfyUI ${pathname} 返回 ${response.status}`;
+        const baseMessage = typeof rawMessage === "string" ? rawMessage : JSON.stringify(rawMessage);
+        const nodeMessage = formatNodeErrors(data?.node_errors);
+        const message = nodeMessage && !baseMessage.includes(nodeMessage) ? `${baseMessage}；${nodeMessage}` : baseMessage;
+        throw new ComfyUIError(truncate(message, 1200), {
           status: response.status === 400 ? 400 : 502,
           code: "comfy_http_error",
           details: data,

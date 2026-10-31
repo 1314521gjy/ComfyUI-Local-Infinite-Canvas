@@ -226,7 +226,7 @@ export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 *
   });
 }
 
-export async function runImage({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, requestId, onProgress, logger, loraCatalog, modelAliasFor = null, includePreviewOutputs = false }) {
+export async function runImage({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, requestId, onProgress, logger, loraCatalog, modelAliasFor = null, loaderSpecs = MODEL_LOADER_SPECS, includePreviewOutputs = false }) {
   const count = context.count || 1;
   const all = [];
   let lastPromptId;
@@ -244,6 +244,7 @@ export async function runImage({ entry, context, comfy, timeoutMs, pollIntervalM
       logger,
       loraCatalog,
       modelAliasFor,
+      loaderSpecs,
       includePreviewOutputs,
       onProgress: (event) => onProgress?.({ ...event, attempt, attempts: count }),
     });
@@ -254,8 +255,8 @@ export async function runImage({ entry, context, comfy, timeoutMs, pollIntervalM
   return { promptId: lastPromptId, files: all.slice(0, count), usedSeed: lastUsedSeed };
 }
 
-export async function runVideo({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, requestId, onProgress, logger, loraCatalog, modelAliasFor = null, includePreviewOutputs = false }) {
-  const result = await runWorkflow({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, requestId, logger, loraCatalog, modelAliasFor, includePreviewOutputs, onProgress });
+export async function runVideo({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, requestId, onProgress, logger, loraCatalog, modelAliasFor = null, loaderSpecs = MODEL_LOADER_SPECS, includePreviewOutputs = false }) {
+  const result = await runWorkflow({ entry, context, comfy, timeoutMs, pollIntervalMs, signal, requestId, logger, loraCatalog, modelAliasFor, loaderSpecs, includePreviewOutputs, onProgress });
   const video = result.files.find((file) => /^video\//i.test(file.mimeType) || /\.(mp4|webm|mov)$/i.test(file.filename));
   if (!video) {
     throw new GenerationError("视频工作流没有返回视频文件（只拿到了图片/动图）", { status: 502, code: "no_video_output", details: result.files.map((file) => file.filename) });

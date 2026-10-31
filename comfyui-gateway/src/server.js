@@ -1534,7 +1534,8 @@ export async function createGatewayApp(overrides = {}) {
         sourceFps,
         requestId: req.id,
         signal,
-        timeoutMs: Number(config.videoTimeoutMs) > 0 ? config.videoTimeoutMs : 10 * 60 * 1000,
+        timeoutMs: config.interpolationTimeoutMs,
+        onProgress: progress,
       });
       return {
         buffer: interpolated.buffer,
@@ -1688,6 +1689,8 @@ export async function createGatewayApp(overrides = {}) {
           multiplier: interpolation === "3x" ? 3 : 2,
           requestId: req.id,
           signal,
+          timeoutMs: config.interpolationTimeoutMs,
+          onProgress: progress,
         });
         file = { ...file, buffer: interpolated.buffer, filename: interpolated.filename, mimeType: interpolated.mimeType };
       }

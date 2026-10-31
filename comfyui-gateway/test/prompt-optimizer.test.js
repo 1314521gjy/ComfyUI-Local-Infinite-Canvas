@@ -356,3 +356,39 @@ test("cloud chat rejects private base urls by default", async () => {
         process.env.ALLOW_PRIVATE_CLOUD = previous;
     }
 });
+
+test("cloud H3 retries with temperature=1 when the provider rejects 0.6", async () => {
+    const bodies = [];
+    const server = http.createServer((req, res) => {
+        let body = "";
+        req.on("data", (chunk) => { body += String(chunk); });
+        req.on("end", () => {
+            bodies.push(JSON.parse(body));
+            res.setHeader("content-type", "application/json");
+            if (bodies.length === 1) {
+                res.statusCode = 400;
+                res.end(JSON.stringify({ error: { message: "invalid temperature: only 1 is allowed for this model" } }));
+                return;
+            }
+            res.end(JSON.stringify({ choices: [{ message: { content: "optimized prompt" } }] }));
+        });
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = server.address().port;
+    try {
+        const optimizer = createPromptOptimizer({ config: { rootDir }, comfy: null, logger: null });
+        const result = await optimizer.optimize({
+            prompt: "a cat",
+            mode: "文生视频(T2VA)",
+            duration: 5,
+            engine: "cloud",
+            cloud: { baseUrl: `http://127.0.0.1:${port}/v1`, apiKey: "test", model: "kimi-thinking" },
+        });
+        assert.equal(bodies.length, 2);
+        assert.equal(bodies[0].temperature, 0.6);
+        assert.equal(bodies[1].temperature, 1);
+        assert.equal(result.prompt, "optimized prompt");
+    } finally {
+        await new Promise((resolve) => server.close(resolve));
+    }
+});

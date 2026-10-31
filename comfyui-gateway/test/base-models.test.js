@@ -144,9 +144,19 @@ test("video workflows use the vid prefix", () => {
   assert.equal(models[1].modelId, "vid-h3-z-image-bf16");
 });
 
-test("descriptors skip a missing default base model and keep installed alternates", () => {
+test("descriptors keep the workflow entry with an installed fallback when the default is missing", () => {
   const models = listModelDescriptors([entry], { UNETLoader: ["z_image_int8.safetensors"] });
-  assert.deepEqual(models.map((model) => model.modelId), ["image-z-image-turbo__z-image-int8"]);
-  assert.equal(models[0].variant.file, "z_image_int8.safetensors");
+  assert.deepEqual(models.map((model) => model.modelId), ["image-z-image-turbo"]);
+  assert.equal(models[0].variant, null);
+  assert.equal(models[0].defaultFile, "z_image_int8.safetensors");
   assert.equal(listModelDescriptors([entry], { UNETLoader: [] }).length, 0);
+});
+
+test("subdirectory loader names match the workflow default by unique basename", () => {
+  const models = listModelDescriptors([entry], { UNETLoader: ["ZImage/z-image-turbo.safetensors"] });
+  assert.deepEqual(models.map((model) => model.modelId), ["image-z-image-turbo"]);
+  assert.equal(models[0].variant, null);
+  const unet = decorateParameters(entry, null, { UNETLoader: ["ZImage/z-image-turbo.safetensors"] }).find((item) => item.key === "unet");
+  assert.equal(unet.default, "ZImage/z-image-turbo.safetensors");
+  assert.deepEqual(unet.options, ["ZImage/z-image-turbo.safetensors"]);
 });

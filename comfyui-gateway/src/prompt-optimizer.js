@@ -250,7 +250,7 @@ async function cloudChat({ system, userText, images = [], cloud = {}, signal, te
     else signal.addEventListener("abort", onAbort, { once: true });
   }
   const started = Date.now();
-  try {
+  const post = async (requestTemperature) => {
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
@@ -260,7 +260,7 @@ async function cloudChat({ system, userText, images = [], cloud = {}, signal, te
           { role: "system", content: system },
           { role: "user", content: userContent },
         ],
-        temperature,
+        temperature: requestTemperature,
         max_tokens: maxTokens,
       }),
       signal: controller.signal,
@@ -271,6 +271,17 @@ async function cloudChat({ system, userText, images = [], cloud = {}, signal, te
       data = text ? JSON.parse(text) : null;
     } catch {
       data = null;
+    }
+    return { response, text, data };
+  };
+  try {
+    let { response, text, data } = await post(temperature);
+    if (!response.ok && temperature !== 1) {
+      const message = data?.error?.message || data?.message || text || "";
+      // Kimi 等思考模型只接受 temperature=1；按报错重试一次，不维护模型名白名单。
+      if (/invalid temperature|only\s+1\s+is\s+allowed|temperature.*not\s+supported/i.test(String(message))) {
+        ({ response, text, data } = await post(1));
+      }
     }
     if (!response.ok) {
       const message = data?.error?.message || data?.message || text || `HTTP ${response.status}`;

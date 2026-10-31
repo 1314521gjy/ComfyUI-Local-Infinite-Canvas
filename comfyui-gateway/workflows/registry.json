@@ -2327,6 +2327,89 @@
       }
     },
     {
+      "id": "image-krea2-four-view",
+      "name": "image-krea2-four-view",
+      "label": "Krea2 角色四视图",
+      "type": "image",
+      "description": "Krea2 Turbo + 角色四视图 LoRA，把单角度角色图整理成面部特写、正面、侧面、背面四视图角色设定表。",
+      "file": "image-krea2-four-view.json",
+      "hidden": true,
+      "bindings": {
+        "prompt": {
+          "node": "24",
+          "input": "prompt",
+          "default": "Convert the character in the image to a Character Sheet showing a face close-up, front full body, side full body and back full body views"
+        },
+        "image": {
+          "node": "17",
+          "input": "image",
+          "from": "image",
+          "imageIndex": 0,
+          "required": true
+        },
+        "seed": {
+          "node": "14",
+          "input": "seed",
+          "from": "params.seed",
+          "transform": "int",
+          "random": true
+        },
+        "steps": {
+          "node": "14",
+          "input": "steps",
+          "from": "params.steps",
+          "transform": "int",
+          "default": 10
+        },
+        "cfg": {
+          "node": "14",
+          "input": "cfg",
+          "from": "params.cfg",
+          "default": 1
+        },
+        "unet": {
+          "node": "25",
+          "input": "unet_name",
+          "from": "params.unet",
+          "default": "krea2_turbo_fp8_scaled.safetensors"
+        },
+        "lora": {
+          "node": "16",
+          "input": "lora_name",
+          "from": "params.lora",
+          "default": "Krea2-功能-角色四视图.safetensors"
+        }
+      },
+      "parameters": [
+        {
+          "key": "seed",
+          "label": "种子",
+          "type": "number",
+          "min": 1,
+          "max": 2147483647,
+          "step": 1
+        },
+        {
+          "key": "steps",
+          "label": "步数",
+          "type": "number",
+          "min": 1,
+          "max": 30,
+          "step": 1,
+          "default": 10
+        },
+        {
+          "key": "cfg",
+          "label": "CFG",
+          "type": "number",
+          "min": 1,
+          "max": 10,
+          "step": 0.5,
+          "default": 1
+        }
+      ]
+    },
+    {
       "id": "video-h3-character-swap",
       "name": "video-h3-character-swap",
       "type": "video",

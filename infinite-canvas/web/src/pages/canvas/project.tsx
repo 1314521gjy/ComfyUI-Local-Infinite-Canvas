@@ -5,7 +5,7 @@ import { Group, Video } from "lucide-react";
 import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 
-import { requestEdit, requestGeneration, requestImageAngle, requestImageQuestion, requestUpscale } from "@/services/api/image";
+import { requestEdit, requestGeneration, requestImageAngle, requestImageFourView, requestImageQuestion, requestUpscale } from "@/services/api/image";
 import { createFreeWorkflowVideoTask, fetchFreeWorkflows, requestFreeWorkflowImage, type FreeWorkflowSummary } from "@/services/api/free-workflow";
 import { bindStepProgress, unbindStepProgress } from "@/services/api/step-progress";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
@@ -142,6 +142,8 @@ const NODE_STATUS_IDLE = "idle" as const;
 const NODE_STATUS_LOADING = "loading" as const;
 const NODE_STATUS_SUCCESS = "success" as const;
 const NODE_STATUS_ERROR = "error" as const;
+const FOUR_VIEW_PROMPT =
+    "Convert the character in the image to a Character Sheet showing a face close-up, front full body, side full body and back full body views";
 
 function applyGeneratedVideo(item: CanvasNodeData, video: UploadedFile, extra: CanvasNodeData["metadata"] = {}): CanvasNodeData {
     const videoSize = fitNodeSize(video.width || item.width, video.height || item.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
@@ -2616,6 +2618,63 @@ function InfiniteCanvasPage() {
         [effectiveConfig, finishGenerationRequest, openConfigDialog, startGenerationRequest, t],
     );
 
+    const fourViewImageNode = useCallback(
+        async (node: CanvasNodeData) => {
+            if (!node.metadata?.content) return;
+            const childId = nanoid();
+            const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
+            const sourceReference = {
+                id: node.id,
+                name: `${node.title || node.id}.png`,
+                type: node.metadata.mimeType || "image/png",
+                dataUrl: node.metadata.content,
+                storageKey: node.metadata.storageKey,
+            };
+            const generationConfig = { ...buildGenerationConfig(effectiveConfig, node, "image"), model: "image-krea2-four-view", count: "1" as const };
+            const generationMetadata = buildImageGenerationMetadata("edit", generationConfig, 1, [sourceReference]);
+            setRunningNodeId(childId);
+            setNodes((prev) => [
+                ...prev,
+                {
+                    id: childId,
+                    type: CanvasNodeType.Image,
+                    title: t("canvas.imageTools.fourView"),
+                    position: { x: node.position.x + node.width + 96, y: node.position.y },
+                    width: imageConfig.width,
+                    height: imageConfig.height,
+                    metadata: { prompt: FOUR_VIEW_PROMPT, status: NODE_STATUS_LOADING, ...generationMetadata },
+                },
+            ]);
+            setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: node.id, toNodeId: childId }]);
+            setSelectedNodeIds(new Set([childId]));
+            setSelectedConnectionId(null);
+            setDialogNodeId(childId);
+            const controller = startGenerationRequest(childId, node.id, childId);
+            try {
+                const image = await requestImageFourView(effectiveConfig, FOUR_VIEW_PROMPT, [sourceReference], { signal: controller.signal }).then((items) => items[0]);
+                if (!image) throw new Error(t("canvas.projectPage.generationFailed"));
+                const uploaded = await uploadImage(image.dataUrl, { signal: controller.signal });
+                const size = fitNodeSize(uploaded.width, uploaded.height, imageConfig.width, imageConfig.height);
+                setNodes((prev) =>
+                    prev.map((item) =>
+                        item.id === childId
+                            ? { ...item, width: size.width, height: size.height, metadata: { ...item.metadata, ...imageMetadata(uploaded), prompt: FOUR_VIEW_PROMPT, status: NODE_STATUS_SUCCESS, ...generationMetadata } }
+                            : item,
+                    ),
+                );
+            } catch (error) {
+                if (isGenerationCanceled(error)) return;
+                const errorDetails = error instanceof Error ? error.message : t("canvas.projectPage.generationFailed");
+                message.error(errorDetails);
+                setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails } } : item)));
+            } finally {
+                finishGenerationRequest(childId, controller);
+                setRunningNodeId((current) => (current === childId ? null : current));
+            }
+        },
+        [effectiveConfig, finishGenerationRequest, message, startGenerationRequest, t],
+    );
+
     const handleFontSizeChange = useCallback((nodeId: string, fontSize: number) => {
         setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, fontSize } } : node)));
     }, []);
@@ -4088,6 +4147,7 @@ function InfiniteCanvasPage() {
                     onUpscale={(node) => setUpscaleNodeId(node.id)}
                     onSuperResolve={(node) => setSuperResolveNodeId(node.id)}
                     onAngle={(node) => setAngleNodeId(node.id)}
+                    onFourView={(node) => void fourViewImageNode(node)}
                     onViewImage={handleNodeViewImage}
                     onReversePrompt={createImageReversePromptNodes}
                     onRetry={(node) => void handleRetryNode(node)}

@@ -3,7 +3,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 
 import { deepClone, isPlainObject, nowIso, readJsonFile, slugify, truncate, writeJsonAtomic } from "./util.js";
-import { baseModelDefault, decorateEntry, findUnetLoader, listBaseModels, listModelDescriptors, resolveBaseModelVariant } from "./base-models.js";
+import { baseModelDefault, decorateEntry, findUnetLoader, listBaseModels, listModelDescriptors, resolveBaseModelFile, resolveBaseModelVariant } from "./base-models.js";
 
 const REGISTRY_FILE = "registry.json";
 const TYPE_PREFIX = { image: "image", video: "video", audio: "audio", text: "text" };
@@ -378,10 +378,14 @@ export function createRegistry({ dir, maxWorkflowBytes = 5 * 1024 * 1024, logger
       }
       const config = direct.baseModels;
       const defaultFile = baseModelDefault(direct, config);
-      const files = loaderOptions?.[config?.classType || "UNETLoader"] || [];
-      if (config && defaultFile && !files.includes(defaultFile)) {
-        const variant = listBaseModels(direct, loaderOptions)[0];
+      const matchedDefault = config && defaultFile ? resolveBaseModelFile(config, loaderOptions, defaultFile) : "";
+      if (config && defaultFile && !matchedDefault) {
+        const variant = listBaseModels(direct, loaderOptions).find((item) => resolveBaseModelFile(config, loaderOptions, item.file));
         if (variant) return { entry: decorateEntry(direct, variant, loaderOptions), variant };
+      }
+      if (config && matchedDefault && matchedDefault !== defaultFile) {
+        const variant = listBaseModels(direct, loaderOptions).find((item) => path.basename(item.file).toLowerCase() === path.basename(matchedDefault).toLowerCase());
+        return { entry: decorateEntry(direct, variant || { file: matchedDefault, label: path.basename(matchedDefault), id: "" }, loaderOptions), variant: variant || null };
       }
       return { entry: decorateWithMainModel(direct, null, loaderOptions), variant: null };
     }

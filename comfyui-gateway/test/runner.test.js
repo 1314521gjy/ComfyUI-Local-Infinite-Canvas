@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { buildContext } from "../src/bindings.js";
-import { runWorkflow } from "../src/runner.js";
+import { runImage, runVideo, runWorkflow } from "../src/runner.js";
 
 function entry() {
   return {
@@ -176,6 +176,55 @@ function fakeComfy(onSubmit) {
     view: async () => ({ buffer: Buffer.from([1, 2, 3]), contentType: "image/png" }),
   };
 }
+
+test("runImage and runVideo forward loaderSpecs to the workflow runner", async () => {
+  const runEntry = () => ({
+    name: "runner-loader-specs",
+    type: "image",
+    workflow: { 1: { class_type: "LoraLoaderBypassModelOnly", inputs: { lora_name: "expected.safetensors" } } },
+    bindings: {},
+    defaults: {},
+    presets: {},
+  });
+  const modelAliasFor = (classType, input, value) => (classType === "LoraLoaderBypassModelOnly" && value === "expected.safetensors" ? "local.safetensors" : "");
+  const loaderSpecs = [{ classType: "LoraLoaderBypassModelOnly", input: "lora_name" }];
+  let imageWorkflow = null;
+  await runImage({
+    entry: runEntry(),
+    context: buildContext({ prompt: "x", count: 1 }),
+    comfy: fakeComfy((workflow) => {
+      imageWorkflow = workflow;
+    }),
+    timeoutMs: 5000,
+    pollIntervalMs: 10,
+    modelAliasFor,
+    loaderSpecs,
+  });
+  assert.equal(imageWorkflow["1"].inputs.lora_name, "local.safetensors");
+
+  let videoWorkflow = null;
+  const videoComfy = {
+    submit: async (workflow) => {
+      videoWorkflow = workflow;
+      return { promptId: "prompt-video" };
+    },
+    history: async () => ({
+      status: { status_str: "success" },
+      outputs: { 9: { videos: [{ filename: "out.mp4", subfolder: "", type: "output" }] } },
+    }),
+    view: async () => ({ buffer: Buffer.from("video"), contentType: "video/mp4" }),
+  };
+  await runVideo({
+    entry: { ...runEntry(), type: "video" },
+    context: buildContext({ prompt: "x" }),
+    comfy: videoComfy,
+    timeoutMs: 5000,
+    pollIntervalMs: 10,
+    modelAliasFor,
+    loaderSpecs,
+  });
+  assert.equal(videoWorkflow["1"].inputs.lora_name, "local.safetensors");
+});
 
 test("base model variants apply params.unet without touching request params", async () => {
   let submittedWorkflow;
