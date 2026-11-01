@@ -799,6 +799,7 @@ export default function (runtime) {
         return h(
             "div",
             {
+                "data-canvas-no-zoom": "true",
                 style: { width: "100%", minWidth: 0, height: "100%", minHeight: 0, display: "flex", flexDirection: "column", background: nodePanel, color: nodeText, overflow: "hidden", borderRadius: "inherit", boxSizing: "border-box" },
             },
             h(

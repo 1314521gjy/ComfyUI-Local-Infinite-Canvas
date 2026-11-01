@@ -6,6 +6,7 @@ import { canvasThemes, getCardBackground } from "@/lib/canvas-theme";
 import { useCanvasTheme, useEffectiveCardSkin } from "@/lib/canvas/use-canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { formatBytes } from "@/lib/image-utils";
+import { formatElapsedDuration } from "@/lib/media-size";
 import { pickImageSource } from "@/lib/image-thumbnail";
 import { previewUrlFor, subscribeImagePreviews, getImagePreviewRevision } from "@/services/image-storage";
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
@@ -31,6 +32,7 @@ type CanvasNodeProps = {
     referenceSelectionState?: "target" | "disabled" | "available";
     showPanel: boolean;
     showImageInfo: boolean;
+    generationStartedAt?: number | null;
     mentionReferences?: CanvasResourceReference[];
     pluginHost?: CanvasPluginHost;
     registryVersion?: number;
@@ -99,6 +101,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     referenceSelectionState,
     showPanel,
     showImageInfo,
+    generationStartedAt = null,
     mentionReferences = [],
     pluginHost,
     renderPanel,
@@ -340,6 +343,11 @@ export const CanvasNode = React.memo(function CanvasNode({
                 else onContextMenu(event, data.id);
             }}
         >
+            {isGenerating && generationStartedAt !== null ? (
+                <div className="pointer-events-none absolute left-2 top-2 z-[70]">
+                    <NodeGenerationElapsed startedAt={generationStartedAt} />
+                </div>
+            ) : null}
             {!referenceSelectionState && (isSelected || hovered || isEditingTitle) && (
                 <div className="absolute left-3 top-[-28px] z-[65] max-w-[calc(100%-24px)]" onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
                     {isEditingTitle ? (
@@ -609,13 +617,27 @@ export const CanvasNode = React.memo(function CanvasNode({
 
             {/* Counter-scale the panel so its on-screen size stays constant while the canvas zooms. */}
             {showPanel && !isGroup && renderPanel ? (
-                <div className="absolute left-1/2 top-full z-[70] w-[600px] pt-4" style={{ transform: `translateX(-50%) scale(${1 / scale})`, transformOrigin: "top center" }} data-node-panel={data.id}>
+                <div className="absolute left-1/2 top-full z-[70] w-max min-w-[560px] max-w-[min(920px,calc(100vw-32px))] pt-4" style={{ transform: `translateX(-50%) scale(${1 / scale})`, transformOrigin: "top center" }} data-node-panel={data.id}>
                     {renderPanel(data)}
                 </div>
             ) : null}
         </div>
     );
 });
+
+function NodeGenerationElapsed({ startedAt }: { startedAt: number }) {
+    const theme = useCanvasTheme();
+    const [now, setNow] = useState(() => Date.now());
+    useEffect(() => {
+        const timer = window.setInterval(() => setNow(Date.now()), 200);
+        return () => window.clearInterval(timer);
+    }, [startedAt]);
+    return (
+        <span data-testid="canvas-node-generation-timer" className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium tabular-nums shadow-sm backdrop-blur" style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}>
+            {formatElapsedDuration(now - startedAt)}
+        </span>
+    );
+}
 
 function NodeContent(props: NodeContentRendererProps) {
     if (props.node.type === CanvasNodeType.Config && props.renderNodeContent) return props.renderNodeContent(props.node);

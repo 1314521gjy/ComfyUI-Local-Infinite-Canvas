@@ -1,16 +1,16 @@
 {
-  "version": "v0.24.4",
+  "version": "v0.24.5",
   "publishedAt": "2026-11-01",
-  "notes": "画布视频卡双击可像图片一样放大打开「视频详情」并自动播放；单击、拖动卡片不会开始播放；打开或关闭预览时会暂停画布视频并销毁预览播放器，关闭后不再残留后台声音。画布修复助手「清空」改为明确文字按钮，空对话有提示、清空需二次确认并显示结果。选中两张图片时可直接「对比」，在大窗口中左右移动鼠标或拖动滑杆查看细节。配置节点隐藏「组装提示词」入口，创建时不再自动弹出；已连接输入与已保存内容不受影响。其余行为与 v0.24.3 一致。",
+  "notes": "画布修复助手的长对话可用鼠标滚轮滚动；视频子卡自动带上一级卡的媒体参考，参考栏以普通可断开参考显示，上一级卡到子卡的关系线不重复计入生成参考；视频最短时长改为 2 秒；提示词输入和放大编辑器支持 @ 选择已连接参考，标签以荧光多色显示；生成时显示画布总计时和卡片计时，完成后左侧列表显示耗时；提示词面板底部按内容自适应宽度，设置项与发送按钮保持同一行。其余行为与 v0.24.4 一致。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.24.4.zip",
-    "sha256": "48ef73c0c201521f3ffe87208c68d6fb8360c13b3945643a57227b20803dbb06",
-    "size": 29603549
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.24.5.zip",
+    "sha256": "323726d8e8a04fc18623d1d404d6ca8d95e65df891c8c16326161f2f954b1514",
+    "size": 29605193
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

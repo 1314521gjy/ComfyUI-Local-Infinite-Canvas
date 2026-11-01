@@ -54,7 +54,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
 
     const syncMention = (nextValue: string, cursor: number) => {
         const prefix = nextValue.slice(0, cursor);
-        const match = /(^|\s)@([^\s@]*)$/.exec(prefix);
+        const match = /(^|[^\w@])@([^\s@]*)$/.exec(prefix);
         if (!match || !references.some((item) => item.active)) {
             closeMention();
             return;
@@ -84,7 +84,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
         setHasSelection(Boolean(textarea && textarea.selectionStart !== textarea.selectionEnd));
     };
 
-    const showOverlay = Boolean(activeLabels.length && !hasSelection);
+    const showOverlay = Boolean(value && activeLabels.length && !hasSelection);
     const mergedStyle = {
         ...(style || {}),
         color: showOverlay ? "transparent" : style?.color,
@@ -212,17 +212,29 @@ function MentionHighlightText({ value, labels, placeholder }: { value: string; l
     if (placeholder) return <span className="opacity-45">{value}</span>;
     if (!labels.length) return <>{value}</>;
     const pattern = new RegExp(`(${labels.map(escapeRegExp).join("|")})`, "g");
+    const neonColors = ["#39ff14", "#00e5ff", "#ff2bd6", "#ffe600", "#ff8a00", "#b26bff"];
     return (
         <>
-            {value.split(pattern).map((part, index) =>
-                labels.includes(part) ? (
-                    <span key={`${part}-${index}`} className="rounded-md bg-[#2f80ff]/16 text-[#2f80ff] ring-1 ring-[#2f80ff]/24">
+            {value.split(pattern).map((part, index) => {
+                const labelIndex = labels.indexOf(part);
+                if (labelIndex < 0) return <span key={`${part}-${index}`}>{part}</span>;
+                const color = neonColors[labelIndex % neonColors.length];
+                return (
+                    <span
+                        key={`${part}-${index}`}
+                        data-canvas-mention-label={part}
+                        style={{
+                            color,
+                            background: `${color}1f`,
+                            borderRadius: 4,
+                            boxShadow: `0 0 7px ${color}66`,
+                            textShadow: `0 0 5px ${color}aa`,
+                        }}
+                    >
                         {part}
                     </span>
-                ) : (
-                    <span key={`${part}-${index}`}>{part}</span>
-                ),
-            )}
+                );
+            })}
         </>
     );
 }

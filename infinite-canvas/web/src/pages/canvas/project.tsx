@@ -38,6 +38,7 @@ import { CanvasNodeSuperResolveDialog, type CanvasSuperResolveParams } from "@/c
 import { CanvasNodeVideoUpscaleDialog, type CanvasVideoUpscaleParams } from "@/components/canvas/canvas-node-video-upscale-dialog";
 import { CanvasImageCompareModal } from "@/components/canvas/canvas-image-compare-modal";
 import { buildNodeGenerationContext, buildNodeGenerationInputs, buildNodeResponseMessages, hydrateNodeGenerationContext, type NodeGenerationInput } from "@/components/canvas/canvas-node-generation";
+import { CanvasGenerationTimer } from "@/components/canvas/canvas-generation-timer";
 import { CanvasNodeHoverToolbar, CanvasNodeInfoModal } from "@/components/canvas/canvas-node-hover-toolbar";
 import { CanvasSelectionToolbar } from "@/components/canvas/canvas-selection-toolbar";
 import { InfiniteCanvas } from "@/components/canvas/infinite-canvas";
@@ -337,6 +338,8 @@ function InfiniteCanvasPage() {
     const selectionBoxRef = useRef(selectionBox);
     const pendingConnectionCreateRef = useRef(pendingConnectionCreate);
     const generationRequestsRef = useRef(new Map<string, CanvasGenerationRequest>());
+    const generationStartedAtRef = useRef(new Map<string, number>());
+    const [generationStartedAt, setGenerationStartedAt] = useState<number | null>(null);
     const projectEpochRef = useRef(0);
     const generationStepTimersRef = useRef(new Map<string, number>());
     const generationStepTracksRef = useRef(new Map<string, Map<string, { step: number; total: number }>>());
@@ -361,7 +364,17 @@ function InfiniteCanvasPage() {
         [cleanupAssetImages],
     );
 
+    const refreshGenerationTimer = useCallback(() => {
+        const starts = [...generationStartedAtRef.current.values()];
+        setGenerationStartedAt(starts.length ? Math.min(...starts) : null);
+    }, []);
+
     const startGenerationRequest = useCallback((targetNodeId: string, originNodeId: string, runningId = originNodeId, controller = new AbortController(), expectedProgressCount = 1) => {
+        if (!generationStartedAtRef.current.has(targetNodeId)) {
+            generationStartedAtRef.current.set(targetNodeId, Date.now());
+            refreshGenerationTimer();
+            setNodes((prev) => prev.map((item) => (item.id === targetNodeId && item.metadata?.generationDurationMs !== undefined ? { ...item, metadata: { ...item.metadata, generationDurationMs: undefined } } : item)));
+        }
         const previous = generationRequestsRef.current.get(targetNodeId);
         if (previous?.controller !== controller) previous?.controller.abort("user-stop");
         const pendingClear = generationStepTimersRef.current.get(targetNodeId);
@@ -387,12 +400,19 @@ function InfiniteCanvasPage() {
         });
         generationRequestsRef.current.set(targetNodeId, { targetNodeId, originNodeId, runningNodeId: runningId, controller });
         return controller;
-    }, []);
+    }, [refreshGenerationTimer]);
 
     const finishGenerationRequest = useCallback((targetNodeId: string, controller: AbortController) => {
         const request = generationRequestsRef.current.get(targetNodeId);
         if (request?.controller !== controller) return;
         generationRequestsRef.current.delete(targetNodeId);
+        const startedAt = generationStartedAtRef.current.get(targetNodeId);
+        if (startedAt !== undefined) {
+            generationStartedAtRef.current.delete(targetNodeId);
+            const duration = Math.max(0, Date.now() - startedAt);
+            setNodes((prev) => prev.map((item) => (item.id === targetNodeId ? { ...item, metadata: { ...item.metadata, generationDurationMs: duration } } : item)));
+            refreshGenerationTimer();
+        }
         generationStepTracksRef.current.delete(targetNodeId);
         unbindStepProgress(controller.signal);
         if (!nodesRef.current.some((item) => item.id === targetNodeId && item.metadata?.stepProgress)) return;
@@ -409,7 +429,7 @@ function InfiniteCanvasPage() {
             setNodes((prev) => prev.map((item) => (item.id === targetNodeId && item.metadata?.stepProgress ? { ...item, metadata: { ...item.metadata, stepProgress: undefined } } : item)));
         }, 1450);
         generationStepTimersRef.current.set(targetNodeId, timer);
-    }, []);
+    }, [refreshGenerationTimer]);
 
     const updateVideoPreview = useCallback((nodeId: string, preview: VideoPreview | null) => {
         setNodes((prev) =>
@@ -998,6 +1018,7 @@ function InfiniteCanvasPage() {
     const connectedNodesByNodeId = useMemo(() => {
         const map = new Map<string, CanvasNodeData[]>();
         connections.forEach((connection) => {
+            if (connection.role === "lineage") return;
             const source = nodeById.get(connection.fromNodeId);
             if (!source) return;
             const connected = map.get(connection.toNodeId);
@@ -3150,7 +3171,17 @@ function InfiniteCanvasPage() {
                             ? prev.map((node) => (node.id === nodeId ? { ...node, ...videoNode } : node))
                             : [...prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_SUCCESS } } : node)), videoNode],
                     );
-                    if (!reuseVideoNode) setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: nodeId, toNodeId: videoId }]);
+                    if (!reuseVideoNode) {
+                        const inheritedInputs = buildNodeGenerationInputs(nodeId, nodesRef.current, connectionsRef.current).filter(
+                            (input) => input.type === "image" || input.type === "video" || input.type === "audio" || input.type === "group" || input.type === "lora",
+                        );
+                        const inheritedConnections = [...new Map(inheritedInputs.map((input) => [input.nodeId, input])).values()].map((input) => ({
+                            id: nanoid(),
+                            fromNodeId: input.nodeId,
+                            toNodeId: videoId,
+                        }));
+                        setConnections((prev) => [...prev, ...inheritedConnections, { id: nanoid(), fromNodeId: nodeId, toNodeId: videoId, role: "lineage" as const }]);
+                    }
                     const controller = startGenerationRequest(videoId, nodeId, nodeId, runController);
                     try {
                         await completeVideoNodeTask(videoId, generationConfig, effectivePrompt, generationContext.referenceImages, controller.signal, {
@@ -4037,6 +4068,8 @@ function InfiniteCanvasPage() {
                     onOpenGuide={() => setOnboardingOpen(true)}
                 />
 
+                <CanvasGenerationTimer startedAt={generationStartedAt} />
+
                 <InfiniteCanvas
                     containerRef={containerRef}
                     viewport={viewport}
@@ -4093,6 +4126,7 @@ function InfiniteCanvasPage() {
                             isConnecting={Boolean(connectingParams)}
                             referenceSelectionState={!referencePickerNodeId ? undefined : node.id === referencePickerNodeId ? "target" : referenceConnectedNodeIds.has(node.id) || !isCanvasReferenceNode(node, nodes) ? "disabled" : "available"}
                             showPanel={!isNodeResizing && dialogNodeId === node.id && !selectionBox && !getNodeDefinition(node.type)?.hidePanel}
+                            generationStartedAt={generationStartedAt}
                             groupChildCount={groupChildCountById.get(node.id) || 0}
                             isGroupDropTarget={dropTargetGroupId === node.id}
                             batchExpanded={expandedBatchNodeIds.has(node.id)}

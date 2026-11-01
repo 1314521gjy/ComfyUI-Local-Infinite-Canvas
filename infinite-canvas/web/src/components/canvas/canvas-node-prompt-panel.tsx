@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, ChevronRight, LoaderCircle, Maximize2, ScanText, Sparkles, Square, X } from "lucide-react";
 import { Button, message, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
@@ -53,6 +53,16 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     const theme = useCanvasTheme();
     const mode = modeOverride ?? defaultMode(node.type);
     const config = buildNodeConfig(globalConfig, node, mode);
+    const inheritedReferenceNodes = useMemo(() => {
+        const references = node.metadata?.references || [];
+        if (!references.length) return [];
+        const keys = new Set(references);
+        return nodes.filter((candidate) => {
+            if (candidate.id === node.id) return false;
+            const candidateKeys = [candidate.metadata?.storageKey, candidate.metadata?.content, ...(candidate.metadata?.images || []).flatMap((image) => [image.storageKey, image.content])].filter((key): key is string => Boolean(key));
+            return candidateKeys.some((key) => keys.has(key));
+        });
+    }, [node.id, node.metadata?.references, nodes]);
     const hasTextContent = node.type === CanvasNodeType.Text && Boolean(node.metadata?.content?.trim());
     const hasImageContent = node.type === CanvasNodeType.Image && Boolean(node.metadata?.content);
     const isEditingExistingContent = hasTextContent || hasImageContent;
@@ -415,7 +425,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
             onPointerDown={(event) => event.stopPropagation()}
             onWheel={(event) => event.stopPropagation()}
         >
-            <CanvasNodeReferenceBar nodeId={node.id} nodes={nodes} connectedNodes={connectedNodes} onDisconnect={onDisconnectReference} onStartSelection={onStartReferenceSelection} addDisabled={isH3T2V} addDisabledHint={t("canvas.promptPanel.videoTextAddDisabled")} />
+            <CanvasNodeReferenceBar nodeId={node.id} nodes={nodes} connectedNodes={connectedNodes} inheritedNodes={inheritedReferenceNodes} onDisconnect={onDisconnectReference} onStartSelection={onStartReferenceSelection} addDisabled={isH3T2V} addDisabledHint={t("canvas.promptPanel.videoTextAddDisabled")} />
             {textVideoHasReferences && !refsWarningDismissed ? (
                 <div className="mb-2 flex items-start gap-2 rounded-lg bg-amber-500/10 px-2 py-1 text-xs leading-4 text-amber-700 dark:text-amber-300">
                     <span className="min-w-0 flex-1">{t("canvas.promptPanel.videoTextRefsWarning")}</span>
@@ -430,6 +440,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                 value={draft}
                 data-onboarding="prompt-input"
                 references={mentionReferences}
+                highlightLabels
                 onChange={setDraft}
                 onBlur={() => commitPrompt()}
                 onSubmit={submit}
@@ -440,8 +451,8 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                 placeholder={promptPlaceholder}
             />
 
-            <div className="mt-2 flex min-w-0 items-center justify-between gap-2">
-                <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+            <div className="mt-2 flex min-w-0 items-center gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <Tooltip title={t("canvas.promptPanel.expandEditor")}>
                         <Button type="text" className="!h-8 !w-8 !min-w-8 shrink-0 !rounded-full !bg-transparent !p-0" style={{ color: theme.node.text }} icon={<Maximize2 className="size-3.5" />} onClick={openExpandedEditor} aria-label={t("canvas.promptPanel.expandEditor")} />
                     </Tooltip>
@@ -539,7 +550,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                 <Button
                     type="primary"
                     data-onboarding="generate-button"
-                    className={`ml-auto !h-10 shrink-0 !rounded-full ${isRunning || captionRunning ? "!min-w-10 !px-2" : "!min-w-16 !px-3"}`}
+                    className={`!h-10 shrink-0 !rounded-full ${isRunning || captionRunning ? "!min-w-10 !px-2" : "!min-w-16 !px-3"}`}
                     danger={isRunning || captionRunning}
                     disabled={!isRunning && !captionRunning && !(captionReady ? imageReferences.length : draft.trim())}
                     title={captionRunning ? t("canvas.promptPanel.captionStop") : captionReady ? (imageReferences.length ? t("canvas.promptPanel.captionHint") : t("canvas.promptPanel.captionNoImage")) : isRunning ? t("canvas.promptPanel.stop") : undefined}
@@ -690,7 +701,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
             ) : null}
             <Modal title={t("canvas.promptPanel.editorTitle")} open={expanded} centered width={760} footer={null} onCancel={() => { commitPrompt(); setExpanded(false); }} destroyOnHidden>
                 <div data-canvas-no-zoom className="pt-2" onWheelCapture={(event) => event.stopPropagation()}>
-                    <CanvasNodeReferenceBar nodeId={node.id} nodes={nodes} connectedNodes={connectedNodes} onDisconnect={onDisconnectReference} onStartSelection={(nodeId) => { setExpanded(false); onStartReferenceSelection?.(nodeId); }} addDisabled={isH3T2V} addDisabledHint={t("canvas.promptPanel.videoTextAddDisabled")} />
+                    <CanvasNodeReferenceBar nodeId={node.id} nodes={nodes} connectedNodes={connectedNodes} inheritedNodes={inheritedReferenceNodes} onDisconnect={onDisconnectReference} onStartSelection={(nodeId) => { setExpanded(false); onStartReferenceSelection?.(nodeId); }} addDisabled={isH3T2V} addDisabledHint={t("canvas.promptPanel.videoTextAddDisabled")} />
                     {textVideoHasReferences && !refsWarningDismissed ? (
                         <div className="mb-2 flex items-start gap-2 rounded-lg bg-amber-500/10 px-2 py-1 text-xs leading-4 text-amber-700 dark:text-amber-300">
                             <span className="min-w-0 flex-1">{t("canvas.promptPanel.videoTextRefsWarning")}</span>
@@ -703,6 +714,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                     <CanvasResourceMentionTextarea
                         value={draft}
                         references={mentionReferences}
+                        highlightLabels
                         onChange={setDraft}
                         onBlur={() => commitPrompt()}
                         onSubmit={submit}

@@ -143,6 +143,7 @@ export type CanvasNodeMetadata = {
     previewStep?: number;
     previewTotal?: number;
     stepProgress?: { step: number; total: number; complete?: boolean };
+    generationDurationMs?: number;
     seed?: string;
     seedFixed?: string;
     aspectRatio?: string;
@@ -168,6 +169,7 @@ export type CanvasConnection = {
     id: string;
     fromNodeId: string;
     toNodeId: string;
+    role?: "lineage";
 };
 
 export type CanvasAssistantReference = {

@@ -43,8 +43,16 @@ export const videoRatioOptions = [
     { value: "auto", width: 0, height: 0 },
 ] as const;
 
-export const VIDEO_SECONDS_MIN = 4;
+export const VIDEO_SECONDS_MIN = 2;
 export const VIDEO_SECONDS_MAX = 30;
+
+export function formatElapsedDuration(ms: number) {
+    const totalSeconds = Math.max(0, ms) / 1000;
+    if (totalSeconds < 60) return `${totalSeconds.toFixed(1)}s`;
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = Math.round(totalSeconds % 60);
+    return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+}
 
 export function normalizeMediaScale(value: string | undefined) {
     const scale = String(value || "").trim().toLowerCase();
