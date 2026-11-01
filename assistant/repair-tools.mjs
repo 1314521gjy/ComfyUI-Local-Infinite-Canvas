@@ -17,7 +17,12 @@ const TEXT_EXTENSIONS = new Set([
     ".py", ".ps1", ".bat", ".sh", ".toml", ".ini", ".gitignore", ".example",
 ]);
 const DENY_SEGMENTS = new Set([".git", "node_modules", "data", "models", "backups", ".assistant-backups", "dist", ".update-backup", "output", ".assistant-downloads"]);
-const DENY_FILES = new Set(["profiles.local.json", "launcher/config.json", ".env"]);
+const DENY_FILES = new Set([
+    "profiles.local.json", "launcher/config.json", ".env", ".npmrc", ".netrc", ".pypirc", ".htpasswd",
+    "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "auth.json", "secrets.json", "credentials.json", "tokens.json",
+]);
+const SENSITIVE_FILE_PATTERN = /(^|[._-])(secrets?|tokens?|credentials?|keys?|api[-_]?keys?|private[-_]?keys?)([._-]|$)/i;
+const PRIVATE_KEY_EXTENSIONS = new Set([".key", ".pem", ".p12", ".pfx", ".jks", ".keystore"]);
 const REMOTE_ALLOW = [
     { host: "modelscope.cn", prefix: "/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/" },
     { host: "www.modelscope.cn", prefix: "/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/" },
@@ -36,9 +41,61 @@ function normalizeRelative(value) {
         .replace(/^(\.\/)+/, "");
 }
 
-function resolveInside(root, relative) {
+export function createAsyncMutex() {
+    let tail = Promise.resolve();
+    return async function runExclusive(task) {
+        let release;
+        const previous = tail;
+        tail = new Promise((resolve) => {
+            release = resolve;
+        });
+        await previous;
+        try {
+            return await task();
+        } finally {
+            release();
+        }
+    };
+}
+
+function isSensitiveFile(relative) {
+    const rel = normalizeRelative(relative).toLowerCase();
+    const name = path.posix.basename(rel);
+    return DENY_FILES.has(rel) || DENY_FILES.has(name) || /(^|\/)\.env(\.|$)/i.test(rel) || SENSITIVE_FILE_PATTERN.test(name) || PRIVATE_KEY_EXTENSIONS.has(path.posix.extname(name));
+}
+
+function isInside(root, target) {
+    const relative = path.relative(root, target);
+    return !relative || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+}
+
+function assertRealPathInside(root, target) {
+    const realRoot = fs.realpathSync.native(root);
+    let existing = target;
+    while (true) {
+        try {
+            fs.lstatSync(existing);
+            break;
+        } catch (error) {
+            if (error?.code !== "ENOENT") throw error;
+            const parent = path.dirname(existing);
+            if (parent === existing || !isInside(root, parent)) throw new Error("路径不能跳出工作区");
+            existing = parent;
+        }
+    }
+    const relative = path.relative(root, existing);
+    let current = root;
+    for (const part of relative.split(path.sep).filter(Boolean)) {
+        current = path.join(current, part);
+        const stat = fs.lstatSync(current);
+        if (stat.isSymbolicLink()) throw new Error(`禁止访问符号链接或 Junction：${normalizeRelative(relative)}`);
+    }
+    const realExisting = fs.realpathSync.native(existing);
+    if (!isInside(realRoot, realExisting)) throw new Error("真实路径不能跳出工作区");
+}
+
+export function resolveInside(root, relative) {
     const rel = normalizeRelative(relative);
-    if (!rel || rel === ".") return root;
     if (path.isAbsolute(rel) || /^[A-Za-z]:/.test(rel)) throw new Error("只接受工作区内的相对路径");
     const parts = rel.split("/");
     for (const part of parts) {
@@ -46,10 +103,10 @@ function resolveInside(root, relative) {
         if (part === "..") throw new Error("路径不能跳出工作区");
         if (DENY_SEGMENTS.has(part.toLowerCase())) throw new Error(`禁止访问目录：${part}`);
     }
+    if (isSensitiveFile(rel)) throw new Error(`禁止访问敏感文件：${rel}`);
     const target = path.resolve(root, rel);
-    if (target !== root && !target.startsWith(root + path.sep)) throw new Error("路径不能跳出工作区");
-    if (DENY_FILES.has(rel.toLowerCase())) throw new Error(`禁止访问文件：${rel}`);
-    if (/(^|\/)\.env(\.|$)/i.test(rel)) throw new Error("禁止访问环境变量文件");
+    if (!isInside(root, target)) throw new Error("路径不能跳出工作区");
+    assertRealPathInside(root, target);
     return target;
 }
 
@@ -239,7 +296,7 @@ function makeProposal(root, summary, edits) {
     };
 }
 
-export function createRepairTools({ workspaceRoot, proposals, webDir, beforeBuild, runTask }) {
+export function createRepairTools({ workspaceRoot, proposals, webDir, beforeBuild, runTask, operationLock }) {
     const root = path.resolve(workspaceRoot);
     const runBuild = async (kind) => {
         if (kind === "build" && typeof beforeBuild === "function") {
@@ -249,6 +306,7 @@ export function createRepairTools({ workspaceRoot, proposals, webDir, beforeBuil
         if (typeof runTask === "function") return runTask(kind);
         return runNpm(webDir, kind);
     };
+    const withOperationLock = (task) => (typeof operationLock === "function" ? operationLock(task) : task());
     return [
         {
             name: "list_workspace",
@@ -385,7 +443,7 @@ export function createRepairTools({ workspaceRoot, proposals, webDir, beforeBuil
                     const result = await runGitStatus(root);
                     return { content: [{ type: "text", text: result.output || "(clean)" }], details: result };
                 }
-                const result = await runBuild(params.kind);
+                const result = await withOperationLock(() => runBuild(params.kind));
                 return {
                     content: [{ type: "text", text: JSON.stringify({ kind: params.kind, ok: result.ok, output: result.output }, null, 2) }],
                     details: result,

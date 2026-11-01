@@ -20,6 +20,7 @@ export type ResourceItem = {
     sources: ResourceSource[];
     requires: string[];
     builder?: Record<string, unknown> | null;
+    downloadable?: boolean;
     status: "present" | "missing" | "blocked";
     present: boolean;
     registered: boolean;
@@ -106,6 +107,7 @@ export type ResourcePack = {
     family?: string;
     tier?: string;
     optional?: boolean;
+    standalone?: boolean;
     optionalLabel?: string;
     eligible?: boolean;
     recommended?: boolean;

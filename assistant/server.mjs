@@ -10,10 +10,11 @@ import { fileURLToPath } from "node:url";
 import { Agent } from "@mariozechner/pi-agent-core";
 
 import { createDiagnosticTools, collectSnapshot, normalizeGatewayUrl } from "./diagnostics.mjs";
-import { applyProposalFiles, createRepairTools, rollbackProposalFiles } from "./repair-tools.mjs";
+import { applyProposalFiles, createAsyncMutex, createRepairTools, resolveInside, rollbackProposalFiles } from "./repair-tools.mjs";
 import { buildSystemPrompt, SKILL_MARKDOWN, SKILL_NAME, SKILL_VERSION } from "./skill.mjs";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
+const IS_MAIN = Boolean(process.argv[1]) && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 const PORT = Number(process.env.ASSISTANT_PORT || 0);
 const HOST = "127.0.0.1";
 const SERVICE_VERSION = "0.3.1";
@@ -47,6 +48,7 @@ let lastActivity = Date.now();
 let shuttingDown = false;
 let recoveryReport = { state: "running", reapplied: 0, conflicts: [], build: null, at: Date.now() };
 let recoveryPromise = Promise.resolve();
+const repairOperation = createAsyncMutex();
 
 function readText(file) {
     try {
@@ -297,6 +299,7 @@ function buildTools(gatewayUrl) {
             webDir: WORKSPACE_WEB,
             beforeBuild: checkBuildAllowed,
             runTask: runBuildTask,
+            operationLock: repairOperation,
         }),
     ];
 }
@@ -440,7 +443,7 @@ async function checkBuildAllowed() {
     return { ok: true };
 }
 
-function resolveWorkspacePath(relative) {
+function resolveWorkspacePath(relative, workspaceRoot = WORKSPACE_ROOT) {
     const rel = String(relative || "").replace(/\\/g, "/").replace(/^\/+/, "");
     if (!rel.startsWith("infinite-canvas/web/")) throw new Error("只允许修改画布前端源码");
     const parts = rel.split("/");
@@ -450,8 +453,9 @@ function resolveWorkspacePath(relative) {
     if (/^infinite-canvas\/web\/(vite|postcss|tailwind|tsconfig[^/]*\.json|package(-lock)?\.json|pnpm-lock\.yaml|bun\.lock|index\.html)$/i.test(rel)) {
         throw new Error("不能修改构建配置或依赖清单");
     }
-    const target = path.resolve(WORKSPACE_ROOT, rel);
-    if (!target.startsWith(path.join(WORKSPACE_ROOT, "infinite-canvas", "web") + path.sep)) throw new Error("路径不能跳出工作区");
+    const target = resolveInside(workspaceRoot, rel);
+    const webRoot = path.join(workspaceRoot, "infinite-canvas", "web");
+    if (!target.startsWith(webRoot + path.sep)) throw new Error("路径不能跳出工作区");
     return target;
 }
 
@@ -505,40 +509,50 @@ function removeFixRecord(id) {
 function loadAppliedProposals() {
     const data = readJson(PROPOSALS_FILE, null);
     if (!data || !Array.isArray(data.records)) return;
+    let loaded = 0;
     for (const record of data.records) {
         if (!record || record.status !== "applied" || !Array.isArray(record.edits)) continue;
-        proposals.set(record.id, { ...record, status: "applied" });
+        const [safeRecord] = serializeAppliedProposals([record]);
+        proposals.set(record.id, safeRecord);
+        loaded += 1;
     }
+    if (loaded) persistAppliedProposals();
 }
 
-function persistAppliedProposals() {
-    const records = [...proposals.values()]
+export function serializeAppliedProposals(values) {
+    return values
         .filter((proposal) => proposal.status === "applied")
         .map((proposal) => ({
             id: proposal.id,
             summary: proposal.summary,
             createdAt: proposal.createdAt,
             status: "applied",
-            edits: proposal.edits,
+            edits: proposal.edits.map((edit) => ({
+                path: edit.path,
+                isCreate: edit.isCreate === true,
+                oldSha: edit.oldSha || sha256(edit.oldContent || ""),
+                newSha: edit.newSha || sha256(edit.newContent || ""),
+            })),
         }));
-    writeJsonAtomic(PROPOSALS_FILE, { version: 1, records });
 }
 
-async function rebuildAndDeploy({ guard = true } = {}) {
-    if (guard) {
-        const allowed = await checkBuildAllowed();
-        if (!allowed.ok) return { ok: false, stage: "preflight", output: allowed.reason };
-    }
+function persistAppliedProposals() {
+    writeJsonAtomic(PROPOSALS_FILE, { version: 1, records: serializeAppliedProposals([...proposals.values()]) });
+}
+
+export async function rebuildAndDeploy({ checkAllowed = checkBuildAllowed, runTask = runBuildTask, deploy = deployWorkspace } = {}) {
+    const allowed = await checkAllowed();
+    if (!allowed.ok) return { ok: false, stage: "preflight", output: allowed.reason };
     buildRunning = true;
     touch();
     try {
-        const typecheck = await runBuildTask("typecheck");
+        const typecheck = await runTask("typecheck");
         if (!typecheck.ok) return { ok: false, stage: "typecheck", output: typecheck.output };
-        const build = await runBuildTask("build");
+        const build = await runTask("build");
         if (!build.ok) return { ok: false, stage: "build", output: build.output };
-        const deploy = deployWorkspace();
-        if (!deploy.ok) return { ok: false, stage: "deploy", output: deploy.output };
-        return { ok: true, output: `${typecheck.output}\n${build.output}\n${deploy.output}`.trim() };
+        const deployed = await deploy();
+        if (!deployed.ok) return { ok: false, stage: "deploy", output: deployed.output };
+        return { ok: true, output: `${typecheck.output}\n${build.output}\n${deployed.output}`.trim() };
     } finally {
         buildRunning = false;
         touch();
@@ -565,23 +579,24 @@ function readPluginManifest(distDir) {
     }
 }
 
-function deployWorkspace() {
-    const sourceDist = path.join(WORKSPACE_WEB, "dist");
+export function deployWorkspace({ workspaceWeb = WORKSPACE_WEB, webDist = WEB_DIST, backupRoot = BACKUP_ROOT } = {}) {
+    const sourceDist = path.join(workspaceWeb, "dist");
     if (!fs.existsSync(path.join(sourceDist, "index.html"))) {
         return { ok: false, output: `工作区构建产物不存在：${sourceDist}` };
     }
-    ensureDir(BACKUP_ROOT);
-    const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
-    const backupDist = path.join(BACKUP_ROOT, `deploy-${stamp}-${process.pid}`);
-    const stagingDist = `${WEB_DIST}.assistant-new-${process.pid}`;
-    const hadTarget = fs.existsSync(WEB_DIST);
+    ensureDir(backupRoot);
+    const suffix = `${process.pid}-${randomUUID()}`;
+    const backupDist = path.join(backupRoot, `deploy-${suffix}`);
+    const stagingDist = `${webDist}.assistant-new-${suffix}`;
+    const retiredDist = `${webDist}.assistant-old-${suffix}`;
+    const hadTarget = fs.existsSync(webDist);
     let configScript = "";
     let oldPlugins = [];
     try {
         if (hadTarget) {
-            fs.cpSync(WEB_DIST, backupDist, { recursive: true });
-            configScript = readText(path.join(WEB_DIST, "config.js"));
-            oldPlugins = readPluginManifest(WEB_DIST);
+            fs.cpSync(webDist, backupDist, { recursive: true });
+            configScript = readText(path.join(webDist, "config.js"));
+            oldPlugins = readPluginManifest(webDist);
         }
         fs.rmSync(stagingDist, { recursive: true, force: true });
         fs.cpSync(sourceDist, stagingDist, { recursive: true });
@@ -595,110 +610,160 @@ function deployWorkspace() {
                 if (!fs.existsSync(source)) continue;
                 fs.mkdirSync(path.dirname(path.join(stagingDist, rel)), { recursive: true });
                 fs.copyFileSync(source, path.join(stagingDist, rel));
-                nextPlugins.push(plugin);
+                nextPlugins.push(rel);
             }
             fs.mkdirSync(path.join(stagingDist, "plugins"), { recursive: true });
             fs.writeFileSync(path.join(stagingDist, "plugins", "index.json"), JSON.stringify(nextPlugins), "utf8");
         }
-        fs.rmSync(WEB_DIST, { recursive: true, force: true });
-        fs.renameSync(stagingDist, WEB_DIST);
-    } catch (error) {
+        if (hadTarget) fs.renameSync(webDist, retiredDist);
         try {
-            fs.rmSync(stagingDist, { recursive: true, force: true });
-            if (hadTarget && fs.existsSync(backupDist)) {
-                fs.rmSync(WEB_DIST, { recursive: true, force: true });
-                fs.cpSync(backupDist, WEB_DIST, { recursive: true });
-            }
-        } catch {
-            // 回滚失败时保留备份目录供手工恢复。
+            fs.renameSync(stagingDist, webDist);
+        } catch (error) {
+            if (hadTarget && fs.existsSync(retiredDist)) fs.renameSync(retiredDist, webDist);
+            throw error;
+        }
+    } catch (error) {
+        fs.rmSync(stagingDist, { recursive: true, force: true });
+        if (hadTarget && !fs.existsSync(webDist) && fs.existsSync(backupDist)) {
+            fs.cpSync(backupDist, webDist, { recursive: true });
         }
         return { ok: false, output: `部署失败：${error?.message || error}` };
     }
     try {
+        if (fs.existsSync(retiredDist)) fs.rmSync(retiredDist, { recursive: true, force: true });
         const backups = fs
-            .readdirSync(BACKUP_ROOT)
+            .readdirSync(backupRoot)
             .filter((name) => name.startsWith("deploy-"))
-            .map((name) => ({ name, at: fs.statSync(path.join(BACKUP_ROOT, name)).mtimeMs }))
+            .map((name) => ({ name, at: fs.statSync(path.join(backupRoot, name)).mtimeMs }))
             .sort((a, b) => b.at - a.at);
-        for (const item of backups.slice(3)) fs.rmSync(path.join(BACKUP_ROOT, item.name), { recursive: true, force: true });
+        for (const item of backups.slice(3)) fs.rmSync(path.join(backupRoot, item.name), { recursive: true, force: true });
     } catch {
         // 清理旧备份失败不影响本次部署。
     }
-    return { ok: true, output: `已部署到 ${WEB_DIST}` };
+    return { ok: true, output: `已部署到 ${webDist}` };
 }
 
-async function recoverAppliedFixes() {
-    const fixes = loadFixes();
+export function recoverAppliedFixes(options = {}) {
+    return repairOperation(() => recoverAppliedFixesUnlocked(options));
+}
+
+async function recoverAppliedFixesUnlocked({
+    workspaceRoot = WORKSPACE_ROOT,
+    load = loadFixes,
+    save = saveFixes,
+    rebuild = rebuildAndDeploy,
+    version = workspaceVersion,
+    writeLog = log,
+} = {}) {
+    const fixes = load();
     const applied = fixes.records.filter((record) => record.status === "applied" && Array.isArray(record.edits) && record.edits.length);
     const report = { state: "done", reapplied: 0, checked: applied.length, conflicts: [], build: null, at: Date.now() };
     if (!applied.length) {
         recoveryReport = report;
         return report;
     }
-    let changed = false;
+    const originalStates = new Map();
+    const virtualStates = new Map();
+    const finalStates = new Map();
+    const hashUpdates = [];
+    const changedRecords = new Set();
     for (const record of applied) {
-        let recordChanged = false;
         const conflicts = [];
         for (const edit of record.edits) {
             try {
-                const file = resolveWorkspacePath(edit.path);
-                const exists = fs.existsSync(file);
-                if (exists) {
-                    const current = fs.readFileSync(file, "utf8");
-                    if (edit.newSha && sha256(current) === edit.newSha) continue;
+                const file = resolveWorkspacePath(edit.path, workspaceRoot);
+                if (!originalStates.has(file)) {
+                    const exists = fs.existsSync(file);
+                    originalStates.set(file, { exists, content: exists ? fs.readFileSync(file, "utf8") : "" });
                 }
+                const currentState = virtualStates.get(file) || originalStates.get(file);
+                if (currentState.exists && edit.newSha && sha256(currentState.content) === edit.newSha) continue;
+                let updated;
                 if (edit.isCreate) {
-                    if (exists) {
+                    if (currentState.exists) {
                         conflicts.push({ path: edit.path, reason: "文件已存在且内容不同" });
                         continue;
                     }
-                    fs.mkdirSync(path.dirname(file), { recursive: true });
-                    fs.writeFileSync(file, String(edit.replace || ""), "utf8");
-                    edit.newSha = sha256(String(edit.replace || ""));
-                    recordChanged = true;
-                    continue;
+                    updated = String(edit.replace || "");
+                } else {
+                    if (!currentState.exists) {
+                        conflicts.push({ path: edit.path, reason: "文件不存在" });
+                        continue;
+                    }
+                    const search = String(edit.search || "");
+                    if (!search) {
+                        conflicts.push({ path: edit.path, reason: "缺少可重放的替换原文" });
+                        continue;
+                    }
+                    const first = currentState.content.indexOf(search);
+                    if (first < 0 || currentState.content.indexOf(search, first + search.length) >= 0) {
+                        conflicts.push({ path: edit.path, reason: first < 0 ? "原文已变化" : "原文出现多次" });
+                        continue;
+                    }
+                    updated = `${currentState.content.slice(0, first)}${String(edit.replace || "")}${currentState.content.slice(first + search.length)}`;
                 }
-                if (!exists) {
-                    conflicts.push({ path: edit.path, reason: "文件不存在" });
-                    continue;
-                }
-                const current = fs.readFileSync(file, "utf8");
-                const search = String(edit.search || "");
-                if (!search) {
-                    conflicts.push({ path: edit.path, reason: "缺少可重放的替换原文" });
-                    continue;
-                }
-                const first = current.indexOf(search);
-                if (first < 0 || current.indexOf(search, first + search.length) >= 0) {
-                    conflicts.push({ path: edit.path, reason: first < 0 ? "原文已变化" : "原文出现多次" });
-                    continue;
-                }
-                const updated = `${current.slice(0, first)}${String(edit.replace || "")}${current.slice(first + search.length)}`;
-                fs.writeFileSync(file, updated, "utf8");
-                edit.newSha = sha256(updated);
-                recordChanged = true;
+                virtualStates.set(file, { exists: true, content: updated });
+                finalStates.set(file, updated);
+                hashUpdates.push({ edit, newSha: sha256(updated) });
+                changedRecords.add(record);
             } catch (error) {
                 conflicts.push({ path: edit.path, reason: String(error?.message || error) });
             }
         }
-        if (conflicts.length) {
-            report.conflicts.push({ id: record.id, summary: record.summary, files: conflicts });
-        } else if (recordChanged) {
-            report.reapplied += 1;
-            record.workspaceVersion = workspaceVersion();
-            changed = true;
-        }
+        if (conflicts.length) report.conflicts.push({ id: record.id, summary: record.summary, files: conflicts });
     }
-    if (changed) {
-        const result = await rebuildAndDeploy({ guard: false });
+    if (report.conflicts.length) {
+        recoveryReport = report;
+        return report;
+    }
+    const committed = [];
+    try {
+        for (const [file, content] of finalStates) {
+            committed.push(file);
+            fs.mkdirSync(path.dirname(file), { recursive: true });
+            fs.writeFileSync(file, content, "utf8");
+        }
+    } catch (error) {
+        for (const file of committed.reverse()) {
+            try {
+                const original = originalStates.get(file);
+                if (original?.exists) fs.writeFileSync(file, original.content, "utf8");
+                else fs.rmSync(file, { force: true });
+            } catch {
+                // 保留原始错误，由调用方报告提交失败。
+            }
+        }
+        report.state = "failed";
+        report.error = `恢复提交失败：${error?.message || error}`;
+        recoveryReport = report;
+        return report;
+    }
+    for (const { edit, newSha } of hashUpdates) edit.newSha = newSha;
+    for (const record of changedRecords) record.workspaceVersion = version();
+    report.reapplied = changedRecords.size;
+    if (finalStates.size) {
+        const result = await rebuild();
         report.build = { ok: result.ok, stage: result.stage || "", output: String(result.output || "").slice(-4000) };
         if (!result.ok) report.state = "failed";
     }
     fixes.records = fixes.records.map((record) => ({ ...record, lastRecoveryAt: Date.now() }));
-    saveFixes(fixes);
+    save(fixes);
     recoveryReport = report;
-    log(`fix recovery checked=${report.checked} reapplied=${report.reapplied} conflicts=${report.conflicts.length} build=${report.build ? (report.build.ok ? "ok" : "failed") : "skipped"}`);
+    writeLog(`fix recovery checked=${report.checked} reapplied=${report.reapplied} conflicts=${report.conflicts.length} build=${report.build ? (report.build.ok ? "ok" : "failed") : "skipped"}`);
     return report;
+}
+
+export async function rollbackProposalAndRebuild({
+    proposal,
+    workspaceRoot = WORKSPACE_ROOT,
+    backupRoot = BACKUP_ROOT,
+    rebuild = rebuildAndDeploy,
+    onDeployed = () => {},
+}) {
+    rollbackProposalFiles({ proposal, workspaceRoot, backupRoot });
+    const result = await rebuild();
+    if (result.ok) await onDeployed();
+    return result;
 }
 
 function handleChat(req, res, origin) {
@@ -888,29 +953,35 @@ function handleApply(req, res, origin, id) {
                 return;
             }
             await recoveryPromise;
-            applyRunning = true;
-            proposal.status = "applying";
-            let applied = null;
-            try {
-                applied = applyProposalFiles({ proposal, workspaceRoot: WORKSPACE_ROOT, backupRoot: BACKUP_ROOT });
-                const result = await rebuildAndDeploy({ guard: false });
-                if (!result.ok) {
-                    proposal.status = "failed";
-                    proposal.lastError = result;
-                    sendJson(res, 200, { ok: false, stage: result.stage, output: result.output, applied, rollbackAvailable: true }, origin);
+            await repairOperation(async () => {
+                if (proposal.status !== "pending") {
+                    sendJson(res, 409, { ok: false, error: `修复方案状态为 ${proposal.status}，请重新生成或回滚` }, origin);
                     return;
                 }
-                proposal.status = "applied";
-                recordAppliedFix(proposal);
-                persistAppliedProposals();
-                sendJson(res, 200, { ok: true, applied, output: result.output, reload: true }, origin);
-            } catch (error) {
-                proposal.status = "failed";
-                proposal.lastError = String(error?.message || error);
-                sendJson(res, 200, { ok: false, stage: "apply", output: String(error?.message || error), applied, rollbackAvailable: Boolean(applied) }, origin);
-            } finally {
-                applyRunning = false;
-            }
+                applyRunning = true;
+                proposal.status = "applying";
+                let applied = null;
+                try {
+                    applied = applyProposalFiles({ proposal, workspaceRoot: WORKSPACE_ROOT, backupRoot: BACKUP_ROOT });
+                    const result = await rebuildAndDeploy();
+                    if (!result.ok) {
+                        proposal.status = "failed";
+                        proposal.lastError = result;
+                        sendJson(res, 200, { ok: false, stage: result.stage, output: result.output, applied, rollbackAvailable: true }, origin);
+                        return;
+                    }
+                    proposal.status = "applied";
+                    recordAppliedFix(proposal);
+                    persistAppliedProposals();
+                    sendJson(res, 200, { ok: true, applied, output: result.output, reload: true }, origin);
+                } catch (error) {
+                    proposal.status = "failed";
+                    proposal.lastError = String(error?.message || error);
+                    sendJson(res, 200, { ok: false, stage: "apply", output: String(error?.message || error), applied, rollbackAvailable: Boolean(applied) }, origin);
+                } finally {
+                    applyRunning = false;
+                }
+            });
         } catch (error) {
             applyRunning = false;
             sendJson(res, 400, { ok: false, error: String(error?.message || error) }, origin);
@@ -943,20 +1014,31 @@ function handleRollback(req, res, origin, id) {
                 sendJson(res, 409, { ok: false, stage: "preflight", error: allowed.reason }, origin);
                 return;
             }
-            applyRunning = true;
-            try {
-                rollbackProposalFiles({ proposal, workspaceRoot: WORKSPACE_ROOT, backupRoot: BACKUP_ROOT });
-                removeFixRecord(id);
-                proposals.delete(id);
-                persistAppliedProposals();
-                proposal.status = "rolled_back";
-                const result = await rebuildAndDeploy({ guard: false });
-                sendJson(res, 200, { ok: result.ok, stage: result.stage || "", output: result.output, rolledBack: true }, origin);
-            } catch (error) {
-                sendJson(res, 200, { ok: false, stage: "rollback", output: String(error?.message || error) }, origin);
-            } finally {
-                applyRunning = false;
-            }
+            await repairOperation(async () => {
+                if (!proposals.has(id)) {
+                    sendJson(res, 404, { ok: false, error: "修复方案不存在" }, origin);
+                    return;
+                }
+                applyRunning = true;
+                try {
+                    const result = await rollbackProposalAndRebuild({
+                        proposal,
+                        workspaceRoot: WORKSPACE_ROOT,
+                        backupRoot: BACKUP_ROOT,
+                        onDeployed: () => {
+                            removeFixRecord(id);
+                            proposals.delete(id);
+                            persistAppliedProposals();
+                            proposal.status = "rolled_back";
+                        },
+                    });
+                    sendJson(res, 200, { ok: result.ok, stage: result.stage || "", output: result.output, rolledBack: true }, origin);
+                } catch (error) {
+                    sendJson(res, 200, { ok: false, stage: "rollback", output: String(error?.message || error) }, origin);
+                } finally {
+                    applyRunning = false;
+                }
+            });
         } catch (error) {
             applyRunning = false;
             sendJson(res, 400, { ok: false, error: String(error?.message || error) }, origin);
@@ -1113,55 +1195,57 @@ server.requestTimeout = 0;
 server.headersTimeout = 0;
 server.timeout = 0;
 
-server.listen(PORT || 0, HOST, () => {
-    const actualPort = server.address()?.port;
-    ensureDir(DATA_DIR);
-    loadAppliedProposals();
-    log(`listening on http://${HOST}:${actualPort} version=${SERVICE_VERSION} app=${APP_VERSION} workspace=${workspaceVersion()}`);
-    recoveryPromise = recoverAppliedFixes().catch((error) => {
-        recoveryReport = { state: "failed", reapplied: 0, conflicts: [], build: null, error: String(error?.message || error), at: Date.now() };
-        log(`fix recovery failed: ${error?.message || error}`);
-        return recoveryReport;
+if (IS_MAIN) {
+    server.listen(PORT || 0, HOST, () => {
+        const actualPort = server.address()?.port;
+        ensureDir(DATA_DIR);
+        loadAppliedProposals();
+        log(`listening on http://${HOST}:${actualPort} version=${SERVICE_VERSION} app=${APP_VERSION} workspace=${workspaceVersion()}`);
+        recoveryPromise = recoverAppliedFixes().catch((error) => {
+            recoveryReport = { state: "failed", reapplied: 0, conflicts: [], build: null, error: String(error?.message || error), at: Date.now() };
+            log(`fix recovery failed: ${error?.message || error}`);
+            return recoveryReport;
+        });
     });
-});
 
-setInterval(() => {
-    if (shuttingDown) return;
-    if (activeRequests > 0 || buildRunning) {
-        touch();
-        return;
-    }
-    if (Date.now() - lastActivity >= IDLE_MS) {
-        shutdown("idle");
-        return;
-    }
-    const now = Date.now();
-    for (const [id, record] of threads) {
-        if (record.running) continue;
-        if (now - record.lastActive > THREAD_IDLE_MS) {
-            try {
-                record.agent.abort();
-            } catch {
-                // ignore
-            }
-            threads.delete(id);
-            log(`thread expired ${id}`);
-        }
-    }
-    for (const [id, proposal] of proposals) {
-        if (now - proposal.createdAt > 2 * 60 * 60 * 1000) proposals.delete(id);
-    }
-}, 5000).unref();
-
-if (PARENT_PID) {
     setInterval(() => {
-        try {
-            process.kill(PARENT_PID, 0);
-        } catch (error) {
-            if (error?.code === "ESRCH") shutdown("parent-exit");
+        if (shuttingDown) return;
+        if (activeRequests > 0 || buildRunning) {
+            touch();
+            return;
         }
-    }, 20000).unref();
-}
+        if (Date.now() - lastActivity >= IDLE_MS) {
+            shutdown("idle");
+            return;
+        }
+        const now = Date.now();
+        for (const [id, record] of threads) {
+            if (record.running) continue;
+            if (now - record.lastActive > THREAD_IDLE_MS) {
+                try {
+                    record.agent.abort();
+                } catch {
+                    // ignore
+                }
+                threads.delete(id);
+                log(`thread expired ${id}`);
+            }
+        }
+        for (const [id, proposal] of proposals) {
+            if (now - proposal.createdAt > 2 * 60 * 60 * 1000) proposals.delete(id);
+        }
+    }, 5000).unref();
 
-process.on("SIGINT", () => shutdown("sigint"));
-process.on("SIGTERM", () => shutdown("sigterm"));
+    if (PARENT_PID) {
+        setInterval(() => {
+            try {
+                process.kill(PARENT_PID, 0);
+            } catch (error) {
+                if (error?.code === "ESRCH") shutdown("parent-exit");
+            }
+        }, 20000).unref();
+    }
+
+    process.on("SIGINT", () => shutdown("sigint"));
+    process.on("SIGTERM", () => shutdown("sigterm"));
+}

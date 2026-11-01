@@ -129,6 +129,30 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
         void loadSources();
     }, [loadSources]);
 
+    // 目录保存/资源刷新后自由工作流源会变化：事件或重新聚焦时补拉一次，不做轮询。
+    useEffect(() => {
+        let lastLoadedAt = 0;
+        const refreshSources = () => {
+            const now = Date.now();
+            if (now - lastLoadedAt < 1500) return;
+            lastLoadedAt = now;
+            void loadSources();
+        };
+        const refreshWhenVisible = () => {
+            if (document.visibilityState === "visible") refreshSources();
+        };
+        window.addEventListener("local-gateway-refresh-models", refreshSources);
+        window.addEventListener("local-gateway-refresh-resources", refreshSources);
+        window.addEventListener("focus", refreshWhenVisible);
+        document.addEventListener("visibilitychange", refreshWhenVisible);
+        return () => {
+            window.removeEventListener("local-gateway-refresh-models", refreshSources);
+            window.removeEventListener("local-gateway-refresh-resources", refreshSources);
+            window.removeEventListener("focus", refreshWhenVisible);
+            document.removeEventListener("visibilitychange", refreshWhenVisible);
+        };
+    }, [loadSources]);
+
     useEffect(() => {
         if (!info?.id) {
             setSummary(null);

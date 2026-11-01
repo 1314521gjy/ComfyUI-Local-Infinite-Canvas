@@ -216,6 +216,39 @@ test("resolution selector aspect ratio is detected and patched", () => {
   assert.equal(unchanged[1].inputs.aspect_ratio, "16:9 (Widescreen)");
 });
 
+test("free workflow sources follow live directory settings without breaking explicit directories", async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), "free-workflows-live-dir-"));
+  try {
+    const dataDir = path.join(root, "data");
+    const firstDir = path.join(root, "first");
+    const secondDir = path.join(root, "second");
+    await Promise.all([dataDir, firstDir, secondDir].map((dir) => fsp.mkdir(dir)));
+    const workflow = JSON.stringify({ 1: { class_type: "SaveImage", inputs: {} } });
+    await Promise.all([
+      fsp.writeFile(path.join(firstDir, "first.json"), workflow),
+      fsp.writeFile(path.join(secondDir, "second.json"), workflow),
+    ]);
+
+    const explicit = createFreeWorkflowStore({ dataDir, comfyWorkflowsDir: firstDir, comfy: {} });
+    assert.deepEqual((await explicit.listSources()).map((source) => source.name), ["first"]);
+
+    const config = { comfyWorkflowsDir: "" };
+    const live = createFreeWorkflowStore({
+      dataDir,
+      comfyWorkflowsDir: config.comfyWorkflowsDir,
+      getComfyWorkflowsDir: () => config.comfyWorkflowsDir,
+      comfy: {},
+    });
+    assert.deepEqual(await live.listSources(), []);
+    config.comfyWorkflowsDir = firstDir;
+    assert.deepEqual((await live.listSources()).map((source) => source.name), ["first"]);
+    config.comfyWorkflowsDir = secondDir;
+    assert.deepEqual((await live.listSources()).map((source) => source.name), ["second"]);
+  } finally {
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+});
+
 test("free workflow store deletes entries and persists", async () => {
   const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "free-workflows-"));
   try {

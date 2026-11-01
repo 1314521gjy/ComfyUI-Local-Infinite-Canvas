@@ -71,7 +71,12 @@ const EXCLUDE = [
     /^data(\/|$)/i,
     /^models(\/|$)/i,
     /^node(\/|$)/i,
-    /^\.git(\/|$)/i,
+    /(^|\/)\.git(\/|$)/i,
+    /(^|\/)\.(?:npmrc|yarnrc|pnpmrc)$/i,
+    /(^|\/)\.env(?:\.|$)/i,
+    /(^|\/)(?:id_rsa|id_dsa|id_ecdsa|id_ed25519)(?:\.|$)/i,
+    /(^|\/)[^/]+\.(?:key|p12|pfx|jks|keystore|ppk)$/i,
+    /(^|\/)[^/]*(?:private|secret)[^/]*\.pem$/i,
     /^\.update/i,
     /^launcher\/config\.json$/i,
     /^launcher\/.*\.log$/i,
@@ -93,6 +98,52 @@ const EXCLUDE = [
     /\.pyc$/i,
 ];
 
+function placeholderSecret(value) {
+    const text = String(value || "").trim();
+    if (text.length < 16) return true;
+    return /example|sample|placeholder|dummy|test|fake|your[_ -]?|you[ru]|xxx|changeme|change[_ -]?me|replace|redacted|masked|insert|fill[_ -]?in|todo|process\.env|<|\$\{|\.\.\.|^\*+$|^x+$/i.test(text)
+        || /^0+$/.test(text)
+        || /^123[0-9a-z]*$/i.test(text);
+}
+
+function obviousSecretKind(text) {
+    const privateKey = /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----([\s\S]*?)-----END (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/g;
+    for (const match of text.matchAll(privateKey)) {
+        const body = match[1].replace(/[^A-Za-z0-9+/=]/g, "");
+        if (body.length >= 64 && !placeholderSecret(match[1])) return "私钥内容";
+    }
+    const patterns = [
+        { kind: "AWS Access Key", regex: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g },
+        { kind: "GitHub Token", regex: /\bgh[pousr]_[A-Za-z0-9_]{30,255}\b/g },
+        { kind: "OpenAI 兼容密钥", regex: /\bsk-[A-Za-z0-9_-]{20,512}\b/g },
+    ];
+    for (const { kind, regex } of patterns) {
+        for (const match of text.matchAll(regex)) {
+            if (!placeholderSecret(match[0])) return kind;
+        }
+    }
+    const assignment = /(?:^|[\s,{;])["']?([A-Za-z][A-Za-z0-9_]{2,64})["']?\s*[:=]\s*["']([^"'\r\n]{8,512})["']/g;
+    for (const match of text.matchAll(assignment)) {
+        const normalized = match[1].replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+        if (!/(^|_)(api_?key|access_?key|secret_?key|private_?key|auth_?key|token|secret|password|passwd|credential)$/.test(normalized)) continue;
+        // 以 sha/md5/hash 等结尾的是摘要字段（如 private_key_sha256），不是密钥本体。
+        if (/(?:^|_)(?:sha1|sha224|sha256|sha384|sha512|md5|hash|checksum|digest)$/i.test(normalized)) continue;
+        // UI 文案/说明文字含空格或中文，不是可直接使用的密钥。
+        if (/[\s\u4e00-\u9fff]/.test(match[2])) continue;
+        if (!placeholderSecret(match[2])) return `疑似密钥配置（${match[1]}）`;
+    }
+    return "";
+}
+
+async function scanForObviousSecrets(source, rel) {
+    const stat = await fsp.stat(source);
+    if (!stat.isFile() || stat.size > 16 * 1024 * 1024) return;
+    const content = await fsp.readFile(source);
+    if (content.includes(0)) return;
+    const kind = obviousSecretKind(content.toString("utf8"));
+    if (kind) throw new Error(`补丁包含${kind}：${rel}；请移除秘密后再构建`);
+}
+
 async function copyEntry(source, destination) {
     const stat = await fsp.lstat(source).catch(() => null);
     if (!stat) throw new Error(`缺少待打包文件：${source}`);
@@ -108,6 +159,7 @@ async function copyEntry(source, destination) {
     if (stat.isSymbolicLink()) throw new Error(`待打包路径是符号链接，补丁可能会缺文件：${source}`);
     const rel = path.relative(root, source).replace(/\\/g, "/");
     if (EXCLUDE.some((pattern) => pattern.test(rel))) return;
+    await scanForObviousSecrets(source, rel);
     await fsp.mkdir(path.dirname(destination), { recursive: true });
     await fsp.copyFile(source, destination);
 }

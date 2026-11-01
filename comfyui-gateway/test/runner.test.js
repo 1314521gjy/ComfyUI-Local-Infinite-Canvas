@@ -128,6 +128,94 @@ test("aborting a running workflow interrupts ComfyUI", async () => {
   assert.equal(interrupted, "prompt-1");
 });
 
+test("a normal polling timeout makes one best-effort downstream cancel", async () => {
+  let cancelCalls = 0;
+  const comfy = {
+    submit: async () => ({ promptId: "prompt-timeout" }),
+    history: async () => null,
+    cancel: async () => {
+      cancelCalls += 1;
+    },
+  };
+
+  await assert.rejects(
+    runWorkflow({ entry: entry(), context: buildContext({ prompt: "x" }), comfy, timeoutMs: 5, pollIntervalMs: 1 }),
+    (error) => error.code === "generation_timeout",
+  );
+  assert.equal(cancelCalls, 1);
+});
+
+test("a timeout reports downstream cancellation failure diagnostically", async () => {
+  const comfy = {
+    submit: async () => ({ promptId: "prompt-timeout" }),
+    history: async () => null,
+    cancel: async () => {
+      throw new Error("injected interrupt failure");
+    },
+  };
+
+  await assert.rejects(
+    runWorkflow({ entry: entry(), context: buildContext({ prompt: "x" }), comfy, timeoutMs: 5, pollIntervalMs: 1 }),
+    (error) => error.code === "generation_cancel_failed" && error.status === 504 && error.details.cause.includes("injected interrupt failure"),
+  );
+});
+
+test("aborting a stuck history request propagates its signal and awaits cancellation", async () => {
+  const controller = new AbortController();
+  let historySignal;
+  let cancelCalls = 0;
+  const comfy = {
+    submit: async () => ({ promptId: "prompt-stuck" }),
+    history: async (_promptId, { signal } = {}) => {
+      historySignal = signal;
+      return new Promise((resolve, reject) => {
+        signal.addEventListener("abort", () => reject(new Error("history aborted")), { once: true });
+      });
+    },
+    cancel: async () => {
+      cancelCalls += 1;
+    },
+  };
+
+  const running = runWorkflow({
+    entry: entry(),
+    context: buildContext({ prompt: "x" }),
+    comfy,
+    timeoutMs: 5000,
+    pollIntervalMs: 1,
+    signal: controller.signal,
+  });
+  while (!historySignal) await new Promise((resolve) => setTimeout(resolve, 1));
+  controller.abort("user-stop");
+
+  await assert.rejects(running, (error) => error.code === "cancelled");
+  assert.equal(historySignal, controller.signal);
+  assert.equal(cancelCalls, 1);
+});
+
+test("abort does not report cancelled when downstream cancellation fails", async () => {
+  const controller = new AbortController();
+  const comfy = {
+    submit: async () => ({ promptId: "prompt-cancel-failure" }),
+    history: async (_promptId, { signal } = {}) => new Promise((resolve, reject) => {
+      signal.addEventListener("abort", () => reject(new Error("history aborted")), { once: true });
+    }),
+    cancel: async () => {
+      throw new Error("injected cancel failure");
+    },
+  };
+
+  const running = runWorkflow({
+    entry: entry(),
+    context: buildContext({ prompt: "x" }),
+    comfy,
+    timeoutMs: 5000,
+    signal: controller.signal,
+  });
+  setTimeout(() => controller.abort("user-stop"), 10);
+  await assert.rejects(running, (error) => error.code === "generation_cancel_failed" && error.details.cause.includes("injected cancel failure"));
+});
+
 test("a pre-aborted request is never submitted", async () => {
   const controller = new AbortController();
   controller.abort("user-stop");

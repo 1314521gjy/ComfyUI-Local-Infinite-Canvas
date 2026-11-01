@@ -51,13 +51,21 @@ export async function deleteStoredMedia(keys: Iterable<string>) {
     );
 }
 
-export async function cleanupUnusedMedia(usedData: unknown) {
-    const usedKeys = collectMediaStorageKeys(usedData);
+type CleanupUsedData = unknown | (() => unknown);
+
+function currentCleanupData(usedData: CleanupUsedData) {
+    return typeof usedData === "function" ? (usedData as () => unknown)() : usedData;
+}
+
+export async function cleanupUnusedMedia(usedData: CleanupUsedData) {
+    const usedKeys = collectMediaStorageKeys(currentCleanupData(usedData));
     const unused: string[] = [];
     await store.iterate((_value, key) => {
         if (!usedKeys.has(key)) unused.push(key);
     });
-    await Promise.all(unused.map((key) => store.removeItem(key)));
+    // Recheck live references immediately before deletion so late additions survive GC.
+    const latestUsedKeys = collectMediaStorageKeys(currentCleanupData(usedData));
+    await Promise.all(unused.filter((key) => !latestUsedKeys.has(key)).map((key) => store.removeItem(key)));
 }
 
 export function collectMediaStorageKeys(value: unknown, keys = new Set<string>()) {

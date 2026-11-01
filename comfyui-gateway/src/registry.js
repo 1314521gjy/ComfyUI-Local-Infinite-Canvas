@@ -183,8 +183,8 @@ function bindingWarnings(workflow, bindings) {
 
 export function createRegistry({ dir, maxWorkflowBytes = 5 * 1024 * 1024, logger, mainModelFile = () => "" } = {}) {
   const registryPath = path.join(dir, REGISTRY_FILE);
-  const cache = new Map();
-  const byName = new Map();
+  let cache = new Map();
+  let byName = new Map();
   let signature = "";
   let loaded = false;
   let loading = null;
@@ -228,8 +228,9 @@ export function createRegistry({ dir, maxWorkflowBytes = 5 * 1024 * 1024, logger
 
   async function doLoad() {
     const entries = await readRegistryData();
-    cache.clear();
-    byName.clear();
+    // 局部构建完成后一次交换，任何并发读取只能看到上一份或下一份完整注册表。
+    const nextCache = new Map();
+    const nextByName = new Map();
     for (const raw of entries) {
       try {
         if (!raw?.file) throw new Error("缺少 file 字段");
@@ -266,14 +267,17 @@ export function createRegistry({ dir, maxWorkflowBytes = 5 * 1024 * 1024, logger
             entry.variants[mode] = { ...variant, workflow: variantWorkflow, bindings: variant.bindings || entry.bindings, defaults: variant.defaults || entry.defaults };
           }
         }
-        cache.set(id, entry);
-        byName.set(name, entry);
-        if (id !== name) byName.set(id, entry);
+        nextCache.set(id, entry);
+        nextByName.set(name, entry);
+        if (id !== name) nextByName.set(id, entry);
       } catch (error) {
         logger?.warn?.(`加载工作流失败 ${raw?.file || raw?.id || "unknown"}: ${error.message}`);
       }
     }
-    signature = await computeSignature(entries);
+    const nextSignature = await computeSignature(entries);
+    cache = nextCache;
+    byName = nextByName;
+    signature = nextSignature;
     loaded = true;
   }
 
@@ -286,13 +290,19 @@ export function createRegistry({ dir, maxWorkflowBytes = 5 * 1024 * 1024, logger
   }
 
   async function reloadIfChanged() {
-    if (!loaded) return load();
+    if (!loaded) {
+      await load();
+      return true;
+    }
     try {
       const entries = await readRegistryData();
       const next = await computeSignature(entries);
-      if (next !== signature) await load();
+      if (next === signature) return false;
+      await load();
+      return true;
     } catch (error) {
       logger?.warn?.(`registry reload check failed: ${error.message}`);
+      return false;
     }
   }
 

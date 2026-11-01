@@ -33,6 +33,7 @@ export function createTaskStore({ dataDir, publicBaseUrl, logger, retentionDays 
   fs.mkdirSync(outputDir, { recursive: true });
   let running = false;
   let persistTimer = null;
+  let persistQueue = Promise.resolve();
   let loaded = false;
 
   function taskTime(task) {
@@ -76,13 +77,20 @@ export function createTaskStore({ dataDir, publicBaseUrl, logger, retentionDays 
     return { removed: drop.size, filesDeleted };
   }
 
-  async function persistNow() {
-    const payload = { version: 1, updatedAt: nowIso(), tasks: [...tasks.values()].map(publicTask) };
-    try {
-      await writeJsonAtomic(file, payload);
-    } catch (error) {
-      logger?.warn?.(`保存任务失败：${error.message}`);
+  function persistNow() {
+    if (persistTimer) {
+      clearTimeout(persistTimer);
+      persistTimer = null;
     }
+    const payload = { version: 1, updatedAt: nowIso(), tasks: [...tasks.values()].map(publicTask) };
+    persistQueue = persistQueue.then(async () => {
+      try {
+        await writeJsonAtomic(file, payload);
+      } catch (error) {
+        logger?.warn?.(`保存任务失败：${error.message}`);
+      }
+    });
+    return persistQueue;
   }
 
   function schedulePersist() {
@@ -115,7 +123,7 @@ export function createTaskStore({ dataDir, publicBaseUrl, logger, retentionDays 
             task.error = null;
             task.completedAt = task.completedAt || nowIso();
           }
-        } else if (task.status === "running" || task.status === "queued") {
+        } else if (task.status === "running" || task.status === "cancelling" || task.status === "queued") {
           task.status = "failed";
           task.error = "网关在任务完成前重启";
           task.completedAt = nowIso();
@@ -194,7 +202,10 @@ export function createTaskStore({ dataDir, publicBaseUrl, logger, retentionDays 
         },
         controller.signal,
       );
-      if (task._cancelled) {
+      if (task._cancelFailed) {
+        task.status = "failed";
+        task.completedAt = task.completedAt || nowIso();
+      } else if (task._cancelled) {
         task.status = "cancelled";
         task.error = "任务已取消";
       } else {
@@ -209,14 +220,15 @@ export function createTaskStore({ dataDir, publicBaseUrl, logger, retentionDays 
         task.completedAt = nowIso();
       }
     } catch (error) {
-      task.status = task._cancelled || error?.code === "cancelled" ? "cancelled" : "failed";
-      task.error = error?.message || String(error);
+      task.status = !task._cancelFailed && (task._cancelled || error?.code === "cancelled") ? "cancelled" : "failed";
+      if (!task._cancelFailed) task.error = error?.message || String(error);
       task.completedAt = nowIso();
       logger?.warn?.(`任务 ${task.id} 失败：${task.error}`);
     } finally {
       delete task._run;
       delete task._controller;
       delete task._cancelled;
+      delete task._cancelFailed;
       task.updatedAt = nowIso();
       running = false;
       await persistNow();
@@ -235,23 +247,43 @@ export function createTaskStore({ dataDir, publicBaseUrl, logger, retentionDays 
     const task = tasks.get(id);
     if (!task) return null;
     if (["completed", "failed", "cancelled"].includes(task.status)) return publicTask(task);
-    task._cancelled = true;
-    const index = queue.indexOf(task);
-    if (index >= 0) queue.splice(index, 1);
-    task._controller?.abort();
-    if (task.promptId && comfy) await (typeof comfy.cancel === "function" ? comfy.cancel(task.promptId) : comfy.interrupt(task.promptId));
     if (task.status === "queued") {
+      const index = queue.indexOf(task);
+      if (index >= 0) queue.splice(index, 1);
+      delete task._run;
+      delete task._controller;
+      delete task._cancelled;
+      delete task._cancelFailed;
       task.status = "cancelled";
       task.error = "任务已取消";
       task.completedAt = nowIso();
       task.updatedAt = nowIso();
       await persistNow();
+      return publicTask(task);
+    }
+
+    task._cancelled = true;
+    task._cancelFailed = false;
+    task.status = "cancelling";
+    task.updatedAt = nowIso();
+    schedulePersist();
+    task._controller?.abort();
+    try {
+      if (task.promptId && comfy) await (typeof comfy.cancel === "function" ? comfy.cancel(task.promptId) : comfy.interrupt(task.promptId));
+    } catch (error) {
+      task._cancelFailed = true;
+      task.status = "failed";
+      task.error = `任务取消失败：${error?.message || error}`;
+      task.completedAt = nowIso();
+      task.updatedAt = nowIso();
+      await persistNow();
+      throw error;
     }
     return publicTask(task);
   }
 
   async function cancelInFlight(comfy, { timeoutMs = 2500 } = {}) {
-    const active = [...tasks.values()].filter((task) => task.status === "running" || task.status === "queued");
+    const active = [...tasks.values()].filter((task) => task.status === "running" || task.status === "cancelling" || task.status === "queued");
     if (!active.length) return { total: 0, timedOut: false };
     let timer = null;
     const guard = new Promise((resolve) => {

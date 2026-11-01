@@ -97,8 +97,9 @@ export const useAssetStore = create<AssetStore>()(
             cleanupImages: (extra) => {
                 window.setTimeout(async () => {
                     const { useCanvasStore } = await import("@/stores/canvas/use-canvas-store");
-                    await cleanupUnusedImages({ assets: get().assets, projects: useCanvasStore.getState().projects, extra });
-                    await cleanupUnusedMedia({ assets: get().assets, projects: useCanvasStore.getState().projects, extra });
+                    const usedData = () => ({ assets: get().assets, projects: useCanvasStore.getState().projects, extra });
+                    await cleanupUnusedImages(usedData);
+                    await cleanupUnusedMedia(usedData);
                 }, 0);
             },
         }),

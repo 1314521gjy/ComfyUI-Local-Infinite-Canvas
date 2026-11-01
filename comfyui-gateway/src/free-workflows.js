@@ -82,7 +82,7 @@ export function applyFreeInputs(workflow, bindings, { prompt, texts = [], upload
   return next;
 }
 
-export function createFreeWorkflowStore({ dataDir, comfyWorkflowsDir = "", comfy, logger, maxWorkflowBytes = 5 * 1024 * 1024 } = {}) {
+export function createFreeWorkflowStore({ dataDir, comfyWorkflowsDir = "", getComfyWorkflowsDir, comfy, logger, maxWorkflowBytes = 5 * 1024 * 1024 } = {}) {
   const file = path.join(dataDir, FILE_NAME);
   const entries = new Map();
   const sourceCache = new Map();
@@ -108,7 +108,8 @@ export function createFreeWorkflowStore({ dataDir, comfyWorkflowsDir = "", comfy
   }
 
   function rootDir() {
-    return comfyWorkflowsDir ? path.resolve(comfyWorkflowsDir) : "";
+    const currentDir = typeof getComfyWorkflowsDir === "function" ? getComfyWorkflowsDir() : comfyWorkflowsDir;
+    return currentDir ? path.resolve(currentDir) : "";
   }
 
   function resolveSource(relative) {

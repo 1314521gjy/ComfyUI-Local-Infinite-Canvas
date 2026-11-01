@@ -5,6 +5,7 @@ import path from "node:path";
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export const nowIso = () => new Date().toISOString();
 export const randomId = (prefix = "") => `${prefix}${crypto.randomUUID()}`;
+const atomicWriteQueues = new Map();
 
 export function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -69,11 +70,40 @@ export async function readJsonFile(file, maxBytes) {
   return JSON.parse(await readTextFile(file, maxBytes));
 }
 
-export async function writeJsonAtomic(file, value) {
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  await fs.writeFile(tmp, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-  await fs.rename(tmp, file);
+const WINDOWS_RENAME_RETRY_MS = [5, 10, 20, 40, 80, 160, 250, 300, 400];
+
+async function renameAtomicTemp(tmp, file) {
+  const retryCodes = new Set(["EPERM", "EACCES", "EBUSY"]);
+  const delays = process.platform === "win32" ? WINDOWS_RENAME_RETRY_MS : [0];
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await fs.rename(tmp, file);
+      return;
+    } catch (error) {
+      // Windows allows reads to block rename; retry without giving up atomic replacement.
+      if (attempt >= delays.length || !retryCodes.has(error?.code)) throw error;
+      await sleep(delays[attempt]);
+    }
+  }
+}
+
+export function writeJsonAtomic(file, value) {
+  const previous = atomicWriteQueues.get(file) || Promise.resolve();
+  const operation = previous.catch(() => {}).then(async () => {
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    const tmp = `${file}.${process.pid}.${Date.now()}.${randomId()}.tmp`;
+    try {
+      await fs.writeFile(tmp, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+      await renameAtomicTemp(tmp, file);
+    } catch (error) {
+      await fs.rm(tmp, { force: true }).catch(() => {});
+      throw error;
+    }
+  });
+  atomicWriteQueues.set(file, operation);
+  return operation.finally(() => {
+    if (atomicWriteQueues.get(file) === operation) atomicWriteQueues.delete(file);
+  });
 }
 
 export function mimeFromFilename(filename) {

@@ -11,6 +11,14 @@ function problemText(problems) {
 export function workflowAvailabilityProblem(setup, entry, { mode = "", allowUnavailable = false } = {}) {
   if (allowUnavailable || !entry || typeof setup?.workflowStatus !== "function") return null;
   const status = setup.workflowStatus(entry.id) || {};
+  if (status.checking === true) {
+    const detail = problemText(status.problems) || "正在扫描 ComfyUI 模型与节点";
+    return {
+      code: "workflow_checking",
+      message: `模型 ${entry.name || entry.id} 正在检查可用性：${detail}。请稍候或重新扫描后再试。`,
+      details: { workflowId: entry.id, checking: true, problems: status.problems || [] },
+    };
+  }
   if (status.available === false) {
     const detail = problemText(status.problems) || "工作流所需的模型或节点尚未就绪";
     return {

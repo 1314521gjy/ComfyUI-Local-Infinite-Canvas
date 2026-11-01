@@ -39,6 +39,33 @@ export function audioMetadata(audio: UploadedFile): CanvasNodeMetadata {
     return { content: audio.url, storageKey: audio.storageKey, status: "success", bytes: audio.bytes, mimeType: audio.mimeType || "audio/mpeg", durationMs: audio.durationMs };
 }
 
+export function removeBatchImage(node: CanvasNodeData, imageId: string): CanvasNodeData {
+    const previousImages = node.metadata?.images || [];
+    const primaryImageId = node.metadata?.primaryImageId || previousImages[0]?.id;
+    const images = previousImages.filter((image) => image.id !== imageId);
+    const removingPrimary = primaryImageId === imageId;
+    const primary = removingPrimary ? images[0] : images.find((image) => image.id === primaryImageId);
+    return {
+        ...node,
+        metadata: {
+            ...node.metadata,
+            ...(removingPrimary
+                ? {
+                      content: primary?.content,
+                      storageKey: primary?.storageKey,
+                      naturalWidth: primary?.naturalWidth,
+                      naturalHeight: primary?.naturalHeight,
+                      bytes: primary?.bytes,
+                      mimeType: primary?.mimeType,
+                  }
+                : {}),
+            images,
+            count: images.length,
+            primaryImageId: removingPrimary ? primary?.id : primaryImageId,
+        },
+    };
+}
+
 export function referenceUrl(image: ReferenceImage) {
     return image.storageKey || image.url || (!image.dataUrl.startsWith("data:") ? image.dataUrl : undefined);
 }

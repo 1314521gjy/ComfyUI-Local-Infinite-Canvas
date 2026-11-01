@@ -23,10 +23,18 @@ export function createModelEventBus({ logger } = {}) {
     }
   }
 
-  function broadcast(reason = "change") {
+  // 只允许携带与快照关联的非敏感标量；不允许把模型列表/提示词塞进 SSE。
+  const META_FIELDS = ["scanId", "setupRevision", "stale", "instanceId"];
+
+  function broadcast(reason = "change", meta = {}) {
     revision += 1;
     lastReason = String(reason || "change");
     const payload = snapshot();
+    for (const field of META_FIELDS) {
+      if (meta[field] === undefined || meta[field] === null) continue;
+      if (typeof meta[field] === "object") continue;
+      payload[field] = meta[field];
+    }
     for (const res of [...clients]) write(res, "models", payload);
     return payload;
   }

@@ -288,6 +288,36 @@ function buildObjectInfo() {
       output: [],
       outputNode: true,
     }),
+
+    VAEEncode: nodeDef({
+      name: 'VAEEncode',
+      displayName: 'VAE Encode',
+      category: 'latent',
+      input: {
+        required: {
+          pixels: ['IMAGE'],
+          vae: ['VAE'],
+        },
+      },
+      output: ['LATENT'],
+    }),
+
+    MiniMaxH3ReferenceToVideo: nodeDef({
+      name: 'MiniMaxH3ReferenceToVideo',
+      displayName: 'MiniMax H3 Reference to Video',
+      category: 'image/video',
+      input: {
+        required: {
+          model: ['MODEL'],
+          positive: ['CONDITIONING'],
+          negative: ['CONDITIONING'],
+          width: ['INT', { default: 1024 }],
+          height: ['INT', { default: 576 }],
+          length: ['INT', { default: 120 }],
+        },
+      },
+      output: ['LATENT'],
+    }),
   };
 }
 

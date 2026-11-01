@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   decorateEntry,
@@ -9,6 +11,7 @@ import {
   listModelDescriptors,
   resolveBaseModelVariant,
 } from "../src/base-models.js";
+import { createRegistry } from "../src/registry.js";
 
 const entry = {
   id: "image-z-image-turbo",
@@ -159,4 +162,29 @@ test("subdirectory loader names match the workflow default by unique basename", 
   const unet = decorateParameters(entry, null, { UNETLoader: ["ZImage/z-image-turbo.safetensors"] }).find((item) => item.key === "unet");
   assert.equal(unet.default, "ZImage/z-image-turbo.safetensors");
   assert.deepEqual(unet.options, ["ZImage/z-image-turbo.safetensors"]);
+});
+
+test("registry exposes and resolves the Z-Image workflow when only int8 is installed", async () => {
+  const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../workflows");
+  const registry = createRegistry({ dir });
+  await registry.load();
+  const int8 = "z_image_turbo_int8_convrot.safetensors";
+  const bf16 = "z_image_turbo_bf16.safetensors";
+  const int8Only = { UNETLoader: [int8] };
+
+  const models = registry.listModels(int8Only).filter((model) => model.baseId === "image-z-image-turbo");
+  assert.deepEqual(models.map((model) => model.modelId), ["image-z-image-turbo"]);
+  assert.equal(models[0].entry.baseModel, undefined);
+
+  const resolved = registry.resolveModel("image-z-image-turbo", int8Only);
+  assert.equal(resolved.variant.file, int8);
+  assert.deepEqual(resolved.entry.baseModelParams, { unet: int8 });
+  assert.equal(registry.resolveModel("img-zit-int8", int8Only).variant.file, int8);
+
+  const withDefault = { UNETLoader: [bf16, int8] };
+  const defaultModels = registry.listModels(withDefault).filter((model) => model.baseId === "image-z-image-turbo");
+  assert.deepEqual(defaultModels.map((model) => model.modelId), ["image-z-image-turbo", "img-zit-int8"]);
+  const preferred = registry.resolveModel("image-z-image-turbo", withDefault);
+  assert.equal(preferred.variant, null);
+  assert.equal(preferred.entry.parameters.find((item) => item.key === "unet").default, bf16);
 });

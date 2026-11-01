@@ -139,11 +139,14 @@ export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 *
     let cancelPromise = null;
     const cancel = () => {
       if (!running) return Promise.resolve();
-      if (!cancelPromise) cancelPromise = typeof comfy.cancel === "function" ? comfy.cancel(promptId) : comfy.interrupt(promptId);
+      if (!cancelPromise) {
+        cancelPromise = Promise.resolve().then(() => (typeof comfy.cancel === "function" ? comfy.cancel(promptId) : comfy.interrupt(promptId)));
+      }
       return cancelPromise;
     };
     const onAbort = () => {
-      void cancel();
+      // 主流程会 await 同一个 Promise；这里只承接事件路径，避免取消失败变成未处理拒绝。
+      void cancel().catch(() => {});
     };
     if (signal) signal.addEventListener("abort", onAbort, { once: true });
     try {
@@ -161,7 +164,7 @@ export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 *
           await cancel();
           throw new GenerationError("生成已取消", { status: 400, code: "cancelled" });
         }
-        history = await comfy.history(promptId);
+        history = await comfy.history(promptId, { signal });
         const failure = historyError(history);
         if (failure) {
           running = false;
@@ -174,7 +177,21 @@ export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 *
         await sleep(pollIntervalMs);
       }
       if (!historyCompleted(history)) {
-        running = false;
+        let cancelError = null;
+        try {
+          await cancel();
+        } catch (error) {
+          cancelError = error;
+        } finally {
+          running = false;
+        }
+        if (cancelError) {
+          throw new GenerationError(`生成超时，且取消 ComfyUI 任务失败：${cancelError?.message || cancelError}`, {
+            status: 504,
+            code: "generation_cancel_failed",
+            details: { promptId, reason: "generation_timeout", cause: cancelError?.message || String(cancelError) },
+          });
+        }
         throw new GenerationError("生成超时", { status: 504, code: "generation_timeout" });
       }
       onProgress?.({ phase: "completed", promptId, progress: 0.65 });
@@ -184,7 +201,7 @@ export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 *
 
       const outputs = [];
       for (const file of files) {
-        const viewed = await comfy.view(file);
+        const viewed = await comfy.view(file, { signal });
         const mimeType = /^application\/octet-stream$/i.test(viewed.contentType) ? mimeFromFilename(file.filename) : viewed.contentType;
         outputs.push({
           buffer: viewed.buffer,
@@ -197,6 +214,18 @@ export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 *
       }
       onProgress?.({ phase: "downloaded", promptId, progress: 0.95 });
       return { promptId, files: outputs, workflow, usedSeed: stats.seed ?? null };
+    } catch (error) {
+      if (!signal?.aborted) throw error;
+      try {
+        await cancel();
+      } catch (cancelError) {
+        throw new GenerationError(`取消 ComfyUI 任务失败：${cancelError?.message || cancelError}`, {
+          status: 502,
+          code: "generation_cancel_failed",
+          details: { promptId, reason: "cancelled", cause: cancelError?.message || String(cancelError) },
+        });
+      }
+      throw new GenerationError("生成已取消", { status: 400, code: "cancelled" });
     } finally {
       signal?.removeEventListener("abort", onAbort);
     }

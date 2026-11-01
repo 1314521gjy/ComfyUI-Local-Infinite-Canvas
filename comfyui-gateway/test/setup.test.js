@@ -63,6 +63,64 @@ function createAliasManager(dataDir, unetFiles, workflow) {
   });
 }
 
+const QWEN21_VAE = "qwen_image_2.1_vae_bf16.safetensors";
+
+function createQwenVaeManager(dataDir, vaeFiles) {
+  const custom = {
+    id: "image-qwen21-vae-test",
+    name: "image-qwen21-vae-test",
+    type: "image",
+    workflow: { 1: { class_type: "VAELoader", inputs: { vae_name: QWEN21_VAE } } },
+  };
+  return createSetupManager({
+    config: { dataDir, comfyUrl: "http://127.0.0.1:1", comfyWorkflowsDir: "", maxWorkflowBytes: 1024 * 1024 },
+    registry: {
+      list: () => [{ id: custom.id }],
+      resolve: () => custom,
+      scan: async () => ({ imported: 0 }),
+      reloadIfChanged: () => {},
+    },
+    comfy: {
+      systemStats: async () => ({}),
+      objectInfo: async () => ({ VAELoader: { input: { required: { vae_name: [vaeFiles] } } } }),
+    },
+    logger: null,
+  });
+}
+
+test("missing Qwen Image 2.1 VAE is not auto-replaced or marked available", async () => {
+  const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-qwen21-vae-missing-"));
+  const legacy = "qwen_image_vae.safetensors";
+  try {
+    const manager = createQwenVaeManager(dataDir, [legacy, "wan_2.1_vae.safetensors", "wan2.1_vae.safetensors"]);
+    await manager.scan();
+    assert.equal(manager.modelAliasFor("VAELoader", "vae_name", QWEN21_VAE), "");
+    assert.equal(manager.isAvailable("image-qwen21-vae-test"), false);
+    assert.ok(manager.workflowStatus("image-qwen21-vae-test").problems.some((problem) => problem.type === "model"));
+
+    await manager.setModelAlias({ classType: "VAELoader", input: "vae_name", from: QWEN21_VAE, to: legacy });
+    assert.equal(manager.modelAliasFor("VAELoader", "vae_name", QWEN21_VAE), legacy);
+    assert.equal(manager.userModelAliasFor("VAELoader", "vae_name", QWEN21_VAE), legacy);
+    assert.equal(manager.isAvailable("image-qwen21-vae-test"), true);
+  } finally {
+    await fsp.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("exact and same-file subdir Qwen Image 2.1 VAEs stay available", async () => {
+  for (const [installed, expectedAlias] of [[QWEN21_VAE, ""], [`Qwen2.1\\${QWEN21_VAE}`, `Qwen2.1\\${QWEN21_VAE}`]]) {
+    const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-qwen21-vae-installed-"));
+    try {
+      const manager = createQwenVaeManager(dataDir, [installed, "qwen_image_vae.safetensors", "wan2.1_vae.safetensors"]);
+      await manager.scan();
+      assert.equal(manager.isAvailable("image-qwen21-vae-test"), true);
+      assert.equal(manager.modelAliasFor("VAELoader", "vae_name", QWEN21_VAE), expectedAlias);
+    } finally {
+      await fsp.rm(dataDir, { recursive: true, force: true });
+    }
+  }
+});
+
 test("auto-recognizes the same model file in a different subfolder", async () => {
   const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-alias-auto-"));
   try {
@@ -72,6 +130,36 @@ test("auto-recognizes the same model file in a different subfolder", async () =>
     await manager.scan();
     assert.equal(manager.isAvailable(entry.id), true);
     assert.equal(manager.modelAliasFor("UNETLoader", "unet_name", "z_image_turbo_bf16.safetensors"), "zimage/z_image_turbo_bf16.safetensors");
+  } finally {
+    await fsp.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("duplicate basenames in two model subdirectories are never guessed", async () => {
+  const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-duplicate-base-"));
+  try {
+    const manager = createAliasManager(dataDir, ["模型A/shared.safetensors", "模型B/shared.safetensors"], {
+      1: { class_type: "UNETLoader", inputs: { unet_name: "shared.safetensors" } },
+    });
+    await manager.scan();
+    assert.equal(manager.modelAliasFor("UNETLoader", "unet_name", "shared.safetensors"), "");
+    assert.equal(manager.isAvailable(entry.id), false);
+    assert.equal(manager.modelCandidates("UNETLoader", "shared.safetensors", "unet_name").length, 2);
+  } finally {
+    await fsp.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("Chinese model directories and filenames work with exact loader values", async () => {
+  const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-chinese-model-"));
+  const model = "人物模型/古风少女_v3.safetensors";
+  try {
+    const manager = createAliasManager(dataDir, [model], {
+      1: { class_type: "UNETLoader", inputs: { unet_name: "人物模型\\古风少女_v3.safetensors" } },
+    });
+    await manager.scan();
+    assert.equal(manager.isAvailable(entry.id), true);
+    assert.equal(manager.modelAliasFor("UNETLoader", "unet_name", "人物模型\\古风少女_v3.safetensors"), model);
   } finally {
     await fsp.rm(dataDir, { recursive: true, force: true });
   }
@@ -571,13 +659,16 @@ test("an exact class alias wins over an equivalent-class alias", async () => {
   }
 });
 
-test("workflowStatus marks the pre-scan state as checking", async () => {
+test("workflowStatus marks the pre-scan state as checking and unavailable", async () => {
   const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-checking-"));
   try {
     const manager = createManager(dataDir, ["z_image_turbo_bf16.safetensors"]);
     assert.equal(manager.workflowStatus(entry.id).checking, true);
+    assert.equal(manager.workflowStatus(entry.id).available, false);
+    assert.equal(manager.isAvailable(entry.id), false);
     await manager.scan();
     assert.equal(manager.workflowStatus(entry.id).checking, undefined);
+    assert.equal(manager.workflowStatus(entry.id).available, true);
   } finally {
     await fsp.rm(dataDir, { recursive: true, force: true });
   }

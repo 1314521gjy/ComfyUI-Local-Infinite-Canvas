@@ -8,6 +8,7 @@ import type { ViewportTransform } from "@/types/canvas";
 // pointer events through this canvas, so without this guard a click on an
 // option would be treated as a background click and close the node panel.
 const OVERLAY_SELECTOR = "[data-canvas-no-zoom],.ant-select-dropdown,.ant-dropdown,.ant-popover,.ant-picker-dropdown,.ant-tooltip,.ant-modal-root,.ant-notification,.ant-message";
+const WHEEL_NO_ZOOM_SELECTOR = "[data-canvas-no-zoom],textarea,.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown";
 
 type InfiniteCanvasProps = {
     containerRef: React.RefObject<HTMLDivElement | null>;
@@ -91,7 +92,7 @@ export function InfiniteCanvas({ containerRef, viewport, tool, backgroundMode = 
 
     const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
         const target = event.target instanceof Element ? event.target : null;
-        if (target?.closest("[data-canvas-no-zoom],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown")) return;
+        if (target?.closest(WHEEL_NO_ZOOM_SELECTOR)) return;
 
         const delta = -event.deltaY;
         const factor = Math.pow(1.1, delta / 100);
@@ -202,7 +203,7 @@ export function InfiniteCanvas({ containerRef, viewport, tool, backgroundMode = 
         // Prevent canvas scrolling from moving the page while preserving native scrolling inside overlays and dialogs.
         const preventWheelScroll = (event: WheelEvent) => {
             const target = event.target instanceof Element ? event.target : null;
-            if (target?.closest("[data-canvas-no-zoom],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown")) return;
+            if (target?.closest(WHEEL_NO_ZOOM_SELECTOR)) return;
             event.preventDefault();
         };
         container.addEventListener("wheel", preventWheelScroll, { passive: false });

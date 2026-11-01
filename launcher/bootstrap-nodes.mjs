@@ -37,6 +37,56 @@ async function sha256File(file) {
     return hash.digest("hex");
 }
 
+const BOOTSTRAP_MANIFEST = ".canvas-bootstrap.json";
+
+async function writeJsonAtomic(file, value) {
+    await fsp.mkdir(path.dirname(file), { recursive: true });
+    const temp = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`);
+    try {
+        await fsp.writeFile(temp, JSON.stringify(value, null, 2), { encoding: "utf8", flag: "wx" });
+        await fsp.rename(temp, file);
+    } finally {
+        await fsp.rm(temp, { force: true }).catch(() => {});
+    }
+}
+
+async function directoryManifest(directory, resource, version = "") {
+    const files = {};
+    const hash = crypto.createHash("sha256");
+    const walk = async (dir, relative = "") => {
+        const entries = await fsp.readdir(dir, { withFileTypes: true });
+        entries.sort((left, right) => left.name.localeCompare(right.name));
+        for (const entry of entries) {
+            const rel = relative ? `${relative}/${entry.name}` : entry.name;
+            const full = path.join(dir, entry.name);
+            if (!relative && entry.name === BOOTSTRAP_MANIFEST) continue;
+            if (entry.isSymbolicLink()) throw new Error(`节点目录包含符号链接：${rel}`);
+            if (entry.isDirectory()) {
+                files[`${rel}/`] = null;
+                hash.update(`${rel}/\0\0`);
+                await walk(full, rel);
+            } else if (entry.isFile()) {
+                const digest = await sha256File(full);
+                files[rel] = digest;
+                hash.update(`${rel}\0${digest}\0`);
+            }
+        }
+    };
+    await walk(directory);
+    return { schema: 1, resourceId: resource.id, version: String(version || ""), sourceHash: hash.digest("hex"), files };
+}
+
+function readBootstrapManifest(file, resourceId) {
+    try {
+        const value = JSON.parse(fs.readFileSync(file, "utf8"));
+        if (value?.schema !== 1 || value?.resourceId !== resourceId) return null;
+        if (!/^[0-9a-f]{64}$/i.test(String(value.sourceHash || "")) || !value.files || typeof value.files !== "object") return null;
+        return value;
+    } catch {
+        return null;
+    }
+}
+
 async function extractZip(archive, destination) {
     await fsp.rm(destination, { recursive: true, force: true });
     await fsp.mkdir(destination, { recursive: true });
@@ -100,10 +150,9 @@ export async function installBundledNodes({ root, comfyRoot, comfyUrl = "", log 
         const parts = String(resource.target || "").replace(/\\/g, "/").split("/").filter(Boolean);
         if (parts[0] !== "custom_nodes" || parts.length < 2 || parts.some((part) => part === ".." || part === ".")) continue;
         const target = path.join(comfyRoot, "custom_nodes", ...parts.slice(1));
-        if (isDir(target)) continue;
-        // 用户可能已经装了同一个插件的另一个目录名；ComfyUI 能提供同样的类就不再重复复制。
+        // 用户可能已经装了同一个插件的另一个目录名；目标不存在时才按类跳过。
         const provides = Array.isArray(resource.provides) ? resource.provides.filter(Boolean) : [];
-        if (provides.length && (await comfyHasClasses(comfyUrl, provides))) {
+        if (!fs.existsSync(target) && provides.length && (await comfyHasClasses(comfyUrl, provides))) {
             log(`[bootstrap] 已由其他目录提供同类节点，跳过：${resource.label || resource.id}`);
             continue;
         }
@@ -121,14 +170,14 @@ export async function installBundledNodes({ root, comfyRoot, comfyUrl = "", log 
         }
 
         // 复制/解压都在 ComfyUI 同盘完成，最后 rename 到 custom_nodes，避免跨盘失败和半成品目录。
-        const installRoot = path.join(comfyRoot, ".canvas-install", `${resource.id}-${process.pid}-${Date.now()}`);
+        const nonce = `${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
+        const installRoot = path.join(comfyRoot, ".canvas-install", `${resource.id}-${nonce}`);
         const temp = path.join(installRoot, "payload");
         try {
             let prepared = false;
             if (bundleDir && isDir(bundleDir)) {
                 await fsp.cp(bundleDir, temp, { recursive: true });
                 prepared = true;
-                log(`[bootstrap] 复制内置目录：${resource.label || resource.id}`);
             }
             if (!prepared) {
                 if (!archive || !isFile(archive)) throw new Error("缺少内置节点包");
@@ -138,11 +187,49 @@ export async function installBundledNodes({ root, comfyRoot, comfyUrl = "", log 
             }
             const sourceDir = await findNodeRoot(temp);
             if (!sourceDir) throw new Error("没有找到 __init__.py");
+            const official = await directoryManifest(sourceDir, resource, resource.version || index.version);
             await fsp.mkdir(path.dirname(target), { recursive: true });
-            if (isDir(target)) {
-                log(`[bootstrap] 节点目录已存在，跳过：${resource.label || resource.id}`, "WARN");
+
+            if (fs.existsSync(target)) {
+                const manifestPath = path.join(target, BOOTSTRAP_MANIFEST);
+                const previous = readBootstrapManifest(manifestPath, resource.id);
+                const current = await directoryManifest(target, resource).catch(() => null);
+                const officialUnchanged = Boolean(previous && current && current.sourceHash === previous.sourceHash);
+                if (officialUnchanged) {
+                    if (current.sourceHash === official.sourceHash) continue;
+                    // 仅受管且逐文件未改的官方目录可升级；旧目录改名保留，失败则恢复。
+                    const backup = path.join(comfyRoot, ".canvas-install-backups", `${resource.id}-${nonce}-previous`);
+                    await fsp.mkdir(path.dirname(backup), { recursive: true });
+                    await fsp.rename(target, backup);
+                    try {
+                        await fsp.rm(path.join(sourceDir, BOOTSTRAP_MANIFEST), { force: true });
+                        await writeJsonAtomic(path.join(sourceDir, BOOTSTRAP_MANIFEST), official);
+                        await fsp.rename(sourceDir, target);
+                    } catch (error) {
+                        await fsp.rename(backup, target).catch(() => {});
+                        throw error;
+                    }
+                    installed.push(resource.label || resource.id);
+                    log(`[bootstrap] 已升级未修改的内置节点，旧版备份：${backup}`);
+                    continue;
+                }
+                if (!previous && current?.sourceHash === official.sourceHash && !fs.existsSync(manifestPath)) {
+                    // 兼容旧版：内容与当前官方副本完全一致时才登记，不接管未知/用户目录。
+                    await writeJsonAtomic(manifestPath, official);
+                    continue;
+                }
+                const suffix = current?.sourceHash?.slice(0, 12) || "unreadable";
+                const backup = path.join(comfyRoot, ".canvas-install-backups", `${resource.id}-${suffix}-user`);
+                if (!fs.existsSync(backup)) {
+                    await fsp.mkdir(path.dirname(backup), { recursive: true });
+                    await fsp.cp(target, backup, { recursive: true, errorOnExist: true });
+                }
+                log(`[bootstrap] 节点目录无可靠官方清单或已被用户修改，保留原目录并备份，未覆盖：${backup}`, "WARN");
                 continue;
             }
+
+            await fsp.rm(path.join(sourceDir, BOOTSTRAP_MANIFEST), { force: true });
+            await writeJsonAtomic(path.join(sourceDir, BOOTSTRAP_MANIFEST), official);
             await fsp.rename(sourceDir, target);
             installed.push(resource.label || resource.id);
             log(`[bootstrap] 已放置内置节点：${resource.label || resource.id}`);

@@ -105,6 +105,10 @@ function hasToken(tokens, name) {
     return tokens.includes(name);
 }
 
+function isQwenImage21Vae(tokens) {
+    return hasToken(tokens, "qwen") && hasToken(tokens, "image") && hasToken(tokens, "vae") && hasToken(tokens, "2") && hasToken(tokens, "1");
+}
+
 function familyRoots(tokens, compact) {
     const roots = new Set();
     for (const family of FAMILY_TOKENS) {
@@ -131,6 +135,8 @@ export function modelNameSimilarity(required, candidate) {
     // 角色和语义限定词必须一致：VAE/CLIP/TE/LoRA 不能互顶，audio/video/vision/image 不能互顶。
     if (!sameSet(roles(left.tokens), roles(right.tokens))) return { ok: false, score: 0, reason: "role" };
     if (!sameSet(qualifiers(left.tokens), qualifiers(right.tokens))) return { ok: false, score: 0, reason: "qualifier" };
+    // Qwen Image 2.1 VAE 不能自动拿旧 Qwen/Wan 视频 VAE 顶替；同代量化差异仍允许。
+    if (isQwenImage21Vae(left.tokens) !== isQwenImage21Vae(right.tokens)) return { ok: false, score: 0, reason: "generation" };
     // 规模不能跨规格顶替：4B/8B、9B/27B 不是同一模型。只有两边都带规模时才硬拦，
     // 兼容没有写参数量的文件名。
     const sizes = [sizeTokens(left.tokens), sizeTokens(right.tokens)];

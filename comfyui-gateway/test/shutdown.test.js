@@ -67,6 +67,7 @@ before(async () => {
   gatewayServer = app.listen(0, "127.0.0.1");
   await new Promise((resolve) => gatewayServer.once("listening", resolve));
   baseUrl = `http://127.0.0.1:${gatewayServer.address().port}`;
+  await setup.scan();
 });
 
 after(async () => {

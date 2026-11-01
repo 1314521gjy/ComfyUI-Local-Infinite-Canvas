@@ -9,7 +9,7 @@ import { isApiWorkflow, isUiWorkflow } from "./registry.js";
 import { findSimilarModel } from "./model-match.js";
 import { MODEL_LOADER_SPECS as LOADER_SPECS, discoverModelLoaderSpecs } from "./model-loaders.js";
 import { MODEL_DIR_KEYS, collectModelRoots, modelRelativePath } from "./model-paths.js";
-import { nowIso, truncate, writeJsonAtomic } from "./util.js";
+import { nowIso, randomId, truncate, writeJsonAtomic } from "./util.js";
 
 function safeStat(file) {
     try {
@@ -65,25 +65,47 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
     const originalComfyDir = config.comfyDir || "";
     const originalWorkflowsDir = config.comfyWorkflowsDir || "";
     let directorySettings = loadDirectorySettings(config.dataDir);
-    const autoAliases = new Map();
-    const availability = new Map();
     const comfyFileCache = new Map();
     const importedComfyPaths = new Set();
     const state = {
         phase: "idle",
+        instanceId: randomId("setup_"),
         comfyUrl: config.comfyUrl,
         comfyReachable: false,
         scanStartedAt: null,
         scannedAt: null,
         scanDurationMs: 0,
+        // 与 SSE 变更序列分开：scanId/revision 只在成功提交快照时自增。
+        scanId: 0,
+        revision: 0,
+        stale: false,
         lastError: null,
         counts: { available: 0, unavailable: 0, total: 0 },
         workflows: [],
         loras: [],
         missing: { models: [], nodes: [], uiWorkflows: 0, uiSamples: [] },
     };
+    // 一次扫描的全部结果放进不可变快照，成功后在同一个同步块里整份交换；
+    // 扫描过程中所有公开读取仍走上一份已提交快照，避免部分新状态被误用。
+    let snapshot = {
+        scanId: 0,
+        revision: 0,
+        loaderCatalog: {},
+        loaderSpecs: LOADER_SPECS,
+        nodeClasses: new Set(),
+        folderPaths: {},
+        autoAliases: new Map(),
+        availability: new Map(),
+        entries: new Map(),
+        workflows: [],
+        loras: [],
+        counts: { available: 0, unavailable: 0, total: 0 },
+        missing: { models: [], nodes: [], uiWorkflows: 0, uiSamples: [] },
+        scannedAt: null,
+        scanDurationMs: 0,
+        committed: false,
+    };
     let scanPromise = null;
-    let hasScanned = false;
     let watcher = null;
     let poller = null;
     let debounceTimer = null;
@@ -91,10 +113,12 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
     let connectivityChecking = false;
     let lastAutoScanAt = 0;
     let lastComfyBase = "";
-    let loaderCatalog = {};
-    let folderPathCatalog = {};
-    let nodeClasses = new Set();
-    let currentLoaderSpecs = LOADER_SPECS;
+    let loaderCatalog = snapshot.loaderCatalog;
+    let folderPathCatalog = snapshot.folderPaths;
+    let nodeClasses = snapshot.nodeClasses;
+    let currentLoaderSpecs = snapshot.loaderSpecs;
+    let autoAliases = snapshot.autoAliases;
+    let availability = snapshot.availability;
     let runtimeProblemProvider = null;
     const fuzzyAliasLogged = new Set();
 
@@ -253,18 +277,32 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         return loaders;
     }
 
-    function loaderOptionsFor(classType, input = "") {
-        const keyed = input ? loaderCatalog?.[`${classType}\u0000${input}`] : null;
-        const list = Array.isArray(keyed) ? keyed : loaderCatalog?.[classType];
+    // view 只由扫描构建阶段内部传入；公开读取一律使用已提交快照。
+    function loaderOptionsFor(classType, input = "", view = null) {
+        const catalog = view ? view.loaderCatalog : loaderCatalog;
+        const keyed = input ? catalog?.[`${classType}\u0000${input}`] : null;
+        const list = Array.isArray(keyed) ? keyed : catalog?.[classType];
         return Array.isArray(list) ? list : [];
+    }
+
+    function buildLoaderCatalog(loaders) {
+        const catalog = {};
+        for (const loader of loaders.values()) {
+            const sorted = [...loader.options].sort();
+            catalog[`${loader.classType}\u0000${loader.input}`] = sorted;
+            const aggregate = catalog[loader.classType] || [];
+            catalog[loader.classType] = [...new Set([...aggregate, ...sorted])].sort();
+        }
+        return catalog;
     }
 
     // 同 basename、不同子目录/路径的文件是同一个模型，可自动认；
     // 同名文件出现多份时不自动选，留给用户确认。
-    function rebuildAutoAliases() {
-        autoAliases.clear();
-        for (const spec of currentLoaderSpecs) {
-            const options = loaderOptionsFor(spec.classType, spec.input);
+    function buildAutoAliases(loaders, specs) {
+        const auto = new Map();
+        for (const spec of specs) {
+            const loader = loaders.get(`${spec.classType}\u0000${spec.input}`);
+            const options = loader ? [...loader.options] : [];
             if (!options.length) continue;
             const byBase = new Map();
             for (const option of options) {
@@ -278,12 +316,13 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
             for (const [base, list] of byBase) {
                 if (list.length === 1) map.set(base, list[0]);
             }
-            autoAliases.set(`${spec.classType}\u0000${spec.input}`, map);
+            auto.set(`${spec.classType}\u0000${spec.input}`, map);
         }
+        return auto;
     }
 
-    function modelRootsForDir(dir) {
-        return collectModelRoots({ dir, folderPaths: folderPathCatalog, comfyDir: config.comfyDir });
+    function modelRootsForDir(dir, view = null) {
+        return collectModelRoots({ dir, folderPaths: view ? view.folderPaths : folderPathCatalog, comfyDir: config.comfyDir });
     }
 
     const modelInventory = new Map();
@@ -320,11 +359,12 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
 
     // ComfyUI 未把文件列进 /object_info，但磁盘上已经有同名/相似模型：
     // 不是“缺模型”，而是需要重启 ComfyUI 重新加载。
-    function pendingModelFile(classType, input, value) {
-        const spec = currentLoaderSpecs.find((item) => item.classType === classType && item.input === input);
+    function pendingModelFile(classType, input, value, view = null) {
+        const specs = view ? view.loaderSpecs : currentLoaderSpecs;
+        const spec = specs.find((item) => item.classType === classType && item.input === input);
         if (!spec || !(spec.dirs || []).length) return null;
         for (const dir of spec.dirs) {
-            for (const root of modelRootsForDir(dir)) {
+            for (const root of modelRootsForDir(dir, view)) {
                 const similar = findSimilarModel(value, listModelFilesForRoot(root));
                 if (similar.file) return { file: similar.file, score: similar.score, dir };
             }
@@ -332,21 +372,22 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         return null;
     }
 
-    function findInstalledOption(classType, value, input = "") {
+    function findInstalledOption(classType, value, input = "", view = null) {
         const normalized = normalizeAliasValue(value).toLowerCase();
-        return loaderOptionsFor(classType, input).find((item) => isModelOption(item) && normalizeAliasValue(item).toLowerCase() === normalized) || "";
+        return loaderOptionsFor(classType, input, view).find((item) => isModelOption(item) && normalizeAliasValue(item).toLowerCase() === normalized) || "";
     }
 
-    function aliasTargetExists(classType, value, input = "") {
-        if (findInstalledOption(classType, value, input)) return true;
+    function aliasTargetExists(classType, value, input = "", view = null) {
+        if (findInstalledOption(classType, value, input, view)) return true;
         const normalized = normalizeAliasValue(value);
         if (!normalized || path.isAbsolute(normalized) || normalized.split("/").includes("..")) return false;
-        const spec = currentLoaderSpecs.find((item) => item.classType === classType && (!input || item.input === input));
+        const specs = view ? view.loaderSpecs : currentLoaderSpecs;
+        const spec = specs.find((item) => item.classType === classType && (!input || item.input === input));
         if (!spec || !(spec.dirs || []).length) return false;
-        return (spec.dirs || []).some((dir) => modelRootsForDir(dir).some((root) => safeStat(path.join(root, normalized))?.isFile()));
+        return (spec.dirs || []).some((dir) => modelRootsForDir(dir, view).some((root) => safeStat(path.join(root, normalized))?.isFile()));
     }
 
-    function crossClassUserAliasFor(classType, input, value) {
+    function crossClassUserAliasFor(classType, input, value, view = null) {
         const role = loaderModelRole(input);
         if (!role || !LLM_LOADER_CLASSES.has(classType)) return "";
         const wanted = normalizeAliasValue(value).toLowerCase();
@@ -356,7 +397,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
             if (!LLM_LOADER_CLASSES.has(sourceClass) || !target) continue;
             if (loaderModelRole(sourceInput) !== role) continue;
             if (normalizeAliasValue(source).toLowerCase() !== wanted) continue;
-            const installed = findInstalledOption(classType, target, input);
+            const installed = findInstalledOption(classType, target, input, view);
             if (installed) candidates.set(normalizeAliasValue(installed).toLowerCase(), installed);
         }
         if (candidates.size === 1) {
@@ -372,38 +413,39 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
 
     // 只返回用户显式点过「自选替换」的别名；资源卡用它判断“已用自选”，
     // 自动/相似匹配不能伪造这个状态。
-    function userModelAliasFor(classType, input, value) {
+    function userModelAliasFor(classType, input, value, view = null) {
         if (!value) return "";
         const user = aliases[modelAliasKey(classType, input, value)] || "";
         if (user) {
             // 只有 ComfyUI 当前 loader 列表里真有的文件才算生效；
             // 仅磁盘存在但未加载的文件交给 pendingModelFile 标“待重启”，不能伪造可用。
-            return findInstalledOption(classType, user, input);
+            return findInstalledOption(classType, user, input, view);
         }
-        return crossClassUserAliasFor(classType, input, value);
+        return crossClassUserAliasFor(classType, input, value, view);
     }
 
-    function modelAliasFor(classType, input, value) {
+    function modelAliasFor(classType, input, value, view = null) {
         if (!value) return "";
         // 用户显式「自选替换」优先：相似匹配只是没自选时的自动兜底，
         // 否则资源卡显示“已替换”，实际出图却仍走相似模型。
-        const user = userModelAliasFor(classType, input, value);
+        const user = userModelAliasFor(classType, input, value, view);
         if (user) return user;
         // 原文件已经在 ComfyUI 列表里时绝不能再自动相似匹配；否则同族不同规格
         // （4B/8B、turbo/raw）会被互相顶替，工作流可能显示可用但运行时必崩。
-        const installed = findInstalledOption(classType, value, input);
+        const installed = findInstalledOption(classType, value, input, view);
         if (installed) return installed === value ? "" : installed;
         // 同 basename、不同子目录（Windows 常见反斜杠）优先按唯一同名认；
         // 不依赖 autoAliases 是否已重建，覆盖 Z-Image/Krea2 这类只有一套文件的模型。
         const baseName = normalizeBaseName(value);
-        const sameBase = loaderOptionsFor(classType, input).filter((item) => isModelOption(item) && normalizeBaseName(item) === baseName);
+        const sameBase = loaderOptionsFor(classType, input, view).filter((item) => isModelOption(item) && normalizeBaseName(item) === baseName);
         if (sameBase.length === 1) return sameBase[0];
-        const auto = autoAliases.get(`${classType}\u0000${input}`)?.get(normalizeBaseName(value)) || "";
+        const autoMap = view ? view.autoAliases : autoAliases;
+        const auto = autoMap.get(`${classType}\u0000${input}`)?.get(normalizeBaseName(value)) || "";
         if (auto && normalizeAliasValue(auto) !== normalizeAliasValue(value)) return auto;
         // 模型放在更深子目录时，ComfyUI 的选项带路径前缀（a/b/x.safetensors）；
         // 唯一后缀匹配视为同一文件，避免“放深一层就检测不到”。
         const wanted = normalizeAliasValue(value).toLowerCase();
-        const deep = loaderOptionsFor(classType, input).filter((item) => {
+        const deep = loaderOptionsFor(classType, input, view).filter((item) => {
             if (!isModelOption(item)) return false;
             const normalized = normalizeAliasValue(item).toLowerCase();
             return normalized !== wanted && normalized.endsWith(`/${wanted}`);
@@ -411,7 +453,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         if (deep.length === 1) return deep[0];
         // 格式相同、名称相似度 ≥50% 的同类模型（不同量化/版本）自动认；
         // 两个候选分数接近时不猜，留给资源卡「自选替换」。
-        const similar = findSimilarModel(value, loaderOptionsFor(classType, input).filter(isModelOption));
+        const similar = findSimilarModel(value, loaderOptionsFor(classType, input, view).filter(isModelOption));
         if (similar.file) {
             const key = `${classType}|${value}|${similar.file}`;
             if (!fuzzyAliasLogged.has(key)) {
@@ -423,9 +465,9 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         return "";
     }
 
-    function modelCandidates(classType, value, input = "") {
+    function modelCandidates(classType, value, input = "", view = null) {
         const base = normalizeBaseName(value);
-        return loaderOptionsFor(classType, input)
+        return loaderOptionsFor(classType, input, view)
             .filter((item) => isModelOption(item) && normalizeAliasValue(item) !== normalizeAliasValue(value))
             .sort((a, b) => {
                 const aSame = normalizeBaseName(a) === base ? 0 : 1;
@@ -461,7 +503,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
             throw new Error(`所选模型尚未安装或不在 ComfyUI 列表中：${target}`);
         }
         await writeJsonAtomic(aliasFile, { version: 1, aliases, updatedAt: nowIso() });
-        await scan();
+        await scan("alias");
         return state;
     }
 
@@ -614,7 +656,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         return false;
     }
 
-    function validateWorkflow(workflow, classes, loaders, entry) {
+    function validateWorkflow(workflow, classes, loaders, entry, view = null) {
         const problems = [];
         for (const [nodeId, node] of Object.entries(workflow || {})) {
             const classType = node?.class_type;
@@ -631,8 +673,8 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 const overrideInstalled = Boolean(override) && [...loader.options].some((option) => normalizeAliasValue(option).toLowerCase() === overrideLower);
                 if (override && classType === "UNETLoader" && loader.input === "unet_name" && overrideInstalled) continue;
                 if (hasBaseModelAlternative(entry, classType, loader.input, loader.options, value)) continue;
-                if (modelAliasFor(classType, loader.input, value)) continue;
-                const pending = pendingModelFile(classType, loader.input, value);
+                if (modelAliasFor(classType, loader.input, value, view)) continue;
+                const pending = pendingModelFile(classType, loader.input, value, view);
                 if (pending) {
                     problems.push({
                         type: "restart",
@@ -650,64 +692,87 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                     classType,
                     input: loader.input,
                     value,
-                    candidates: modelCandidates(classType, value, loader.input),
+                    candidates: modelCandidates(classType, value, loader.input, view),
                 });
             }
         }
         return problems;
     }
 
-    async function scan() {
+    // 成功扫描的唯一提交点：同步块内整份换快照并推进 scanId/revision。
+    function commitSnapshot(next) {
+        const revision = (snapshot.revision || 0) + 1;
+        const scanId = (snapshot.scanId || 0) + 1;
+        const committed = { ...next, scanId, revision, committed: true };
+        snapshot = committed;
+        loaderCatalog = committed.loaderCatalog;
+        folderPathCatalog = committed.folderPaths;
+        nodeClasses = committed.nodeClasses;
+        currentLoaderSpecs = committed.loaderSpecs;
+        autoAliases = committed.autoAliases;
+        availability = committed.availability;
+        Object.assign(state, {
+            phase: "ready",
+            comfyReachable: true,
+            scanId,
+            revision,
+            scannedAt: committed.scannedAt,
+            scanDurationMs: committed.scanDurationMs,
+            stale: false,
+            lastError: null,
+            counts: committed.counts,
+            workflows: committed.workflows,
+            loras: committed.loras,
+            missing: committed.missing,
+        });
+    }
+
+    async function scan(reason = "scan") {
         if (scanPromise) return scanPromise;
+        let outcome = { ok: false, reason };
         scanPromise = (async () => {
             modelInventory.clear();
+            // 只改 phase/开始时间；loader/availability 等仍保持上一份已提交快照。
             state.phase = "scanning";
             state.scanStartedAt = nowIso();
-            state.scannedAt = null;
-            state.lastError = null;
             await persist();
             const started = Date.now();
             try {
-                const stats = await comfy.systemStats();
+                await comfy.systemStats();
                 const objectInfo = await comfy.objectInfo();
-                folderPathCatalog = typeof comfy.folderPaths === "function" ? await comfy.folderPaths() : {};
-                state.comfyReachable = true;
+                const folderPaths = typeof comfy.folderPaths === "function" ? await comfy.folderPaths() : {};
                 const classes = new Set(Object.keys(objectInfo || {}));
-                nodeClasses = classes;
-                currentLoaderSpecs = discoverModelLoaderSpecs(objectInfo);
-                const loaders = collectLoaderOptions(objectInfo, currentLoaderSpecs);
-                const catalog = {};
-                for (const loader of loaders.values()) {
-                    const sorted = [...loader.options].sort();
-                    catalog[`${loader.classType}\u0000${loader.input}`] = sorted;
-                    const aggregate = catalog[loader.classType] || [];
-                    catalog[loader.classType] = [...new Set([...aggregate, ...sorted])].sort();
-                }
-                loaderCatalog = catalog;
-                rebuildAutoAliases();
+                const specs = discoverModelLoaderSpecs(objectInfo);
+                const loaders = collectLoaderOptions(objectInfo, specs);
+                const catalog = buildLoaderCatalog(loaders);
+                const auto = buildAutoAliases(loaders, specs);
+                // view 是本次扫描的局部构建视图；校验和别名解析都只读它，
+                // 不能提前写入公开 catalog/specs/availability。
+                const view = { loaderCatalog: catalog, loaderSpecs: specs, nodeClasses: classes, folderPaths, autoAliases: auto };
                 const loraOptions = new Set([
-                    ...(loaderOptionsFor("LoraLoaderModelOnly", "lora_name") || []),
-                    ...(loaderOptionsFor("LoraLoader", "lora_name") || []),
+                    ...loaderOptionsFor("LoraLoaderModelOnly", "lora_name", view),
+                    ...loaderOptionsFor("LoraLoader", "lora_name", view),
                 ]);
-                state.loras = [...loraOptions].sort();
+                const loras = [...loraOptions].sort();
                 const gatewayScan = await registry.scan();
                 const comfyScan = await importComfyWorkflows();
                 registry.reloadIfChanged?.();
                 // hidden 工作流（如被画布复用的放大工具）不计入模型列表和“不可用”统计，
                 // 但仍要计算可用性，否则超分等工具会被误判为不可用。
                 const allEntries = registry.list().map((entry) => registry.resolve(entry.id)).filter(Boolean);
+                const workflowEntries = new Map(allEntries.map((entry) => [entry.id, entry]));
                 const workflows = [];
+                const nextAvailability = new Map();
                 const missingModels = new Set();
                 const missingNodes = new Set();
                 const missingRuntime = new Set();
                 const missingRestart = new Set();
-                availability.clear();
                 for (const entry of allEntries) {
-                    const baseProblems = entry.workflow ? validateWorkflow(entry.workflow, classes, loaders, entry) : [];
+                    const baseProblems = entry.workflow ? validateWorkflow(entry.workflow, classes, loaders, entry, view) : [];
                     const variantStatus = {};
                     for (const [mode, variant] of Object.entries(entry.variants || {})) {
                         if (!variant?.workflow) continue;
-                        variantStatus[mode] = validateWorkflow(variant.workflow, classes, loaders, entry);
+                        variantStatus[mode] = validateWorkflow(variant.workflow, classes, loaders, entry, view);
                     }
                     const variantProblems = Object.values(variantStatus).flat();
                     const runtimeProblems = typeof runtimeProblemProvider === "function" ? runtimeProblemProvider(entry.id) || [] : [];
@@ -724,7 +789,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                     const anyVariantAvailable = Object.values(variantStatus).some((list) => list.length === 0);
                     const available = runtimeProblems.length === 0 && (baseAvailable || anyVariantAvailable);
                     const variants = Object.fromEntries(Object.entries(variantStatus).map(([mode, list]) => [mode, { available: list.length === 0, problems: list }]));
-                    availability.set(entry.id, { available, problems: unique, variants });
+                    nextAvailability.set(entry.id, { available, problems: unique, variants });
                     if (entry.hidden) continue;
                     for (const problem of unique) {
                         if (problem.type === "model") missingModels.add(problem.message);
@@ -734,13 +799,12 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                     }
                     workflows.push({ id: entry.id, name: entry.name, type: entry.type, available, problems: unique, variants });
                 }
-                state.workflows = workflows;
-                state.counts = {
+                const counts = {
                     total: workflows.length,
                     available: workflows.filter((workflow) => workflow.available).length,
                     unavailable: workflows.filter((workflow) => !workflow.available).length,
                 };
-                state.missing = {
+                const missing = {
                     models: [...missingModels].sort(),
                     nodes: [...missingNodes].sort(),
                     runtime: [...missingRuntime].sort(),
@@ -748,27 +812,50 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                     uiWorkflows: comfyScan.ui,
                     uiSamples: comfyScan.samples,
                 };
-                state.phase = "ready";
-                state.scannedAt = nowIso();
-                state.scanDurationMs = Date.now() - started;
-                hasScanned = true;
-                logger?.info?.(`setup scan ready: ${state.counts.available}/${state.counts.total} workflows, ${state.missing.uiWorkflows} UI workflow(s) skipped, ${state.scanDurationMs}ms`);
+                const scanDurationMs = Date.now() - started;
+                commitSnapshot({
+                    loaderCatalog: catalog,
+                    loaderSpecs: specs,
+                    nodeClasses: classes,
+                    folderPaths,
+                    autoAliases: auto,
+                    availability: nextAvailability,
+                    entries: workflowEntries,
+                    workflows,
+                    loras,
+                    counts,
+                    missing,
+                    scannedAt: nowIso(),
+                    scanDurationMs,
+                });
+                outcome = { ok: true, reason };
+                logger?.info?.(`setup scan ready: ${counts.available}/${counts.total} workflows, ${missing.uiWorkflows} UI workflow(s) skipped, ${scanDurationMs}ms`);
                 if (gatewayScan.added?.length || comfyScan.imported || comfyScan.removed) {
                     logger?.info?.(`auto-imported workflows: gateway=${gatewayScan.added?.length || 0}, comfy=${comfyScan.imported}, removed drafts=${comfyScan.removed || 0}`);
                 }
             } catch (error) {
-                state.phase = "degraded";
-                state.comfyReachable = false;
-                state.lastError = truncate(error?.message || String(error), 500);
-                state.scanDurationMs = Date.now() - started;
-                state.scannedAt = nowIso();
+                // 失败只改降级标记：上一份成功快照原样保留给 stale 列表，
+                // 不能用空 catalog/availability 覆盖，也不推进 scanId/revision。
+                Object.assign(state, {
+                    phase: "degraded",
+                    comfyReachable: false,
+                    lastError: truncate(error?.message || String(error), 500),
+                    scanDurationMs: Date.now() - started,
+                    scannedAt: nowIso(),
+                    stale: Boolean(snapshot.committed),
+                });
                 logger?.warn?.(`setup scan degraded: ${state.lastError}`);
             } finally {
                 if (typeof comfy.baseUrl === "function") lastComfyBase = comfy.baseUrl() || lastComfyBase;
                 await persist();
                 scanPromise = null;
                 try {
-                    onScanComplete?.(state);
+                    onScanComplete?.(state, {
+                        ...outcome,
+                        scanId: state.scanId,
+                        revision: state.revision,
+                        stale: state.stale,
+                    });
                 } catch (error) {
                     logger?.warn?.(`setup scan callback failed: ${error.message}`);
                 }
@@ -798,7 +885,13 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         watchDir(config.workflowDir, "gateway");
         watchDir(config.comfyWorkflowsDir, "comfyui");
         poller = setInterval(() => {
-            registry.reloadIfChanged?.();
+            const pending = registry.reloadIfChanged?.();
+            if (!pending) return;
+            Promise.resolve(pending)
+                .then((changed) => {
+                    if (changed) schedule(0);
+                })
+                .catch((error) => logger?.warn?.(`registry poll reload failed: ${error.message}`));
         }, 30000);
         if (typeof poller.unref === "function") poller.unref();
     }
@@ -817,9 +910,15 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 if (state.comfyReachable || state.phase === "ready") {
                     state.comfyReachable = false;
                     state.phase = "degraded";
+                    state.stale = Boolean(snapshot.committed);
                     state.lastError = "ComfyUI 连接已断开，等待重连后自动重新扫描";
                     logger?.warn?.(state.lastError);
                     await persist();
+                    try {
+                        onScanComplete?.(state, { ok: false, reason: "offline", scanId: state.scanId, revision: state.revision, stale: state.stale });
+                    } catch (error) {
+                        logger?.warn?.(`setup offline callback failed: ${error.message}`);
+                    }
                 }
                 return;
             }
@@ -827,7 +926,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
             if (Date.now() - lastAutoScanAt < 10000) return;
             lastAutoScanAt = Date.now();
             logger?.info?.(addressChanged ? `ComfyUI 地址变化（${lastComfyBase} → ${currentBase}），自动重新扫描` : "ComfyUI 已连接，自动重新扫描工作流与模型");
-            await scan();
+            await scan(addressChanged ? "address-change" : "reconnect");
         } catch (error) {
             logger?.warn?.(`ComfyUI 连通性检查失败：${error.message}`);
         } finally {
@@ -873,16 +972,32 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         connectivityTimer = null;
     }
 
+    // registry reload/import/remove 会替换条目对象；必须和 setup 快照同代际。
+    function snapshotHasCurrentEntry(id) {
+        const committed = snapshot.entries?.get(id);
+        const current = typeof registry.resolve === "function" ? registry.resolve(id) : null;
+        return Boolean(committed && current && committed === current);
+    }
+
+    function registrySnapshotCurrent() {
+        if (!snapshot.committed) return false;
+        const current = typeof registry.list === "function" ? registry.list() : [];
+        if (current.length !== snapshot.entries.size) return false;
+        return current.every((entry) => snapshotHasCurrentEntry(entry.id));
+    }
+
     function isAvailable(id) {
-        // ComfyUI 离线/扫描失败时不能再用旧结果假装可用。
-        if (state.phase === "degraded") return false;
-        if (!hasScanned) return state.phase === "idle" || state.phase === "scanning";
+        // 未提交过快照时不能把“未知”当可用；离线/降级同样阻止生成。
+        if (state.phase === "degraded" || !snapshot.committed) return false;
+        if (!snapshotHasCurrentEntry(id)) return false;
+        // 后续扫描期间继续使用上一份已提交且自洽的可用性。
         const entry = availability.get(id);
         return entry ? entry.available : false;
     }
 
     // 离线时模型列表保留上一次扫描结果（前端会标 stale），避免整个下拉瞬间清空。
     function isKnownAvailable(id) {
+        if (!snapshot.committed || !snapshotHasCurrentEntry(id)) return false;
         const entry = availability.get(id);
         return entry ? entry.available : false;
     }
@@ -895,9 +1010,22 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 problems: [{ type: "offline", message: "ComfyUI 未连接，暂时无法确认工作流可用性" }],
             };
         }
+        if (!snapshot.committed) {
+            return {
+                available: false,
+                checking: true,
+                problems: [{ type: "checking", message: "正在扫描 ComfyUI 模型与节点，请稍候" }],
+            };
+        }
+        if (!snapshotHasCurrentEntry(id)) {
+            return {
+                available: false,
+                checking: true,
+                problems: [{ type: "checking", message: "工作流已变化，正在重新扫描模型与节点，请稍候" }],
+            };
+        }
         const entry = availability.get(id);
-        if (entry) return entry;
-        return { available: !hasScanned, checking: !hasScanned, problems: [] };
+        return entry || { available: false, problems: [{ type: "unknown", message: "该工作流不在最近一次扫描结果中，请重新扫描" }] };
     }
 
     function loraNames() {
@@ -944,6 +1072,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         isAvailable,
         isKnownAvailable,
         workflowStatus,
+        registrySnapshotCurrent,
         hasNodeClass,
         setRuntimeProblemProvider,
         modelLoaderSpecs,

@@ -78,7 +78,7 @@ test("dynamic probing finds ComfyUI on a non-standard port", async () => {
   const http = await import("node:http");
   const server = http.createServer((req, res) => {
     res.setHeader("content-type", "application/json");
-    res.end(JSON.stringify({ system: { os: "nt" }, devices: [] }));
+    res.end(JSON.stringify({ system: { os: "nt", ram_total: 2048, ram_free: 1024 }, devices: [{ name: "Stub GPU", type: "cuda", vram_total: 1024, vram_free: 512 }] }));
   });
   await new Promise((resolve) => server.listen(18123, "127.0.0.1", resolve));
   try {
@@ -174,6 +174,7 @@ test("assistant runtime zip extracts once and is skipped when ready", async () =
   }
   const assistantDir = path.join(root, "assistant");
   await fsp.mkdir(assistantDir, { recursive: true });
+  await fsp.writeFile(path.join(assistantDir, "server.mjs"), "newer-source", "utf8");
   const archive = path.join(assistantDir, "runtime.zip");
   const tar = process.env.SystemRoot ? path.join(process.env.SystemRoot, "System32", "tar.exe") : "tar";
   execFileSync(tar, ["-a", "-c", "-f", archive, "-C", payload, "."], { timeout: 120000, windowsHide: true });
@@ -182,11 +183,18 @@ test("assistant runtime zip extracts once and is skipped when ready", async () =
     assert.equal(first.ok, true);
     assert.equal(first.extracted, true);
     assert.ok(fs.existsSync(path.join(assistantDir, "server.mjs")));
+    assert.equal(fs.readFileSync(path.join(assistantDir, "server.mjs"), "utf8"), "newer-source");
     assert.ok(fs.existsSync(path.join(assistantDir, "workspace", "infinite-canvas", "web", "node_modules")));
     const second = ensureAssistantRuntime(root, { logger: () => {} });
     assert.equal(second.ok, true);
     assert.equal(second.extracted, false);
     assert.equal(second.reason, "already-ready");
+    await fsp.rm(path.join(assistantDir, "runtime.json"), { force: true });
+    const markerMissing = ensureAssistantRuntime(root, { logger: () => {} });
+    assert.equal(markerMissing.ok, true);
+    assert.equal(markerMissing.extracted, false);
+    assert.equal(markerMissing.reason, "already-ready");
+    assert.equal(fs.readFileSync(path.join(assistantDir, "server.mjs"), "utf8"), "newer-source");
   } finally {
     await fsp.rm(root, { recursive: true, force: true });
   }

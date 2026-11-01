@@ -40,3 +40,16 @@ test("does not cross model sizes or turbo/raw variants", () => {
     assert.equal(findSimilarModel("qwen3vl_4b_fp8_scaled.safetensors", ["qwen3vl_4b_bf16.safetensors"]).file, "qwen3vl_4b_bf16.safetensors");
     assert.equal(findSimilarModel("qwen_image_2.1_turbo_int8_convrot.safetensors", ["z_image_turbo_int8_convrot.safetensors"]).file, "");
 });
+
+test("Qwen Image 2.1 VAE never fuzzy matches legacy Qwen or Wan VAEs", () => {
+    const qwen21 = "qwen_image_2.1_vae_bf16.safetensors";
+    for (const legacy of ["qwen_image_vae.safetensors", "wan_2.1_vae.safetensors", "wan2.1_vae.safetensors"]) {
+        assert.equal(findSimilarModel(qwen21, [legacy]).file, "");
+        assert.equal(findSimilarModel(legacy, [qwen21]).file, "");
+    }
+});
+
+test("Qwen Image 2.1 VAE still matches same-generation quantization", () => {
+    const match = findSimilarModel("qwen_image_2.1_vae_bf16.safetensors", ["qwen_image_2.1_vae_fp16.safetensors"]);
+    assert.equal(match.file, "qwen_image_2.1_vae_fp16.safetensors");
+});

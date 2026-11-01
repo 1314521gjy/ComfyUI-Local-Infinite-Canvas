@@ -95,3 +95,44 @@ test("4xx responses are not retried", async () => {  let calls = 0;
     await close(server);
   }
 });
+
+for (const operation of ["history", "view"]) {
+  test(`${operation} aborts a stuck execution request through AbortSignal`, async () => {
+    let markReceived;
+    const received = new Promise((resolve) => {
+      markReceived = resolve;
+    });
+    const { server, port } = await listen(() => markReceived());
+    const comfy = createComfyClient({ baseUrl: `http://127.0.0.1:${port}`, retryAttempts: 1 });
+    const controller = new AbortController();
+    try {
+      const pending = operation === "history"
+        ? comfy.history("abc", { signal: controller.signal })
+        : comfy.view({ filename: "out.png" }, { signal: controller.signal });
+      await received;
+      controller.abort("user-stop");
+      await assert.rejects(pending, (error) => error.code === "comfy_aborted");
+    } finally {
+      await close(server);
+    }
+  });
+}
+
+test("interrupt and cancel propagate downstream cancellation failures", async () => {
+  const { server, port } = await listen((req, res) => {
+    if (req.url === "/queue") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end("{}");
+      return;
+    }
+    res.writeHead(500, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "injected interrupt failure" }));
+  });
+  const comfy = createComfyClient({ baseUrl: `http://127.0.0.1:${port}`, retryAttempts: 1 });
+  try {
+    await assert.rejects(comfy.interrupt("abc"), (error) => error.code === "comfy_http_error" && error.message.includes("injected interrupt failure"));
+    await assert.rejects(comfy.cancel("abc"), (error) => error.code === "comfy_http_error" && error.message.includes("injected interrupt failure"));
+  } finally {
+    await close(server);
+  }
+});

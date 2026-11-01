@@ -37,7 +37,9 @@ test("allows hidden upscale tools and unknown modes without blocking", () => {
   assert.equal(workflowAvailabilityProblem(available, entry, { mode: "other" }), null);
 });
 
-test("is a no-op before setup exposes workflow status", () => {
+test("is a no-op only when setup exposes no status provider", () => {
   assert.equal(workflowAvailabilityProblem({}, entry), null);
-  assert.equal(workflowAvailabilityProblem({ workflowStatus: () => ({ available: true, checking: true, problems: [] }) }, entry), null);
+  const checking = workflowAvailabilityProblem({ workflowStatus: () => ({ available: false, checking: true, problems: [{ message: "正在扫描" }] }) }, entry);
+  assert.equal(checking.code, "workflow_checking");
+  assert.match(checking.message, /正在检查可用性/);
 });

@@ -332,8 +332,9 @@ function statusTag(item: ResourceItem, copy: Copy) {
 
 function packState(pack: ResourcePack, copy: Copy) {
     if (pack.planned) return <Tag>{copy.planned}</Tag>;
-    if (!pack.missing) return <Tag color="green">{copy.ready}</Tag>;
-    return <Tag color="orange">{copy.missing} {pack.missing}</Tag>;
+    const missing = pack.standalone ? pack.optionalMissing : pack.missing;
+    if (!missing) return <Tag color="green">{copy.ready}</Tag>;
+    return <Tag color="orange">{copy.missing} {missing}</Tag>;
 }
 
 function formatSpeed(bytesPerSecond: number) {
@@ -1047,6 +1048,9 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                         ...pack.requiredItems.filter((item) => item.status !== "present").map((item) => item.id),
                         ...selectedOptionalInPack.map((item) => item.id),
                     ];
+                    const standaloneInstallIds = pack.standalone
+                        ? [...new Set(workflowDependencies.flatMap((workflow) => workflow.installIds))]
+                        : [];
                     const expandable = pack.total > 0 || pack.optionalTotal > 0 || workflowDependencies.length > 0;
                     const optionalLabel = pack.optionalLabel?.trim() || copy.optionalSection;
                     const mainModel = pack.mainModel;
@@ -1102,7 +1106,11 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                 {packState(pack, copy)}
                                 {workflowDependencies.length ? <Tag>{copy.workflowSection} {workflowDependencies.length}</Tag> : null}
                                 {extraOptionalItems.length ? <Tag>{optionalLabel} {extraOptionalItems.length}</Tag> : null}
-                                {pack.missingSize ? <span className="text-[11px] text-stone-500 dark:text-stone-400">{copy.size} {formatBytes(pack.missingSize)}</span> : null}
+                                {pack.standalone ? (
+                                    pack.optionalSize ? <span className="text-[11px] text-stone-500 dark:text-stone-400">{copy.size} {formatBytes(pack.optionalSize)}</span> : null
+                                ) : pack.missingSize ? (
+                                    <span className="text-[11px] text-stone-500 dark:text-stone-400">{copy.size} {formatBytes(pack.missingSize)}</span>
+                                ) : null}
                             </div>
                         </>
                     );
@@ -1127,6 +1135,11 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                 ) : (
                                     <div className="min-w-0 flex-1">{headerBody}</div>
                                 )}
+                                {standaloneInstallIds.length ? (
+                                    <Button size="small" type="primary" icon={<Download className="size-3.5" />} onClick={() => void startInstall({ ids: standaloneInstallIds })} disabled={Boolean(job && job.status === "running")}>
+                                        {copy.installPack}
+                                    </Button>
+                                ) : null}
                                 {expandable ? (
                                     <button type="button" className="mt-0.5 rounded-md p-1 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-600 dark:text-stone-500 dark:hover:bg-white/5 dark:hover:text-stone-300" onClick={() => toggleExpanded(pack.id)} aria-label={expanded ? copy.collapse : copy.expand}>
                                         <ChevronDown className={`size-4 transition-transform ${expanded ? "rotate-180" : ""}`} />

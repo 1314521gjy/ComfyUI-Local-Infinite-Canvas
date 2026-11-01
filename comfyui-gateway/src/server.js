@@ -48,6 +48,71 @@ class HttpError extends Error {
   }
 }
 
+const uploadBudgetSymbol = Symbol("uploadBudget");
+
+function createBoundedMemoryStorage(maxTotalBytes) {
+  const limit = maxTotalBytes >= 1024 * 1024
+    ? `${Math.round(maxTotalBytes / (1024 * 1024))} MB`
+    : `${Math.ceil(maxTotalBytes / 1024)} KB`;
+  const exceeded = () => new HttpError(`上传文件总大小超过 ${limit} 请求预算，请减少素材或分批重试。`, {
+    status: 413,
+    code: "upload_total_too_large",
+  });
+  return {
+    _handleFile(req, file, cb) {
+      const budget = req[uploadBudgetSymbol] || { bytes: 0, failed: false };
+      req[uploadBudgetSymbol] = budget;
+      const chunks = [];
+      let done = false;
+      const finish = (...args) => {
+        if (done) return;
+        done = true;
+        cb(...args);
+      };
+      if (budget.failed) {
+        file.stream.resume();
+        finish(exceeded());
+        return;
+      }
+      file.stream.on("data", (chunk) => {
+        if (budget.failed) return;
+        budget.bytes += chunk.length;
+        if (budget.bytes > maxTotalBytes) {
+          budget.failed = true;
+          chunks.length = 0;
+          finish(exceeded());
+          return;
+        }
+        chunks.push(chunk);
+      });
+      file.stream.on("end", () => {
+        if (budget.failed) return finish();
+        const buffer = Buffer.concat(chunks);
+        finish(null, { buffer, size: buffer.length });
+      });
+      file.stream.on("error", finish);
+    },
+    _removeFile(_req, file, cb) {
+      delete file.buffer;
+      cb(null);
+    },
+  };
+}
+
+function requestGatewayToken(req) {
+  const header = req.headers["x-gateway-token"];
+  if (typeof header === "string" && header.trim()) return header.trim();
+  const authorization = String(req.headers.authorization || "");
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : "";
+}
+
+function gatewayTokenMatches(candidate, expected) {
+  const left = Buffer.from(String(candidate || ""));
+  const right = Buffer.from(String(expected || ""));
+  return left.length === right.length && left.length > 0 && crypto.timingSafeEqual(left, right);
+}
+
 function probeVideoInfo(file, extraProbes = []) {
   if (!file?.buffer?.length) return { fps: 0, duration: 0, frames: 0 };
   const rawExt = extFromMime(file.mimetype) || ".mp4";
@@ -104,7 +169,7 @@ function corsMiddleware(config) {
       res.setHeader("Vary", "Origin");
     }
     res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Requested-With, X-Request-Id");
+    res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Requested-With, X-Request-Id, X-Gateway-Token");
     res.setHeader("Access-Control-Expose-Headers", "X-Request-Id");
     res.setHeader("Access-Control-Max-Age", "86400");
     if (req.method === "OPTIONS") return res.status(204).end();
@@ -238,6 +303,152 @@ function requireWorkflowMode(setup, entry, mode) {
   if (unavailable) throw new HttpError(unavailable.message, { status: 409, code: unavailable.code, details: unavailable.details });
 }
 
+// 字段名会重复出现在普通节点里，必须同时匹配已发现的 loader classType 和 input。
+function diagnosticLoaderPairs(setup) {
+  const pairs = new Set();
+  for (const spec of setup?.modelLoaderSpecs?.() || []) {
+    if (!spec?.classType || !spec?.input) continue;
+    pairs.add(`${spec.classType}\u0000${spec.input}`);
+  }
+  return pairs;
+}
+
+// loader 值允许保留 ComfyUI 内的相对子目录，但不能把本机绝对路径带进诊断。
+function sanitizeModelValue(value) {
+  const text = String(value ?? "");
+  if (!text) return "";
+  const normalized = text.replace(/\\/g, "/");
+  if (/^[A-Za-z]:\//.test(normalized) || normalized.startsWith("//") || normalized.startsWith("/")) {
+    return normalized.split("/").filter(Boolean).pop() || "";
+  }
+  return text;
+}
+
+function sanitizeDiagnosticText(value) {
+  return String(value ?? "")
+    .replace(/(?:[A-Za-z]:[\\/]|\\\\)[^\s"'<>|，。；）)]+/g, "<path>")
+    .replace(/\/(?:Users|home|root|tmp|var|opt|mnt)\/[^\s"'<>|，。；）)]+/g, "<path>")
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer <redacted>")
+    .replace(/\b(authorization|token|api[_-]?key|secret|password|cookie)\b\s*[:=]\s*[^\s,;"']+/gi, "$1=<redacted>");
+}
+
+function sanitizeComfyUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    url.username = "";
+    url.password = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return "";
+  }
+}
+
+function setupSyncSummary(status, instanceId) {
+  return {
+    instanceId: instanceId || status?.instanceId || "",
+    scanId: status?.scanId ?? 0,
+    revision: status?.revision ?? 0,
+    phase: status?.phase || "idle",
+    scanning: status?.scanning === true,
+    stale: status?.stale === true,
+    comfyReachable: status?.comfyReachable === true,
+    scannedAt: status?.scannedAt || null,
+    counts: status?.counts || { available: 0, unavailable: 0, total: 0 },
+  };
+}
+
+function diagnosticProblems(problems = [], limit = 20) {
+  return (Array.isArray(problems) ? problems : [])
+    .slice(0, limit)
+    .map((problem) => ({
+      type: String(problem?.type || "problem"),
+      message: sanitizeDiagnosticText(problem?.message || ""),
+      classType: problem?.classType ? String(problem.classType) : undefined,
+      input: problem?.input ? String(problem.input) : undefined,
+      value: problem?.value ? sanitizeModelValue(problem.value) : undefined,
+      candidates: Array.isArray(problem?.candidates)
+        ? problem.candidates.slice(0, 10).map(sanitizeModelValue)
+        : undefined,
+    }));
+}
+
+function setupProblemSummary(status) {
+  const missing = status?.missing || {};
+  const list = (items) => (Array.isArray(items) ? items : []);
+  return {
+    models: list(missing.models).slice(0, 10).map(sanitizeDiagnosticText),
+    modelCount: list(missing.models).length,
+    nodes: list(missing.nodes).slice(0, 10).map(sanitizeDiagnosticText),
+    nodeCount: list(missing.nodes).length,
+    runtime: list(missing.runtime).slice(0, 10).map(sanitizeDiagnosticText),
+    restart: list(missing.restart).slice(0, 10).map(sanitizeDiagnosticText),
+    uiWorkflows: Number(missing.uiWorkflows || 0),
+    uiSamples: list(missing.uiSamples).slice(0, 5).map(sanitizeDiagnosticText),
+  };
+}
+
+function workflowLoaderEvidence(entry, setup, status) {
+  const specs = setup.modelLoaderSpecs?.() || [];
+  const catalog = setup.loaderOptions?.() || {};
+  const rows = [];
+  for (const [nodeId, node] of Object.entries(entry?.workflow || {})) {
+    const classType = node?.class_type;
+    if (!classType) continue;
+    for (const spec of specs) {
+      if (spec.classType !== classType) continue;
+      const expected = node.inputs?.[spec.input];
+      if (typeof expected !== "string" || !expected.trim()) continue;
+      const options = Array.isArray(catalog[`${classType}\u0000${spec.input}`])
+        ? catalog[`${classType}\u0000${spec.input}`]
+        : Array.isArray(catalog[classType]) ? catalog[classType] : [];
+      const wanted = expected.replace(/\\/g, "/").toLowerCase();
+      const installed = options.some((item) => String(item).replace(/\\/g, "/").toLowerCase() === wanted);
+      const alias = setup.modelAliasFor?.(classType, spec.input, expected) || "";
+      const problem = (status?.problems || []).find((item) => item.classType === classType && item.input === spec.input && (!item.value || item.value === expected));
+      const candidates = (setup.modelCandidates?.(classType, expected, spec.input) || []).slice(0, 10);
+      rows.push({
+        nodeId,
+        classType,
+        input: spec.input,
+        expected: sanitizeModelValue(expected),
+        installed,
+        alias: alias ? sanitizeModelValue(alias) : null,
+        effective: sanitizeModelValue(alias || expected),
+        candidates: candidates.map(sanitizeModelValue),
+        availability: {
+          available: !problem,
+          problemType: problem?.type || null,
+          message: problem ? sanitizeDiagnosticText(problem.message) : null,
+        },
+      });
+    }
+  }
+  return rows;
+}
+
+function diagnosticWorkflow(entry, setup, status, { workflowVisibility } = {}) {
+  const variants = {};
+  for (const [mode, variant] of Object.entries(status?.variants || {})) {
+    variants[mode] = {
+      available: variant?.available === true,
+      problems: diagnosticProblems(variant?.problems),
+    };
+  }
+  return {
+    id: entry.id,
+    name: entry.name,
+    type: entry.type,
+    enabled: entry.hidden !== true && !workflowVisibility?.isHidden?.(entry.id),
+    available: status?.available === true,
+    stale: status?.stale === true,
+    problems: diagnosticProblems(status?.problems),
+    variants,
+    loaders: workflowLoaderEvidence(entry, setup, status),
+  };
+}
+
 function isLoopbackPeer(address) {
   const raw = String(address || "").replace(/^::ffff:/i, "");
   return raw === "::1" || raw === "localhost" || raw.startsWith("127.");
@@ -315,6 +526,7 @@ export async function createGatewayApp(overrides = {}) {
   const freeWorkflows = createFreeWorkflowStore({
     dataDir: config.dataDir,
     comfyWorkflowsDir: config.comfyWorkflowsDir,
+    getComfyWorkflowsDir: () => config.comfyWorkflowsDir,
     comfy,
     logger,
     maxWorkflowBytes: config.maxWorkflowBytes,
@@ -329,9 +541,43 @@ export async function createGatewayApp(overrides = {}) {
   const bridgeStatus = await comfyBridge.ensure();
   if (!bridgeStatus.installed) logger.warn(`ComfyUI 工作流桥接未安装：${bridgeStatus.reason || "未知原因"}`);
   const sessions = createSessionTracker({ staleMs: config.sessionStaleSec * 1000 });
-  const setup = createSetupManager({ config, registry, comfy, logger, mainModelFile: (id) => mainModels.fileForWorkflow(id), onScanComplete: () => modelEvents.broadcast("scan") });
+  const setup = createSetupManager({
+    config,
+    registry,
+    comfy,
+    logger,
+    mainModelFile: (id) => mainModels.fileForWorkflow(id),
+    // 扫描成功/失败、断线、重连、目录/别名等变化都复用这一条广播路径；
+    // 只带 revision 信号与快照代际，不推送模型列表正文。
+    onScanComplete: (status, meta = {}) => {
+      const reason = meta.ok === false ? (meta.reason === "offline" ? "offline" : "scan-failed") : meta.reason || "scan";
+      modelEvents.broadcast(reason, {
+        scanId: status?.scanId,
+        setupRevision: status?.revision,
+        stale: status?.stale,
+        instanceId: status?.instanceId,
+      });
+    },
+  });
+  const emitModelChange = (reason) => {
+    const status = setup.status();
+    return modelEvents.broadcast(reason, {
+      scanId: status.scanId,
+      setupRevision: status.revision,
+      stale: status.stale,
+      instanceId: status.instanceId,
+    });
+  };
+  // 注册表内容变化后必须重建 setup 快照，禁止同一 ID 的新工作流沿用旧可用性。
+  const reloadRegistryAndSnapshot = async (reason = "registry-reload") => {
+    const changed = await registry.reloadIfChanged();
+    if (!changed && setup.registrySnapshotCurrent()) return;
+    const pending = setup.scan(reason);
+    // 首扫尚未完成时不阻塞模型列表；已有成功快照时等新代际提交，避免返回跨代数据。
+    if (setup.status().scanId > 0) await pending;
+  };
   if (config.allowRemote && !config.gatewayToken) {
-    logger.warn("ALLOW_REMOTE=1 但未设置 GATEWAY_TOKEN：/api/* 与 /admin 对局域网无鉴权，建议设置令牌或改回回环绑定。");
+    logger.warn("ALLOW_REMOTE=1 但未设置 GATEWAY_TOKEN：接口无令牌保护，仅可在可信内网使用，不要映射到公网。");
   }
   const resources = createResourceManager({ config, setup, registry, logger, workflowVisibility, mainModels });
   await resources.init();
@@ -442,10 +688,10 @@ export async function createGatewayApp(overrides = {}) {
     return config.corsOrigins.includes(origin) || config.corsOrigins.includes("*") || origin === config.publicBaseUrl;
   };
   app.use((req, res, next) => {
-    // 远程模式：管理接口要求令牌（/health 与生成接口不拦）
+    // 管理接口支持令牌；生成与媒体链的远程鉴权需和前端请求、SSE、Blob 一起迁移。
     if (config.allowRemote && config.gatewayToken && (req.path.startsWith("/api/") || req.path === "/admin")) {
-      if (String(req.headers["x-gateway-token"] || "") !== config.gatewayToken) {
-        res.status(401).json({ ok: false, error: { message: "缺少有效的网关令牌" } });
+      if (!gatewayTokenMatches(requestGatewayToken(req), config.gatewayToken)) {
+        res.status(401).json({ ok: false, error: { message: "缺少有效的网关令牌", code: "unauthorized" } });
         return;
       }
     }
@@ -463,7 +709,7 @@ export async function createGatewayApp(overrides = {}) {
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ extended: true, limit: "50mb" }));
   const upload = multer({
-    storage: multer.memoryStorage(),
+    storage: createBoundedMemoryStorage(config.maxTotalUploadBytes),
     limits: { fileSize: config.maxUploadBytes, files: 12 },
   });
 
@@ -478,14 +724,123 @@ export async function createGatewayApp(overrides = {}) {
       comfy: { url: comfy.baseUrl(), reachable },
       // 与设置页一致：hidden 的辅助工作流不计入可用性统计。
       workflows: { count: setupStatus.counts?.total || registry.list().length },
-      setup: { phase: setupStatus.phase, counts: setupStatus.counts },
+      setup: {
+        phase: setupStatus.phase,
+        counts: setupStatus.counts,
+        instanceId: setupStatus.instanceId,
+        scanId: setupStatus.scanId,
+        revision: setupStatus.revision,
+        scanning: setupStatus.scanning,
+        stale: setupStatus.stale,
+      },
       tasks: { count: tasks.list().length, retentionDays: config.taskRetentionDays, maxStoredTasks: config.maxStoredTasks },
       uptimeSeconds: Math.round(process.uptime()),
     });
   });
 
   app.get("/api/setup/status", (_req, res) => {
-    res.json({ ok: true, status: setup.status(), comfyUrl: comfy.baseUrl() });
+    // revision 是 SSE 变更序列号，setup.revision 是最近一次成功提交的扫描代际。
+    res.json({ ok: true, status: setup.status(), comfyUrl: comfy.baseUrl(), revision: modelEvents.snapshot().revision });
+  });
+
+  app.get("/api/setup/diagnostics", async (req, res) => {
+    const queryText = (value, field) => {
+      if (value === undefined) return "";
+      const raw = String(value).trim();
+      if (!raw) return "";
+      if (raw.length > 200) throw new HttpError(`${field} 过长`, { status: 400, code: "invalid_query" });
+      return raw;
+    };
+    const workflowId = queryText(req.query.workflowId, "workflowId");
+    const modelId = queryText(req.query.modelId, "modelId");
+    const promptId = queryText(req.query.promptId, "promptId");
+    if (promptId && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(promptId)) {
+      throw new HttpError("promptId 格式不合法", { status: 400, code: "invalid_prompt_id" });
+    }
+
+    const setupStatus = setup.status();
+    let workflowEntry = null;
+    if (workflowId) {
+      workflowEntry = registry.resolve(workflowId);
+      if (!workflowEntry) throw new HttpError(`工作流不存在：${workflowId}`, { status: 404, code: "workflow_not_found" });
+    }
+    let modelEntry = null;
+    if (modelId) {
+      const found = registry.resolveModel(modelId, setup.loaderOptions?.() || {});
+      if (!found) throw new HttpError(`未找到模型：${modelId}`, { status: 404, code: "model_not_found" });
+      modelEntry = found.entry;
+    }
+
+    let execution = null;
+    if (promptId) {
+      let history = null;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      try {
+        history = await comfy.history(promptId, { signal: controller.signal });
+      } catch (error) {
+        throw new HttpError(`读取 ComfyUI 执行记录失败：${sanitizeDiagnosticText(error?.message || error)}`, { status: 502, code: "comfy_history_failed" });
+      } finally {
+        clearTimeout(timer);
+      }
+      if (!history) throw new HttpError(`未找到执行记录：${promptId}`, { status: 404, code: "prompt_not_found" });
+      // 真实执行图在 history.prompt[2]；只提取已发现 loader spec 的精确 classType + input。
+      const graph = Array.isArray(history.prompt) ? history.prompt[2] : history.prompt;
+      const loaderPairs = diagnosticLoaderPairs(setup);
+      const nodes = [];
+      for (const [nodeId, node] of Object.entries(graph && typeof graph === "object" ? graph : {})) {
+        if (!node?.class_type) continue;
+        const classType = String(node.class_type);
+        const fields = {};
+        for (const [key, value] of Object.entries(node.inputs || {})) {
+          if (!loaderPairs.has(`${classType}\u0000${key}`)) continue;
+          if (typeof value !== "string" || !value) continue;
+          fields[key] = sanitizeModelValue(value);
+        }
+        if (Object.keys(fields).length) nodes.push({ nodeId, classType, fields });
+      }
+      execution = {
+        promptId,
+        status: sanitizeDiagnosticText(history.status?.status_str || ""),
+        completed: history.status?.completed === true,
+        nodes,
+      };
+    }
+
+    const evidenceEntry = modelEntry || workflowEntry;
+    const evidenceStatus = evidenceEntry ? setup.workflowStatus(evidenceEntry.id) : null;
+    res.json({
+      ok: true,
+      version: config.version,
+      generatedAt: nowIso(),
+      comfy: {
+        url: sanitizeComfyUrl(comfy.baseUrl()),
+        reachable: setupStatus.comfyReachable === true,
+      },
+      setup: {
+        instanceId: setupStatus.instanceId || "",
+        scanId: setupStatus.scanId ?? 0,
+        revision: setupStatus.revision ?? 0,
+        phase: setupStatus.phase,
+        scanning: setupStatus.scanning === true,
+        stale: setupStatus.stale === true,
+        comfyReachable: setupStatus.comfyReachable === true,
+        scannedAt: setupStatus.scannedAt || null,
+        counts: setupStatus.counts || { available: 0, unavailable: 0, total: 0 },
+        lastError: setupStatus.lastError ? sanitizeDiagnosticText(setupStatus.lastError) : null,
+        problems: setupProblemSummary(setupStatus),
+      },
+      workflow: workflowEntry ? diagnosticWorkflow(workflowEntry, setup, setup.workflowStatus(workflowEntry.id), { workflowVisibility }) : null,
+      model: modelEntry
+        ? {
+            id: modelId,
+            workflowId: evidenceEntry.id,
+            ...diagnosticWorkflow(evidenceEntry, setup, evidenceStatus, { workflowVisibility }),
+          }
+        : null,
+      execution,
+      links: { models: "/v1/models", status: "/api/setup/status", events: "/api/models/events" },
+    });
   });
 
   app.post("/api/setup/model-alias", async (req, res) => {
@@ -793,7 +1148,7 @@ export async function createGatewayApp(overrides = {}) {
     const liveFolderPaths = await comfy.folderPaths().catch(() => setup.folderPaths?.() || {});
     const loadReport = directoryLoadReport(saved, { comfyRoot: liveRootBefore, folderPaths: liveFolderPaths });
     const restartRequired = saved.mode === "manual" && (loadReport.restartRequired || Boolean(write.changed));
-    await setup.scan().catch((error) => logger.warn(`directory settings rescan failed: ${error.message}`));
+    await setup.scan("directories").catch((error) => logger.warn(`directory settings rescan failed: ${error.message}`));
     res.json({
       ok: true,
       settings: saved,
@@ -847,8 +1202,9 @@ export async function createGatewayApp(overrides = {}) {
   });
 
   app.get("/v1/models", async (_req, res) => {
-    await registry.reloadIfChanged();
-    const degraded = setup.status?.().phase === "degraded";
+    await reloadRegistryAndSnapshot();
+    const status = setup.status();
+    const degraded = status.phase === "degraded";
     const data = registry
       .listModels((setup.loaderOptions?.() || {}))
       .filter((model) => (setup.isAvailable(model.baseId) || (degraded && setup.isKnownAvailable?.(model.baseId))) && !model.entry.hidden && model.entry.category !== "upscale" && !workflowVisibility.isHidden(model.entry.id))
@@ -873,11 +1229,11 @@ export async function createGatewayApp(overrides = {}) {
           availability: setup.workflowStatus(model.baseId),
         },
       }));
-    res.json({ object: "list", data });
+    res.json({ object: "list", revision: modelEvents.snapshot().revision, setup: setupSyncSummary(status), data });
   });
 
   app.get("/api/workflows", async (_req, res) => {
-    await registry.reloadIfChanged();
+    await reloadRegistryAndSnapshot();
     res.json({
       workflows: registry.list().map((entry) => ({
         ...entry,
@@ -894,7 +1250,7 @@ export async function createGatewayApp(overrides = {}) {
     const enabled = req.body?.enabled !== false;
     await workflowVisibility.setHidden(entry.id, !enabled);
     logger.info(`workflow visibility ${entry.id} -> ${enabled ? "enabled" : "hidden"}`);
-    modelEvents.broadcast("visibility");
+    emitModelChange("visibility");
     res.json({ ok: true, id: entry.id, enabled });
   });
 
@@ -929,23 +1285,28 @@ export async function createGatewayApp(overrides = {}) {
 
   app.post("/api/workflows/import", async (req, res) => {
     const result = await registry.importWorkflow(req.body || {});
+    await setup.scan("registry-import");
     logger.info(`imported workflow ${result.workflow.name} (${result.workflow.type})`);
     res.status(201).json({ ok: true, ...result });
   });
 
   app.post("/api/workflows/scan", async (_req, res) => {
     const result = await registry.scan();
+    await setup.scan("registry-scan");
     res.json({ ok: true, ...result });
   });
 
   app.post("/api/workflows/reload", async (_req, res) => {
     await registry.load();
+    await setup.scan("registry-reload");
     res.json({ ok: true, count: registry.list().length });
   });
 
   app.delete("/api/workflows/:id", async (req, res) => {
     const removed = await registry.remove(req.params.id);
     if (!removed) throw new HttpError("工作流不存在", { status: 404, code: "workflow_not_found" });
+    // 只移除注册记录，不删除用户工作流文件；本次事件后列表立即更新。
+    emitModelChange("registry-remove");
     res.json({ ok: true });
   });
 
@@ -1159,7 +1520,7 @@ export async function createGatewayApp(overrides = {}) {
   });
 
   app.post("/v1/images/generations", async (req, res) => {
-    await registry.reloadIfChanged();
+    await reloadRegistryAndSnapshot();
     const body = req.body || {};
     const baseEntry = requireModel(registry, setup, body.model, "image");
     const mode = String(body.mode || body.imageMode || "").trim();
@@ -1221,7 +1582,7 @@ export async function createGatewayApp(overrides = {}) {
   });
 
   app.post("/v1/images/upscale", upload.any(), async (req, res) => {
-    await registry.reloadIfChanged();
+    await reloadRegistryAndSnapshot();
     const body = req.body || {};
     const entry = requireModel(registry, setup, body.model || "image-esrgan-upscale", "image", { allowUnavailable: true });
     if (entry.category !== "upscale") {
@@ -1278,7 +1639,7 @@ export async function createGatewayApp(overrides = {}) {
   });
 
   app.post("/v1/images/edits", upload.any(), async (req, res) => {
-    await registry.reloadIfChanged();
+    await reloadRegistryAndSnapshot();
     const body = req.body || {};
     const entry = requireModel(registry, setup, body.model, "image");
     const files = imageFilesFrom(req.files || []);
@@ -1472,7 +1833,7 @@ export async function createGatewayApp(overrides = {}) {
   });
 
   app.post("/v1/videos/upscale", upload.any(), async (req, res) => {
-    await registry.reloadIfChanged();
+    await reloadRegistryAndSnapshot();
     const body = req.body || {};
     const entry = requireModel(registry, setup, body.model || "video-seedvr2-upscale", "video", { allowUnavailable: true });
     if (entry.category !== "upscale") {
@@ -1580,7 +1941,7 @@ export async function createGatewayApp(overrides = {}) {
   });
 
   app.post("/v1/videos", upload.any(), async (req, res) => {
-    await registry.reloadIfChanged();
+    await reloadRegistryAndSnapshot();
     const body = req.body || {};
     const entry = requireModel(registry, setup, body.model, "video");
     const files = orderedVideoFiles(req.files || []);

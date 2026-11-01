@@ -35,10 +35,15 @@ function list(value, fallback) {
 export function loadConfig(overrides = {}) {
   const port = num(overrides.port ?? process.env.PORT, 8190);
   const host = overrides.host ?? process.env.HOST ?? "127.0.0.1";
-  const allowRemote = String(process.env.ALLOW_REMOTE || "").trim() === "1";
-  if (!["127.0.0.1", "localhost", "::1", "[::1]"].includes(host) && !allowRemote) {
+  const allowRemote = overrides.allowRemote === undefined
+    ? String(process.env.ALLOW_REMOTE || "").trim() === "1"
+    : overrides.allowRemote === true || overrides.allowRemote === "1";
+  const loopbackHost = ["127.0.0.1", "localhost", "::1", "[::1]"].includes(host);
+  if (!loopbackHost && !allowRemote) {
     throw new Error("网关默认只允许绑定本机回环地址；如确需局域网访问，请设置 ALLOW_REMOTE=1。");
   }
+  const gatewayToken = String(overrides.gatewayToken ?? process.env.GATEWAY_TOKEN ?? "").trim();
+  const maxUploadBytes = num(overrides.maxUploadBytes ?? process.env.MAX_UPLOAD_BYTES, 512 * 1024 * 1024);
   const config = {
     rootDir,
     appRoot,
@@ -68,7 +73,11 @@ export function loadConfig(overrides = {}) {
     maxStoredTasks: count(overrides.maxStoredTasks ?? process.env.MAX_STORED_TASKS, 0),
     cleanupIntervalMs: num(overrides.cleanupIntervalMs ?? process.env.CLEANUP_INTERVAL_MS, 60 * 60 * 1000),
     sessionStaleSec: num(overrides.sessionStaleSec ?? process.env.SESSION_STALE_SEC, 120),
-    maxUploadBytes: num(overrides.maxUploadBytes ?? process.env.MAX_UPLOAD_BYTES, 512 * 1024 * 1024),
+    maxUploadBytes,
+    maxTotalUploadBytes: num(
+      overrides.maxTotalUploadBytes ?? process.env.MAX_TOTAL_UPLOAD_BYTES,
+      Math.max(maxUploadBytes, 768 * 1024 * 1024),
+    ),
     outpaintMaxMegapixels: num(overrides.outpaintMaxMegapixels ?? process.env.OUTPAINT_MAX_MEGAPIXELS, 4),
     maxWorkflowBytes: num(overrides.maxWorkflowBytes ?? process.env.MAX_WORKFLOW_BYTES, 5 * 1024 * 1024),
     maxImageCount: num(overrides.maxImageCount ?? process.env.MAX_IMAGE_COUNT, 15),
@@ -93,7 +102,7 @@ export function loadConfig(overrides = {}) {
     resourcesFetchTimeoutMs: num(overrides.resourcesFetchTimeoutMs ?? process.env.RESOURCES_FETCH_TIMEOUT_MS, 8000),
     resourceConcurrency: num(overrides.resourceConcurrency ?? process.env.RESOURCE_CONCURRENCY, 2),
     allowRemote,
-    gatewayToken: String(process.env.GATEWAY_TOKEN || "").trim(),
+    gatewayToken,
     assistantIdleMs: num(overrides.assistantIdleMs ?? process.env.ASSISTANT_IDLE_MS, 180 * 1000),
     version: readVersion(appRoot),
   };

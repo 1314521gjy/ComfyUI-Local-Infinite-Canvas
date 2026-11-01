@@ -37,7 +37,7 @@ before(async () => {
   mock = createMockComfyServer({ port: 0, delayMs: 50, quiet: true });
   await mock.start();
   mockUrl = mock.url;
-  const { app } = await createGatewayApp({
+  const { app, setup } = await createGatewayApp({
     comfyUrl: mockUrl,
     workflowDir: workflows,
     dataDir: path.join(tempDir, "data"),
@@ -51,6 +51,7 @@ before(async () => {
   gatewayServer = app.listen(0, "127.0.0.1");
   await new Promise((resolve) => gatewayServer.once("listening", resolve));
   baseUrl = `http://127.0.0.1:${gatewayServer.address().port}`;
+  await setup.scan();
 });
 
 after(async () => {

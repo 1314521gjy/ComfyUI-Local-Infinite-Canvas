@@ -139,7 +139,9 @@ export function createComfyClient({ baseUrl, timeoutMs = 10 * 60 * 1000, retryAt
       return data;
     } catch (error) {
       if (error instanceof ComfyUIError) throw error;
-      if (error?.name === "AbortError") throw new ComfyUIError("ComfyUI 请求已取消或超时", { status: 504, code: "comfy_aborted" });
+      if (controller.signal.aborted || error?.name === "AbortError") {
+        throw new ComfyUIError("ComfyUI 请求已取消或超时", { status: 504, code: "comfy_aborted", details: error?.message || String(error) });
+      }
       throw new ComfyUIError(`无法连接 ComfyUI：${error?.message || error}`, { status: 502, code: "comfy_unreachable" });
     } finally {
       clearTimeout(timer);
@@ -196,18 +198,18 @@ export function createComfyClient({ baseUrl, timeoutMs = 10 * 60 * 1000, retryAt
     return { promptId: data.prompt_id, number: data.number, raw: data };
   }
 
-  async function history(promptId) {
-    const data = await request(`/history/${encodeURIComponent(promptId)}`);
+  async function history(promptId, { signal } = {}) {
+    const data = await request(`/history/${encodeURIComponent(promptId)}`, { signal });
     return data?.[promptId] || data?.[String(promptId)] || null;
   }
 
-  async function view(file) {
+  async function view(file, { signal } = {}) {
     const params = new URLSearchParams({
       filename: String(file.filename || ""),
       subfolder: String(file.subfolder || ""),
       type: String(file.type || "output"),
     });
-    return request(`/view?${params.toString()}`, { raw: true });
+    return request(`/view?${params.toString()}`, { raw: true, signal });
   }
 
   async function uploadImage(buffer, filename = "input.png", mimeType = "image/png") {
@@ -221,31 +223,35 @@ export function createComfyClient({ baseUrl, timeoutMs = 10 * 60 * 1000, retryAt
     return { name: data.name, subfolder: data.subfolder || "", type: data.type || "input" };
   }
 
-  async function interrupt(promptId) {
+  async function interrupt(promptId, { signal } = {}) {
     try {
       await request("/interrupt", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(promptId ? { prompt_id: promptId } : {}),
         timeout: 5000,
+        signal,
       });
     } catch (error) {
       logger?.warn?.(`interrupt failed: ${error.message}`);
+      throw error;
     }
   }
 
-  // 同时删掉排队项并打断当前采样；排队项如果已经运行，删除会失败，由 interrupt 兜底。
-  async function cancel(promptId) {
+  // 同时删掉排队项并打断当前采样；运行项删除失败可由 interrupt 兜底，但打断失败不能静默成功。
+  async function cancel(promptId, { signal } = {}) {
     const tasks = [
       request("/queue", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ delete: [promptId] }),
         timeout: 5000,
+        signal,
       }).catch((error) => logger?.warn?.(`queue delete failed: ${error.message}`)),
-      interrupt(promptId),
+      interrupt(promptId, { signal }),
     ];
-    await Promise.allSettled(tasks);
+    const results = await Promise.allSettled(tasks);
+    if (results[1].status === "rejected") throw results[1].reason;
   }
 
   const freeMemory = () =>

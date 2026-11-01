@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import { buildTrtCompileHint, createResourceManager, inferComfyRootFromFolderPaths, selectPipWheelForRuntime } from "../src/resources.js";
 
@@ -270,7 +271,15 @@ test("resources can install a custom node zip", async () => {
         schema: 1,
         version: "test-node-1",
         packs: [{ id: "test", resources: ["test-node"] }],
-        resources: [{ id: "test-node", type: "node", label: "Test node", target: "custom_nodes/ComfyUI-testnode", sources: [`http://127.0.0.1:${port}/node.zip`] }],
+        resources: [{
+            id: "test-node",
+            type: "node",
+            label: "Test node",
+            target: "custom_nodes/ComfyUI-testnode",
+            size: payload.length,
+            sha256: crypto.createHash("sha256").update(payload).digest("hex"),
+            sources: [`http://127.0.0.1:${port}/node.zip`],
+        }],
     };
     await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
     const manager = createResourceManager({
@@ -452,7 +461,7 @@ test("node resources can install from a bundled directory without extracting", a
     }
 });
 
-test("node backup sources can opt out of the primary zip hash", async () => {
+test("node sources cannot bypass executable archive verification", async () => {
     const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-node-backup-test-"));
     const comfy = path.join(root, "ComfyUI");
     const data = path.join(root, "data");
@@ -514,8 +523,86 @@ test("node backup sources can opt out of the primary zip hash", async () => {
         await manager.init();
         const job = manager.install({ ids: ["test-node"] });
         const finished = await waitForJob(manager, job.id);
-        assert.equal(finished.status, "done", JSON.stringify(finished));
-        assert.equal(await fsp.readFile(path.join(comfy, "custom_nodes", "ComfyUI-testnode", "__init__.py"), "utf8"), "BACKUP = True\n");
+        assert.equal(finished.status, "error", JSON.stringify(finished));
+        assert.match(finished.items[0].error, /可信 SHA256|拒绝安装可执行代码/);
+        assert.equal(fs.existsSync(path.join(comfy, "custom_nodes", "ComfyUI-testnode")), false);
+    } finally {
+        await new Promise((resolve) => server.close(resolve));
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});
+
+test("cancel during node extraction blocks overlap and prevents the commit", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-node-cancel-test-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(path.join(comfy, "custom_nodes"), { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    const source = path.join(root, "source", "ComfyUI-slow-node");
+    await fsp.mkdir(source, { recursive: true });
+    await fsp.writeFile(path.join(source, "__init__.py"), "NODE_CLASS_MAPPINGS = {}\n", "utf8");
+    for (let index = 0; index < 2500; index += 1) {
+        await fsp.writeFile(path.join(source, `file-${index}.txt`), `payload-${index}\n`, "utf8");
+    }
+    const zipped = spawnSync("tar", ["-a", "-c", "-f", "node.zip", "-C", "source", "ComfyUI-slow-node"], { cwd: root, encoding: "utf8" });
+    assert.equal(zipped.status, 0, zipped.stderr);
+    const payload = await fsp.readFile(path.join(root, "node.zip"));
+    const server = http.createServer((_req, res) => {
+        res.setHeader("Content-Type", "application/zip");
+        res.setHeader("Content-Length", payload.length);
+        res.end(payload);
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = server.address().port;
+    const index = {
+        schema: 1,
+        version: "test-node-cancel-1",
+        packs: [],
+        resources: [{
+            id: "slow-node",
+            type: "node",
+            label: "Slow node",
+            target: "custom_nodes/ComfyUI-slow-node",
+            size: payload.length,
+            sha256: crypto.createHash("sha256").update(payload).digest("hex"),
+            sources: [`http://127.0.0.1:${port}/node.zip`],
+        }],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: { loaderOptions: () => ({}), status: () => ({ comfyReachable: true }), scan: async () => ({}) },
+        logger: null,
+    });
+    try {
+        await manager.init();
+        const job = manager.install({ ids: ["slow-node"] });
+        const deadline = Date.now() + 15000;
+        while (manager.getJob(job.id)?.items[0]?.status !== "extracting") {
+            if (Date.now() > deadline) throw new Error(`did not reach extraction: ${JSON.stringify(manager.getJob(job.id))}`);
+            await new Promise((resolve) => setTimeout(resolve, 1));
+        }
+        const canceled = manager.cancelJob(job.id);
+        assert.equal(canceled.status, "canceled");
+        assert.throws(() => manager.install({ ids: [] }), /已有安装任务/);
+        while (manager.getJob(job.id)?.items[0]?.status !== "error") {
+            if (Date.now() > deadline) throw new Error(`cancellation did not settle: ${JSON.stringify(manager.getJob(job.id))}`);
+            await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        assert.match(manager.getJob(job.id).items[0].error, /取消/);
+        assert.equal(fs.existsSync(path.join(comfy, "custom_nodes", "ComfyUI-slow-node")), false);
+        let settled = false;
+        while (Date.now() < deadline && !settled) {
+            try {
+                manager.install({ ids: [] });
+                settled = true;
+            } catch {
+                await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+        }
+        assert.equal(settled, true, "activeJob should be released only after asynchronous cleanup");
     } finally {
         await new Promise((resolve) => server.close(resolve));
         await fsp.rm(root, { recursive: true, force: true });
@@ -668,10 +755,12 @@ test("zimage pack keeps one default base and exposes int8 as an optional base mo
     assert.equal(index.resources.some((item) => item.id === "z_image_turbo_distill_lora"), false);
 });
 
-test("krea2 pack lists the four-view LoRA as an optional resource", () => {
+test("krea2 and four-view packs keep the base workflow and standalone resource entry separate", () => {
     const index = JSON.parse(fs.readFileSync(new URL("../resources/index.json", import.meta.url), "utf8"));
     const pack = index.packs.find((item) => item.id === "krea2");
+    const fourView = index.packs.find((item) => item.id === "krea2-four-view");
     assert.ok(pack, "krea2 pack is missing");
+    assert.ok(fourView, "krea2-four-view pack is missing");
     assert.equal(pack.autoRecommend, false);
     assert.equal(pack.optional, true);
     assert.equal(pack.variants, undefined);
@@ -690,12 +779,33 @@ test("krea2 pack lists the four-view LoRA as an optional resource", () => {
         "qwen3vl_4b_fp8_scaled",
         "qwen_image_vae",
         "krea2_turbo_int8_convrot",
-        "krea2_four_view_lora",
     ]);
     assert.ok(!pack.workflowDependencies["image-krea2-turbo"].includes("krea2_turbo_int8_convrot"));
+
+    const dependencies = [
+        "krea2_turbo_fp8_scaled",
+        "qwen3vl_4b_fp8_scaled",
+        "qwen_image_vae",
+        "krea2_four_view_lora",
+    ];
+    assert.equal(fourView.family, "krea2");
+    assert.equal(fourView.autoRecommend, false);
+    assert.equal(fourView.standalone, true);
+    assert.deepEqual(fourView.resources, dependencies);
+    assert.deepEqual(fourView.optionalResources, dependencies);
+    assert.deepEqual(fourView.workflows, ["image-krea2-four-view"]);
+    assert.deepEqual(fourView.workflowDependencies, { "image-krea2-four-view": dependencies });
+    const lora = index.resources.find((item) => item.id === "krea2_four_view_lora");
+    assert.equal(lora.target, "loras/Krea2-功能-角色四视图.safetensors");
+    assert.equal(lora.size, 914160176);
+    assert.equal(lora.sha256, "9435005af21cadaed16f79ef1eca9b76b8497789644eeb7f2475b826bb480fbc");
+    assert.deepEqual(lora.sources, [
+        { kind: "bundled", path: "resources/loras/Krea2-功能-角色四视图.safetensors", label: "随包" },
+        "https://www.modelscope.cn/models/Alissonerdx/CharacterSheet/resolve/master/QuadView_krea2_v1.safetensors",
+        "https://hf-mirror.com/Alissonerdx/CharacterSheet/resolve/main/QuadView_krea2_v1.safetensors",
+    ]);
     assert.equal(index.resources.some((item) => item.id === "krea2_darkbrush_lora"), false);
     assert.equal(index.resources.some((item) => item.id === "krea2_retroanime_lora"), false);
-    assert.equal(index.resources.some((item) => item.id === "krea2_four_view_lora"), true);
     assert.equal(index.resources.length, 72);
 });
 
@@ -788,7 +898,7 @@ test("upscale pack ships the node with the app and downloads ESRGAN/SeedVR2 weig
     }
 });
 
-test("h3 pack lists the shared models, VDN/noVDN variants and character swap", () => {
+test("h3 pack exposes only noVDN workflows while keeping VDN runtime dependencies", () => {
     const index = JSON.parse(fs.readFileSync(new URL("../resources/index.json", import.meta.url), "utf8"));
     const pack = index.packs.find((item) => item.id === "h3");
     assert.ok(pack, "h3 pack is missing");
@@ -796,13 +906,9 @@ test("h3 pack lists the shared models, VDN/noVDN variants and character swap", (
     assert.equal(pack.optional, true);
     assert.equal(pack.autoRecommend, false);
     assert.deepEqual(pack.workflows, [
-        "video-h3-ref2va",
-        "video-h3-t2v",
-        "video-h3-frames",
         "video-h3-ref2va-novdn",
         "video-h3-t2v-novdn",
         "video-h3-frames-novdn",
-        "video-h3-character-swap",
     ]);
     const byId = new Map(index.resources.map((item) => [item.id, item]));
     const optional = new Set(pack.optionalResources || []);
@@ -811,20 +917,97 @@ test("h3 pack lists the shared models, VDN/noVDN variants and character swap", (
     for (const id of ["h3_unet_singularity_ref2va_v13_int8", "h3_te_qwen3vl_32b_int8_convrot", "h3_audio_vae_fp32", "h3_vae_onnx_decoder", "h3_trt_vae_decoder_engine", "h3_trt_vae_encoder_engine"]) {
         assert.ok(pack.resources.includes(id), `h3 missing ${id}`);
     }
+    for (const item of index.resources.filter((resource) => resource.id.startsWith("h3_vdn_stage_"))) {
+        assert.equal(item.downloadable, false, `${item.id} must not be downloadable for new users`);
+    }
+    assert.equal(byId.get("h3_character_swap_lora").downloadable, false);
+    assert.equal(byId.get("h3_vdn_node").downloadable, false);
+    assert.equal(byId.get("h3_vdn_node").autoInstall, false);
+    for (const id of ["h3_vdn_stage_model", "h3_character_swap_lora"]) {
+        assert.equal(pack.resources.includes(id), false, `${id} must not be in pack install resources`);
+    }
     for (const id of pack.resources) {
         assert.notEqual(byId.get(id)?.type, "node", `${id} is a node and must ship with the app, not download`);
     }
-    assert.ok(pack.workflowDependencies["video-h3-ref2va"].includes("h3_vae_onnx_decoder"));
     assert.ok(pack.workflowDependencies["video-h3-ref2va"].includes("h3_vdn_stage_model"));
-    assert.ok(pack.workflowDependencies["video-h3-ref2va"].includes("h3_trt_vae_decoder_engine"));
-    assert.ok(pack.workflowDependencies["video-h3-ref2va-novdn"].includes("h3_lightx2v_8step_lora"));
     assert.ok(pack.workflowDependencies["video-h3-character-swap"].includes("h3_character_swap_lora"));
+    assert.ok(pack.workflowDependencies["video-h3-ref2va-novdn"].includes("h3_lightx2v_8step_lora"));
+    assert.ok(pack.workflowDependencies["video-h3-ref2va-novdn"].includes("h3_trt_vae_decoder_engine"));
     const decoderEngine = index.resources.find((item) => item.id === "h3_trt_vae_decoder_engine");
     assert.equal(decoderEngine.type, "bake");
+    assert.equal(decoderEngine.downloadable, undefined);
     assert.equal(decoderEngine.builder.kind, "h3-trt-vae");
     assert.deepEqual(decoderEngine.requires, ["h3_vae_onnx_decoder", "h3_vae_onnx_decoder_data"]);
+    const registry = JSON.parse(fs.readFileSync(new URL("../workflows/registry.json", import.meta.url), "utf8"));
+    for (const id of ["video-h3-ref2va", "video-h3-t2v", "video-h3-frames", "video-h3-character-swap"]) {
+        const workflow = registry.workflows.find((item) => item.id === id);
+        assert.ok(workflow, `${id} must remain registered for installed users`);
+        assert.notEqual(workflow.hidden, true, `${id} must remain callable after resource cards are hidden`);
+    }
     const ids = new Set(index.resources.map((item) => item.id));
     assert.equal(ids.size, index.resources.length, "duplicate resource ids");
+});
+
+test("resource status exposes standalone four-view and hides all VDN workflow cards", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-vdn-status-test-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    await fsp.mkdir(path.join(comfy, "models"), { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    const gatewayRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+    const manager = createResourceManager({
+        config: { rootDir: gatewayRoot, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: { loaderOptions: () => ({}), status: () => ({ comfyReachable: true }), scan: async () => ({}), workflowStatus: () => ({ available: false, problems: [] }) },
+        logger: null,
+    });
+    try {
+        await manager.init();
+        const status = manager.status();
+        const fourView = status.packs.find((pack) => pack.id === "krea2-four-view");
+        assert.ok(fourView, "standalone four-view pack is missing");
+        assert.equal(fourView.standalone, true);
+        assert.equal(fourView.optionalMissing, 4);
+        assert.deepEqual(fourView.workflowDependencies.map((workflow) => workflow.id), ["image-krea2-four-view"]);
+        assert.deepEqual([...fourView.workflowDependencies[0].installIds].sort(), [
+            "krea2_four_view_lora",
+            "krea2_turbo_fp8_scaled",
+            "qwen3vl_4b_fp8_scaled",
+            "qwen_image_vae",
+        ]);
+        const krea2 = status.packs.find((pack) => pack.id === "krea2");
+        assert.equal(krea2.optionalIds.includes("krea2_four_view_lora"), false);
+
+        const h3 = status.packs.find((pack) => pack.id === "h3");
+        assert.deepEqual(h3.workflows, ["video-h3-ref2va-novdn", "video-h3-t2v-novdn", "video-h3-frames-novdn"]);
+        assert.deepEqual(h3.workflowDependencies.map((workflow) => workflow.id), [
+            "video-h3-ref2va-novdn",
+            "video-h3-t2v-novdn",
+            "video-h3-frames-novdn",
+        ]);
+        for (const id of ["h3_vdn_stage_model", "h3_character_swap_lora"]) {
+            assert.equal(h3.resourceIds.includes(id), false);
+            assert.equal(h3.optionalIds.includes(id), false);
+        }
+        const novdn = h3.workflowDependencies.find((workflow) => workflow.id === "video-h3-ref2va-novdn");
+        assert.ok(novdn.resources.some((item) => item.type === "bake"), "noVDN shared TRT bake must remain available");
+        assert.equal(status.resources.find((item) => item.id === "h3_vdn_stage_metadata").downloadable, false);
+        for (const id of ["h3_vdn_stage_model", "h3_character_swap_lora", "h3_vdn_node"]) {
+            assert.throws(() => manager.install({ ids: [id] }), /停止提供新下载/);
+        }
+
+        const vdnMetadata = path.join(comfy, "models", "vdn", "stage-dmd-step-250", "metadata.json");
+        await fsp.mkdir(path.dirname(vdnMetadata), { recursive: true });
+        await fsp.writeFile(vdnMetadata, "x".repeat(463));
+        const existing = manager.install({ ids: ["h3_vdn_stage_metadata"] });
+        assert.equal(existing.status, "done");
+        assert.equal(existing.items.length, 0);
+        const afterInstalled = manager.status();
+        const installedH3 = afterInstalled.packs.find((pack) => pack.id === "h3");
+        assert.equal(installedH3.workflowDependencies.some((workflow) => workflow.id.includes("character-swap")), false);
+        assert.equal(installedH3.workflowDependencies.some((workflow) => /^video-h3-(ref2va|t2v|frames)$/.test(workflow.id)), false);
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
 });
 
 test("a selected pack main model activates the workflow and replaces the default model resource", async () => {

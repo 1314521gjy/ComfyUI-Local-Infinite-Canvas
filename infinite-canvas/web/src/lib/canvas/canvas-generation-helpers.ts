@@ -161,8 +161,9 @@ export function resetInterruptedGeneration(nodes: CanvasNodeData[]) {
 }
 
 export function clearStaleNodeErrors(nodes: CanvasNodeData[]) {
+    const interrupted = i18n.t("canvas.generation.interrupted");
     return nodes.map((node) =>
-        node.metadata?.status === "error"
+        node.metadata?.status === "error" && node.metadata.errorDetails !== interrupted
             ? { ...node, metadata: { ...node.metadata, status: "idle" as const, errorDetails: undefined } }
             : node,
     );
