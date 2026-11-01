@@ -1,16 +1,16 @@
 {
-  "version": "v0.24.2",
+  "version": "v0.24.3",
   "publishedAt": "2026-11-01",
-  "notes": "模型识别与画布同步改为原子环境快照与 latest-wins，扫描失败保留上一份可用性；资源索引旧/新/缓存统一规范化，Krea2 四视图独立入口不消失，VDN 停止新下载且已安装用户不受影响；网关、助手与启动器安全加固，并修复 Windows 原子写、任务取消终态与并发安装问题。默认单机行为不变。",
+  "notes": "四视图资源卡补齐 Krea2Edit 编辑节点（魔搭/国内加速，SHA256 固定）；资源索引更新到 2026.11.01-33，保留旧/新/缓存索引兼容与 VDN 下载门禁；其余行为与 v0.24.2 一致。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.24.2.zip",
-    "sha256": "dcfe77cfb6f3f8b3ac5b619223cea17af262bee380d4b88e1812f95553ee6e2d",
-    "size": 29603207
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.24.3.zip",
+    "sha256": "e613dfac278484dd145ccac530ec5099e18ee7deaec970f4e2b5a799ade11913",
+    "size": 29603833
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
