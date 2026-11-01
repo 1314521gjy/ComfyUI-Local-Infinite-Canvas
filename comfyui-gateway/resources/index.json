@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026.11.01-32",
+  "version": "2026.11.01-33",
   "channel": "stable",
   "updatedAt": "2026-11-01",
   "packs": [
@@ -265,7 +265,8 @@
           "krea2_turbo_fp8_scaled",
           "qwen3vl_4b_fp8_scaled",
           "qwen_image_vae",
-          "krea2_four_view_lora"
+          "krea2_four_view_lora",
+          "krea2_edit_node"
         ]
       },
       "standalone": true
@@ -1752,6 +1753,47 @@
           "label": "随包"
         }
       ]
+    },
+    {
+      "id": "krea2_edit_node",
+      "type": "node",
+      "label": "Krea2 编辑节点（Krea2Edit）",
+      "target": "custom_nodes/comfyui-krea2edit",
+      "size": 27009,
+      "sha256": "a35a008b0dcdcadfb67a2936c7b14693fcdcac8735a95f9c812e5ac43479963c",
+      "license": "Apache-2.0",
+      "provides": [
+        "Krea2EditModelPatch",
+        "Krea2EditGroundedEncode"
+      ],
+      "note": "四视图/角色编辑所需节点；安装后需重启 ComfyUI。下载源已固定 SHA256。",
+      "sources": [
+        {
+          "url": "https://www.modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/comfyui-gateway/resources/nodes/krea2edit-node.zip",
+          "label": "魔搭",
+          "size": 27009,
+          "sha256": "a35a008b0dcdcadfb67a2936c7b14693fcdcac8735a95f9c812e5ac43479963c"
+        },
+        {
+          "url": "https://gh-proxy.com/https://raw.githubusercontent.com/lbouaraba/comfyui-krea2edit/main/node.zip",
+          "label": "国内加速 1",
+          "size": 27009,
+          "sha256": "a35a008b0dcdcadfb67a2936c7b14693fcdcac8735a95f9c812e5ac43479963c"
+        },
+        {
+          "url": "https://ghfast.top/https://raw.githubusercontent.com/lbouaraba/comfyui-krea2edit/main/node.zip",
+          "label": "国内加速 2",
+          "size": 27009,
+          "sha256": "a35a008b0dcdcadfb67a2936c7b14693fcdcac8735a95f9c812e5ac43479963c"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/lbouaraba/comfyui-krea2edit/main/node.zip",
+          "label": "GitHub",
+          "size": 27009,
+          "sha256": "a35a008b0dcdcadfb67a2936c7b14693fcdcac8735a95f9c812e5ac43479963c"
+        }
+      ],
+      "autoInstall": false
     }
   ]
 }

@@ -788,13 +788,23 @@ test("krea2 and four-view packs keep the base workflow and standalone resource e
         "qwen_image_vae",
         "krea2_four_view_lora",
     ];
+    const workflowDependencies = [...dependencies, "krea2_edit_node"];
     assert.equal(fourView.family, "krea2");
     assert.equal(fourView.autoRecommend, false);
     assert.equal(fourView.standalone, true);
     assert.deepEqual(fourView.resources, dependencies);
     assert.deepEqual(fourView.optionalResources, dependencies);
     assert.deepEqual(fourView.workflows, ["image-krea2-four-view"]);
-    assert.deepEqual(fourView.workflowDependencies, { "image-krea2-four-view": dependencies });
+    assert.deepEqual(fourView.workflowDependencies, { "image-krea2-four-view": workflowDependencies });
+    const editNode = index.resources.find((item) => item.id === "krea2_edit_node");
+    assert.equal(editNode.type, "node");
+    assert.equal(editNode.target, "custom_nodes/comfyui-krea2edit");
+    assert.equal(editNode.size, 27009);
+    assert.equal(editNode.sha256, "a35a008b0dcdcadfb67a2936c7b14693fcdcac8735a95f9c812e5ac43479963c");
+    assert.equal(editNode.license, "Apache-2.0");
+    assert.deepEqual([...editNode.provides].sort(), ["Krea2EditGroundedEncode", "Krea2EditModelPatch"]);
+    assert.ok(editNode.sources.some((source) => /gh-proxy\.com|ghfast\.top/.test(source.url || "")), "domestic mirror required");
+    assert.ok(editNode.sources.every((source) => source.sha256 === editNode.sha256 && source.size === editNode.size));
     const lora = index.resources.find((item) => item.id === "krea2_four_view_lora");
     assert.equal(lora.target, "loras/Krea2-功能-角色四视图.safetensors");
     assert.equal(lora.size, 914160176);
@@ -806,7 +816,7 @@ test("krea2 and four-view packs keep the base workflow and standalone resource e
     ]);
     assert.equal(index.resources.some((item) => item.id === "krea2_darkbrush_lora"), false);
     assert.equal(index.resources.some((item) => item.id === "krea2_retroanime_lora"), false);
-    assert.equal(index.resources.length, 72);
+    assert.equal(index.resources.length, 73);
 });
 
 test("moss pack no longer ships Balanced workflows or the local bake resource", () => {
@@ -969,6 +979,7 @@ test("resource status exposes standalone four-view and hides all VDN workflow ca
         assert.equal(fourView.optionalMissing, 4);
         assert.deepEqual(fourView.workflowDependencies.map((workflow) => workflow.id), ["image-krea2-four-view"]);
         assert.deepEqual([...fourView.workflowDependencies[0].installIds].sort(), [
+            "krea2_edit_node",
             "krea2_four_view_lora",
             "krea2_turbo_fp8_scaled",
             "qwen3vl_4b_fp8_scaled",
@@ -1429,7 +1440,7 @@ test("trt compile failure hint is copy-ready for the user's agent", () => {
     assert.ok(spaced.includes('"D:/My ComfyUI/custom_nodes/ComfyUI-H3VAE_TRT/compile.py"'));
 });
 
-test("packs only declare downloadable weights; nodes ship with the app", () => {
+test("packs declare weights and only sha-pinned third-party nodes", () => {
     const index = JSON.parse(fs.readFileSync(new URL("../resources/index.json", import.meta.url), "utf8"));
     const byId = new Map(index.resources.map((item) => [item.id, item]));
     for (const pack of index.packs) {
@@ -1443,7 +1454,14 @@ test("packs only declare downloadable weights; nodes ship with the app", () => {
         }
         for (const [workflowId, ids] of Object.entries(pack.workflowDependencies || {})) {
             for (const id of ids) {
-                assert.notEqual(byId.get(id)?.type, "node", `${workflowId} depends on node ${id}`);
+                const resource = byId.get(id);
+                if (resource?.type === "node") {
+                    assert.match(String(resource.sha256 || ""), /^[0-9a-f]{64}$/, `${workflowId} node ${id} must pin sha256`);
+                    assert.ok(Array.isArray(resource.sources) && resource.sources.length, `${workflowId} node ${id} needs sources`);
+                    assert.equal(resource.autoInstall === true, false, `${id} must be user-installed`);
+                    continue;
+                }
+                assert.notEqual(resource?.type, "node", `${workflowId} depends on node ${id}`);
             }
         }
     }
