@@ -23,7 +23,7 @@ import { cropDataUrl, splitDataUrl } from "@/lib/canvas/canvas-image-data";
 import { fitNodeSize, nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
 import { captureVideoFrame, type VideoFramePosition } from "@/lib/canvas/canvas-video-frame";
 import { App, Button, Modal } from "antd";
-import { NODE_DEFAULT_SIZE, getNodeSpec } from "@/constant/canvas";
+import { CONFIG_COMPOSER_ENABLED, NODE_DEFAULT_SIZE, getNodeSpec } from "@/constant/canvas";
 import { ActiveConnectionPath, ConnectionPath } from "@/components/canvas/canvas-connections";
 import { CanvasConfigComposer } from "@/components/canvas/canvas-config-composer";
 import { CanvasConfigNodePanel } from "@/components/canvas/canvas-config-node-panel";
@@ -36,6 +36,7 @@ import { CanvasNodeMossLayoutDialog, type CanvasMossLayoutPayload } from "@/comp
 import { CanvasNodeSplitDialog, type CanvasImageSplitParams } from "@/components/canvas/canvas-node-split-dialog";
 import { CanvasNodeSuperResolveDialog, type CanvasSuperResolveParams } from "@/components/canvas/canvas-node-super-resolve-dialog";
 import { CanvasNodeVideoUpscaleDialog, type CanvasVideoUpscaleParams } from "@/components/canvas/canvas-node-video-upscale-dialog";
+import { CanvasImageCompareModal } from "@/components/canvas/canvas-image-compare-modal";
 import { buildNodeGenerationContext, buildNodeGenerationInputs, buildNodeResponseMessages, hydrateNodeGenerationContext, type NodeGenerationInput } from "@/components/canvas/canvas-node-generation";
 import { CanvasNodeHoverToolbar, CanvasNodeInfoModal } from "@/components/canvas/canvas-node-hover-toolbar";
 import { CanvasSelectionToolbar } from "@/components/canvas/canvas-selection-toolbar";
@@ -144,6 +145,12 @@ const NODE_STATUS_SUCCESS = "success" as const;
 const NODE_STATUS_ERROR = "error" as const;
 const FOUR_VIEW_PROMPT =
     "Convert the character in the image to a Character Sheet showing a face close-up, front full body, side full body and back full body views";
+
+function primaryImageContentOf(node: CanvasNodeData) {
+    const images = node.metadata?.images || [];
+    const primary = images.find((image) => image.id === node.metadata?.primaryImageId) || images[0];
+    return primary?.content || node.metadata?.content || "";
+}
 
 function applyGeneratedVideo(item: CanvasNodeData, video: UploadedFile, extra: CanvasNodeData["metadata"] = {}): CanvasNodeData {
     const videoSize = fitNodeSize(video.width || item.width, video.height || item.height, VIDEO_NODE_MAX_WIDTH, VIDEO_NODE_MAX_HEIGHT);
@@ -305,6 +312,8 @@ function InfiniteCanvasPage() {
     const [videoUpscaleNodeId, setVideoUpscaleNodeId] = useState<string | null>(null);
     const [angleNodeId, setAngleNodeId] = useState<string | null>(null);
     const [previewNodeId, setPreviewNodeId] = useState<string | null>(null);
+    const [compareNodeIds, setCompareNodeIds] = useState<[string, string] | null>(null);
+    const previewVideoRef = useRef<HTMLVideoElement | null>(null);
     const [hoverPreviewNodeId, setHoverPreviewNodeId] = useState<string | null>(null);
     const [hoverPreviewImageId, setHoverPreviewImageId] = useState<string | null>(null);
     const [previewImageId, setPreviewImageId] = useState<string | null>(null);
@@ -798,7 +807,7 @@ function InfiniteCanvasPage() {
             setConnections((prev) => [...prev, { id: nanoid(), ...connection }]);
             setSelectedNodeIds(new Set([newNode.id]));
             setSelectedConnectionId(null);
-            if (insertBefore || (type !== CanvasNodeType.Text && type !== CanvasNodeType.Audio)) setDialogNodeId(newNode.id);
+            if (insertBefore || (type !== CanvasNodeType.Text && type !== CanvasNodeType.Audio && (type !== CanvasNodeType.Config || CONFIG_COMPOSER_ENABLED))) setDialogNodeId(newNode.id);
             setPendingConnectionCreate(null);
             setConnecting(null);
         },
@@ -902,6 +911,21 @@ function InfiniteCanvasPage() {
     const hasMultipleSelectedNodes = selectedNodeIds.size > 1;
     const selectedNodes = useMemo(() => nodes.filter((node) => selectedNodeIds.has(node.id)), [nodes, selectedNodeIds]);
     const selectedVideoNodes = selectedNodes.filter((node) => node.type === CanvasNodeType.Video && Boolean(node.metadata?.content));
+    const selectedCompareNodes = useMemo(() => selectedNodes.filter((node) => node.type === CanvasNodeType.Image && Boolean(primaryImageContentOf(node))), [selectedNodes]);
+    const canCompareSelection = selectedCompareNodes.length === 2;
+    const openImageCompare = useCallback(() => {
+        if (selectedCompareNodes.length !== 2) return;
+        const ordered = [...selectedCompareNodes].sort((left, right) => left.position.y - right.position.y || left.position.x - right.position.x);
+        setCompareNodeIds([ordered[0].id, ordered[1].id]);
+    }, [selectedCompareNodes]);
+    const compareItems = useMemo(
+        () =>
+            (compareNodeIds || [])
+                .map((id) => nodeById.get(id))
+                .filter((node): node is CanvasNodeData => Boolean(node))
+                .map((node) => ({ id: node.id, title: node.title, src: primaryImageContentOf(node) })),
+        [compareNodeIds, nodeById],
+    );
     const syncPlaySelectedVideos = () => {
         const ids = new Set(selectedVideoNodes.map((node) => node.id));
         const videos = Array.from(document.querySelectorAll<HTMLVideoElement>("video[data-canvas-video]")).filter((video) => ids.has(video.dataset.canvasVideo || ""));
@@ -1043,7 +1067,7 @@ function InfiniteCanvasPage() {
                   : definition?.useBuiltinPanel
                     ? true
                     : isBuiltinType(type) && type !== CanvasNodeType.Text && type !== CanvasNodeType.Audio && type !== CanvasNodeType.Group;
-            if (wantsPanel) setDialogNodeId(newNode.id);
+            if (wantsPanel && (type !== CanvasNodeType.Config || CONFIG_COMPOSER_ENABLED)) setDialogNodeId(newNode.id);
         },
         [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, getCanvasCenter],
     );
@@ -3819,10 +3843,14 @@ function InfiniteCanvasPage() {
     const handleNodeHoverEnd = useCallback((nodeId: string) => {
         setHoveredNodeId((current) => (current === nodeId ? null : current));
     }, []);
+    const pauseCanvasVideos = useCallback(() => {
+        document.querySelectorAll<HTMLVideoElement>("video[data-canvas-video]").forEach((video) => video.pause());
+    }, []);
     const handleNodeViewImage = useCallback((node: CanvasNodeData, imageId?: string) => {
+        pauseCanvasVideos();
         setPreviewNodeId(node.id);
         setPreviewImageId(imageId || null);
-    }, []);
+    }, [pauseCanvasVideos]);
     const handleSidebarHoverNode = useCallback((nodeId: string | null) => {
         setHoverPreviewNodeId(nodeId);
         setHoverPreviewImageId(null);
@@ -3832,9 +3860,10 @@ function InfiniteCanvasPage() {
         setHoverPreviewImageId(imageId);
     }, []);
     const handleSidebarPreviewImage = useCallback((nodeId: string, imageId: string) => {
+        pauseCanvasVideos();
         setPreviewNodeId(nodeId);
         setPreviewImageId(imageId);
-    }, []);
+    }, [pauseCanvasVideos]);
     const handleNodeRetry = useCallback(
         (node: CanvasNodeData) => {
             if (node.type === CanvasNodeType.Text && (node.metadata?.textCount || 1) > 1) {
@@ -3881,17 +3910,19 @@ function InfiniteCanvasPage() {
                     onStartReferenceSelection={startNodeReferenceSelection}
                 />
             ) : panelNode.type === CanvasNodeType.Config ? (
-                <CanvasConfigComposer
-                    nodeId={panelNode.id}
-                    nodes={nodes}
-                    value={panelNode.metadata?.composerContent ?? panelNode.metadata?.prompt ?? ""}
-                    inputs={configInputsById.get(panelNode.id) || []}
-                    connectedNodes={connectedNodesByNodeId.get(panelNode.id) || []}
-                    onChange={(composerContent) => handleConfigNodeChange(panelNode.id, { composerContent })}
-                    onClose={() => setDialogNodeId(null)}
-                    onDisconnectReference={disconnectNodeReference}
-                    onStartReferenceSelection={startNodeReferenceSelection}
-                />
+                CONFIG_COMPOSER_ENABLED ? (
+                    <CanvasConfigComposer
+                        nodeId={panelNode.id}
+                        nodes={nodes}
+                        value={panelNode.metadata?.composerContent ?? panelNode.metadata?.prompt ?? ""}
+                        inputs={configInputsById.get(panelNode.id) || []}
+                        connectedNodes={connectedNodesByNodeId.get(panelNode.id) || []}
+                        onChange={(composerContent) => handleConfigNodeChange(panelNode.id, { composerContent })}
+                        onClose={() => setDialogNodeId(null)}
+                        onDisconnectReference={disconnectNodeReference}
+                        onStartReferenceSelection={startNodeReferenceSelection}
+                    />
+                ) : null
             ) : (
                 <CanvasNodePromptPanel
                     node={panelNode}
@@ -4181,9 +4212,11 @@ function InfiniteCanvasPage() {
                         nodes={selectedNodes}
                         viewport={viewport}
                         showToolbar={!isNodeDragging && !isNodeResizing}
+                        canCompare={canCompareSelection}
                         canGroup={canGroupSelection}
                         canUngroup={canUngroupSelection}
                         canSyncPlay={selectedVideoNodes.length >= 2}
+                        onCompare={openImageCompare}
                         onGroup={groupSelection}
                         onUngroup={ungroupSelection}
                         onSyncPlay={syncPlaySelectedVideos}
@@ -4334,16 +4367,43 @@ function InfiniteCanvasPage() {
 
                 {angleNode?.metadata?.content ? <CanvasNodeAngleDialog dataUrl={angleNode.metadata.content} open={Boolean(angleNode)} onClose={() => setAngleNodeId(null)} onConfirm={(params) => void generateAngleNode(angleNode!, params)} /> : null}
 
+                <CanvasImageCompareModal open={Boolean(compareNodeIds)} items={compareItems} onClose={() => setCompareNodeIds(null)} />
+
                 <Modal
-                    title={t("canvas.projectPage.imageDetails")}
+                    title={previewNode?.type === CanvasNodeType.Video ? t("canvas.projectPage.videoDetails") : t("canvas.projectPage.imageDetails")}
                     open={Boolean(previewContent)}
                     centered
-                    onCancel={() => setPreviewNodeId(null)}
+                    onCancel={() => {
+                        const video = previewVideoRef.current;
+                        if (video) {
+                            video.pause();
+                            video.removeAttribute("src");
+                            video.load();
+                        }
+                        pauseCanvasVideos();
+                        setPreviewNodeId(null);
+                        setPreviewImageId(null);
+                    }}
+                    destroyOnHidden
                     footer={null}
                     width="auto"
                     styles={{ body: { padding: 0, display: "flex", justifyContent: "center", alignItems: "center", maxHeight: "80vh" } }}
                 >
-                    {previewContent ? <img src={previewContent} alt={previewNode?.title || t("assets.kinds.image")} style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain" }} /> : null}
+                    {previewContent ? (
+                        previewNode?.type === CanvasNodeType.Video ? (
+                            <video
+                                ref={previewVideoRef}
+                                src={previewContent}
+                                controls
+                                autoPlay
+                                playsInline
+                                style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain" }}
+                                data-testid="canvas-video-preview"
+                            />
+                        ) : (
+                            <img src={previewContent} alt={previewNode?.title || t("assets.kinds.image")} style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain" }} />
+                        )
+                    ) : null}
                 </Modal>
 
                 <Modal

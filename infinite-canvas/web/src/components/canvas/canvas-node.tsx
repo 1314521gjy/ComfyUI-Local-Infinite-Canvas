@@ -402,7 +402,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                         if (definition.onDoubleClick(pluginContext)) event.stopPropagation();
                         return;
                     }
-                    if (data.type === CanvasNodeType.Image && hasImageContent) {
+                    if ((data.type === CanvasNodeType.Image && hasImageContent) || (data.type === CanvasNodeType.Video && hasVideoContent)) {
                         event.stopPropagation();
                         onViewImage?.(data);
                         return;
@@ -1002,6 +1002,7 @@ function VideoNodeContent({ node, theme, onVideoDimensions }: NodeContentRendere
                 data-canvas-no-zoom
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => event.stopPropagation()}
+                onDoubleClick={(event) => event.stopPropagation()}
             >
                 <button type="button" className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white/15 hover:bg-white/25" aria-label={playing ? t("canvas.videoControls.pause") : t("canvas.videoControls.play")} onClick={togglePlayback}>
                     {playing ? <Pause className="size-3.5" /> : <Play className="size-3.5 fill-current" />}

@@ -250,6 +250,8 @@ export default function (runtime) {
         const [serviceUrl, setServiceUrl] = useState("");
         const [serviceError, setServiceError] = useState("");
         const [recoveryNotice, setRecoveryNotice] = useState("");
+        const [clearConfirm, setClearConfirm] = useState(false);
+        const [clearNotice, setClearNotice] = useState("");
         const [threadId, setThreadId] = useState(() => readChat(ctx.node.id).threadId);
         const [profiles, setProfiles] = useState(() => listProfiles());
         const [apiId, setApiId] = useState(() => String((ctx.node.metadata && ctx.node.metadata.params && ctx.node.metadata.params.assistantApiProfileId) || ""));
@@ -261,6 +263,7 @@ export default function (runtime) {
         const headerRef = useRef(null);
         const apiRef = useRef(null);
         const autoHeightRef = useRef(null);
+        const clearNoticeTimerRef = useRef(null);
         const abortRef = useRef(null);
         const threadRef = useRef("");
         const serviceUrlRef = useRef("");
@@ -280,6 +283,19 @@ export default function (runtime) {
             const timer = setTimeout(() => writeChat(ctx.node.id, messages, threadId), 450);
             return () => clearTimeout(timer);
         }, [ctx.node.id, messages, threadId]);
+
+        useEffect(() => {
+            if (!clearConfirm) return;
+            const timer = setTimeout(() => setClearConfirm(false), 3000);
+            return () => clearTimeout(timer);
+        }, [clearConfirm]);
+
+        useEffect(
+            () => () => {
+                if (clearNoticeTimerRef.current) clearTimeout(clearNoticeTimerRef.current);
+            },
+            [],
+        );
 
         useEffect(() => {
             const node = scrollRef.current;
@@ -643,6 +659,17 @@ export default function (runtime) {
         }, []);
 
         const clear = useCallback(() => {
+            if (!messages.length) {
+                setClearNotice("当前没有对话可清空");
+                if (clearNoticeTimerRef.current) clearTimeout(clearNoticeTimerRef.current);
+                clearNoticeTimerRef.current = setTimeout(() => setClearNotice(""), 1600);
+                return;
+            }
+            if (!clearConfirm) {
+                setClearConfirm(true);
+                return;
+            }
+            setClearConfirm(false);
             if (abortRef.current) abortRef.current.abort();
             const id = threadRef.current;
             const url = serviceUrlRef.current;
@@ -654,7 +681,10 @@ export default function (runtime) {
             } catch {
                 // ignore
             }
-        }, [ctx]);
+            setClearNotice("已清空这张卡的对话");
+            if (clearNoticeTimerRef.current) clearTimeout(clearNoticeTimerRef.current);
+            clearNoticeTimerRef.current = setTimeout(() => setClearNotice(""), 1800);
+        }, [clearConfirm, ctx, messages.length]);
 
         const patchProposal = useCallback(
             (assistantId, proposalId, patch) => {
@@ -784,14 +814,33 @@ export default function (runtime) {
                 lifecycle === "error"
                     ? h("button", { type: "button", style: iconButtonStyle, title: "重新唤起助手服务", onMouseDown: (event) => event.stopPropagation(), onPointerDown: (event) => event.stopPropagation(), onClick: () => void ensureService() }, "重试")
                     : null,
-                h("button", { type: "button", style: iconButtonStyle, title: "清空这张卡的对话", onMouseDown: (event) => event.stopPropagation(), onPointerDown: (event) => event.stopPropagation(), onClick: clear }, h(Icon, { name: "trash" })),
+                h(
+                    "button",
+                    {
+                        type: "button",
+                        style: { ...iconButtonStyle, color: clearConfirm ? "#ef4444" : nodeText, borderColor: clearConfirm ? "#ef444488" : nodeStroke },
+                        title: clearConfirm ? "再点一次确认清空" : "清空这张卡的对话",
+                        onMouseDown: (event) => event.stopPropagation(),
+                        onPointerDown: (event) => event.stopPropagation(),
+                        onClick: clear,
+                    },
+                    h(Icon, { name: "trash" }),
+                    clearConfirm ? "确认清空" : "清空",
+                ),
             ),
+            clearNotice
+                ? h(
+                      "div",
+                      { style: { padding: "6px 11px", borderBottom: `1px solid ${nodeStroke}`, background: `${ACCENT}0d`, color: nodeMuted, fontSize: 10, lineHeight: 1.6 } },
+                      clearNotice,
+                  )
+                : null,
             needPackage || (lifecycle === "error" && serviceError) || recoveryNotice
                 ? h(
                       "div",
                       { style: { padding: "7px 11px", borderBottom: `1px solid ${nodeStroke}`, background: needPackage ? "#f59e0b12" : lifecycle === "error" ? "#ef444410" : `${ACCENT}0d`, color: needPackage ? "#b45309" : lifecycle === "error" ? "#ef4444" : nodeMuted, fontSize: 10, lineHeight: 1.6 } },
                       needPackage
-                          ? "当前是应用内小补丁，Agent 工作区未安装。请从夸克网盘下载 v0.23.1 完整包后使用；画布其他功能不受影响。"
+                          ? "当前是应用内小补丁，Agent 工作区未安装。请从夸克网盘下载最新完整包后使用；画布其他功能不受影响。"
                           : lifecycle === "error"
                             ? `助手服务未就绪：${serviceError}`
                             : recoveryNotice,
@@ -889,7 +938,7 @@ export default function (runtime) {
                     h("textarea", {
                         ref: inputRef,
                         value: input,
-                        placeholder: needPackage ? "需要下载 v0.23.1 完整包" : selectedProfile ? "描述问题，Enter 发送" : "先在设置里配置一个文本 API",
+                        placeholder: needPackage ? "需要下载完整包" : selectedProfile ? "描述问题，Enter 发送" : "先在设置里配置一个文本 API",
                         title: needPackage ? "Agent 工作区未安装" : "Enter 发送，Shift+Enter 换行",
                         disabled: needPackage,
                         rows: 1,
@@ -1204,7 +1253,7 @@ export default function (runtime) {
     return {
         id: "canvas-assistant",
         name: "画布修复助手",
-        version: "0.3.1",
+        version: "0.3.2",
         description: "画布原生修复 Agent：按需唤起、只读诊断、读源码、提出修改，用户确认后应用、构建并部署；3 分钟无提问自动休眠。",
         defaultEnabled: true,
         css,

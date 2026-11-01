@@ -10,6 +10,8 @@ type CanvasNodeSpec = {
     metadata?: CanvasNodeMetadata;
 };
 
+export const CONFIG_COMPOSER_ENABLED: boolean = false;
+
 export const NODE_DEFAULT_SIZE = {
     [CanvasNodeType.Image]: { width: 340, height: 240, get title() { return i18n.t("canvas.nodeTypes.image"); } },
     [CanvasNodeType.Text]: { width: 340, height: 240, get title() { return i18n.t("canvas.nodeTypes.text"); } },
