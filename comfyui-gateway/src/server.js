@@ -21,6 +21,7 @@ import { createModelEventBus } from "./model-events.js";
 import { createRegistry } from "./registry.js";
 import { createSessionTracker } from "./sessions.js";
 import { createSetupManager } from "./setup.js";
+import { pickWorkflowDir, workflowDirCandidates } from "./workflow-dir.js";
 import { createResourceManager } from "./resources.js";
 import { createPromptOptimizer } from "./prompt-optimizer.js";
 import { reorderQwenEditFiles, reorderQwenEditPrompt, stripImageLabelPreamble } from "./qwen-edit.js";
@@ -582,6 +583,28 @@ export async function createGatewayApp(overrides = {}) {
   const resources = createResourceManager({ config, setup, registry, logger, workflowVisibility, mainModels });
   await resources.init();
   setup.setRuntimeProblemProvider?.((workflowId) => resources.runtimeProblemsFor(workflowId));
+  // 启动器只靠端口接管 ComfyUI 时可能拿不到安装目录；自由卡片仍应能工作。
+  async function resolveFreeWorkflowsDir() {
+    const collect = (folderPaths) =>
+      workflowDirCandidates({
+        configured: config.comfyWorkflowsDir,
+        comfyDir: config.comfyDir,
+        comfyRoot: resources.comfyRoot?.() || "",
+        folderPaths,
+      });
+    let tried = collect(setup.folderPaths?.() || {});
+    let dir = pickWorkflowDir(tried);
+    if (!dir) {
+      const liveFolderPaths = await comfy.folderPaths().catch(() => ({}));
+      tried = [...new Set([...tried, ...collect(liveFolderPaths)])];
+      dir = pickWorkflowDir(tried);
+    }
+    if (dir && path.resolve(dir) !== path.resolve(config.comfyWorkflowsDir || "")) {
+      config.comfyWorkflowsDir = dir;
+      logger.info(`已自动识别 ComfyUI 工作流目录：${dir}`);
+    }
+    return { dir, tried };
+  }
   // 随包节点由启动器首次启动复制；直接用 start-all/start-gateway 启动时这里补一次（幂等）
   void ensureBundledNodes();
   async function ensureBundledNodes() {
@@ -699,7 +722,11 @@ export async function createGatewayApp(overrides = {}) {
     if (!SAFE_METHODS.has(req.method)) {
       const origin = String(req.headers.origin || "");
       const site = String(req.headers["sec-fetch-site"] || "");
-      if (site === "cross-site" || !isAllowedOrigin(origin)) {
+      // Edge/Chromium 把 localhost:3000 页面访问 127.0.0.1 网关记为 cross-site，但两端都是本机回环；
+      // 白名单 Origin 同理放行。缺少 Origin 的跨站写请求和外部来源仍然拒绝。
+      const trustedCrossSite = site === "cross-site" && Boolean(origin) && isAllowedOrigin(origin);
+      if (!isAllowedOrigin(origin) || (site === "cross-site" && !trustedCrossSite)) {
+        if (site === "cross-site") logger.warn(`拒绝跨站写请求 ${req.method} ${req.path} origin=${origin || "-"} sec-fetch-site=${site} ${req.id}`);
         res.status(403).json({ ok: false, error: { message: "跨站请求被拒绝" } });
         return;
       }
@@ -1317,7 +1344,13 @@ export async function createGatewayApp(overrides = {}) {
   };
 
   app.get("/api/free-workflows/sources", async (_req, res) => {
-    res.json({ sources: await freeWorkflows.listSources(), dir: config.comfyWorkflowsDir || "" });
+    const resolved = await resolveFreeWorkflowsDir();
+    res.json({
+      sources: await freeWorkflows.listSources(),
+      dir: resolved.dir || config.comfyWorkflowsDir || "",
+      comfyDir: config.comfyDir || "",
+      tried: resolved.tried,
+    });
   });
 
   app.get("/api/free-workflows", async (req, res) => {
@@ -1326,6 +1359,7 @@ export async function createGatewayApp(overrides = {}) {
   });
 
   app.post("/api/free-workflows/import", async (req, res) => {
+    await resolveFreeWorkflowsDir();
     const relative = String(req.body?.path || "").trim();
     if (!relative) throw new HttpError("缺少工作流路径", { status: 400, code: "missing_workflow_path" });
     try {

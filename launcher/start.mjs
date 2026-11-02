@@ -1768,6 +1768,7 @@ async function main() {
   if (!gateway) {
     const workflowsDir = cfg.comfyWorkflowsDir || comfyInstall?.workflowsDir || "";
     if (workflowsDir) log(`网关将使用 COMFY_WORKFLOWS_DIR=${workflowsDir}`);
+    else log("未识别 ComfyUI 用户工作流目录；自由卡片会看不到已保存工作流。可在设置→偏好设置手动指定 ComfyUI 目录后重启网关。", "WARN");
     const comfyUrl = comfy?.url || cfg.comfyUrl;
 
     if (DRY_RUN) {

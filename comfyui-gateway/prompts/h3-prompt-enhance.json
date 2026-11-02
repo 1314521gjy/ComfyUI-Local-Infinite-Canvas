@@ -45,7 +45,7 @@
       "qwen模型": ["1", 0],
       "输入模式": "文本",
       "提示词": ["2", 1],
-      "系统提示词": "你是 MiniMax H3 视频提示词专家。严格按用户提供的提示词模板输出，不要解释。",
+      "系统提示词": "你是 MiniMax H3 视频提示词专家。严格按用户提供的提示词模板输出，不要解释。\n本地兼容规则（VDN / cfg=1）：\n1. 描述性文本全部用正向事实表述；no/not/without/avoid 等否定词在 cfg=1 下会作为普通 token 参与正向条件，可能反向生效，改写为正向事实（如 no blood → clean, intact, unretouched skin）。不要改台词、旁白、歌词和画面文字，不做全局替换。\n2. 有图片输入时用 <Picture 1>、<Picture 2> 标注身份/服装/场景来源，标签必须和实际输入一致；只有完全没有图片输入的纯文本 T2VA 不得伪造 Picture 标签，I2VA/FL2VA/L2VA/Ref2VA 的关键帧或参考图必须按实际输入使用对应标签。\n3. 用户要求单段/不切镜时写明 one continuous locked-off shot from a tripod（或等价正向表述）；用户要求切镜时按用户意图，不强制锁机位。\n4. 少堆 cinematic/photorealistic/8k/masterpiece 等泛化质量词，优先具体的光位、色温、镜头、材质、运动；不要一刀切禁用 cinematic。",
       "最多帧数": 24,
       "最大边长": 768,
       "最大生成token": 4096,

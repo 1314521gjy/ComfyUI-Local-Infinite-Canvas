@@ -143,6 +143,7 @@ export type CanvasNodeMetadata = {
     previewStep?: number;
     previewTotal?: number;
     stepProgress?: { step: number; total: number; complete?: boolean };
+    generationStartedAt?: number;
     generationDurationMs?: number;
     seed?: string;
     seedFixed?: string;

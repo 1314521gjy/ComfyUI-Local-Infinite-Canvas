@@ -29,6 +29,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
     const [mention, setMention] = useState<MentionState | null>(null);
     const [activeIndex, setActiveIndex] = useState(0);
     const [hasSelection, setHasSelection] = useState(false);
+    const [focused, setFocused] = useState(false);
     const candidates = useMemo(() => {
         if (!mention) return [];
         const query = mention.query.trim().toLowerCase();
@@ -87,7 +88,8 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
     const showOverlay = Boolean(value && activeLabels.length && !hasSelection);
     const mergedStyle = {
         ...(style || {}),
-        color: showOverlay ? "transparent" : style?.color,
+        // 聚焦时以真实 textarea 的文字为准，高亮层只画背景，避免镜像排版造成光标/框选错位。
+        color: showOverlay && !focused ? "transparent" : style?.color,
         caretColor: style?.color || theme.node.text,
         cursor: "text",
         // The highlight layer covers the textarea when showOverlay is active, so keep the textarea above it to preserve the native caret.
@@ -107,8 +109,12 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
     return (
         <div className={`relative h-full w-full ${containerClassName || ""}`}>
             {showOverlay ? (
-                <div ref={overlayRef} className={`${className || ""} pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words`} style={{ ...style, color: theme.node.text, scrollbarGutter: "stable", overflowWrap: "break-word" }}>
-                    <MentionHighlightText value={value || props.placeholder?.toString() || ""} labels={activeLabels} placeholder={!value} />
+                <div
+                    ref={overlayRef}
+                    className={`${className || ""} canvas-mention-highlight pointer-events-none absolute inset-0 overflow-y-scroll overflow-x-hidden whitespace-pre-wrap break-words`}
+                    style={{ ...style, color: focused ? "transparent" : theme.node.text, scrollbarGutter: "stable", overflowWrap: "break-word" }}
+                >
+                    <MentionHighlightText value={value || props.placeholder?.toString() || ""} labels={activeLabels} placeholder={!value} textVisible={!focused} />
                 </div>
             ) : null}
             <textarea
@@ -136,15 +142,22 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
                     props.onSelect?.(event);
                 }}
                 onFocus={(event) => {
+                    setFocused(true);
                     requestAnimationFrame(syncOverlayScroll);
                     props.onFocus?.(event);
                 }}
+                onPointerDown={(event) => {
+                    setHasSelection(true);
+                    props.onPointerDown?.(event);
+                }}
                 onKeyUp={(event) => {
                     updateSelectionState();
+                    syncOverlayScroll();
                     props.onKeyUp?.(event);
                 }}
                 onPointerUp={(event) => {
                     updateSelectionState();
+                    requestAnimationFrame(syncOverlayScroll);
                     props.onPointerUp?.(event);
                 }}
                 onKeyDown={(event) => {
@@ -198,6 +211,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
                     props.onScroll?.(event);
                 }}
                 onBlur={(event) => {
+                    setFocused(false);
                     setHasSelection(false);
                     window.setTimeout(closeMention, 120);
                     props.onBlur?.(event);
@@ -208,7 +222,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
     );
 });
 
-function MentionHighlightText({ value, labels, placeholder }: { value: string; labels: string[]; placeholder: boolean }) {
+function MentionHighlightText({ value, labels, placeholder, textVisible }: { value: string; labels: string[]; placeholder: boolean; textVisible: boolean }) {
     if (placeholder) return <span className="opacity-45">{value}</span>;
     if (!labels.length) return <>{value}</>;
     const pattern = new RegExp(`(${labels.map(escapeRegExp).join("|")})`, "g");
@@ -224,11 +238,11 @@ function MentionHighlightText({ value, labels, placeholder }: { value: string; l
                         key={`${part}-${index}`}
                         data-canvas-mention-label={part}
                         style={{
-                            color,
+                            color: textVisible ? color : "transparent",
                             background: `${color}1f`,
                             borderRadius: 4,
-                            boxShadow: `0 0 7px ${color}66`,
-                            textShadow: `0 0 5px ${color}aa`,
+                            boxShadow: textVisible ? `0 0 7px ${color}66` : undefined,
+                            textShadow: textVisible ? `0 0 5px ${color}aa` : undefined,
                         }}
                     >
                         {part}

@@ -152,6 +152,8 @@ export function resetInterruptedGeneration(nodes: CanvasNodeData[]) {
                           ...node.metadata,
                           status: "error" as const,
                           errorDetails: i18n.t("canvas.generation.interrupted"),
+                          // 图片/文本任务切画布即中断，不能把持久化的开始时间当成还在跑。
+                          generationStartedAt: undefined,
                           images: node.metadata.images?.map((image) => (image.status === "loading" ? { ...image, status: "error" as const, errorDetails: i18n.t("canvas.generation.interrupted") } : image)),
                           texts: node.metadata.texts?.map((text) => (text.status === "loading" ? { ...text, status: "error" as const, errorDetails: i18n.t("canvas.generation.interrupted") } : text)),
                       },

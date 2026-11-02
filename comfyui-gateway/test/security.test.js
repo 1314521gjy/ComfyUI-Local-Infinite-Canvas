@@ -133,6 +133,27 @@ test("setup diagnostics require the management token and never echo secrets or l
   }
 });
 
+test("cross-site writes from a loopback page are allowed; unknown or remote origins stay blocked", async () => {
+  const post = (headers) => fetch(`${baseUrl}/v1/__cross_site_probe`, { method: "POST", headers });
+  // Edge treats a page on localhost:3000 calling 127.0.0.1 as cross-site; both are loopback and must work.
+  const localPage = await post({ origin: "http://localhost:3000", "sec-fetch-site": "cross-site" });
+  assert.equal(localPage.status, 404);
+  // The exact path from the report: canvas on localhost:3000 -> gateway on 127.0.0.1.
+  const heartbeat = await fetch(`${baseUrl}/api/session/heartbeat`, {
+    method: "POST",
+    headers: { "x-gateway-token": token, "content-type": "application/json", origin: "http://localhost:3000", "sec-fetch-site": "cross-site" },
+    body: JSON.stringify({ id: "cross-site-test" }),
+  });
+  assert.equal(heartbeat.status, 200);
+  const sameSite = await post({ origin: "http://localhost:3000", "sec-fetch-site": "same-site" });
+  assert.equal(sameSite.status, 404);
+  const missingOrigin = await post({ "sec-fetch-site": "cross-site" });
+  assert.equal(missingOrigin.status, 403);
+  assert.equal((await missingOrigin.json()).error.message, "跨站请求被拒绝");
+  const remoteOrigin = await post({ origin: "http://evil.example", "sec-fetch-site": "cross-site" });
+  assert.equal(remoteOrigin.status, 403);
+});
+
 test("multipart files share a per-request total byte budget with a clear 413", async () => {
   const form = new FormData();
   form.set("model", "image-mock-edit");

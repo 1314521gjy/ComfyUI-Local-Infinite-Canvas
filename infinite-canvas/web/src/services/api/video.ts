@@ -11,7 +11,7 @@ import { runModelPlugin } from "./model-plugin";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
-type VideoResponse = { id: string; status?: string; error?: { message?: string }; url?: string; result_url?: string; video_url?: string; content?: { video_url?: string; url?: string } | null; preview?: { url?: string; mime?: string; step?: number; total?: number }; steps?: { step?: number; total?: number } };
+type VideoResponse = { id: string; status?: string; error?: { message?: string }; url?: string; result_url?: string; video_url?: string; content?: { video_url?: string; url?: string } | null; preview?: { url?: string; mime?: string; step?: number; total?: number }; steps?: { step?: number; total?: number }; created_at?: string; completed_at?: string };
 type ApiVideoResponse = VideoResponse | { code?: number | string; data?: VideoResponse | null; msg?: string; message?: string; error?: { message?: string } };
 type ApiEnvelope<T> = T | { code?: number | string; data?: T | null; msg?: string; message?: string; error?: { message?: string } };
 type RequestOptions = { signal?: AbortSignal; params?: Record<string, unknown> };
@@ -167,6 +167,25 @@ export async function pollVideoGenerationTask(config: AiConfig, task: VideoGener
     assertVideoConfig(requestConfig, requestConfig.model);
     if (task.provider === "gemini") return pollGeminiVideoTask(requestConfig, task, options);
     return pollOpenAIVideoTask(requestConfig, task, options);
+}
+
+export type VideoTaskResumeInfo = { status: string; createdAtMs: number | null; completedAtMs: number | null };
+
+/** Gateway task state used when resuming a canvas timer; timestamps let the caller avoid ghost durations. */
+export async function readVideoTaskResumeInfo(config: AiConfig, task: VideoGenerationTask): Promise<VideoTaskResumeInfo | null> {
+    if (task.provider !== "openai") return null;
+    const requestConfig = resolveModelRequestConfig(config, task.model);
+    assertVideoConfig(requestConfig, requestConfig.model);
+    const video = unwrapVideoResponse((await axios.get<ApiVideoResponse>(aiApiUrl(requestConfig, `/videos/${task.id}`), { headers: aiHeaders(requestConfig), timeout: 5000 })).data);
+    const parseTime = (value?: string) => {
+        const parsed = value ? Date.parse(value) : NaN;
+        return Number.isFinite(parsed) ? parsed : null;
+    };
+    return {
+        status: video.status || "running",
+        createdAtMs: parseTime(video.created_at),
+        completedAtMs: parseTime(video.completed_at),
+    };
 }
 
 async function createPluginVideoTask(config: AiConfig, model: string, script: string, prompt: string, references: ReferenceImage[], options?: VideoMediaOptions): Promise<VideoGenerationTask> {

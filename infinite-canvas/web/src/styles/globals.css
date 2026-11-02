@@ -231,6 +231,20 @@
         scrollbar-width: thin;
     }
 
+    /* Keep the same scrollbar width as the transparent textarea, but hide its thumb. */
+    .canvas-mention-highlight {
+        scrollbar-color: transparent transparent;
+    }
+
+    .canvas-mention-highlight::-webkit-scrollbar-thumb,
+    .canvas-mention-highlight.thin-scrollbar::-webkit-scrollbar-thumb {
+        background: transparent;
+    }
+
+    .canvas-mention-highlight::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
     .thin-scrollbar::-webkit-scrollbar {
         height: 4px;
         width: 4px;

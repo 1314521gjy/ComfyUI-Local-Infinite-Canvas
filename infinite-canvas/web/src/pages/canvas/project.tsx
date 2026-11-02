@@ -9,7 +9,7 @@ import { requestEdit, requestGeneration, requestImageAngle, requestImageFourView
 import { createFreeWorkflowVideoTask, fetchFreeWorkflows, requestFreeWorkflowImage, type FreeWorkflowSummary } from "@/services/api/free-workflow";
 import { bindStepProgress, unbindStepProgress } from "@/services/api/step-progress";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
-import { createVideoGenerationTask, createVideoInterpolateTask, createVideoUpscaleTask, isVideoTaskFailed, storeGeneratedVideo, waitForVideoGenerationTask, type VideoPreview } from "@/services/api/video";
+import { createVideoGenerationTask, createVideoInterpolateTask, createVideoUpscaleTask, isVideoTaskFailed, readVideoTaskResumeInfo, storeGeneratedVideo, waitForVideoGenerationTask, type VideoPreview } from "@/services/api/video";
 import { channelModelOf, defaultConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { ensureImagePreview, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
@@ -56,6 +56,7 @@ import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
 import { usePluginHost } from "@/pages/canvas/hooks/use-plugin-host";
 import { buildNodeMentionReferences, getGroupResourceNodes, isCanvasReferenceNode, resolveCanvasBaseImage, type CanvasBaseImage, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+import { dedupeReferenceImages } from "@/lib/canvas/reference-dedupe";
 import { exportCanvasProjects } from "@/lib/canvas/canvas-export";
 import { applyNodeConfigPatch, audioMetadata, buildAudioGenerationMetadata, buildImageGenerationMetadata, createCanvasNode, imageMetadata, removeBatchImage, videoMetadata } from "@/lib/canvas/canvas-node-factory";
 import { recallNodeSettings } from "@/lib/canvas/node-settings-memory";
@@ -371,9 +372,17 @@ function InfiniteCanvasPage() {
 
     const startGenerationRequest = useCallback((targetNodeId: string, originNodeId: string, runningId = originNodeId, controller = new AbortController(), expectedProgressCount = 1) => {
         if (!generationStartedAtRef.current.has(targetNodeId)) {
-            generationStartedAtRef.current.set(targetNodeId, Date.now());
+            // 恢复视频任务时沿用节点里持久化的开始时间；新任务才从此刻计时。
+            const persistedStartedAt = nodesRef.current.find((item) => item.id === targetNodeId)?.metadata?.generationStartedAt;
+            const startedAt = typeof persistedStartedAt === "number" && persistedStartedAt > 0 ? persistedStartedAt : Date.now();
+            generationStartedAtRef.current.set(targetNodeId, startedAt);
             refreshGenerationTimer();
-            setNodes((prev) => prev.map((item) => (item.id === targetNodeId && item.metadata?.generationDurationMs !== undefined ? { ...item, metadata: { ...item.metadata, generationDurationMs: undefined } } : item)));
+            setNodes((prev) => prev.map((item) => (item.id === targetNodeId ? { ...item, metadata: { ...item.metadata, generationStartedAt: startedAt, generationDurationMs: undefined } } : item)));
+        }
+        // 复用节点时构造新对象会整体替换 metadata；ref 仍是同一任务，补回本节点开始时间，不回退全局。
+        const activeStartedAt = generationStartedAtRef.current.get(targetNodeId);
+        if (activeStartedAt !== undefined) {
+            setNodes((prev) => prev.map((item) => (item.id === targetNodeId && item.metadata?.generationStartedAt !== activeStartedAt ? { ...item, metadata: { ...item.metadata, generationStartedAt: activeStartedAt } } : item)));
         }
         const previous = generationRequestsRef.current.get(targetNodeId);
         if (previous?.controller !== controller) previous?.controller.abort("user-stop");
@@ -410,7 +419,7 @@ function InfiniteCanvasPage() {
         if (startedAt !== undefined) {
             generationStartedAtRef.current.delete(targetNodeId);
             const duration = Math.max(0, Date.now() - startedAt);
-            setNodes((prev) => prev.map((item) => (item.id === targetNodeId ? { ...item, metadata: { ...item.metadata, generationDurationMs: duration } } : item)));
+            setNodes((prev) => prev.map((item) => (item.id === targetNodeId ? { ...item, metadata: { ...item.metadata, generationStartedAt: undefined, generationDurationMs: duration } } : item)));
             refreshGenerationTimer();
         }
         generationStepTracksRef.current.delete(targetNodeId);
@@ -477,7 +486,13 @@ function InfiniteCanvasPage() {
             let controller: AbortController | undefined;
             try {
                 const generationConfig = buildGenerationConfig(effectiveConfig, node, "video");
+                const clearResumedTimer = () => {
+                    if (generationStartedAtRef.current.delete(node.id)) refreshGenerationTimer();
+                    setNodes((prev) => prev.map((item) => (item.id === node.id && item.metadata?.generationStartedAt !== undefined ? { ...item, metadata: { ...item.metadata, generationStartedAt: undefined } } : item)));
+                };
                 if (!isAiConfigReady(generationConfig, generationConfig.model)) {
+                    // 无法继续轮询就没有“正在跑”的任务，不能留下幽灵计时。
+                    clearResumedTimer();
                     if (silent) {
                         setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails: t("workbench.configFirst") } } : item)));
                         return;
@@ -488,6 +503,25 @@ function InfiniteCanvasPage() {
                 setRunningNodeId(node.id);
                 setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_LOADING, errorDetails: undefined } } : item)));
                 controller = startGenerationRequest(node.id, node.id, node.id);
+                try {
+                    const resumeInfo = await readVideoTaskResumeInfo(generationConfig, { id: taskId, provider: node.metadata?.videoTaskProvider === "gemini" ? "gemini" : "openai", model: generationConfig.model });
+                    const terminal = resumeInfo?.status === "completed" || resumeInfo?.status === "failed" || resumeInfo?.status === "cancelled";
+                    if (terminal) {
+                        // 网关说任务已经结束：不能拿旧开始时间算时长，否则会留下幽灵计时。
+                        const exactDuration = resumeInfo?.createdAtMs != null && resumeInfo?.completedAtMs != null ? Math.max(0, resumeInfo.completedAtMs - resumeInfo.createdAtMs) : undefined;
+                        generationStartedAtRef.current.delete(node.id);
+                        refreshGenerationTimer();
+                        setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, generationStartedAt: undefined, ...(exactDuration !== undefined ? { generationDurationMs: exactDuration } : {}) } } : item)));
+                    } else if (resumeInfo?.createdAtMs && resumeInfo.createdAtMs <= Date.now() && generationStartedAtRef.current.has(node.id)) {
+                        // 网关的 createdAt 比本地持久化更准（例如换机器/清缓存后恢复）。
+                        const gatewayStartedAt = resumeInfo.createdAtMs;
+                        generationStartedAtRef.current.set(node.id, gatewayStartedAt);
+                        setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, generationStartedAt: gatewayStartedAt } } : item)));
+                        refreshGenerationTimer();
+                    }
+                } catch {
+                    // 任务查询失败：沿用本地时间，由随后的轮询给出最终结果。
+                }
                 const video = await storeGeneratedVideo(await waitForVideoGenerationTask(generationConfig, { id: taskId, provider: node.metadata?.videoTaskProvider === "gemini" ? "gemini" : "openai", model: generationConfig.model }, { signal: controller.signal, onPreview: (preview) => updateVideoPreview(node.id, preview), onSteps: (steps) => updateVideoSteps(node.id, steps) }));
                 setNodes((prev) =>
                     prev.map((item) =>
@@ -540,17 +574,24 @@ function InfiniteCanvasPage() {
                 }
             }
         },
-        [effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, startGenerationRequest, t, updateVideoPreview, updateVideoSteps],
+        [effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, refreshGenerationTimer, startGenerationRequest, t, updateVideoPreview, updateVideoSteps],
     );
 
     const stopGenerationByRunningId = useCallback((runningId: string) => {
         const affectedNodeIds = new Set<string>();
+        const finishedDurations = new Map<string, number>();
+        const stoppedAt = Date.now();
         generationRequestsRef.current.forEach((request) => {
             if (request.runningNodeId !== runningId && request.originNodeId !== runningId && request.targetNodeId !== runningId) return;
             request.controller.abort("user-stop");
             generationRequestsRef.current.delete(request.targetNodeId);
             unbindStepProgress(request.controller.signal);
             generationStepTracksRef.current.delete(request.targetNodeId);
+            const startedAt = generationStartedAtRef.current.get(request.targetNodeId);
+            if (startedAt !== undefined) {
+                generationStartedAtRef.current.delete(request.targetNodeId);
+                finishedDurations.set(request.targetNodeId, Math.max(0, stoppedAt - startedAt));
+            }
             const pendingClear = generationStepTimersRef.current.get(request.targetNodeId);
             if (pendingClear) {
                 window.clearTimeout(pendingClear);
@@ -559,26 +600,37 @@ function InfiniteCanvasPage() {
             affectedNodeIds.add(request.targetNodeId);
             affectedNodeIds.add(request.originNodeId);
         });
+        if (finishedDurations.size) refreshGenerationTimer();
         setRunningNodeId((current) => (current === runningId ? null : current));
         if (!affectedNodeIds.size) return;
         setNodes((prev) =>
-            prev.map((node) =>
-                affectedNodeIds.has(node.id) && node.metadata?.status === NODE_STATUS_LOADING
-                    ? {
-                          ...node,
-                          metadata: {
-                              ...node.metadata,
-                              status: NODE_STATUS_IDLE,
-                              errorDetails: undefined,
-                              stepProgress: undefined,
-                              images: node.metadata.images?.map((image) => (image.status === NODE_STATUS_LOADING ? { ...image, status: NODE_STATUS_ERROR, errorDetails: t("common.requestCanceled") } : image)),
-                              texts: node.metadata.texts?.map((text) => (text.status === NODE_STATUS_LOADING ? { ...text, status: NODE_STATUS_ERROR, errorDetails: t("common.requestCanceled") } : text)),
-                          },
-                      }
-                    : node,
-            ),
+            prev.map((node) => {
+                if (!affectedNodeIds.has(node.id)) return node;
+                const duration = finishedDurations.get(node.id);
+                const timerPatch =
+                    duration !== undefined
+                        ? { generationStartedAt: undefined, generationDurationMs: duration }
+                        : node.metadata?.generationStartedAt !== undefined
+                          ? { generationStartedAt: undefined }
+                          : null;
+                if (node.metadata?.status !== NODE_STATUS_LOADING) {
+                    return timerPatch ? { ...node, metadata: { ...node.metadata, ...timerPatch } } : node;
+                }
+                return {
+                    ...node,
+                    metadata: {
+                        ...node.metadata,
+                        status: NODE_STATUS_IDLE,
+                        errorDetails: undefined,
+                        stepProgress: undefined,
+                        images: node.metadata.images?.map((image) => (image.status === NODE_STATUS_LOADING ? { ...image, status: NODE_STATUS_ERROR, errorDetails: t("common.requestCanceled") } : image)),
+                        texts: node.metadata.texts?.map((text) => (text.status === NODE_STATUS_LOADING ? { ...text, status: NODE_STATUS_ERROR, errorDetails: t("common.requestCanceled") } : text)),
+                        ...(timerPatch ?? {}),
+                    },
+                };
+            }),
         );
-    }, [t]);
+    }, [refreshGenerationTimer, t]);
 
     const confirmStopGeneration = useCallback(
         (nodeId: string) => {
@@ -649,7 +701,21 @@ function InfiniteCanvasPage() {
 
     useEffect(() => {
         if (!projectLoaded) return;
-        nodesRef.current.filter(hasResumableVideoTask).forEach((node) => void pollVideoNodeTask(node, true));
+        const resumable = nodes.filter(hasResumableVideoTask);
+        const resumableIds = new Set(resumable.map((node) => node.id));
+        let seeded = false;
+        for (const node of resumable) {
+            const startedAt = node.metadata?.generationStartedAt;
+            if (typeof startedAt === "number" && startedAt > 0 && !generationStartedAtRef.current.has(node.id)) {
+                generationStartedAtRef.current.set(node.id, startedAt);
+                seeded = true;
+            }
+        }
+        if (seeded) refreshGenerationTimer();
+        if (nodes.some((node) => !resumableIds.has(node.id) && node.metadata?.generationStartedAt !== undefined)) {
+            setNodes((prev) => prev.map((node) => (!resumableIds.has(node.id) && node.metadata?.generationStartedAt !== undefined ? { ...node, metadata: { ...node.metadata, generationStartedAt: undefined } } : node)));
+        }
+        resumable.forEach((node) => void pollVideoNodeTask(node, true));
         // Resume once after the current canvas is restored, not on later config identity changes.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [projectLoaded]);
@@ -2994,7 +3060,7 @@ function InfiniteCanvasPage() {
                     const inheritedReferences = isImageNode && sourceNode?.metadata?.references?.length
                         ? (await resolveMetadataReferences(sourceNode.metadata)) || []
                         : [];
-                    const referenceImages = [...new Map([...inheritedReferences, ...generationContext.referenceImages].map((image) => [image.id, image])).values()];
+                    const referenceImages = dedupeReferenceImages<ReferenceImage>(inheritedReferences, generationContext.referenceImages);
                     const generationType = referenceImages.length ? ("edit" as const) : ("generation" as const);
                     if ((generationConfig.imageMode || "").trim() && !referenceImages.length) {
                         // 没有参考却沿用 edit/inpaint/outpaint 会让请求直接缺图；空参考时回到文生图。
@@ -3415,8 +3481,15 @@ function InfiniteCanvasPage() {
             }
             const generationType = savedImageMetadata?.generationType;
             const useReferenceImages = generationType ? generationType === "edit" : Boolean(context?.referenceImages.length);
+            const savedRetryReferences = hasSavedImageMetadata && savedImageMetadata ? await resolveMetadataReferences(savedImageMetadata) : null;
             const retryReferenceImages =
-                hasSavedImageMetadata && savedImageMetadata ? await resolveMetadataReferences(savedImageMetadata) : useReferenceImages ? (context?.referenceImages.length ? context.referenceImages : sourceNodeReferenceImages(sourceNode)) : [];
+                hasSavedImageMetadata && savedImageMetadata
+                    ? savedRetryReferences
+                        ? dedupeReferenceImages<ReferenceImage>(savedRetryReferences)
+                        : null
+                    : useReferenceImages
+                      ? dedupeReferenceImages<ReferenceImage>(context?.referenceImages.length ? context.referenceImages : sourceNodeReferenceImages(sourceNode))
+                      : [];
             if (useReferenceImages && !retryReferenceImages) {
                 message.error(t("canvas.projectPage.referenceMissing"));
                 setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: item.metadata?.content ? NODE_STATUS_SUCCESS : NODE_STATUS_ERROR, errorDetails: item.metadata?.content ? undefined : t("canvas.projectPage.referenceMissing"), images: item.metadata?.images?.map((image) => (image.id === imageId ? { ...image, status: NODE_STATUS_ERROR, errorDetails: t("canvas.projectPage.referenceMissing") } : image)) } } : item)));
@@ -4126,7 +4199,7 @@ function InfiniteCanvasPage() {
                             isConnecting={Boolean(connectingParams)}
                             referenceSelectionState={!referencePickerNodeId ? undefined : node.id === referencePickerNodeId ? "target" : referenceConnectedNodeIds.has(node.id) || !isCanvasReferenceNode(node, nodes) ? "disabled" : "available"}
                             showPanel={!isNodeResizing && dialogNodeId === node.id && !selectionBox && !getNodeDefinition(node.type)?.hidePanel}
-                            generationStartedAt={generationStartedAt}
+                            generationStartedAt={typeof node.metadata?.generationStartedAt === "number" ? node.metadata.generationStartedAt : null}
                             groupChildCount={groupChildCountById.get(node.id) || 0}
                             isGroupDropTarget={dropTargetGroupId === node.id}
                             batchExpanded={expandedBatchNodeIds.has(node.id)}
