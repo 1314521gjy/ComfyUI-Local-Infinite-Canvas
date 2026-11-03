@@ -206,16 +206,16 @@ export function convertUiWorkflow(ui, objectInfo = {}) {
   const nodes = new Map((ui.nodes || []).map((node) => [String(node.id), node]));
   const links = normalizeLinks(ui.links);
   const warnings = [];
-  const missingClasses = new Set();
   const setNodesByName = new Map();
   for (const node of nodes.values()) {
     if (node.type !== SET_NODE_TYPE) continue;
     const name = setGetName(node);
     if (!name) continue;
     if (setNodesByName.has(name)) {
-      throw new Error(`SetNode「${name}」重名，暂不支持自动解析；请在 ComfyUI 中改名后重试`);
+      warnings.push(`SetNode「${name}」重名，已按节点顺序使用第一个；生成时可能失败。`);
+    } else {
+      setNodesByName.set(name, node);
     }
-    setNodesByName.set(name, node);
   }
 
   function resolveEndpoint(nodeId, slot, seen = new Set()) {
@@ -238,7 +238,8 @@ export function convertUiWorkflow(ui, objectInfo = {}) {
         const name = setGetName(node);
         source = setNodesByName.get(name);
         if (!source) {
-          throw new Error(`GetNode「${name || "未命名"}」找不到对应的 SetNode；请检查变量名或改用直接连线`);
+          warnings.push(`GetNode「${name || "未命名"}」找不到对应的 SetNode，已省略该输入；生成时由 ComfyUI 校验。`);
+          return undefined;
         }
         if (Number(source.mode || 0) === MUTE_MODE) return undefined;
       }
@@ -280,7 +281,45 @@ export function convertUiWorkflow(ui, objectInfo = {}) {
     }
     const specs = inputSpecs(objectInfo, node.type);
     if (!specs.length) {
-      missingClasses.add(node.type);
+      // object_info 里没有的节点不能直接丢掉；保留 class_type 和能映射的连线/控件，
+      // 让 ComfyUI 在生成时给出权威错误，而不是在导入阶段伪造“缺少自定义节点”。
+      const unknownInputs = {};
+      const setUnknown = (name, resolved) => {
+        if (!name || resolved === undefined) return;
+        if (resolved.value !== undefined) unknownInputs[name] = resolved.value;
+        else if (resolved.link) unknownInputs[name] = resolved.link;
+      };
+      for (const uiInput of node.inputs || []) {
+        if (uiInput.link === null || uiInput.link === undefined) continue;
+        const resolved = resolveLink(uiInput.link);
+        if (resolved === undefined) {
+          warnings.push(`未知节点「${node.title || node.type}」的输入 ${uiInput.name} 无法解析，已省略；生成时由 ComfyUI 校验。`);
+          continue;
+        }
+        setUnknown(uiInput.name, resolved);
+      }
+      const named = isPlainObject(node.widgets_values_named) ? node.widgets_values_named : null;
+      if (named) {
+        for (const [name, value] of Object.entries(named)) {
+          if (value !== undefined && !(name in unknownInputs)) unknownInputs[name] = value;
+        }
+      } else if (Array.isArray(node.widgets_values) && node.widgets_values.length) {
+        const widgetNames = (node.inputs || []).filter((input) => input.widget).map((input) => input.widget?.name || input.name);
+        node.widgets_values.forEach((value, index) => {
+          const name = widgetNames[index];
+          if (!name || name in unknownInputs || name === "control_after_generate" || name === "upload") return;
+          unknownInputs[name] = value;
+        });
+        if (widgetNames.length < node.widgets_values.length) {
+          warnings.push(`未知节点「${node.type}」有 ${node.widgets_values.length - widgetNames.length} 个控件值无法按名称映射，已省略；生成时由 ComfyUI 校验。`);
+        }
+      }
+      workflow[nodeId] = {
+        class_type: node.type,
+        inputs: unknownInputs,
+        ...(node.title || node._meta?.title ? { _meta: { title: node.title || node._meta.title } } : {}),
+      };
+      warnings.push(`未找到节点「${node.type}」的 object_info，已按 UI 连线保留 class_type；生成时由 ComfyUI 校验。`);
       continue;
     }
     const specByName = new Map(specs.map((spec) => [spec.name, spec]));
@@ -336,9 +375,6 @@ export function convertUiWorkflow(ui, objectInfo = {}) {
     };
   }
 
-  if (missingClasses.size) {
-    throw new Error(`缺少节点定义：${[...missingClasses].slice(0, 8).join(", ")}。请先在 ComfyUI 安装对应自定义节点。`);
-  }
   if (!Object.keys(workflow).length) throw new Error("转换后没有可执行节点");
   return { workflow, warnings };
 }

@@ -128,7 +128,7 @@ test("UI conversion resolves SetNode/GetNode virtual links", () => {
   assert.deepEqual(bindings.textInputs.map((item) => item.role), ["positive", "negative"]);
 });
 
-test("UI conversion rejects a used GetNode without a matching SetNode", () => {
+test("UI conversion keeps importing when a used GetNode has no matching SetNode", () => {
   const info = { ...objectInfo, CheckpointLoaderSimple: { input: { required: { ckpt_name: [["model.safetensors"], {}] } } } };
   const ui = {
     nodes: [
@@ -137,7 +137,9 @@ test("UI conversion rejects a used GetNode without a matching SetNode", () => {
     ],
     links: [[1, 1, 0, 2, 0, "CONDITIONING"]],
   };
-  assert.throws(() => convertUiWorkflow(ui, info), /GetNode「missing_cond」找不到对应的 SetNode/);
+  const result = convertUiWorkflow(ui, info);
+  assert.equal(result.workflow["2"].inputs.positive, undefined);
+  assert.ok(result.warnings.some((line) => /GetNode.*missing_cond.*找不到对应的 SetNode/.test(line)));
 });
 
 test("UI conversion ignores an unused GetNode without a SetNode", () => {
@@ -152,15 +154,40 @@ test("UI conversion ignores an unused GetNode without a SetNode", () => {
   assert.deepEqual(Object.keys(result.workflow), ["1"]);
 });
 
-test("UI conversion rejects duplicate SetNode names", () => {
+test("UI conversion keeps importing duplicate SetNodes with a deterministic first match", () => {
   const ui = {
     nodes: [
-      { id: 1, type: "SetNode", mode: 0, inputs: [], outputs: [{ name: "CONDITIONING", type: "CONDITIONING", links: null }], widgets_values: ["dup"] },
-      { id: 2, type: "SetNode", mode: 0, inputs: [], outputs: [{ name: "CONDITIONING", type: "CONDITIONING", links: null }], widgets_values: ["dup"] },
+      { id: 1, type: "PrimitiveNode", mode: 0, inputs: [], outputs: [{ name: "STRING", type: "STRING" }], widgets_values: ["first"] },
+      { id: 2, type: "PrimitiveNode", mode: 0, inputs: [], outputs: [{ name: "STRING", type: "STRING" }], widgets_values: ["second"] },
+      { id: 3, type: "SetNode", mode: 0, inputs: [{ name: "STRING", type: "STRING", link: 1 }], outputs: [{ name: "STRING", type: "STRING", links: null }], widgets_values: ["dup"] },
+      { id: 4, type: "SetNode", mode: 0, inputs: [{ name: "STRING", type: "STRING", link: 2 }], outputs: [{ name: "STRING", type: "STRING", links: null }], widgets_values: ["dup"] },
+      { id: 5, type: "GetNode", mode: 0, inputs: [], outputs: [{ name: "STRING", type: "STRING", links: [3] }], widgets_values: ["dup"] },
+      { id: 6, type: "CLIPTextEncode", mode: 0, inputs: [{ name: "text", type: "STRING", link: 3 }], outputs: [{ name: "CONDITIONING", type: "CONDITIONING" }], widgets_values: [""] },
     ],
-    links: [],
+    links: [
+      [1, 1, 0, 3, 0, "STRING"],
+      [2, 2, 0, 4, 0, "STRING"],
+      [3, 5, 0, 6, 0, "STRING"],
+    ],
   };
-  assert.throws(() => convertUiWorkflow(ui, objectInfo), /SetNode「dup」重名/);
+  const result = convertUiWorkflow(ui, objectInfo);
+  assert.equal(result.workflow["6"].inputs.text, "first");
+  assert.ok(result.warnings.some((line) => /SetNode「dup」重名/.test(line)));
+});
+
+test("UI conversion keeps unknown nodes as best-effort API graph entries", () => {
+  const ui = {
+    nodes: [
+      { id: 1, type: "TotallyUnknownNode", mode: 0, inputs: [], outputs: [{ name: "IMAGE", type: "IMAGE", links: [1] }], widgets_values_named: { value: 42 } },
+      { id: 2, type: "SaveImage", mode: 0, inputs: [{ name: "images", type: "IMAGE", link: 1 }], outputs: [], widgets_values: ["ComfyUI"] },
+    ],
+    links: [[1, 1, 0, 2, 0, "IMAGE"]],
+  };
+  const result = convertUiWorkflow(ui, objectInfo);
+  assert.equal(result.workflow["1"].class_type, "TotallyUnknownNode");
+  assert.equal(result.workflow["1"].inputs.value, 42);
+  assert.deepEqual(result.workflow["2"].inputs.images, ["1", 0]);
+  assert.ok(result.warnings.some((line) => /未找到节点「TotallyUnknownNode」的 object_info/.test(line)));
 });
 
 test("UI conversion maps VHS widgets and normalizes display labels", () => {
