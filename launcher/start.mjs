@@ -765,6 +765,17 @@ function ensureGatewayDeps(cfg) {
 
 /* ------------------------------------------------------------- 网关启动 */
 
+function readManualCustomNodesDirs() {
+  const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(ROOT, "comfyui-gateway", "data");
+  try {
+    const settings = JSON.parse(fs.readFileSync(path.join(dataDir, "directory-settings.json"), "utf8"));
+    if (settings?.mode !== "manual" || !Array.isArray(settings.customNodesDirs)) return [];
+    return settings.customNodesDirs.map((dir) => path.resolve(String(dir)));
+  } catch {
+    return [];
+  }
+}
+
 async function quarantineTeManData(comfyRoot) {
   if (!comfyRoot) return;
   const dataDir = path.join(ROOT, "comfyui-gateway", "data");
@@ -1571,6 +1582,12 @@ async function startControlServer(cfg) {
         res.end(JSON.stringify({ ok: true, pid: state.gatewayChild.pid }));
         return;
       }
+      if (req.method === "POST" && pathname === "/ensure-assistant") {
+        res.setTimeout(600000);
+        const result = ensureAssistantRuntime(ROOT);
+        res.end(JSON.stringify({ ...result, ok: result.ok !== false }));
+        return;
+      }
       if (req.method === "POST" && pathname === "/set-comfy-dir") {
         const body = await new Promise((resolve) => {
           let raw = "";
@@ -1657,6 +1674,9 @@ async function main() {
   if (DRY_RUN) log("dry-run：只做检测与打印，不启动任何进程，不监听端口");
   cfg.launcherControlUrl = "";
   if (!DRY_RUN) {
+    // 每次启动都检查一次：即使用已有网关被接管，也要把新下载的完整包解压出来。
+    const runtime = ensureAssistantRuntime(ROOT);
+    if (!runtime.ok) log(runtime.error || "Agent 运行时解压失败", "WARN");
     const controlReady = await startControlServer(cfg);
     if (controlReady) cfg.launcherControlUrl = cfg.controlUrl;
   }
@@ -1706,7 +1726,7 @@ async function main() {
     const comfyRoot = comfyInstall.mainPy
       ? path.dirname(comfyInstall.mainPy)
       : (isDir(path.join(comfyInstall.dir, "ComfyUI")) ? path.join(comfyInstall.dir, "ComfyUI") : comfyInstall.dir);
-    const installed = await installBundledNodes({ root: ROOT, comfyRoot, comfyUrl: comfy || "", log });
+    const installed = await installBundledNodes({ root: ROOT, comfyRoot, comfyUrl: comfy || "", customNodesDirs: readManualCustomNodesDirs(), log });
     await quarantineTeManData(comfyRoot);
     if (installed.length) log(`已自动放置 ${installed.length} 个内置节点包${comfy ? "；ComfyUI 已在运行，重启后生效" : ""}`);
   }

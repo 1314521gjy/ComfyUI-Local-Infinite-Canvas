@@ -12,6 +12,7 @@ import { findUnetLoader } from "./base-models.js";
 import { MODEL_LOADER_SPECS } from "./model-loaders.js";
 import { findSimilarModel, FUZZY_MODEL_EXTENSIONS } from "./model-match.js";
 import { collectModelRoots, clearExtraModelPathsCache } from "./model-paths.js";
+import { isManualModelCategory, manualCustomNodeRoots, manualModelRoots } from "./directories.js";
 import { nowIso, truncate, writeJsonAtomic } from "./util.js";
 
 const MODEL_DIRS = new Set(["diffusion_models", "text_encoders", "vae", "vae_approx", "loras", "checkpoints", "upscale_models", "latent_upscale_models", "vdn", "clip_vision", "LLM", "SEEDVR2"]);
@@ -96,25 +97,30 @@ function resolveComfyRoot(config) {
         candidates.push(resolved);
         candidates.push(path.join(resolved, "ComfyUI"));
     };
-    add(config.comfyDir);
-    add(config.comfyFrontendDir);
-    let cursor = config.comfyWorkflowsDir ? path.resolve(config.comfyWorkflowsDir) : "";
-    for (let i = 0; cursor && i < 6; i += 1) {
-        candidates.push(cursor);
-        const parent = path.dirname(cursor);
-        if (parent === cursor) break;
-        cursor = parent;
-    }
-    const home = os.homedir();
-    for (const fallback of [
-        "C:/ComfyUI",
-        "D:/ComfyUI",
-        "E:/ComfyUI",
-        "C:/ComfyUI_windows_portable",
-        path.join(home, "ComfyUI"),
-        path.join(home, "Documents", "ComfyUI"),
-    ]) {
-        add(fallback);
+    const explicit = String(config.comfyDir || "").trim();
+    if (explicit) {
+        // 用户显式指定的目录只认它自己；无效时绝不回退到别的 ComfyUI 安装。
+        add(explicit);
+    } else {
+        add(config.comfyFrontendDir);
+        let cursor = config.comfyWorkflowsDir ? path.resolve(config.comfyWorkflowsDir) : "";
+        for (let i = 0; cursor && i < 6; i += 1) {
+            candidates.push(cursor);
+            const parent = path.dirname(cursor);
+            if (parent === cursor) break;
+            cursor = parent;
+        }
+        const home = os.homedir();
+        for (const fallback of [
+            "C:/ComfyUI",
+            "D:/ComfyUI",
+            "E:/ComfyUI",
+            "C:/ComfyUI_windows_portable",
+            path.join(home, "ComfyUI"),
+            path.join(home, "Documents", "ComfyUI"),
+        ]) {
+            add(fallback);
+        }
     }
     const seen = new Set();
     for (const dir of candidates) {
@@ -481,7 +487,11 @@ export function createResourceManager({ config, setup, registry, logger, workflo
     let loadedAt = null;
 
     function comfyRoot() {
-        return resolveComfyRoot(config) || inferComfyRootFromFolderPaths(setup?.folderPaths?.() || {});
+        const resolved = resolveComfyRoot(config);
+        if (resolved) return resolved;
+        // 显式配置无效时不改写成另一套 ComfyUI，交给调用方报出原路径。
+        if (String(config.comfyDir || "").trim()) return "";
+        return inferComfyRootFromFolderPaths(setup?.folderPaths?.() || {});
     }
 
     function comfyPython(root = comfyRoot()) {
@@ -505,9 +515,23 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         return collectModelRoots({ dir, folderPaths: setup?.folderPaths?.() || {}, comfyDir: config.comfyDir, comfyRoot: root });
     }
 
+    function manualRootsFor(dir) {
+        return manualModelRoots(setup?.getDirectorySettings?.() || null, dir);
+    }
+
+    function manualNodeRoots() {
+        return manualCustomNodeRoots(setup?.getDirectorySettings?.() || null);
+    }
+
+    function customNodeRoots(root = comfyRoot()) {
+        const roots = [...manualNodeRoots()];
+        if (root) roots.push(path.join(root, "custom_nodes"));
+        return [...new Set(roots.map((entry) => path.resolve(entry)))];
+    }
+
     function modelFileCandidates(resource, root = comfyRoot()) {
         const { dir, file } = targetParts(resource.target);
-        if (dir === "custom_nodes") return root ? [path.join(root, "custom_nodes", file)] : [];
+        if (dir === "custom_nodes") return customNodeRoots(root).map((entry) => path.join(entry, file));
         return modelRoots(dir, root).map((entry) => path.join(entry, file));
     }
 
@@ -582,7 +606,11 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         const options = spec ? setup?.loaderOptions?.()?.[spec.classType] : null;
         if (Array.isArray(options)) {
             for (const name of options) {
-                if (typeof name === "string") addItem(name, "", 0, true);
+                if (typeof name !== "string") continue;
+                // 必须先落到真实文件才算存在；只有加载器列表里的旧名字不算，
+                // 否则删除/移动文件后会一直显示已安装并跳过重新下载。
+                const existsOnDisk = roots.some((base) => isFile(path.join(base, name)));
+                if (existsOnDisk) addItem(name, path.join(roots.find((base) => isFile(path.join(base, name))), name), 0, true);
             }
         }
         inventoryCache.set(key, { at: Date.now(), items });
@@ -590,8 +618,11 @@ export function createResourceManager({ config, setup, registry, logger, workflo
     }
 
     function resourceMatch(resource, root = comfyRoot()) {
+        const explicitRoot = String(config.comfyDir || "").trim();
+        if (!root && explicitRoot) {
+            return { present: false, path: "", rel: "", size: 0, matchedBy: "", mismatch: `配置的 ComfyUI 目录无效：${explicitRoot}` };
+        }
         const { dir, file } = targetParts(resource.target);
-        if (dir === "custom_nodes" && !root) return { present: false, path: "", rel: "", size: 0, matchedBy: "", mismatch: "" };
         if (resource.type === "dir") {
             for (const base of modelRoots(dir, root)) {
                 const candidate = path.join(base, file);
@@ -602,8 +633,11 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             return { present: false, path: "", rel: "", size: 0, matchedBy: "", mismatch: "" };
         }
         if (dir === "custom_nodes") {
-            const target = path.join(root, "custom_nodes", file);
-            return { present: isDir(target), path: isDir(target) ? target : "", rel: file, size: 0, matchedBy: "path", mismatch: "" };
+            for (const base of customNodeRoots(root)) {
+                const target = path.join(base, file);
+                if (isDir(target)) return { present: true, path: target, rel: root ? path.relative(root, target) : target, size: 0, matchedBy: "path", mismatch: "" };
+            }
+            return { present: false, path: "", rel: file, size: 0, matchedBy: "", mismatch: "" };
         }
         const wanted = normalizeRelName(file);
         const wantedBase = wanted.split("/").pop() || wanted;
@@ -688,13 +722,51 @@ export function createResourceManager({ config, setup, registry, logger, workflo
     function targetPath(resource, root = comfyRoot()) {
         const { dir, file } = targetParts(resource.target);
         if (dir === "custom_nodes") {
+            // 用户显式配置了插件目录时，插件/目录资源只写该目录。
+            const manual = manualNodeRoots();
+            if (manual.length) {
+                const writable = manual.find((entry) => isDir(entry) && canWrite(entry));
+                if (writable) return path.join(writable, file);
+                throw new Error(`手动插件目录不可用：${manual.join("、")}（目录不存在或不可写）`);
+            }
             if (!root) throw new Error("未找到 ComfyUI 安装目录");
             return path.join(root, "custom_nodes", file);
         }
+        // 手动配置了该类别目录时，只写手动目录；无效/不可写直接报错，不回退默认目录。
+        const manual = manualRootsFor(dir);
+        if (manual.length) {
+            const writable = manual.find((entry) => isDir(entry) && canWrite(entry));
+            if (writable) return path.join(writable, file);
+            throw new Error(`手动模型目录不可用：${manual.join("、")}（目录不存在或不可写）`);
+        }
+        // 手动目录存在、但没有任何一个映射当前类别时也不能写回默认目录，
+        // 否则用户仍然会在配置的目录里找不到刚下载的模型。
+        const manualSettings = setup?.getDirectorySettings?.() || null;
+        if (isManualModelCategory(dir) && manualSettings?.mode === "manual" && (manualSettings.modelDirs || []).length) {
+            throw new Error(`手动模型目录未映射「${dir}」：${manualSettings.modelDirs.join("、")}（已阻止写入默认目录；请为该类别调整手动目录，或改回自动识别）`);
+        }
+        // 显式配置无效时不得从 folder_paths 或别的安装兜底写入。
+        if (!root && String(config.comfyDir || "").trim()) throw new Error(`配置的 ComfyUI 目录无效：${config.comfyDir}（缺少 main.py / models / custom_nodes）`);
         const writable = modelRoots(dir, root).find((entry) => isDir(entry) && canWrite(entry));
         if (writable) return path.join(writable, file);
         if (root) return path.join(root, "models", dir, file);
+        if (String(config.comfyDir || "").trim()) throw new Error(`配置的 ComfyUI 目录无效：${config.comfyDir}（缺少 main.py / models / custom_nodes）`);
         throw new Error("未找到可写的 ComfyUI 模型目录；请确认 ComfyUI 已启动，并且「添加工作流」能识别到模型目录");
+    }
+
+    function restartRequiredFor(dir, target) {
+        // 新插件/目录资源只有重启 ComfyUI 后才会被扫描加载。
+        if (dir === "custom_nodes") return true;
+        const manual = manualRootsFor(dir);
+        if (!manual.length) return false;
+        const normalized = path.resolve(target).toLowerCase();
+        const root = manual.find((entry) => {
+            const base = path.resolve(entry).toLowerCase();
+            return normalized === base || normalized.startsWith(`${base}${path.sep}`);
+        });
+        if (!root) return false;
+        const live = (setup?.folderPaths?.()?.[dir] || []).map((entry) => path.resolve(entry).toLowerCase());
+        return !live.includes(path.resolve(root).toLowerCase());
     }
 
     async function loadLock() {
@@ -1080,14 +1152,14 @@ export function createResourceManager({ config, setup, registry, logger, workflo
               ? { present: Boolean(pip.present), path: "", rel: "", size: 0, matchedBy: pip.present ? "python" : "", mismatch: "" }
               : isNode
                 ? (() => {
-                      const target = root ? path.join(root, "custom_nodes", file) : "";
-                      const dirPresent = Boolean(target && isDir(target));
+                      const nodeMatch = resourceMatch(resource, root);
+                      const dirPresent = nodeMatch.present;
                       // 用户可能装的是同名插件的另一个目录（大小写/后缀不同），
                       // 只要能提供同样的节点类就算已装，避免重复下载。
                       const provides = Array.isArray(resource.provides) ? resource.provides.filter(Boolean) : [];
                       const classPresent = provides.length > 0 && provides.every((name) => setup?.hasNodeClass?.(name));
                       const present = dirPresent || classPresent;
-                      return { present, path: dirPresent ? target : "", rel: file, size: 0, matchedBy: dirPresent ? "path" : classPresent ? "class" : "", mismatch: "" };
+                      return { present, path: dirPresent ? nodeMatch.path : "", rel: file, size: 0, matchedBy: dirPresent ? "path" : classPresent ? "class" : "", mismatch: "" };
                   })()
                 : directMatch;
         const exists = Boolean(match.present);
@@ -1646,6 +1718,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             source: item.source,
             error: item.error,
             hint: item.hint || "",
+            path: item.path || "",
+            restartRequired: Boolean(item.restartRequired),
             skipped: item.skipped,
         }));
         const known = items.filter((item) => item.size > 0 && item.status !== "skipped");
@@ -1662,12 +1736,14 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             completed: finished,
             total: items.length,
             progress: totalBytes > 0 ? Math.min(100, Math.round((doneBytes / totalBytes) * 100)) : items.length ? Math.round((finished / items.length) * 100) : 100,
+            restartRequired: Boolean(job.restartRequired || items.some((item) => item.restartRequired)),
             error: job.error || "",
         };
     }
 
     function updateJob(job) {
         job.updatedAt = nowIso();
+        job.restartRequired = Boolean(job.items?.some((item) => item.restartRequired));
         jobs.set(job.id, job);
         while (jobs.size > JOB_LIMIT) {
             const oldest = [...jobs.keys()].find((id) => jobs.get(id)?.status !== "running");
@@ -1903,7 +1979,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             return;
         }
         const target = targetPath(resource, root);
-        // 有些第三方下载器/杀软会把最终文件留成 xxx.safetensors_；用户点安装时
+        const { dir } = targetParts(resource.target);
         // 先尝试把同大小/同哈希的临时名恢复成正式名，避免重复下载 1GB。
         const repaired = await repairUnderscoredTarget(resource, root, target, jobItem, signal);
         if (repaired) return;
@@ -1960,6 +2036,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 await saveLock();
                 jobItem.status = "done";
                 jobItem.bytes = actualSize;
+                jobItem.path = target;
+                jobItem.restartRequired = restartRequiredFor(dir, target);
                 return;
             } catch (error) {
                 lastError = error;
@@ -2075,6 +2153,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                     await saveLock();
                     jobItem.status = "done";
                     jobItem.bytes = resource.size || 0;
+                    jobItem.path = target;
+                    jobItem.restartRequired = true;
                     return;
                 } catch (error) {
                     lastError = error;
@@ -2125,6 +2205,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                     await saveLock();
                     jobItem.status = "done";
                     jobItem.bytes = resource.size || jobItem.bytes;
+                    jobItem.path = target;
+                    jobItem.restartRequired = true;
                     return;
                 } catch (error) {
                     lastError = error;
@@ -2161,6 +2243,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             return;
         }
         const target = targetPath(resource, root);
+        const { dir } = targetParts(resource.target);
         const installRoot = newInstallRoot(root, resource.id);
         const archive = path.join(installRoot, "payload.zip");
         const extract = path.join(installRoot, "extract");
@@ -2221,6 +2304,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 await saveLock();
                 jobItem.status = "done";
                 jobItem.bytes = resource.size || jobItem.bytes;
+                jobItem.path = target;
+                jobItem.restartRequired = restartRequiredFor(dir, target);
                 await fsp.rm(installRoot, { recursive: true, force: true }).catch(() => {});
                 return;
             } catch (error) {
@@ -2461,6 +2546,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                     });
                     if (!response.ok) throw new Error(`HTTP ${response.status}`);
                     jobItem.restarted = true;
+                    jobItem.restartRequired = false;
+                    jobItem.message = "运行库已安装，ComfyUI 已重启";
                 } catch (cause) {
                     jobItem.restartError = truncate(cause?.message || String(cause), 200);
                     jobItem.hint = `运行库已安装，但自动重启 ComfyUI 失败：${jobItem.restartError}。请手动关闭并重新启动 start-local.bat，或把下面这段发给你的 AI Agent：\n请在我的 Windows 机器上重启 ComfyUI（安装目录 ${comfyRoot()}），检查 launcher.log 里的错误；不要重装 SageAttention。`;
@@ -2469,6 +2556,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 jobItem.message = "安装完成，请手动重启 ComfyUI";
             }
         }
+        jobItem.path = python;
         jobItem.status = "done";
     }
 

@@ -133,10 +133,30 @@ async function comfyHasClasses(comfyUrl, classes) {
     return true;
 }
 
-export async function installBundledNodes({ root, comfyRoot, comfyUrl = "", log = console.log } = {}) {
+export async function installBundledNodes({ root, comfyRoot, comfyUrl = "", customNodesDirs = [], log = console.log } = {}) {
     const gatewayRoot = path.join(root, "comfyui-gateway");
     const indexPath = path.join(gatewayRoot, "resources", "index.json");
     if (!comfyRoot || !isFile(indexPath)) return [];
+    const defaultNodesRoot = path.join(comfyRoot, "custom_nodes");
+    const configuredRoots = (Array.isArray(customNodesDirs) ? customNodesDirs : [])
+        .map((dir) => {
+            try {
+                return path.resolve(String(dir));
+            } catch {
+                return "";
+            }
+        })
+        .filter(Boolean);
+    const manualRoots = configuredRoots.filter(isDir);
+    if (configuredRoots.length && !manualRoots.length) {
+        // 用户显式配置了插件目录但全部不可用：报错并跳过，不能静默写回默认目录。
+        log(`[bootstrap] 手动插件目录不可用：${configuredRoots.join("、")}；已跳过随包节点复制，避免写入默认目录`, "WARN");
+        return [];
+    }
+    for (const dir of configuredRoots.filter((item) => !isDir(item))) {
+        log(`[bootstrap] 忽略不存在的手动插件目录：${dir}`, "WARN");
+    }
+    const nodeRoots = [...new Set([...manualRoots, defaultNodesRoot])];
     let index;
     try {
         index = JSON.parse(fs.readFileSync(indexPath, "utf8"));
@@ -149,7 +169,27 @@ export async function installBundledNodes({ root, comfyRoot, comfyUrl = "", log 
         if (resource.type !== "node" || resource.autoInstall !== true) continue;
         const parts = String(resource.target || "").replace(/\\/g, "/").split("/").filter(Boolean);
         if (parts[0] !== "custom_nodes" || parts.length < 2 || parts.some((part) => part === ".." || part === ".")) continue;
-        const target = path.join(comfyRoot, "custom_nodes", ...parts.slice(1));
+        // 已装在任一插件根（手动目录或默认目录）时沿用原位置升级，不自动搬移。
+        let targetRoot = "";
+        let target = "";
+        for (const base of nodeRoots) {
+            const candidate = path.join(base, ...parts.slice(1));
+            if (fs.existsSync(candidate)) {
+                targetRoot = base;
+                target = candidate;
+                break;
+            }
+        }
+        if (!target) {
+            targetRoot = manualRoots[0] || defaultNodesRoot;
+            target = path.join(targetRoot, ...parts.slice(1));
+        }
+        // 手动插件目录在别的盘时，临时目录和备份必须与之同盘。
+        // 放在 custom_nodes 根内时用 .disabled 后缀，避免 ComfyUI 启动时把临时目录当插件导入。
+        const insideCustomRoot = targetRoot !== defaultNodesRoot;
+        const workRoot = insideCustomRoot ? targetRoot : comfyRoot;
+        const installDirName = insideCustomRoot ? ".canvas-install.disabled" : ".canvas-install";
+        const backupDirName = insideCustomRoot ? ".canvas-install-backups.disabled" : ".canvas-install-backups";
         // 用户可能已经装了同一个插件的另一个目录名；目标不存在时才按类跳过。
         const provides = Array.isArray(resource.provides) ? resource.provides.filter(Boolean) : [];
         if (!fs.existsSync(target) && provides.length && (await comfyHasClasses(comfyUrl, provides))) {
@@ -171,7 +211,7 @@ export async function installBundledNodes({ root, comfyRoot, comfyUrl = "", log 
 
         // 复制/解压都在 ComfyUI 同盘完成，最后 rename 到 custom_nodes，避免跨盘失败和半成品目录。
         const nonce = `${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
-        const installRoot = path.join(comfyRoot, ".canvas-install", `${resource.id}-${nonce}`);
+        const installRoot = path.join(workRoot, installDirName, `${resource.id}-${nonce}`);
         const temp = path.join(installRoot, "payload");
         try {
             let prepared = false;
@@ -198,7 +238,7 @@ export async function installBundledNodes({ root, comfyRoot, comfyUrl = "", log 
                 if (officialUnchanged) {
                     if (current.sourceHash === official.sourceHash) continue;
                     // 仅受管且逐文件未改的官方目录可升级；旧目录改名保留，失败则恢复。
-                    const backup = path.join(comfyRoot, ".canvas-install-backups", `${resource.id}-${nonce}-previous`);
+                    const backup = path.join(workRoot, backupDirName, `${resource.id}-${nonce}-previous`);
                     await fsp.mkdir(path.dirname(backup), { recursive: true });
                     await fsp.rename(target, backup);
                     try {
@@ -219,7 +259,7 @@ export async function installBundledNodes({ root, comfyRoot, comfyUrl = "", log 
                     continue;
                 }
                 const suffix = current?.sourceHash?.slice(0, 12) || "unreadable";
-                const backup = path.join(comfyRoot, ".canvas-install-backups", `${resource.id}-${suffix}-user`);
+                const backup = path.join(workRoot, backupDirName, `${resource.id}-${suffix}-user`);
                 if (!fs.existsSync(backup)) {
                     await fsp.mkdir(path.dirname(backup), { recursive: true });
                     await fsp.cp(target, backup, { recursive: true, errorOnExist: true });
@@ -237,6 +277,8 @@ export async function installBundledNodes({ root, comfyRoot, comfyUrl = "", log 
             log(`[bootstrap] 节点放置失败 ${resource.id}：${error.message}`, "WARN");
         } finally {
             await fsp.rm(installRoot, { recursive: true, force: true }).catch(() => {});
+            // 只删除空的工作目录，避免在用户插件根留下会被扫描的空目录。
+            await fsp.rmdir(path.join(workRoot, installDirName)).catch(() => {});
         }
     }
     return installed;

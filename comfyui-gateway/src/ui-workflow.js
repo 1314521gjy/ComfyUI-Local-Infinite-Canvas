@@ -12,6 +12,8 @@ const NOTE_TYPES = new Set([
 ]);
 const REROUTE_TYPE = "Reroute";
 const PRIMITIVE_TYPE = "PrimitiveNode";
+const SET_NODE_TYPE = "SetNode";
+const GET_NODE_TYPE = "GetNode";
 const BYPASS_MODE = 4;
 const MUTE_MODE = 2;
 
@@ -178,6 +180,20 @@ function primitiveValue(node) {
   return values[0];
 }
 
+// SetNode/GetNode 是 ComfyUI 前端虚拟节点，按名称共享值，不进入 API 图。
+function setGetName(node) {
+  const named = node?.widgets_values_named;
+  if (isPlainObject(named)) {
+    for (const key of ["name", "variable", "value", "text"]) {
+      if (typeof named[key] === "string" && named[key].trim()) return named[key].trim();
+    }
+    const first = Object.values(named).find((value) => typeof value === "string" && value.trim());
+    if (first) return first.trim();
+  }
+  const values = Array.isArray(node?.widgets_values) ? node.widgets_values : [];
+  return typeof values[0] === "string" ? values[0].trim() : "";
+}
+
 export function convertUiWorkflow(ui, objectInfo = {}) {
   if (!isUiWorkflow(ui)) throw new Error("不是 ComfyUI UI 工作流（需要 nodes + links）");
   if (Array.isArray(ui.definitions?.subgraphs) && ui.definitions.subgraphs.length) {
@@ -191,6 +207,16 @@ export function convertUiWorkflow(ui, objectInfo = {}) {
   const links = normalizeLinks(ui.links);
   const warnings = [];
   const missingClasses = new Set();
+  const setNodesByName = new Map();
+  for (const node of nodes.values()) {
+    if (node.type !== SET_NODE_TYPE) continue;
+    const name = setGetName(node);
+    if (!name) continue;
+    if (setNodesByName.has(name)) {
+      throw new Error(`SetNode「${name}」重名，暂不支持自动解析；请在 ComfyUI 中改名后重试`);
+    }
+    setNodesByName.set(name, node);
+  }
 
   function resolveEndpoint(nodeId, slot, seen = new Set()) {
     const key = `${nodeId}:${slot}`;
@@ -201,6 +227,22 @@ export function convertUiWorkflow(ui, objectInfo = {}) {
     if (node.type === PRIMITIVE_TYPE) return { value: primitiveValue(node) };
     if (node.type === REROUTE_TYPE) {
       const linked = (node.inputs || []).find((input) => input.link !== null && input.link !== undefined);
+      return linked ? resolveLink(linked.link, seen) : undefined;
+    }
+    if (node.type === GET_NODE_TYPE || node.type === SET_NODE_TYPE) {
+      const mode = Number(node.mode || 0);
+      if (mode === MUTE_MODE) return undefined;
+      let source = node;
+      if (node.type === GET_NODE_TYPE) {
+        if (mode === BYPASS_MODE) return undefined;
+        const name = setGetName(node);
+        source = setNodesByName.get(name);
+        if (!source) {
+          throw new Error(`GetNode「${name || "未命名"}」找不到对应的 SetNode；请检查变量名或改用直接连线`);
+        }
+        if (Number(source.mode || 0) === MUTE_MODE) return undefined;
+      }
+      const linked = (source.inputs || []).find((input) => input.link !== null && input.link !== undefined);
       return linked ? resolveLink(linked.link, seen) : undefined;
     }
     const mode = Number(node.mode || 0);
@@ -229,7 +271,7 @@ export function convertUiWorkflow(ui, objectInfo = {}) {
 
   const workflow = {};
   for (const [nodeId, node] of nodes) {
-    if (NOTE_TYPES.has(node.type) || node.type === REROUTE_TYPE || node.type === PRIMITIVE_TYPE) continue;
+    if (NOTE_TYPES.has(node.type) || node.type === REROUTE_TYPE || node.type === PRIMITIVE_TYPE || node.type === SET_NODE_TYPE || node.type === GET_NODE_TYPE) continue;
     const mode = Number(node.mode || 0);
     if (mode === MUTE_MODE || mode === BYPASS_MODE) continue;
     if (isUiOnlyNode(node)) {

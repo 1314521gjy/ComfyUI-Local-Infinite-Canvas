@@ -5,6 +5,7 @@ import { Button } from "antd";
 
 import { VideoSettingsPanel, videoInterpolationLabel, videoModeLabel, videoResolutionLabel, videoSecondsLabel, videoSelfLiftLabel, videoSizeLabel } from "@/components/video-settings-panel";
 import i18n from "@/i18n";
+import { isCustomVideoSize } from "@/lib/media-size";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useCanvasTheme } from "@/lib/canvas/use-canvas-theme";
 import type { AiConfig } from "@/stores/use-config-store";
@@ -51,13 +52,17 @@ export function CanvasVideoSettingsPopover({ config, onConfigChange, buttonClass
 
     const panel = open && buttonRect ? <VideoSettingsPortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={config} onConfigChange={onConfigChange} frameMode={frameMode} onFrameModeChange={onFrameModeChange} onModeChange={onModeChange} durationLocked={durationLocked} sourceDurationSeconds={sourceDurationSeconds} /> : null;
     const durationSummary = durationLocked ? `${i18n.t("settingsPanels.video.followSource")}${sourceDurationSeconds != null ? ` · ${sourceDurationSeconds.toFixed(1)}s` : ""}` : videoSecondsLabel(config.videoSeconds);
+    const customSize = isCustomVideoSize(config.size || "auto", config.vquality);
+    const sizeSummary = customSize
+        ? `${i18n.t("settingsPanels.video.customSize")} ${videoSizeLabel(config.size, config.vquality)}`
+        : `${videoResolutionLabel(config.vquality)} · ${videoSizeLabel(config.size, config.vquality)}`;
 
     return (
         <>
             <span ref={buttonRef} className="inline-flex min-w-0">
                 <Button size="small" type="text" className={buttonClassName || "!h-8 !max-w-[220px] !justify-start !rounded-full !px-2.5"} style={{ background: theme.node.fill, color: theme.node.text }} icon={<Settings2 className="size-3.5" />} onClick={() => setOpen((current) => !current)}>
                     <span className="truncate">
-                        {videoResolutionLabel(config.vquality)} · {videoSizeLabel(config.size)} · {durationSummary} · {videoModeLabel(config.videoMode)}{videoInterpolationLabel(config.videoInterpolation) ? ` · ${videoInterpolationLabel(config.videoInterpolation)}` : ""}{videoSelfLiftLabel(config.videoSelfLiftMode) ? ` · ${videoSelfLiftLabel(config.videoSelfLiftMode)}` : ""}
+                        {sizeSummary} · {durationSummary} · {videoModeLabel(config.videoMode)}{videoInterpolationLabel(config.videoInterpolation) ? ` · ${videoInterpolationLabel(config.videoInterpolation)}` : ""}{videoSelfLiftLabel(config.videoSelfLiftMode) ? ` · ${videoSelfLiftLabel(config.videoSelfLiftMode)}` : ""}
                     </span>
                 </Button>
             </span>

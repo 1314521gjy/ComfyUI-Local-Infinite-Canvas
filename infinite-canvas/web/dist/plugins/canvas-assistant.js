@@ -249,6 +249,7 @@ export default function (runtime) {
         const [lifecycle, setLifecycle] = useState("unknown");
         const [serviceUrl, setServiceUrl] = useState("");
         const [serviceError, setServiceError] = useState("");
+        const [canRepair, setCanRepair] = useState(false);
         const [recoveryNotice, setRecoveryNotice] = useState("");
         const [clearConfirm, setClearConfirm] = useState(false);
         const [clearNotice, setClearNotice] = useState("");
@@ -327,9 +328,11 @@ export default function (runtime) {
         const applyServiceStatus = useCallback((payload) => {
             if (!payload || payload.ok === false) {
                 setLifecycle("error");
+                setCanRepair(false);
                 setServiceError((payload && (payload.error || payload.reason)) || "网关没有返回 Agent 状态");
                 return;
             }
+            setCanRepair(payload.needFullPackage === true && payload.canRepair === true);
             if (payload.needFullPackage) {
                 serviceUrlRef.current = "";
                 setServiceUrl("");
@@ -387,9 +390,11 @@ export default function (runtime) {
                 if (!response.ok || !data.ok) {
                     if (data.needFullPackage) {
                         setLifecycle("need-package");
+                        setCanRepair(Boolean(data.canRepair));
                         setServiceError(data.error || "");
                     } else {
                         setLifecycle("error");
+                        setCanRepair(false);
                         setServiceError(data.error || `HTTP ${response.status}`);
                     }
                     return "";
@@ -531,7 +536,7 @@ export default function (runtime) {
                 if (lifecycle === "need-package") {
                     setMessages((prev) => [
                         ...prev,
-                        { id: newId(), role: "assistant", text: "当前是应用内小补丁，Agent 工作区没有安装。请下载 v0.23.1 完整包后使用；画布其他功能不受影响。", pending: false, failed: true, tools: [] },
+                        { id: newId(), role: "assistant", text: "当前安装缺少 Agent 工作区。请使用包含 assistant-runtime.zip 的完整包，解压到程序根目录后重启应用；画布其他功能不受影响。", pending: false, failed: true, tools: [] },
                     ]);
                     return;
                 }
@@ -815,6 +820,9 @@ export default function (runtime) {
                 lifecycle === "error"
                     ? h("button", { type: "button", style: iconButtonStyle, title: "重新唤起助手服务", onMouseDown: (event) => event.stopPropagation(), onPointerDown: (event) => event.stopPropagation(), onClick: () => void ensureService() }, "重试")
                     : null,
+                lifecycle === "need-package" && canRepair
+                    ? h("button", { type: "button", style: iconButtonStyle, title: "重新解压 assistant-runtime.zip", onMouseDown: (event) => event.stopPropagation(), onPointerDown: (event) => event.stopPropagation(), onClick: () => void ensureService() }, "重新解压")
+                    : null,
                 h(
                     "button",
                     {
@@ -841,7 +849,7 @@ export default function (runtime) {
                       "div",
                       { style: { padding: "7px 11px", borderBottom: `1px solid ${nodeStroke}`, background: needPackage ? "#f59e0b12" : lifecycle === "error" ? "#ef444410" : `${ACCENT}0d`, color: needPackage ? "#b45309" : lifecycle === "error" ? "#ef4444" : nodeMuted, fontSize: 10, lineHeight: 1.6 } },
                       needPackage
-                          ? "当前是应用内小补丁，Agent 工作区未安装。请从夸克网盘下载最新完整包后使用；画布其他功能不受影响。"
+                          ? `${serviceError || "Agent 工作区未安装"}。${canRepair ? "已检测到 assistant-runtime.zip，可点右上角「重新解压」。" : "请使用包含 assistant-runtime.zip 的完整包，解压到程序根目录后重启应用。"}`
                           : lifecycle === "error"
                             ? `助手服务未就绪：${serviceError}`
                             : recoveryNotice,

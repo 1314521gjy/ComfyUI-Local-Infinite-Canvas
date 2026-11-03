@@ -7,7 +7,7 @@ import i18n from "@/i18n";
 import { ImageSettingsTheme, SeedSetting } from "@/components/image-settings-panel";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import { videoWorkflowId, baseVideoWorkflowId } from "@/lib/canvas/video-model-mode";
-import { clampVideoSeconds, computeVideoSize, inferVideoRatio, parseVideoResolution, readVideoDimensions, VIDEO_SECONDS_MAX, VIDEO_SECONDS_MIN, videoRatioOptions } from "@/lib/media-size";
+import { clampVideoSeconds, computeVideoSize, inferVideoRatio, isCustomVideoSize, parseVideoResolution, readVideoDimensions, VIDEO_SECONDS_MAX, VIDEO_SECONDS_MIN, videoRatioOptions } from "@/lib/media-size";
 import { type AiConfig } from "@/stores/use-config-store";
 
 const resolutionOptions = [
@@ -59,6 +59,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
     ];
     const modeOptions = isH3 ? h3ModeOptions : videoModeOptions;
     const resolution = parseVideoResolution(config.vquality);
+    const customSize = isCustomVideoSize(config.size || "auto", resolution);
     const selectedRatio = inferVideoRatio(config.size || "auto");
     const dimensions = readVideoDimensions(config.size || "auto", resolution, selectedRatio);
     useEffect(() => {
@@ -78,19 +79,19 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
 
     return (
         <ImageSettingsTheme theme={theme}>
-            <div className={className} style={{ color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()}>
+            <div className={className} style={{ color: theme.node.text }} onMouseDown={(event) => { event.stopPropagation(); if (event.target instanceof HTMLInputElement) return; if (document.activeElement instanceof HTMLInputElement && event.currentTarget.contains(document.activeElement)) document.activeElement.blur(); }}>
                 {showTitle ? <div className="text-lg font-semibold">{t("settingsPanels.video.title")}</div> : null}
                 <SettingGroup title={t("settingsPanels.video.resolution")} color={theme.node.muted}>
                     <div className="grid grid-cols-4 gap-2.5">
                         {resolutionOptions.map((item) => (
-                            <OptionPill key={item.value} selected={resolution === item.value} theme={theme} onClick={() => selectResolution(item.value)}>
+                            <OptionPill key={item.value} selected={!customSize && resolution === item.value} theme={theme} onClick={() => selectResolution(item.value)}>
                                 {item.label}
                             </OptionPill>
                         ))}
                         <ResolutionInput value={resolution} theme={theme} onChange={selectResolution} />
                     </div>
                 </SettingGroup>
-                <SettingGroup title={t("settingsPanels.video.size")} color={theme.node.muted}>
+                <SettingGroup title={`${t("settingsPanels.video.size")}${customSize ? ` · ${t("settingsPanels.video.customSize")}` : ""}`} color={theme.node.muted}>
                     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2.5">
                         <DimensionInput prefix="W" value={dimensions.width} disabled={selectedRatio === "auto"} theme={theme} onChange={(value) => updateDimension("width", value, dimensions, onConfigChange)} />
                         <span className="text-lg opacity-45">↔</span>
@@ -201,7 +202,11 @@ export function videoResolutionLabel(value: string) {
     return `${parseVideoResolution(value)}p`;
 }
 
-export function videoSizeLabel(value: string) {
+export function videoSizeLabel(value: string, resolution = "") {
+    if (resolution && isCustomVideoSize(value, resolution)) {
+        const pixels = readVideoDimensions(value, parseVideoResolution(resolution), "auto");
+        if (pixels.width && pixels.height) return `${pixels.width}×${pixels.height}`;
+    }
     const ratio = inferVideoRatio(value);
     return ratio === "auto" ? i18n.t("settingsPanels.video.adaptive") : ratio;
 }
@@ -266,9 +271,25 @@ function SettingGroup({ title, color, children }: { title: string; color: string
 }
 
 function ResolutionInput({ value, theme, onChange }: { value: string; theme: CanvasTheme; onChange: (value: string) => void }) {
+    const commit = (input: HTMLInputElement) => {
+        const next = parseVideoResolution(input.value);
+        input.value = next;
+        onChange(next);
+    };
     return (
         <label className="flex h-9 overflow-hidden rounded-full border text-sm" style={{ borderColor: theme.node.stroke, color: theme.node.text }}>
-            <input type="number" min={1} className="min-w-0 flex-1 bg-transparent px-3 text-center outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" value={value} onChange={(event) => onChange(event.target.value)} onMouseDown={(event) => event.stopPropagation()} />
+            <input
+                type="number"
+                min={1}
+                className="min-w-0 flex-1 bg-transparent px-3 text-center outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                defaultValue={value}
+                key={`resolution-${value}`}
+                onBlur={(event) => commit(event.currentTarget)}
+                onKeyDown={(event) => {
+                    if (event.key === "Enter") event.currentTarget.blur();
+                }}
+                onMouseDown={(event) => event.stopPropagation()}
+            />
             <span className="grid w-7 place-items-center pr-1" style={{ color: theme.node.muted }}>
                 p
             </span>
@@ -303,12 +324,30 @@ function SecondsInput({ value, theme, onCommit }: { value: number; theme: Canvas
 }
 
 function DimensionInput({ prefix, value, disabled, theme, onChange }: { prefix: string; value: number; disabled: boolean; theme: CanvasTheme; onChange: (value: number | null) => void }) {
+    const commit = (input: HTMLInputElement) => {
+        const next = Math.max(1, Math.floor(Number(input.value) || value || 720));
+        input.value = String(next);
+        onChange(next);
+    };
+
     return (
         <label className="flex h-9 overflow-hidden rounded-xl text-sm" style={{ background: theme.node.fill, color: theme.node.text, opacity: disabled ? 0.55 : 1 }}>
             <span className="grid w-9 place-items-center" style={{ color: theme.node.muted }}>
                 {prefix}
             </span>
-            <input type="number" min={1} disabled={disabled} className="min-w-0 flex-1 bg-transparent px-2 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" value={value || ""} onChange={(event) => onChange(Number(event.target.value) || null)} onMouseDown={(event) => event.stopPropagation()} />
+            <input
+                type="number"
+                min={1}
+                disabled={disabled}
+                className="min-w-0 flex-1 bg-transparent px-2 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                defaultValue={value || ""}
+                key={`${prefix}-${value}`}
+                onBlur={(event) => commit(event.currentTarget)}
+                onKeyDown={(event) => {
+                    if (event.key === "Enter") event.currentTarget.blur();
+                }}
+                onMouseDown={(event) => event.stopPropagation()}
+            />
         </label>
     );
 }

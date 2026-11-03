@@ -14,7 +14,7 @@ import { createAssistantManager } from "./assistant.js";
 import { createComfyBridge } from "./comfy-bridge.js";
 import { createComfyClient } from "./comfy-client.js";
 import { createLogger, loadConfig } from "./config.js";
-import { describeAutoDirectories, detectComfyLayout, directoryLoadReport, normalizeDirectorySettings, saveDirectorySettings, scanDirectories, validateDirectorySettings, writeManagedExtraPaths } from "./directories.js";
+import { describeAutoDirectories, detectComfyLayout, directoryLoadReport, manualCustomNodeRoots, normalizeDirectorySettings, saveDirectorySettings, scanDirectories, validateDirectorySettings, writeManagedExtraPaths } from "./directories.js";
 import { pickFolder } from "./folder-picker.js";
 import { createMainModelStore } from "./main-models.js";
 import { createModelEventBus } from "./model-events.js";
@@ -619,6 +619,7 @@ export async function createGatewayApp(overrides = {}) {
       const installed = await installBundledNodes({
         root: packageRoot,
         comfyRoot: comfyDir,
+        customNodesDirs: manualCustomNodeRoots(setup?.getDirectorySettings?.() || null),
         log: (message, level) => (level === "WARN" ? logger.warn(message) : logger.info(message)),
       });
       if (installed.length) logger.info(`已放置 ${installed.length} 个随包节点，重启 ComfyUI 后生效`);

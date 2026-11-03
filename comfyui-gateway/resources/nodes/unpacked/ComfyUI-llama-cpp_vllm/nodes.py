@@ -346,7 +346,12 @@ if not hasattr(mm, "unload_all_models_backup"):
     print("[llama-cpp_vlm] Model cleanup hook applied!")
 
 llm_extensions = ['.ckpt', '.pt', '.bin', '.pth', '.safetensors', '.gguf']
-folder_paths.folder_names_and_paths["LLM"] = ([os.path.join(folder_paths.models_dir, "LLM")], llm_extensions)
+# 保留 extra_model_paths.yaml 已注册的 LLM 路径，避免覆盖用户手动配置的模型目录。
+_llm_paths = list(folder_paths.folder_names_and_paths.get("LLM", ([], llm_extensions))[0])
+_llm_default = os.path.join(folder_paths.models_dir, "LLM")
+if _llm_default not in _llm_paths:
+    _llm_paths.append(_llm_default)
+folder_paths.folder_names_and_paths["LLM"] = (_llm_paths, llm_extensions)
 preset_prompts = {
     "Empty - Nothing": "",
     "Normal - Describe": "Describe this @.",

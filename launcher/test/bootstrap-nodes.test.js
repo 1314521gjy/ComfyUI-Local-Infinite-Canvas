@@ -63,6 +63,59 @@ test("managed unchanged nodes upgrade by hash and repeat runs are idempotent", a
     }
 });
 
+test("bundled nodes install into the configured manual custom node directory", async () => {
+    const state = await fixture("v1", "VERSION = 1\n");
+    const manual = path.join(state.root, "manual-nodes");
+    await fsp.mkdir(manual, { recursive: true });
+    try {
+        assert.deepEqual(await installBundledNodes({ root: state.root, comfyRoot: state.comfyRoot, customNodesDirs: [manual], log: () => {} }), ["Test node"]);
+        const target = path.join(manual, "TestNode");
+        assert.equal(await fsp.readFile(path.join(target, "__init__.py"), "utf8"), "VERSION = 1\n");
+        assert.equal(fs.existsSync(path.join(target, ".canvas-bootstrap.json")), true);
+        assert.equal(fs.existsSync(path.join(state.comfyRoot, "custom_nodes", "TestNode")), false);
+
+        await fsp.writeFile(path.join(state.bundleDir, "__init__.py"), "VERSION = 2\n", "utf8");
+        await state.writeIndex("v2");
+        assert.deepEqual(await installBundledNodes({ root: state.root, comfyRoot: state.comfyRoot, customNodesDirs: [manual], log: () => {} }), ["Test node"]);
+        assert.equal(await fsp.readFile(path.join(target, "__init__.py"), "utf8"), "VERSION = 2\n");
+        const backupRoot = path.join(manual, ".canvas-install-backups.disabled");
+        const backups = await fsp.readdir(backupRoot);
+        assert.equal(backups.filter((name) => name.endsWith("-previous")).length, 1);
+        assert.equal(fs.existsSync(path.join(manual, ".canvas-install")), false, "temporary install dir must be cleaned up");
+        assert.equal(fs.existsSync(path.join(manual, ".canvas-install.disabled")), false, "temporary install dir must be cleaned up");
+        assert.deepEqual(await installBundledNodes({ root: state.root, comfyRoot: state.comfyRoot, customNodesDirs: [manual], log: () => {} }), []);
+    } finally {
+        await fsp.rm(state.root, { recursive: true, force: true });
+    }
+});
+
+test("invalid manual plugin dirs do not fall back to the default custom_nodes", async () => {
+    const state = await fixture("v1", "VERSION = 1\n");
+    const missing = path.join(state.root, "missing-nodes");
+    const logs = [];
+    try {
+        assert.deepEqual(await installBundledNodes({ root: state.root, comfyRoot: state.comfyRoot, customNodesDirs: [missing], log: (message) => logs.push(message) }), []);
+        assert.equal(fs.existsSync(path.join(state.comfyRoot, "custom_nodes", "TestNode")), false);
+        assert.ok(logs.some((line) => line.includes("手动插件目录不可用")), "must report the invalid manual dir");
+    } finally {
+        await fsp.rm(state.root, { recursive: true, force: true });
+    }
+});
+
+test("existing default installation is not duplicated into the manual plugin dir", async () => {
+    const state = await fixture("v1", "VERSION = 1\n");
+    const manual = path.join(state.root, "manual-nodes");
+    await fsp.mkdir(manual, { recursive: true });
+    try {
+        assert.deepEqual(await installBundledNodes({ root: state.root, comfyRoot: state.comfyRoot, log: () => {} }), ["Test node"]);
+        assert.deepEqual(await installBundledNodes({ root: state.root, comfyRoot: state.comfyRoot, customNodesDirs: [manual], log: () => {} }), []);
+        assert.equal(fs.existsSync(path.join(state.comfyRoot, "custom_nodes", "TestNode")), true);
+        assert.equal(fs.existsSync(path.join(manual, "TestNode")), false);
+    } finally {
+        await fsp.rm(state.root, { recursive: true, force: true });
+    }
+});
+
 test("user-modified nodes are backed up and never overwritten", async () => {
     const state = await fixture("v1", "VERSION = 1\n");
     try {

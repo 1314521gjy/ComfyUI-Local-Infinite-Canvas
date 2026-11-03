@@ -161,6 +161,16 @@ export function readVideoDimensions(size: string, resolution: string, ratio: str
     return parsePixelSize(computed) || { width: 0, height: 0 };
 }
 
+// 像素尺寸与当前分辨率档 + 最近比例推导出的预设尺寸不一致时，视为用户自定义 W/H。
+export function isCustomVideoSize(size: string, resolution: string) {
+    const pixels = parsePixelSize(size);
+    if (!pixels) return false;
+    const ratio = inferVideoRatio(size);
+    const expected = parsePixelSize(computeVideoSize(resolution, ratio === "auto" ? "16:9" : ratio));
+    if (!expected) return false;
+    return pixels.width !== expected.width || pixels.height !== expected.height;
+}
+
 function evenRound(value: number) {
     return Math.max(2, Math.round(value / 2) * 2);
 }

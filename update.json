@@ -1,16 +1,16 @@
 {
-  "version": "v0.24.6",
-  "publishedAt": "2026-11-02",
-  "notes": "修复画布自由工作流目录失效后无法列出/导入已保存工作流；Qwen 2.1 多图编辑取消或重试不再重复参考图、不再误报最多 4 张；长提示词聚焦、框选与滚动光标对齐；切画布或刷新后任务计时不归零，完成/取消/失败清理，多任务卡片独立计时；H3 提示词改为全正向描述并用 <Picture n> 锚定参考图，按意图保留单段或切镜；本机 localhost 访问 127.0.0.1 网关的写请求不再被误判跨站。其余行为与 v0.24.5 一致。",
+  "version": "v0.24.7",
+  "publishedAt": "2026-11-03",
+  "notes": "本次集中修复下载与识别：手动模型、插件和 VDN/SeedVR2/LLM/vae_approx 等专用目录按配置落盘并回显真实路径，无效或未映射目录明确报错；未自定义目录的用户保持原行为，手动目录只影响主动配置者。视频手动修改 W/H 自动进入自定义分辨率，重选预设恢复联动。资源中心新增可选「插件与节点」包，默认不勾选、不自动下载。内置 Agent 完整包缺失或解压失败时可自动或手动重新解压；pip/运行库显示实际 Python 环境并修正重启提示。自由卡片导入已支持 SetNode/GetNode 虚拟节点，缺失或重名时明确报错，不生成无法执行的图。其余行为与 v0.24.6 一致。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.24.6.zip",
-    "sha256": "a2032bfca05a2fdd380036fa83cf86d712621986a6579726793279cc925404a1",
-    "size": 29609967
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.24.7.zip",
+    "sha256": "278a41e4b2d20fcf5f8a28e103efa65ca2fe021ddbc8560a655b7f98c21301e8",
+    "size": 29616817
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

@@ -91,6 +91,7 @@ export function createAssistantManager({
         serviceModules: path.join(assistantDir, "node_modules", "@mariozechner", "pi-agent-core"),
         serviceAiModules: path.join(assistantDir, "node_modules", "@mariozechner", "pi-ai"),
         data: path.join(assistantDir, "data"),
+        runtimeZip: [path.join(assistantDir, "runtime.zip"), path.join(config.appRoot, "assistant-runtime.zip")].find(hasFile) || "",
     };
     const state = {
         child: null,
@@ -104,8 +105,9 @@ export function createAssistantManager({
     let ensurePromise = null;
 
     function availability() {
+        const runtimePackagePresent = Boolean(paths.runtimeZip);
         if (process.env.ASSISTANT_ENABLED === "0") {
-            return { available: false, needFullPackage: false, reason: "Agent 已被环境变量关闭" };
+            return { available: false, needFullPackage: false, canRepair: false, runtimePackagePresent, reason: "Agent 已被环境变量关闭", missing: [] };
         }
         const missing = [];
         if (!hasFile(paths.server)) missing.push("assistant/server.mjs");
@@ -113,14 +115,47 @@ export function createAssistantManager({
         if (!hasFile(path.join(paths.workspaceWeb, "package.json"))) missing.push("assistant/workspace");
         if (!hasDir(paths.workspaceWebModules)) missing.push("assistant/workspace/infinite-canvas/web/node_modules");
         if (!hasFile(path.join(config.canvasDist, "index.html"))) missing.push("infinite-canvas/web/dist");
-        if (!missing.length) return { available: true, needFullPackage: false, reason: "" };
+        const canRepair = runtimePackagePresent && Boolean(config.launcherControlUrl);
+        if (!missing.length) return { available: true, needFullPackage: false, canRepair: false, runtimePackagePresent, reason: "", missing: [] };
         const fullPackageItems = new Set(["assistant/node_modules", "assistant/workspace", "assistant/workspace/infinite-canvas/web/node_modules"]);
         return {
             available: false,
             needFullPackage: missing.some((item) => fullPackageItems.has(item)),
+            canRepair,
+            runtimePackagePresent,
             reason: `缺少 ${missing.join("、")}`,
             missing,
         };
+    }
+
+    let lastRepairAt = 0;
+    async function repairRuntime() {
+        if (!paths.runtimeZip) return { ok: false, error: "未找到 assistant-runtime.zip" };
+        if (!config.launcherControlUrl) return { ok: false, error: "启动器未提供运行时解压接口，请重启应用" };
+        if (Date.now() - lastRepairAt < 60_000) return { ok: false, error: "刚尝试过解压，请稍后重试" };
+        lastRepairAt = Date.now();
+        try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 300_000);
+            try {
+                const response = await fetchFn(`${config.launcherControlUrl}/ensure-assistant`, {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: "{}",
+                    signal: controller.signal,
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || data.ok === false) {
+                    return { ok: false, error: data.error || `启动器解压 Agent 运行时失败（HTTP ${response.status}）` };
+                }
+                logger?.info?.(`Agent 运行时${data.extracted ? "已重新解压" : "已就绪"}`);
+                return { ok: true, extracted: data.extracted === true };
+            } finally {
+                clearTimeout(timer);
+            }
+        } catch (error) {
+            return { ok: false, error: `无法联系启动器解压 Agent 运行时：${error.message}` };
+        }
     }
 
     async function probe(timeoutMs = PROBE_TIMEOUT_MS) {
@@ -230,9 +265,16 @@ export function createAssistantManager({
     }
 
     async function ensure() {
-        const info = availability();
+        let info = availability();
+        if (!info.available && info.canRepair) {
+            const repair = await repairRuntime();
+            if (!repair.ok) {
+                return { ok: false, needFullPackage: info.needFullPackage, error: repair.error || info.reason, missing: info.missing || [], canRepair: info.canRepair, runtimePackagePresent: info.runtimePackagePresent };
+            }
+            info = availability();
+        }
         if (!info.available) {
-            return { ok: false, needFullPackage: info.needFullPackage, error: info.reason, missing: info.missing || [] };
+            return { ok: false, needFullPackage: info.needFullPackage, error: info.reason, missing: info.missing || [], canRepair: info.canRepair, runtimePackagePresent: info.runtimePackagePresent };
         }
         if (ensurePromise) return ensurePromise;
         ensurePromise = (async () => {
@@ -311,6 +353,8 @@ export function createAssistantManager({
             ok: true,
             available: info.available,
             needFullPackage: info.needFullPackage,
+            canRepair: info.canRepair === true,
+            runtimePackagePresent: info.runtimePackagePresent === true,
             reason: info.reason,
             missing: info.missing || [],
             running: Boolean(state.child),

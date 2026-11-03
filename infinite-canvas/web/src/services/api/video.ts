@@ -492,6 +492,8 @@ function resolveVideoMode(mode: string | undefined, imageCount: number) {
 function normalizeVideoSize(value: string, resolution?: string) {
     const selectedResolution = resolution || "720";
     if (!value || value === "auto") return computeVideoSize(selectedResolution, "16:9");
+    // 自定义 W/H 直接按像素提交，不再被分辨率档覆盖；/32 对齐仍由网关工作流绑定处理。
+    if (/^\d+[xX]\d+$/.test(String(value).trim())) return String(value).trim();
     // A stale pixel size must not override the selected 480/720/1080 tier.
     const ratio = inferVideoRatio(value);
     return computeVideoSize(selectedResolution, ratio === "auto" ? "16:9" : ratio);

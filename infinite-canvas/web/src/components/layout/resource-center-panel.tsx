@@ -119,6 +119,10 @@ const copyByLocale = {
         installing: "安装运行库",
         extracting: "解压中",
         done: "安装完成",
+        savedTo: "已保存到：",
+        installedTo: "已安装到：",
+        restartToApply: "需重启 ComfyUI 后才会被扫描识别",
+        restartRuntimeToApply: "需重启 ComfyUI 后运行库才会生效",
         failed: "部分资源安装失败",
         compileFailed: "本机编译失败",
         copyHint: "复制给 AI Agent",
@@ -252,6 +256,10 @@ const copyByLocale = {
         installing: "Installing runtime",
         extracting: "Extracting",
         done: "Install complete",
+        savedTo: "Saved to: ",
+        installedTo: "Installed to: ",
+        restartToApply: "Restart ComfyUI before it is scanned",
+        restartRuntimeToApply: "Restart ComfyUI for the runtime to take effect",
         failed: "Some resources failed",
         compileFailed: "Local compile failed",
         copyHint: "Copy for your AI agent",
@@ -1000,6 +1008,14 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                 </div>
                                 {item.status === "error" && item.error ? (
                                     <div className="line-clamp-2 break-words pl-1 text-[10px] text-red-500" title={item.error}>{item.error}</div>
+                                ) : null}
+                                {item.path && (item.status === "done" || item.status === "skipped") ? (
+                                    <div className="break-all pl-1 text-[10px] text-stone-400 dark:text-stone-500" title={item.path}>
+                                        {item.type === "pip" ? copy.installedTo : copy.savedTo}{item.path}
+                                    </div>
+                                ) : null}
+                                {item.restartRequired ? (
+                                    <div className="pl-1 text-[10px] text-amber-600 dark:text-amber-400">{item.type === "pip" ? copy.restartRuntimeToApply : copy.restartToApply}</div>
                                 ) : null}
                             </div>
                         ))}

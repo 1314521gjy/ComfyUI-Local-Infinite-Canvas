@@ -271,6 +271,10 @@ const MODEL_KEYS = [
     "controlnet",
     "clip_vision",
     "embeddings",
+    "vae_approx",
+    "vdn",
+    "LLM",
+    "SEEDVR2",
 ];
 
 const MODEL_DIR_HINTS = {
@@ -285,6 +289,10 @@ const MODEL_DIR_HINTS = {
     controlnet: ["controlnet", "t2i_adapter"],
     clip_vision: ["clip_vision"],
     embeddings: ["embeddings"],
+    vae_approx: ["vae_approx"],
+    vdn: ["vdn"],
+    LLM: ["LLM", "llm"],
+    SEEDVR2: ["SEEDVR2", "seedvr2"],
 };
 
 function modelDirMappings(dir) {
@@ -300,6 +308,56 @@ function modelDirMappings(dir) {
     if (ownKey) return [`${ownKey}: .`];
     // 扁平目录没有可识别的子目录，只能按通用模型目录处理。
     return MODEL_KEYS.map((key) => `${key}: .`);
+}
+
+// 托管 YAML 能表达的模型类别；只有这些类别的手动目录才需要严格阻止回退默认目录。
+export function isManualModelCategory(dir) {
+    return MODEL_KEYS.includes(dir);
+}
+
+// 手动插件目录：与托管 YAML 的 custom_nodes 映射一致，只有显式配置时才改写下载落点。
+export function manualCustomNodeRoots(settings) {
+    if (!settings || settings.mode !== "manual") return [];
+    const roots = [];
+    for (const value of settings.customNodesDirs || []) {
+        if (!value) continue;
+        const resolved = path.resolve(value);
+        if (!roots.includes(resolved)) roots.push(resolved);
+    }
+    return roots;
+}
+
+// 与 buildManagedExtraPaths 的映射规则保持一致：返回某个模型类别在手动目录里的下载落点。
+// 未映射到该类别时返回空数组，调用方不得改写回 ComfyUI 默认目录。
+export function manualModelRoots(settings, dir) {
+    if (!settings || settings.mode !== "manual" || !MODEL_KEYS.includes(dir)) return [];
+    const roots = [];
+    const add = (value) => {
+        if (!value) return;
+        const resolved = path.resolve(value);
+        if (!roots.includes(resolved)) roots.push(resolved);
+    };
+    const hints = MODEL_DIR_HINTS[dir] || [dir];
+    for (const base of settings.modelDirs || []) {
+        const sub = hints.map((name) => path.join(base, name)).find((candidate) => isDir(candidate));
+        if (sub) {
+            add(sub);
+            continue;
+        }
+        // 该目录已经有其它类别的子目录时，托管 YAML 不会为当前类别映射它，下载也不能落这里。
+        const hasOtherMapping = MODEL_KEYS.some((key) => (MODEL_DIR_HINTS[key] || [key]).some((name) => isDir(path.join(base, name))));
+        if (hasOtherMapping) continue;
+        const ownBase = path.basename(base).toLowerCase();
+        const ownKey = MODEL_KEYS.find((key) => key === ownBase || (MODEL_DIR_HINTS[key] || []).includes(ownBase));
+        if (ownKey) {
+            if (ownKey === dir || hints.includes(ownBase)) add(base);
+            continue;
+        }
+        // 扁平目录在托管 YAML 里映射为 “key: .”，所有类别都落在这里。
+        add(base);
+    }
+    if (dir === "loras") for (const base of settings.loraDirs || []) add(base);
+    return roots;
 }
 
 export function buildManagedExtraPaths(settings) {

@@ -461,6 +461,101 @@ test("node resources can install from a bundled directory without extracting", a
     }
 });
 
+test("manual custom node dirs receive plugin installs and report restart", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-node-manual-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    const manualNodes = path.join(root, "manual-nodes");
+    await fsp.mkdir(path.join(comfy, "custom_nodes"), { recursive: true });
+    await fsp.mkdir(manualNodes, { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(path.join(resources, "nodes", "testnode"), { recursive: true });
+    await fsp.writeFile(path.join(resources, "nodes", "testnode", "__init__.py"), "BUNDLED = True\n", "utf8");
+    const index = {
+        schema: 1,
+        version: "test-node-manual-1",
+        packs: [{ id: "test", resources: ["test-node"] }],
+        resources: [{ id: "test-node", type: "node", label: "Test node", target: "custom_nodes/TestNode", bundleDir: "resources/nodes/testnode", sources: [] }],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: {
+            getDirectorySettings: () => ({ mode: "manual", modelDirs: [], loraDirs: [], customNodesDirs: [manualNodes] }),
+            folderPaths: () => ({ custom_nodes: [path.join(comfy, "custom_nodes")] }),
+            loaderOptions: () => ({}),
+            status: () => ({ comfyReachable: true }),
+            scan: async () => ({}),
+        },
+        logger: null,
+    });
+
+    try {
+        await manager.init();
+        assert.equal(manager.status().resources[0].status, "missing");
+        const job = manager.install({ ids: ["test-node"] });
+        const finished = await waitForJob(manager, job.id);
+        assert.equal(finished.status, "done", JSON.stringify(finished));
+        const expected = path.join(manualNodes, "TestNode");
+        assert.equal(finished.items[0].path, expected);
+        assert.equal(finished.items[0].restartRequired, true);
+        assert.equal(finished.restartRequired, true);
+        assert.equal(await fsp.readFile(path.join(expected, "__init__.py"), "utf8"), "BUNDLED = True\n");
+        // 默认插件目录不产生副本；安装后状态按手动目录判定为已安装。
+        assert.equal(fs.existsSync(path.join(comfy, "custom_nodes", "TestNode")), false);
+        const after = manager.status().resources[0];
+        assert.equal(after.status, "present");
+        assert.equal(after.exists, true);
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});
+
+test("manual mode without plugin dirs keeps the default custom_nodes target", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-node-nodirs-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(path.join(comfy, "custom_nodes"), { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(path.join(resources, "nodes", "testnode"), { recursive: true });
+    await fsp.writeFile(path.join(resources, "nodes", "testnode", "__init__.py"), "BUNDLED = True\n", "utf8");
+    const index = {
+        schema: 1,
+        version: "test-node-nodirs-1",
+        packs: [{ id: "test", resources: ["test-node"] }],
+        resources: [{ id: "test-node", type: "node", label: "Test node", target: "custom_nodes/TestNode", bundleDir: "resources/nodes/testnode", sources: [] }],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: {
+            getDirectorySettings: () => ({ mode: "manual", modelDirs: [], loraDirs: [], customNodesDirs: [] }),
+            folderPaths: () => ({ custom_nodes: [path.join(comfy, "custom_nodes")] }),
+            loaderOptions: () => ({}),
+            status: () => ({ comfyReachable: true }),
+            scan: async () => ({}),
+        },
+        logger: null,
+    });
+
+    try {
+        await manager.init();
+        const job = manager.install({ ids: ["test-node"] });
+        const finished = await waitForJob(manager, job.id);
+        assert.equal(finished.status, "done", JSON.stringify(finished));
+        const expected = path.join(comfy, "custom_nodes", "TestNode");
+        assert.equal(finished.items[0].path, expected);
+        assert.equal(finished.items[0].restartRequired, true);
+        assert.equal(await fsp.readFile(path.join(expected, "__init__.py"), "utf8"), "BUNDLED = True\n");
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});
+
 test("node sources cannot bypass executable archive verification", async () => {
     const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-node-backup-test-"));
     const comfy = path.join(root, "ComfyUI");
@@ -1447,7 +1542,13 @@ test("packs declare weights and only sha-pinned third-party nodes", () => {
         const optional = new Set(pack.optionalResources || []);
         for (const id of pack.resources || []) {
             const resource = byId.get(id);
-            assert.notEqual(resource?.type, "node", `${pack.id} lists node ${id}`);
+            if (resource?.type === "node") {
+                // 插件包允许把随包节点作为“手动勾选修复”入口，但不能变成必装或自动推荐。
+                assert.ok(optional.has(id), `${pack.id} lists required node ${id}`);
+                assert.equal(pack.optional, true, `${pack.id} must be optional to list user-installed node ${id}`);
+                assert.equal(pack.autoRecommend === false, true, `${pack.id} must not auto-recommend node ${id}`);
+                continue;
+            }
             if (!optional.has(id)) {
                 assert.equal(resource?.type, "pip", `${pack.id} declares ${id} as required; only runtime pip resources may be required`);
             }
@@ -1598,7 +1699,8 @@ test("resource matching handles subfolders, renamed files and size mismatches", 
         assert.equal(byId.get("renamed-demo").matchedBy, "size");
         assert.equal(byId.get("wrong-size").status, "present");
         assert.match(byId.get("wrong-size").sizeMismatch, /大小不一致/);
-        assert.equal(byId.get("loader-only").status, "present");
+        // 加载器列表里还有名字，但磁盘上没有文件：不能再算已安装，必须允许重新下载。
+        assert.equal(byId.get("loader-only").status, "missing");
     } finally {
         await fsp.rm(root, { recursive: true, force: true });
     }
@@ -1886,6 +1988,309 @@ test("install repairs a model file left with a trailing underscore", async () =>
         assert.equal(fs.existsSync(path.join(vaeDir, "test.bin")), true);
         assert.equal(fs.existsSync(path.join(vaeDir, "test.bin_")), false);
         assert.deepEqual(await fsp.readFile(path.join(vaeDir, "test.bin")), payload);
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});
+
+test("manual model dirs receive downloads and report restart", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-manual-dir-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    const manual = path.join(root, "manual-models");
+    await fsp.mkdir(path.join(comfy, "models", "vae"), { recursive: true });
+    await fsp.mkdir(manual, { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+
+    const payload = crypto.randomBytes(32 * 1024);
+    const digest = crypto.createHash("sha256").update(payload).digest("hex");
+    const server = http.createServer((_req, res) => {
+        res.setHeader("Content-Type", "application/octet-stream");
+        res.setHeader("Content-Length", payload.length);
+        res.end(payload);
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = server.address().port;
+
+    const index = {
+        schema: 1,
+        version: "test-manual-1",
+        packs: [{ id: "test", resources: ["test-file"] }],
+        resources: [{ id: "test-file", type: "model", target: "vae/test.bin", size: payload.length, sha256: digest, sources: [{ url: `http://127.0.0.1:${port}/good.bin` }] }],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: {
+            getDirectorySettings: () => ({ mode: "manual", modelDirs: [manual], loraDirs: [], customNodesDirs: [] }),
+            folderPaths: () => ({}),
+            loaderOptions: () => ({}),
+            status: () => ({ comfyReachable: true }),
+            scan: async () => ({}),
+        },
+        logger: null,
+    });
+
+    try {
+        await manager.init();
+        const job = manager.install({ ids: ["test-file"] });
+        const finished = await waitForJob(manager, job.id);
+        assert.equal(finished.status, "done", JSON.stringify(finished));
+        const item = finished.items[0];
+        const expected = path.join(manual, "test.bin");
+        assert.equal(item.path, expected);
+        assert.equal(item.restartRequired, true);
+        assert.equal(finished.restartRequired, true);
+        assert.deepEqual(await fsp.readFile(expected), payload);
+        assert.equal(fs.existsSync(path.join(comfy, "models", "vae", "test.bin")), false);
+    } finally {
+        await new Promise((resolve) => server.close(resolve));
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});
+
+test("manual model dirs receive VDN stage downloads", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-manual-vdn-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    const manual = path.join(root, "manual-models");
+    await fsp.mkdir(path.join(comfy, "models", "vdn"), { recursive: true });
+    await fsp.mkdir(manual, { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+
+    const payload = crypto.randomBytes(8 * 1024);
+    const digest = crypto.createHash("sha256").update(payload).digest("hex");
+    const server = http.createServer((_req, res) => {
+        res.setHeader("Content-Type", "application/octet-stream");
+        res.setHeader("Content-Length", payload.length);
+        res.end(payload);
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = server.address().port;
+
+    const index = {
+        schema: 1,
+        version: "test-manual-vdn-1",
+        packs: [{ id: "test", resources: ["test-file"] }],
+        resources: [{ id: "test-file", type: "model", target: "vdn/stage-test/model.bin", size: payload.length, sha256: digest, sources: [{ url: `http://127.0.0.1:${port}/good.bin` }] }],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: {
+            getDirectorySettings: () => ({ mode: "manual", modelDirs: [manual], loraDirs: [], customNodesDirs: [] }),
+            folderPaths: () => ({}),
+            loaderOptions: () => ({}),
+            status: () => ({ comfyReachable: true }),
+            scan: async () => ({}),
+        },
+        logger: null,
+    });
+
+    try {
+        await manager.init();
+        const job = manager.install({ ids: ["test-file"] });
+        const finished = await waitForJob(manager, job.id);
+        assert.equal(finished.status, "done", JSON.stringify(finished));
+        const expected = path.join(manual, "stage-test", "model.bin");
+        assert.equal(finished.items[0].path, expected);
+        assert.equal(finished.items[0].restartRequired, true);
+        assert.deepEqual(await fsp.readFile(expected), payload);
+        assert.equal(fs.existsSync(path.join(comfy, "models", "vdn", "stage-test", "model.bin")), false);
+    } finally {
+        await new Promise((resolve) => server.close(resolve));
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});
+
+test("manual dirs that map another category block the download instead of using defaults", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-manual-unmapped-"));
+    const comfy = path.join(root, "ComfyUI");
+    const other = path.join(root, "other-comfy");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    const manual = path.join(root, "manual-models");
+    await fsp.mkdir(path.join(comfy, "models", "vae"), { recursive: true });
+    await fsp.mkdir(path.join(other, "models", "vae"), { recursive: true });
+    // 手动根只映射 upscale_models，本次安装的是 vae：不能猜测落点，也不能回退默认目录。
+    await fsp.mkdir(path.join(manual, "upscale_models"), { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    const index = {
+        schema: 1,
+        version: "test-manual-unmapped-1",
+        packs: [{ id: "test", resources: ["test-file"] }],
+        resources: [{ id: "test-file", type: "model", target: "vae/test.bin", size: 10, sources: [{ url: "http://127.0.0.1:9/unused.bin" }] }],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: {
+            getDirectorySettings: () => ({ mode: "manual", modelDirs: [manual], loraDirs: [], customNodesDirs: [] }),
+            folderPaths: () => ({ vae: [path.join(other, "models", "vae")] }),
+            loaderOptions: () => ({}),
+            status: () => ({ comfyReachable: true }),
+            scan: async () => ({}),
+        },
+        logger: null,
+    });
+
+    try {
+        await manager.init();
+        assert.equal(manager.status().resources[0].status, "missing");
+        const job = manager.install({ ids: ["test-file"] });
+        const finished = await waitForJob(manager, job.id);
+        assert.equal(finished.status, "error");
+        assert.match(finished.items[0].error, /手动模型目录未映射/);
+        // 手动目录、ComfyUI 默认目录和另一套安装都不得出现文件。
+        assert.equal(fs.existsSync(path.join(manual, "test.bin")), false);
+        assert.equal(fs.existsSync(path.join(comfy, "models", "vae", "test.bin")), false);
+        assert.equal(fs.existsSync(path.join(other, "models", "vae", "test.bin")), false);
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});
+
+test("manual mode without model dirs keeps the default model target", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-manual-nodirs-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(path.join(comfy, "models", "vae"), { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+
+    const payload = crypto.randomBytes(16 * 1024);
+    const digest = crypto.createHash("sha256").update(payload).digest("hex");
+    const server = http.createServer((_req, res) => {
+        res.setHeader("Content-Type", "application/octet-stream");
+        res.setHeader("Content-Length", payload.length);
+        res.end(payload);
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = server.address().port;
+
+    const index = {
+        schema: 1,
+        version: "test-manual-nodirs-1",
+        packs: [{ id: "test", resources: ["test-file"] }],
+        resources: [{ id: "test-file", type: "model", target: "vae/test.bin", size: payload.length, sha256: digest, sources: [{ url: `http://127.0.0.1:${port}/good.bin` }] }],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: {
+            getDirectorySettings: () => ({ mode: "manual", modelDirs: [], loraDirs: [], customNodesDirs: [] }),
+            folderPaths: () => ({ vae: [path.join(comfy, "models", "vae")] }),
+            loaderOptions: () => ({}),
+            status: () => ({ comfyReachable: true }),
+            scan: async () => ({}),
+        },
+        logger: null,
+    });
+
+    try {
+        await manager.init();
+        const job = manager.install({ ids: ["test-file"] });
+        const finished = await waitForJob(manager, job.id);
+        assert.equal(finished.status, "done", JSON.stringify(finished));
+        const expected = path.join(comfy, "models", "vae", "test.bin");
+        assert.equal(finished.items[0].path, expected);
+        assert.equal(finished.items[0].restartRequired, false);
+        assert.deepEqual(await fsp.readFile(expected), payload);
+    } finally {
+        await new Promise((resolve) => server.close(resolve));
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});
+
+test("explicit invalid comfyDir never falls back to another install", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-invalid-root-"));
+    const empty = path.join(root, "empty-comfy");
+    const other = path.join(root, "other-comfy");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(empty, { recursive: true });
+    await fsp.mkdir(path.join(other, "models", "vae"), { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    const index = {
+        schema: 1,
+        version: "test-invalid-1",
+        packs: [{ id: "test", resources: ["test-file"] }],
+        resources: [{ id: "test-file", type: "model", target: "vae/test.bin", size: 10 }],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: empty, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: {
+            getDirectorySettings: () => ({ mode: "auto", modelDirs: [], loraDirs: [], customNodesDirs: [] }),
+            folderPaths: () => ({ vae: [path.join(other, "models", "vae")] }),
+            loaderOptions: () => ({ VAELoader: ["test.bin"] }),
+            status: () => ({ comfyReachable: true }),
+            scan: async () => ({}),
+        },
+        logger: null,
+    });
+
+    try {
+        await manager.init();
+        assert.equal(manager.comfyRoot(), "");
+        assert.equal(manager.status().resources[0].status, "missing");
+        const job = manager.install({ ids: ["test-file"] });
+        const finished = await waitForJob(manager, job.id);
+        assert.equal(finished.status, "error");
+        assert.match(finished.items[0].error, /配置的 ComfyUI 目录无效/);
+        assert.equal(fs.existsSync(path.join(other, "models", "vae", "test.bin")), false);
+    } finally {
+        await fsp.rm(root, { recursive: true, force: true });
+    }
+});
+
+test("loader-only names never count as present without the file", async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), "resource-offline-"));
+    const comfy = path.join(root, "ComfyUI");
+    const data = path.join(root, "data");
+    const resources = path.join(root, "resources");
+    await fsp.mkdir(path.join(comfy, "models", "vae"), { recursive: true });
+    await fsp.mkdir(data, { recursive: true });
+    await fsp.mkdir(resources, { recursive: true });
+    const index = {
+        schema: 1,
+        version: "test-offline-1",
+        packs: [{ id: "test", resources: ["test-file"] }],
+        resources: [{ id: "test-file", type: "model", target: "vae/test.bin", size: 10 }],
+    };
+    await fsp.writeFile(path.join(resources, "index.json"), JSON.stringify(index), "utf8");
+
+    let live = true;
+    const manager = createResourceManager({
+        config: { rootDir: root, dataDir: data, comfyDir: comfy, comfyWorkflowsDir: "", resourcesIndexUrl: "", resourcesFetchTimeoutMs: 1000, resourceConcurrency: 1 },
+        setup: {
+            getDirectorySettings: () => ({ mode: "auto", modelDirs: [], loraDirs: [], customNodesDirs: [] }),
+            folderPaths: () => ({}),
+            loaderOptions: () => ({ VAELoader: ["test.bin"] }),
+            status: () => ({ comfyReachable: live }),
+            scan: async () => ({}),
+        },
+        logger: null,
+    });
+
+    try {
+        await manager.init();
+        // 加载器快照还在，但文件已经不存在：在线/离线都不能报已安装。
+        assert.equal(manager.status().resources[0].status, "missing");
+        live = false;
+        assert.equal(manager.status().resources[0].status, "missing");
     } finally {
         await fsp.rm(root, { recursive: true, force: true });
     }

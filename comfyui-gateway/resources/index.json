@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "version": "2026.11.01-33",
+  "version": "2026.11.01-34",
   "channel": "stable",
-  "updatedAt": "2026-11-01",
+  "updatedAt": "2026-11-03",
   "packs": [
     {
       "id": "core",
@@ -545,6 +545,54 @@
           "seedvr2_dep_einops"
         ]
       }
+    },
+    {
+      "id": "plugins",
+      "label": "插件与节点",
+      "description": "按需安装或修复 ComfyUI 自定义节点。默认不勾选；已安装的会跳过。节点写入设置里的插件目录（未设置时用 ComfyUI/custom_nodes），重启 ComfyUI 后加载。",
+      "resources": [
+        "qwenmultiangle",
+        "inpaint_cropandstitch",
+        "kjnodes",
+        "tespeed_moss",
+        "h3_te_speed_node",
+        "h3_audio_t8_node",
+        "h3_yc_nodes",
+        "h3_selflift_node",
+        "h3_solattn_node",
+        "h3_trt_vae_node",
+        "h3_vhs_node",
+        "prompt_llama_node",
+        "prompt_florence_node",
+        "prompt_te_man",
+        "seedvr2_node",
+        "qwen_angle_prompt",
+        "krea2_edit_node"
+      ],
+      "optionalResources": [
+        "qwenmultiangle",
+        "inpaint_cropandstitch",
+        "kjnodes",
+        "tespeed_moss",
+        "h3_te_speed_node",
+        "h3_audio_t8_node",
+        "h3_yc_nodes",
+        "h3_selflift_node",
+        "h3_solattn_node",
+        "h3_trt_vae_node",
+        "h3_vhs_node",
+        "prompt_llama_node",
+        "prompt_florence_node",
+        "prompt_te_man",
+        "seedvr2_node",
+        "qwen_angle_prompt",
+        "krea2_edit_node"
+      ],
+      "workflows": [],
+      "family": "plugins",
+      "tier": "utility",
+      "optional": true,
+      "autoRecommend": false
     }
   ],
   "resources": [
@@ -1300,7 +1348,7 @@
       "target": "custom_nodes/ComfyUI-llama-cpp_vllm",
       "autoInstall": true,
       "bundleDir": "resources/nodes/unpacked/ComfyUI-llama-cpp_vllm",
-      "size": 507114,
+      "size": 507412,
       "license": "MIT",
       "note": "Qwen 本地反推所需；装完重启 ComfyUI。",
       "provides": [

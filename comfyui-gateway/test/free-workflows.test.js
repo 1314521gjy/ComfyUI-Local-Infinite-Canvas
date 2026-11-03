@@ -87,6 +87,82 @@ test("UI workflow conversion keeps widgets, links and resolves bypass", () => {
   assert.equal(result.workflow["3"].inputs.filename_prefix, "out");
 });
 
+test("UI conversion resolves SetNode/GetNode virtual links", () => {
+  const info = { ...objectInfo, CheckpointLoaderSimple: { input: { required: { ckpt_name: [["model.safetensors"], {}] } } } };
+  const n = (id, type, inputs, outputs, widgets_values, title = "") => ({ id, type, title, mode: 0, inputs, outputs, widgets_values });
+  const ui = {
+    nodes: [
+      n(1, "CheckpointLoaderSimple", [], [{ name: "MODEL", type: "MODEL" }, { name: "CLIP", type: "CLIP" }, { name: "VAE", type: "VAE" }], ["model.safetensors"]),
+      n(2, "CLIPTextEncode", [{ name: "clip", type: "CLIP", link: 2 }], [{ name: "CONDITIONING", type: "CONDITIONING" }], ["positive text"]),
+      n(3, "CLIPTextEncode", [{ name: "clip", type: "CLIP", link: 3 }], [{ name: "CONDITIONING", type: "CONDITIONING" }], ["negative text"]),
+      n(4, "EmptyLatentImage", [], [{ name: "LATENT", type: "LATENT" }], [512, 512, 1]),
+      n(5, "SetNode", [{ name: "CONDITIONING", type: "CONDITIONING", link: 5 }], [{ name: "CONDITIONING", type: "CONDITIONING", links: null }], ["positive_cond"], "Set_positive_cond"),
+      n(6, "GetNode", [], [{ name: "CONDITIONING", type: "CONDITIONING", links: [8] }], ["positive_cond"], "Get_positive_cond"),
+      n(7, "KSampler", [
+        { name: "model", type: "MODEL", link: 1 },
+        { name: "positive", type: "CONDITIONING", link: 8 },
+        { name: "negative", type: "CONDITIONING", link: 6 },
+        { name: "latent_image", type: "LATENT", link: 7 },
+      ], [{ name: "LATENT", type: "LATENT" }], [12345, "fixed", 20, 7, "euler", "normal", 1]),
+      n(8, "VAEDecode", [{ name: "samples", type: "LATENT", link: 9 }, { name: "vae", type: "VAE", link: 4 }], [{ name: "IMAGE", type: "IMAGE" }], []),
+      n(9, "SaveImage", [{ name: "images", type: "IMAGE", link: 10 }], [], ["ComfyUI"]),
+    ],
+    links: [
+      [1, 1, 0, 7, 0, "MODEL"],
+      [2, 1, 1, 2, 0, "CLIP"],
+      [3, 1, 1, 3, 0, "CLIP"],
+      [4, 1, 2, 8, 1, "VAE"],
+      [5, 2, 0, 5, 0, "CONDITIONING"],
+      [6, 3, 0, 7, 2, "CONDITIONING"],
+      [7, 4, 0, 7, 3, "LATENT"],
+      [8, 6, 0, 7, 1, "CONDITIONING"],
+      [9, 7, 0, 8, 0, "LATENT"],
+      [10, 8, 0, 9, 0, "IMAGE"],
+    ],
+  };
+  const result = convertUiWorkflow(ui, info);
+  assert.deepEqual(result.workflow["7"].inputs.positive, ["2", 0]);
+  assert.equal(Object.values(result.workflow).some((node) => /SetNode|GetNode/.test(node.class_type)), false);
+  const bindings = detectFreeBindings(result.workflow, info);
+  assert.equal(bindings.prompt?.node, "2");
+  assert.deepEqual(bindings.textInputs.map((item) => item.role), ["positive", "negative"]);
+});
+
+test("UI conversion rejects a used GetNode without a matching SetNode", () => {
+  const info = { ...objectInfo, CheckpointLoaderSimple: { input: { required: { ckpt_name: [["model.safetensors"], {}] } } } };
+  const ui = {
+    nodes: [
+      { id: 1, type: "GetNode", mode: 0, inputs: [], outputs: [{ name: "CONDITIONING", type: "CONDITIONING", links: [1] }], widgets_values: ["missing_cond"] },
+      { id: 2, type: "KSampler", mode: 0, inputs: [{ name: "positive", type: "CONDITIONING", link: 1 }], outputs: [{ name: "LATENT", type: "LATENT" }], widgets_values: [1, "fixed", 20, 7, "euler", "normal", 1] },
+    ],
+    links: [[1, 1, 0, 2, 0, "CONDITIONING"]],
+  };
+  assert.throws(() => convertUiWorkflow(ui, info), /GetNode「missing_cond」找不到对应的 SetNode/);
+});
+
+test("UI conversion ignores an unused GetNode without a SetNode", () => {
+  const ui = {
+    nodes: [
+      { id: 1, type: "CLIPTextEncode", mode: 0, inputs: [], outputs: [{ name: "CONDITIONING", type: "CONDITIONING" }], widgets_values: ["hello"] },
+      { id: 2, type: "GetNode", mode: 0, inputs: [], outputs: [{ name: "CONDITIONING", type: "CONDITIONING", links: null }], widgets_values: ["unused"] },
+    ],
+    links: [],
+  };
+  const result = convertUiWorkflow(ui, objectInfo);
+  assert.deepEqual(Object.keys(result.workflow), ["1"]);
+});
+
+test("UI conversion rejects duplicate SetNode names", () => {
+  const ui = {
+    nodes: [
+      { id: 1, type: "SetNode", mode: 0, inputs: [], outputs: [{ name: "CONDITIONING", type: "CONDITIONING", links: null }], widgets_values: ["dup"] },
+      { id: 2, type: "SetNode", mode: 0, inputs: [], outputs: [{ name: "CONDITIONING", type: "CONDITIONING", links: null }], widgets_values: ["dup"] },
+    ],
+    links: [],
+  };
+  assert.throws(() => convertUiWorkflow(ui, objectInfo), /SetNode「dup」重名/);
+});
+
 test("UI conversion maps VHS widgets and normalizes display labels", () => {
   const ui = {
     nodes: [

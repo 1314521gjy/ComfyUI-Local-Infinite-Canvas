@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 
@@ -74,6 +75,49 @@ test("assistant manager gates on missing full package", async () => {
     const status = await manager.status();
     assert.equal(status.running, false);
     fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("assistant manager repairs a present runtime package through the launcher", async () => {
+    const root = buildAppRoot();
+    fs.rmSync(path.join(root, "assistant", "workspace"), { recursive: true, force: true });
+    fs.rmSync(path.join(root, "assistant", "node_modules"), { recursive: true, force: true });
+    write(path.join(root, "assistant", "runtime.zip"), "zip");
+    let repaired = false;
+    const launcher = http.createServer((req, res) => {
+        if (req.method === "POST" && req.url === "/ensure-assistant") {
+            fs.mkdirSync(path.join(root, "assistant", "workspace", "infinite-canvas", "web", "node_modules"), { recursive: true });
+            fs.mkdirSync(path.join(root, "assistant", "node_modules", "@mariozechner", "pi-agent-core"), { recursive: true });
+            fs.mkdirSync(path.join(root, "assistant", "node_modules", "@mariozechner", "pi-ai"), { recursive: true });
+            write(path.join(root, "assistant", "workspace", "infinite-canvas", "web", "package.json"), "{}");
+            repaired = true;
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(JSON.stringify({ ok: true, extracted: true }));
+            return;
+        }
+        res.writeHead(404);
+        res.end("{}");
+    });
+    await new Promise((resolve) => launcher.listen(0, "127.0.0.1", resolve));
+    const config = { ...configFor(root), launcherControlUrl: `http://127.0.0.1:${launcher.address().port}` };
+    const manager = createAssistantManager({ config, logger: null });
+    try {
+        const before = manager.availability();
+        assert.equal(before.available, false);
+        assert.equal(before.canRepair, true);
+        assert.equal(before.runtimePackagePresent, true);
+
+        const started = await manager.ensure();
+        assert.equal(repaired, true);
+        assert.equal(started.ok, true);
+        assert.match(started.url, /^http:\/\/127\.0\.0\.1:\d+$/);
+        const status = await manager.status();
+        assert.equal(status.available, true);
+        assert.equal(status.online, true);
+    } finally {
+        await manager.stop("cleanup");
+        await new Promise((resolve) => launcher.close(resolve));
+        fs.rmSync(root, { recursive: true, force: true });
+    }
 });
 
 test("assistant manager starts on demand, reuses and stops", async () => {

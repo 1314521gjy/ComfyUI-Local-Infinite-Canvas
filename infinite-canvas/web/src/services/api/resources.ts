@@ -192,6 +192,8 @@ export type ResourceJobItem = {
     source?: string | null;
     error?: string;
     hint?: string;
+    path?: string;
+    restartRequired?: boolean;
     skipped?: boolean;
 };
 
@@ -205,6 +207,7 @@ export type ResourceJob = {
     completed: number;
     total: number;
     progress: number;
+    restartRequired?: boolean;
     error?: string;
 };
 
