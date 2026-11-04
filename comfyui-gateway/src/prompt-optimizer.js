@@ -265,7 +265,8 @@ async function cloudChat({ system, userText, images = [], cloud = {}, signal, te
     else signal.addEventListener("abort", onAbort, { once: true });
   }
   const started = Date.now();
-  const post = async (requestTemperature) => {
+  let attemptMaxTokens = maxTokens;
+  const post = async (requestTemperature, requestMaxTokens = attemptMaxTokens) => {
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
@@ -276,7 +277,7 @@ async function cloudChat({ system, userText, images = [], cloud = {}, signal, te
           { role: "user", content: userContent },
         ],
         temperature: requestTemperature,
-        max_tokens: maxTokens,
+        max_tokens: requestMaxTokens,
       }),
       signal: controller.signal,
     });
@@ -297,6 +298,11 @@ async function cloudChat({ system, userText, images = [], cloud = {}, signal, te
       if (/invalid temperature|only\s+1\s+is\s+allowed|temperature.*not\s+supported/i.test(String(message))) {
         ({ response, text, data } = await post(1));
       }
+    }
+    // 部分 OpenAI 兼容网关对单次输出上限有更小的硬限制（如 8192/16384）：带限自动降档重试，最多两档。
+    while (!response.ok && attemptMaxTokens > 8192 && /max.?_?tokens|token limit|输出 token|输出长度/i.test(String(data?.error?.message || data?.message || text || ""))) {
+      attemptMaxTokens = Math.floor(attemptMaxTokens / 2);
+      ({ response, text, data } = await post(temperature));
     }
     if (!response.ok) {
       const message = data?.error?.message || data?.message || text || `HTTP ${response.status}`;
@@ -368,7 +374,7 @@ async function cloudOptimize({ prompt, mode, duration, referenceNote, language, 
     images: cloudImages,
     cloud,
     signal,
-    maxTokens: 16384,
+    maxTokens: 32768,
   });
   const sanitized = sanitizeH3Prompt(content);
   if (!sanitized) {
