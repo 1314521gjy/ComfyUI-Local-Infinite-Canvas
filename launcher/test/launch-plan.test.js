@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import http from "node:http";
@@ -162,6 +163,7 @@ test("assistant runtime zip extracts once and is skipped when ready", async () =
   const payload = path.join(root, "payload");
   const files = [
     "server.mjs",
+    "package-lock.json",
     "node_modules/@mariozechner/pi-agent-core/package.json",
     "node_modules/@mariozechner/pi-ai/package.json",
     "workspace/infinite-canvas/web/package.json",
@@ -175,26 +177,173 @@ test("assistant runtime zip extracts once and is skipped when ready", async () =
   const assistantDir = path.join(root, "assistant");
   await fsp.mkdir(assistantDir, { recursive: true });
   await fsp.writeFile(path.join(assistantDir, "server.mjs"), "newer-source", "utf8");
+  await fsp.writeFile(path.join(assistantDir, "package-lock.json"), "newer-lock", "utf8");
   const archive = path.join(assistantDir, "runtime.zip");
   const tar = process.env.SystemRoot ? path.join(process.env.SystemRoot, "System32", "tar.exe") : "tar";
   execFileSync(tar, ["-a", "-c", "-f", archive, "-C", payload, "."], { timeout: 120000, windowsHide: true });
   try {
-    const first = ensureAssistantRuntime(root, { logger: () => {} });
+    const first = await ensureAssistantRuntime(root, { logger: () => {} });
     assert.equal(first.ok, true);
     assert.equal(first.extracted, true);
+    assert.equal(first.runtimePackagePresent, true);
     assert.ok(fs.existsSync(path.join(assistantDir, "server.mjs")));
     assert.equal(fs.readFileSync(path.join(assistantDir, "server.mjs"), "utf8"), "newer-source");
+    assert.equal(fs.readFileSync(path.join(assistantDir, "package-lock.json"), "utf8"), "newer-lock");
     assert.ok(fs.existsSync(path.join(assistantDir, "workspace", "infinite-canvas", "web", "node_modules")));
-    const second = ensureAssistantRuntime(root, { logger: () => {} });
+    const second = await ensureAssistantRuntime(root, { logger: () => {} });
     assert.equal(second.ok, true);
     assert.equal(second.extracted, false);
     assert.equal(second.reason, "already-ready");
     await fsp.rm(path.join(assistantDir, "runtime.json"), { force: true });
-    const markerMissing = ensureAssistantRuntime(root, { logger: () => {} });
+    const markerMissing = await ensureAssistantRuntime(root, { logger: () => {} });
     assert.equal(markerMissing.ok, true);
     assert.equal(markerMissing.extracted, false);
     assert.equal(markerMissing.reason, "already-ready");
     assert.equal(fs.readFileSync(path.join(assistantDir, "server.mjs"), "utf8"), "newer-source");
+  } finally {
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+});
+
+async function makeRuntimeZip(root) {
+  const payload = path.join(root, "runtime-payload");
+  for (const rel of [
+    "server.mjs",
+    "node_modules/@mariozechner/pi-agent-core/package.json",
+    "node_modules/@mariozechner/pi-ai/package.json",
+    "workspace/infinite-canvas/web/package.json",
+    "workspace/infinite-canvas/web/node_modules/.keep",
+  ]) {
+    const full = path.join(payload, rel);
+    await fsp.mkdir(path.dirname(full), { recursive: true });
+    await fsp.writeFile(full, "{}", "utf8");
+  }
+  const archive = path.join(root, "mirror-runtime.zip");
+  const tar = process.env.SystemRoot ? path.join(process.env.SystemRoot, "System32", "tar.exe") : "tar";
+  execFileSync(tar, ["-a", "-c", "-f", archive, "-C", payload, "."], { timeout: 120000, windowsHide: true });
+  return archive;
+}
+
+test("assistant runtime without a package fails honestly instead of reporting ready", async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), "assistant-runtime-missing-"));
+  const messages = [];
+  try {
+    const result = await ensureAssistantRuntime(root, { logger: (message, level) => messages.push([message, level]) });
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, "missing-runtime-package");
+    assert.equal(result.runtimePackagePresent, false);
+    assert.ok(messages.some(([message, level]) => level === "WARN" && message.includes("未下载 Agent 运行时包")));
+  } finally {
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("assistant runtime already installed without a package stays usable with a warning", async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), "assistant-runtime-ready-"));
+  const assistantDir = path.join(root, "assistant");
+  for (const rel of [
+    "server.mjs",
+    "node_modules/@mariozechner/pi-agent-core/package.json",
+    "node_modules/@mariozechner/pi-ai/package.json",
+    "workspace/infinite-canvas/web/package.json",
+    "workspace/infinite-canvas/web/node_modules/.keep",
+  ]) {
+    const full = path.join(assistantDir, rel);
+    await fsp.mkdir(path.dirname(full), { recursive: true });
+    await fsp.writeFile(full, "{}", "utf8");
+  }
+  const messages = [];
+  try {
+    const result = await ensureAssistantRuntime(root, { logger: (message, level) => messages.push([message, level]) });
+    assert.equal(result.ok, true);
+    assert.equal(result.reason, "ready-without-package");
+    assert.equal(result.runtimePackagePresent, false);
+    assert.ok(messages.some(([message, level]) => level === "WARN" && message.includes("未找到 assistant-runtime.zip")));
+  } finally {
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("assistant runtime reports an incomplete extraction instead of success", async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), "assistant-runtime-incomplete-"));
+  const payload = path.join(root, "payload");
+  await fsp.mkdir(payload, { recursive: true });
+  await fsp.writeFile(path.join(payload, "server.mjs"), "{}", "utf8");
+  const assistantDir = path.join(root, "assistant");
+  await fsp.mkdir(assistantDir, { recursive: true });
+  const archive = path.join(assistantDir, "runtime.zip");
+  const tar = process.env.SystemRoot ? path.join(process.env.SystemRoot, "System32", "tar.exe") : "tar";
+  execFileSync(tar, ["-a", "-c", "-f", archive, "-C", payload, "."], { timeout: 120000, windowsHide: true });
+  try {
+    const result = await ensureAssistantRuntime(root, { logger: () => {} });
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, "incomplete-extract");
+    assert.equal(result.runtimePackagePresent, true);
+  } finally {
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("assistant runtime mirror download verifies SHA256 and can retry after failure", async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), "assistant-runtime-download-"));
+  const zip = await makeRuntimeZip(root);
+  const bytes = await fsp.readFile(zip);
+  const sha256 = crypto.createHash("sha256").update(bytes).digest("hex");
+  let mode = "fail";
+  const server = http.createServer((req, res) => {
+    if (mode === "fail") {
+      res.writeHead(500);
+      res.end("no");
+      return;
+    }
+    res.writeHead(200, { "content-type": "application/zip" });
+    res.end(bytes);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const url = `http://127.0.0.1:${server.address().port}/assistant-runtime.zip`;
+  await fsp.writeFile(path.join(root, "update.json"), JSON.stringify({ assistantRuntime: { url, sha256, size: bytes.length } }), "utf8");
+  try {
+    const failed = await ensureAssistantRuntime(root, { logger: () => {}, download: true });
+    assert.equal(failed.ok, false);
+    assert.equal(failed.reason, "download-failed");
+    assert.equal(fs.existsSync(path.join(root, "assistant", "server.mjs")), false);
+
+    mode = "ok";
+    const wrongSha = await ensureAssistantRuntime(root, { logger: () => {}, download: true, mirrorSha256: "0".repeat(64) });
+    assert.equal(wrongSha.ok, false);
+    assert.equal(wrongSha.reason, "download-failed");
+    assert.match(wrongSha.error, /SHA256/);
+
+    const retried = await ensureAssistantRuntime(root, { logger: () => {}, download: true });
+    assert.equal(retried.ok, true);
+    assert.equal(retried.extracted, true);
+    assert.ok(fs.existsSync(path.join(root, "assistant", "node_modules", "@mariozechner", "pi-agent-core")));
+    assert.ok(fs.existsSync(path.join(root, ".update", "assistant-runtime", "assistant-runtime.zip")));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("assistant runtime uses a local downloaded zip and rejects a bad hash", async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), "assistant-runtime-local-"));
+  const zip = await makeRuntimeZip(root);
+  const bytes = await fsp.readFile(zip);
+  const sha256 = crypto.createHash("sha256").update(bytes).digest("hex");
+  const local = path.join(root, ".update", "assistant-runtime", "assistant-runtime.zip");
+  await fsp.mkdir(path.dirname(local), { recursive: true });
+  await fsp.writeFile(local, bytes);
+  try {
+    const rejected = await ensureAssistantRuntime(root, { logger: () => {}, mirrorSha256: "f".repeat(64) });
+    assert.equal(rejected.ok, false);
+    assert.equal(rejected.reason, "invalid-local-package");
+    assert.equal(fs.existsSync(local), false);
+
+    await fsp.writeFile(local, bytes);
+    const accepted = await ensureAssistantRuntime(root, { logger: () => {}, mirrorSha256: sha256 });
+    assert.equal(accepted.ok, true);
+    assert.equal(accepted.extracted, true);
+    assert.equal(accepted.runtimePackagePresent, true);
   } finally {
     await fsp.rm(root, { recursive: true, force: true });
   }

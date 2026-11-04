@@ -575,9 +575,10 @@ function GenerationSettings({
                     config={{ ...config, model }}
                     onConfigChange={(key, value) => updateConfig(key, value)}
                     onModeChange={(value) => {
+                        updateConfig("videoMode", value);
+                        if (videoWorkflowId(config, model) === "video-h3-fast") return;
                         const baseId = value === "reference" ? "video-h3-ref2va" : value === "frames" ? "video-h3-frames" : "video-h3-t2v";
                         const nextModel = videoModelForWorkflow(config, baseId, { noVdn: isNoVdnWorkflowId(videoWorkflowId(config, model)) });
-                        updateConfig("videoMode", value);
                         if (nextModel) updateConfig("videoModel", nextModel);
                     }}
                     frameMode={frameMode}

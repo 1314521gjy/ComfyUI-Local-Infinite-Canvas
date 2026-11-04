@@ -22,6 +22,8 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
+import { Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 
 import { installBundledNodes } from "./bootstrap-nodes.mjs";
@@ -638,18 +640,132 @@ function assistantRuntimeReady(assistantDir) {
   );
 }
 
-export function ensureAssistantRuntime(root = ROOT, { logger = log } = {}) {
+export function assistantRuntimeConfig(root = ROOT) {
+  let manifest = null;
+  try {
+    manifest = JSON.parse(fs.readFileSync(path.join(root, "update.json"), "utf8"));
+  } catch {
+    manifest = null;
+  }
+  const value = manifest && typeof manifest.assistantRuntime === "object" ? manifest.assistantRuntime : {};
+  return {
+    url: typeof value.url === "string" ? value.url.trim() : "",
+    sha256: typeof value.sha256 === "string" ? value.sha256.trim().toLowerCase() : "",
+    size: Math.max(0, Number(value.size) || 0),
+    fullPackageUrl: typeof value.fullPackageUrl === "string" ? value.fullPackageUrl.trim() : "",
+  };
+}
+
+async function fileSha256(file) {
+  const hash = crypto.createHash("sha256");
+  for await (const chunk of fs.createReadStream(file)) hash.update(chunk);
+  return hash.digest("hex");
+}
+
+async function downloadAssistantRuntime(destination, { url, sha256, size, logger = log }) {
+  if (!sha256) throw new Error("缺少官方 SHA256，已拒绝下载");
+  const sizeMb = size ? Math.round(size / 1024 / 1024) : 0;
+  logger(`本机没有可用的 Agent 运行时包，正在从镜像下载${sizeMb ? `（约 ${sizeMb} MB）` : ""}…`, "WARN");
+  const response = await fetch(url, { signal: AbortSignal.timeout(600000) });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.body) throw new Error("镜像没有返回文件内容");
+  await fsp.mkdir(path.dirname(destination), { recursive: true });
+  const temp = `${destination}.part`;
+  const hash = crypto.createHash("sha256");
+  let bytes = 0;
+  const meter = new Transform({
+    transform(chunk, _encoding, callback) {
+      bytes += chunk.length;
+      hash.update(chunk);
+      callback(null, chunk);
+    },
+  });
+  try {
+    await pipeline(Readable.fromWeb(response.body), meter, fs.createWriteStream(temp));
+  } catch (error) {
+    await fsp.rm(temp, { force: true });
+    throw error;
+  }
+  if (size > 0 && bytes !== size) {
+    await fsp.rm(temp, { force: true });
+    throw new Error(`运行时包大小不符（${bytes} != ${size}）`);
+  }
+  const digest = hash.digest("hex");
+  if (digest !== sha256) {
+    await fsp.rm(temp, { force: true });
+    throw new Error("运行时包 SHA256 校验失败");
+  }
+  await fsp.rename(temp, destination);
+  return destination;
+}
+
+export async function ensureAssistantRuntime(
+  root = ROOT,
+  { logger = log, download = false, mirrorUrl = "", mirrorSha256 = "" } = {},
+) {
   const assistantDir = path.join(root, "assistant");
-  const candidates = [path.join(assistantDir, "runtime.zip"), path.join(root, "assistant-runtime.zip")];
-  const archive = candidates.find((item) => isFile(item));
-  const markerFile = path.join(assistantDir, "runtime.json");
-  if (!archive) return { ok: true, extracted: false, reason: "no-runtime-zip" };
+  const config = assistantRuntimeConfig(root);
+  const url = String(mirrorUrl || config.url || "").trim();
+  const sha256 = String(mirrorSha256 || config.sha256 || "").trim().toLowerCase();
+  const downloadAvailable = Boolean(url && sha256);
+  const fullPackageUrl = config.fullPackageUrl;
+  const downloadedArchive = path.join(root, ".update", "assistant-runtime", "assistant-runtime.zip");
+  const bundledArchive =
+    [path.join(assistantDir, "runtime.zip"), path.join(root, "assistant-runtime.zip")].find((item) => isFile(item)) || "";
+  let archive = bundledArchive || (isFile(downloadedArchive) ? downloadedArchive : "");
+  let downloadedNow = false;
+  const ready = assistantRuntimeReady(assistantDir);
+  if (!archive) {
+    if (ready) {
+      logger("Agent 运行时已就绪，但未找到 assistant-runtime.zip；后续代码更新不会自动覆盖现有运行时。", "WARN");
+      return { ok: true, ready: true, extracted: false, reason: "ready-without-package", runtimePackagePresent: false, downloadAvailable, fullPackageUrl };
+    }
+    if (!download) {
+      const error = "未下载 Agent 运行时包 assistant-runtime.zip；画布其他功能不受影响。";
+      const hint = downloadAvailable
+        ? "可在助手卡点「下载完整包」。"
+        : fullPackageUrl
+          ? "请从完整包下载页获取后放到程序根目录。"
+          : "请下载包含运行时包的完整包。";
+      logger(`${error}${hint}`, "WARN");
+      return { ok: false, ready: false, extracted: false, reason: "missing-runtime-package", error, runtimePackagePresent: false, downloadAvailable, fullPackageUrl };
+    }
+    if (!downloadAvailable) {
+      const error = "没有可用的 Agent 运行时镜像（缺少官方 URL 或 SHA256）；请下载完整包后重试。";
+      logger(error, "WARN");
+      return { ok: false, ready: false, extracted: false, reason: "missing-runtime-mirror", error, runtimePackagePresent: false, downloadAvailable: false, fullPackageUrl };
+    }
+    try {
+      archive = await downloadAssistantRuntime(downloadedArchive, { url, sha256, size: config.size, logger });
+      downloadedNow = true;
+    } catch (error) {
+      const message = `下载 Agent 运行时包失败：${error.message}`;
+      logger(message, "WARN");
+      return { ok: false, ready: false, extracted: false, reason: "download-failed", error: message, runtimePackagePresent: false, downloadAvailable, fullPackageUrl };
+    }
+  }
+  if (archive === downloadedArchive && sha256 && !downloadedNow) {
+    try {
+      const digest = await fileSha256(archive);
+      if (digest !== sha256) {
+        await fsp.rm(archive, { force: true });
+        const error = "本地已下载的 Agent 运行时包 SHA256 校验失败，已删除；请重新下载。";
+        logger(error, "WARN");
+        return { ok: false, ready, extracted: false, reason: "invalid-local-package", error, runtimePackagePresent: false, downloadAvailable, fullPackageUrl };
+      }
+    } catch (error) {
+      const message = `校验本地 Agent 运行时包失败：${error.message}`;
+      logger(message, "WARN");
+      return { ok: false, ready, extracted: false, reason: "invalid-local-package", error: message, runtimePackagePresent: true, downloadAvailable, fullPackageUrl };
+    }
+  }
   let stat;
   try {
     stat = fs.statSync(archive);
   } catch (error) {
-    return { ok: false, extracted: false, error: `读取 Agent 运行时包失败：${error.message}` };
+    return { ok: false, ready: false, extracted: false, reason: "package-unreadable", error: `读取 Agent 运行时包失败：${error.message}`, runtimePackagePresent: true, downloadAvailable, fullPackageUrl };
   }
+  const markerFile = path.join(assistantDir, "runtime.json");
   let marker = null;
   try {
     marker = JSON.parse(fs.readFileSync(markerFile, "utf8"));
@@ -657,7 +773,7 @@ export function ensureAssistantRuntime(root = ROOT, { logger = log } = {}) {
     marker = null;
   }
   if (assistantRuntimeReady(assistantDir) && marker && marker.size === stat.size && marker.mtimeMs === stat.mtimeMs) {
-    return { ok: true, extracted: false, reason: "already-ready" };
+    return { ok: true, ready: true, extracted: false, reason: "already-ready", runtimePackagePresent: true, downloadAvailable, fullPackageUrl };
   }
   if (assistantRuntimeReady(assistantDir)) {
     // 运行时已经完整；仅缺标记时不能重新解压，否则旧 runtime.zip 会覆盖较新的源码。
@@ -666,12 +782,12 @@ export function ensureAssistantRuntime(root = ROOT, { logger = log } = {}) {
     } catch {
       // 标记失败时下次仍走就绪检查，不影响本次使用。
     }
-    return { ok: true, extracted: false, reason: "already-ready" };
+    return { ok: true, ready: true, extracted: false, reason: "already-ready", runtimePackagePresent: true, downloadAvailable, fullPackageUrl };
   }
   const sizeMb = Math.round(stat.size / 1024 / 1024);
   logger(`正在解压画布修复助手运行时（${sizeMb} MB，仅首次或整包更新后执行）…`);
   const preservedSources = new Map();
-  for (const name of ["server.mjs", "repair-tools.mjs", "diagnostics.mjs", "skill.mjs", "package.json"]) {
+  for (const name of ["server.mjs", "repair-tools.mjs", "diagnostics.mjs", "skill.mjs", "package.json", "package-lock.json", "repair-security.test.mjs"]) {
     const file = path.join(assistantDir, name);
     if (!isFile(file)) continue;
     try {
@@ -693,7 +809,7 @@ export function ensureAssistantRuntime(root = ROOT, { logger = log } = {}) {
   if (result.status !== 0) {
     const error = "解压 Agent 运行时失败；画布其他功能不受影响，助手卡会提示需要完整包。";
     logger(error, "WARN");
-    return { ok: false, extracted: false, error };
+    return { ok: false, ready: false, extracted: false, reason: "extract-failed", error, runtimePackagePresent: true, downloadAvailable, fullPackageUrl };
   }
   for (const [name, content] of preservedSources) {
     try {
@@ -705,7 +821,7 @@ export function ensureAssistantRuntime(root = ROOT, { logger = log } = {}) {
   if (!assistantRuntimeReady(assistantDir)) {
     const error = "Agent 运行时包解压后仍缺少文件；助手卡会提示需要完整包。";
     logger(error, "WARN");
-    return { ok: false, extracted: false, error };
+    return { ok: false, ready: false, extracted: false, reason: "incomplete-extract", error, runtimePackagePresent: true, downloadAvailable, fullPackageUrl };
   }
   try {
     fs.writeFileSync(markerFile, `${JSON.stringify({ size: stat.size, mtimeMs: stat.mtimeMs, extractedAt: new Date().toISOString() }, null, 2)}\n`, "utf8");
@@ -713,7 +829,7 @@ export function ensureAssistantRuntime(root = ROOT, { logger = log } = {}) {
     // 标记写失败只会导致下次重复解压，不影响本次使用。
   }
   logger("画布修复助手运行时已就绪。");
-  return { ok: true, extracted: true };
+  return { ok: true, ready: true, extracted: true, reason: "extracted", runtimePackagePresent: true, downloadAvailable, fullPackageUrl };
 }
 
 async function downloadGatewayDeps(destination) {
@@ -814,7 +930,6 @@ async function quarantineTeManData(comfyRoot) {
 }
 
 function spawnGateway(cfg, comfyUrl, workflowsDir) {
-  ensureAssistantRuntime(ROOT);
   const serverEntry = path.join(cfg.gatewayDir, "src", "server.js");
   if (!isFile(serverEntry)) {
     throw new Error(`找不到网关入口：${serverEntry}`);
@@ -1553,6 +1668,25 @@ async function restartComfy(cfg) {
   }
 }
 
+function readJsonBody(req, limit = 8192) {
+  return new Promise((resolve) => {
+    let raw = "";
+    req.setEncoding("utf8");
+    req.on("data", (chunk) => {
+      raw += chunk;
+      if (raw.length > limit) req.destroy();
+    });
+    req.on("end", () => {
+      try {
+        resolve(JSON.parse(raw || "{}"));
+      } catch {
+        resolve({});
+      }
+    });
+    req.on("error", () => resolve({}));
+  });
+}
+
 async function startControlServer(cfg) {
   const server = http.createServer(async (req, res) => {
     res.setHeader("content-type", "application/json; charset=utf-8");
@@ -1583,28 +1717,14 @@ async function startControlServer(cfg) {
         return;
       }
       if (req.method === "POST" && pathname === "/ensure-assistant") {
-        res.setTimeout(600000);
-        const result = ensureAssistantRuntime(ROOT);
+        res.setTimeout(900000);
+        const body = await readJsonBody(req);
+        const result = await ensureAssistantRuntime(ROOT, { download: body.download === true });
         res.end(JSON.stringify({ ...result, ok: result.ok !== false }));
         return;
       }
       if (req.method === "POST" && pathname === "/set-comfy-dir") {
-        const body = await new Promise((resolve) => {
-          let raw = "";
-          req.setEncoding("utf8");
-          req.on("data", (chunk) => {
-            raw += chunk;
-            if (raw.length > 8192) req.destroy();
-          });
-          req.on("end", () => {
-            try {
-              resolve(JSON.parse(raw || "{}"));
-            } catch {
-              resolve({});
-            }
-          });
-          req.on("error", () => resolve({}));
-        });
+        const body = await readJsonBody(req);
         const dir = String(body.dir || "").trim();
         if (!dir || !isDir(dir)) {
           res.statusCode = 400;
@@ -1675,8 +1795,8 @@ async function main() {
   cfg.launcherControlUrl = "";
   if (!DRY_RUN) {
     // 每次启动都检查一次：即使用已有网关被接管，也要把新下载的完整包解压出来。
-    const runtime = ensureAssistantRuntime(ROOT);
-    if (!runtime.ok) log(runtime.error || "Agent 运行时解压失败", "WARN");
+    const runtime = await ensureAssistantRuntime(ROOT);
+    if (!runtime.ok) log(runtime.error || "Agent 运行时未就绪", "WARN");
     const controlReady = await startControlServer(cfg);
     if (controlReady) cfg.launcherControlUrl = cfg.controlUrl;
   }

@@ -1065,8 +1065,8 @@ export async function createGatewayApp(overrides = {}) {
     res.json(await assistant.status());
   });
 
-  app.post("/api/assistant/ensure", async (_req, res) => {
-    const result = await assistant.ensure();
+  app.post("/api/assistant/ensure", async (req, res) => {
+    const result = await assistant.ensure({ download: req.body?.download === true });
     res.status(result.ok ? 200 : result.needFullPackage ? 409 : 503).json(result);
   });
 
@@ -1671,6 +1671,128 @@ export async function createGatewayApp(overrides = {}) {
     }
     if (!data.length) throw new HttpError("超分工作流没有返回图片", { status: 502, code: "no_images" });
     res.json({ created: Math.floor(Date.now() / 1000), data, seed: result.usedSeed ?? null });
+  });
+
+  app.post("/v1/3d/generations", upload.any(), async (req, res) => {
+    await reloadRegistryAndSnapshot();
+    const body = req.body || {};
+    const entry = registry.resolve("image-idol-3d");
+    if (!entry) throw new HttpError("3D 工作流未注册", { status: 500, code: "missing_3d_workflow" });
+    const files = imageFilesFrom(req.files || []);
+    if (!files.length) throw new HttpError("3D 生成缺少输入图片", { status: 400, code: "missing_input_image" });
+    const uploadedImages = await uploadImages(comfy, [files[0]]);
+    const params = parseParams(body.params);
+    params.idolMode = String(body.mode || params.idolMode || "synthetic").toLowerCase() === "real" ? "real" : "synthetic";
+    const seed = Number(body.seed);
+    if (Number.isFinite(seed) && seed > 0) params.seed = Math.trunc(seed);
+    const gaussians = Number(body.num_gaussians ?? body.numGaussians);
+    if (Number.isFinite(gaussians)) params.numGaussians = Math.max(32768, Math.min(1048576, Math.trunc(gaussians)));
+    const context = buildContext({ images: [files[0]], uploadedImages, params, mode: params.idolMode });
+    const abort = abortOnDisconnect(req, res, registerActiveRequest);
+    let result;
+    try {
+      result = await runWorkflow({
+        entry,
+        context,
+        comfy,
+        timeoutMs: config.requestTimeoutMs,
+        pollIntervalMs: config.pollIntervalMs,
+        signal: abort.signal,
+        requestId: req.id,
+        logger,
+        loraCatalog: setup.loraNames(),
+        modelAliasFor: setup.modelAliasFor,
+        loaderSpecs: setup.modelLoaderSpecs?.(),
+      });
+    } catch (error) {
+      if (abort.signal.aborted) {
+        logger.info(`3d ${entry.name} 请求被客户端中断 ${req.id}`);
+        return;
+      }
+      const failureText = `${error?.message || ""} ${typeof error?.details === "string" ? error.details : JSON.stringify(error?.details || "")}`;
+      if (/mask is empty|no object found/i.test(failureText)) {
+        throw new HttpError("没有检测到可分离的主体：图片转3D 只适合单个物体；场景或三视图请先裁出一张主体图再试。", { status: 422, code: "no_3d_subject" });
+      }
+      throw error;
+    } finally {
+      abort.cleanup();
+    }
+    const video = result.files.find((file) => /\.(mp4|webm|mov)$/i.test(file.filename) || /^video\//i.test(file.mimeType));
+    const model = result.files.find((file) => /\.(ply|spz|ksplat|splat)$/i.test(file.filename));
+    const preview = result.files.find((file) => file !== video && file !== model && /^image\//i.test(file.mimeType));
+    if (!model) throw new HttpError("3D 工作流没有返回模型文件", { status: 502, code: "no_3d_output", details: result.files.map((file) => file.filename) });
+    const savedModel = await tasks.saveOutput(randomId("model3d_"), model.buffer, extFromMime(model.mimeType, model.filename, "ply"));
+    const savedVideo = video ? await tasks.saveOutput(randomId("model3d_"), video.buffer, extFromMime(video.mimeType, video.filename, "mp4")) : null;
+    const savedPreview = preview ? await tasks.saveOutput(randomId("model3d_"), preview.buffer, extFromMime(preview.mimeType, preview.filename, "png")) : null;
+    logger.info(`3d ${entry.name} seed=${result.usedSeed ?? "-"} -> ${result.promptId} mode=${params.idolMode} ${req.id}`);
+    res.json({
+      created: Math.floor(Date.now() / 1000),
+      prompt_id: result.promptId,
+      seed: result.usedSeed ?? null,
+      mode: params.idolMode,
+      model: { url: savedModel.url, bytes: savedModel.bytes, filename: model.filename },
+      video: savedVideo ? { url: savedVideo.url, bytes: savedVideo.bytes, filename: video.filename } : null,
+      preview: savedPreview ? { url: savedPreview.url, bytes: savedPreview.bytes, filename: preview.filename } : null,
+    });
+  });
+
+  app.post("/v1/3d/scenes", upload.any(), async (req, res) => {
+    await reloadRegistryAndSnapshot();
+    const body = req.body || {};
+    const entry = registry.resolve("image-moge-scene");
+    if (!entry) throw new HttpError("MoGe 场景工作流未注册", { status: 500, code: "missing_scene_workflow" });
+    const files = imageFilesFrom(req.files || []);
+    if (!files.length) throw new HttpError("场景建3D 缺少输入图片", { status: 400, code: "missing_input_image" });
+    const uploadedImages = await uploadImages(comfy, [files[0]]);
+    const params = parseParams(body.params);
+    const resolution = Number(body.resolution ?? params.mogeResolution);
+    if (Number.isFinite(resolution)) params.mogeResolution = Math.max(0, Math.min(9, Math.trunc(resolution)));
+    const decimation = Number(body.decimation ?? params.mogeDecimation);
+    if (Number.isFinite(decimation)) params.mogeDecimation = Math.max(1, Math.min(8, Math.trunc(decimation)));
+    const context = buildContext({ images: [files[0]], uploadedImages, params });
+    const abort = abortOnDisconnect(req, res, registerActiveRequest);
+    let result;
+    try {
+      result = await runWorkflow({
+        entry,
+        context,
+        comfy,
+        timeoutMs: config.requestTimeoutMs,
+        pollIntervalMs: config.pollIntervalMs,
+        signal: abort.signal,
+        requestId: req.id,
+        logger,
+        loraCatalog: setup.loraNames(),
+        modelAliasFor: setup.modelAliasFor,
+        loaderSpecs: setup.modelLoaderSpecs?.(),
+      });
+    } catch (error) {
+      if (abort.signal.aborted) {
+        logger.info(`3d scene ${entry.name} 请求被客户端中断 ${req.id}`);
+        return;
+      }
+      throw error;
+    } finally {
+      abort.cleanup();
+    }
+    const model = result.files.find((file) => /\.(glb|gltf)$/i.test(file.filename));
+    const preview =
+      result.files.find((file) => /\.(png|jpe?g|webp)$/i.test(file.filename) && /render/i.test(file.filename)) ||
+      result.files.find((file) => /^image\//i.test(file.mimeType));
+    const depth = result.files.find((file) => /\.(png|jpe?g|webp)$/i.test(file.filename) && /depth/i.test(file.filename));
+    if (!model) throw new HttpError("MoGe 没有返回网格文件", { status: 502, code: "no_scene_mesh", details: result.files.map((file) => file.filename) });
+    const savedModel = await tasks.saveOutput(randomId("scene3d_"), model.buffer, extFromMime(model.mimeType, model.filename, "glb"));
+    const savedPreview = preview ? await tasks.saveOutput(randomId("scene3d_"), preview.buffer, extFromMime(preview.mimeType, preview.filename, "png")) : null;
+    const savedDepth = depth ? await tasks.saveOutput(randomId("scene3d_"), depth.buffer, extFromMime(depth.mimeType, depth.filename, "png")) : null;
+    logger.info(`3d scene ${entry.name} -> ${result.promptId} res=${params.mogeResolution ?? 6} ${req.id}`);
+    res.json({
+      created: Math.floor(Date.now() / 1000),
+      prompt_id: result.promptId,
+      resolution: params.mogeResolution ?? 6,
+      model: { url: savedModel.url, bytes: savedModel.bytes, filename: model.filename, format: "glb" },
+      preview: savedPreview ? { url: savedPreview.url, bytes: savedPreview.bytes, filename: preview.filename } : null,
+      depth: savedDepth ? { url: savedDepth.url, bytes: savedDepth.bytes, filename: depth.filename } : null,
+    });
   });
 
   app.post("/v1/images/edits", upload.any(), async (req, res) => {

@@ -1,0 +1,8 @@
+# Optional only: the default FastH3/VSA deployment does not install this.
+# The CuTe DSL runtime is distributed by NVIDIA; the Sol-Attn Python source is
+# vendored at the pinned NVlabs/Sana commit under third_party/sol_attn because
+# no sol-attn distribution exists on PyPI. Keep these dependencies in an
+# optional target/site directory so the
+# baseline Torch/Kitchen environment is unchanged.
+nvidia-cutlass-dsl[cu13]==4.7.1
+apache-tvm-ffi==0.1.14.post0

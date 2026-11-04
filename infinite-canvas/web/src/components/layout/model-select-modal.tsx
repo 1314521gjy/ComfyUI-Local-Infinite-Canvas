@@ -1,6 +1,6 @@
 import { App, Button, Checkbox, Input, Modal, Tabs } from "antd";
 import { RefreshCw, Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { fetchChannelModels } from "@/services/api/image";
@@ -17,6 +17,8 @@ export function ModelSelectModal({ open, channel, selectedNames, onConfirm, onCl
     const [search, setSearch] = useState("");
     const [manual, setManual] = useState("");
     const [loading, setLoading] = useState(false);
+    const fetchAbortRef = useRef<AbortController | null>(null);
+    const fetchSeqRef = useRef(0);
 
     useEffect(() => {
         if (!open) return;
@@ -59,24 +61,48 @@ export function ModelSelectModal({ open, channel, selectedNames, onConfirm, onCl
         setActiveTab("new");
     };
 
-    const fetchModels = async () => {
+    const fetchModels = async (silent = false) => {
         if (!channel) return;
         if (!channel.baseUrl.trim() || !channel.apiKey.trim()) {
             message.error(t("config.modelSelect.missingConfig"));
             return;
         }
+        fetchAbortRef.current?.abort();
+        const controller = new AbortController();
+        const seq = ++fetchSeqRef.current;
+        fetchAbortRef.current = controller;
         setLoading(true);
         try {
-            const models = await fetchChannelModels(channel);
+            const models = await fetchChannelModels(channel, { signal: controller.signal });
+            if (seq !== fetchSeqRef.current || controller.signal.aborted) return;
             setFetched(models);
             setActiveTab("new");
-            message.success(t("config.modelSelect.fetched", { count: models.length }));
+            if (!models.length) {
+                message.warning(t("config.modelSelect.fetchedNone"));
+            } else if (!silent) {
+                message.success(t("config.modelSelect.fetched", { count: models.length }));
+            }
         } catch (error) {
+            if (seq !== fetchSeqRef.current || controller.signal.aborted) return;
             message.error(error instanceof Error ? error.message : t("config.modelSelect.fetchFailed"));
         } finally {
-            setLoading(false);
+            if (seq === fetchSeqRef.current) setLoading(false);
         }
     };
+
+    useEffect(() => {
+        if (!open) {
+            fetchAbortRef.current?.abort();
+            fetchSeqRef.current += 1;
+            setLoading(false);
+            return;
+        }
+        if (!channel || !channel.baseUrl.trim() || !channel.apiKey.trim()) return;
+        const timer = window.setTimeout(() => void fetchModels(true), 250);
+        return () => window.clearTimeout(timer);
+    }, [open, channel]);
+
+    useEffect(() => () => fetchAbortRef.current?.abort(), []);
 
     const confirm = () => {
         const ordered = [...existing, ...fetched].filter((name, index, list) => list.indexOf(name) === index).filter((name) => selected.has(name));

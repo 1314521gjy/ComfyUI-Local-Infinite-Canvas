@@ -15,7 +15,7 @@ import { collectModelRoots, clearExtraModelPathsCache } from "./model-paths.js";
 import { isManualModelCategory, manualCustomNodeRoots, manualModelRoots } from "./directories.js";
 import { nowIso, truncate, writeJsonAtomic } from "./util.js";
 
-const MODEL_DIRS = new Set(["diffusion_models", "text_encoders", "vae", "vae_approx", "loras", "checkpoints", "upscale_models", "latent_upscale_models", "vdn", "clip_vision", "LLM", "SEEDVR2"]);
+const MODEL_DIRS = new Set(["diffusion_models", "text_encoders", "vae", "vae_approx", "loras", "checkpoints", "upscale_models", "latent_upscale_models", "vdn", "clip_vision", "clip_projections", "background_removal", "geometry_estimation", "LLM", "SEEDVR2"]);
 const VDN_STAGE_RESOURCE_PREFIX = "h3_vdn_stage_";
 const RETIRED_RESOURCE_IDS = new Set(["h3_character_swap_lora", "h3_vdn_node"]);
 const H3_PACK_ID = "h3";

@@ -93,7 +93,12 @@ function writeJsonAtomic(file, value) {
 }
 
 function workspaceVersion() {
-    return readText(path.join(WORKSPACE_ROOT, "VERSION")).trim() || readText(path.join(WORKSPACE_ROOT, "infinite-canvas", "VERSION")).trim() || "unknown";
+    return (
+        readText(path.join(WORKSPACE_ROOT, "VERSION")).trim() ||
+        readText(path.join(WORKSPACE_ROOT, "infinite-canvas", "VERSION")).trim() ||
+        APP_VERSION ||
+        "unknown"
+    );
 }
 
 function touch() {

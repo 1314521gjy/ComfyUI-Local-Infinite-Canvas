@@ -102,7 +102,7 @@ function collectOutputFiles(history, { includePreview = false } = {}) {
   const files = [];
   const seen = new Set();
   for (const [nodeId, output] of Object.entries(history?.outputs || {})) {
-    for (const key of ["images", "gifs", "videos"]) {
+    for (const key of ["images", "gifs", "videos", "3d"]) {
       for (const item of output?.[key] || []) {
         if (!item?.filename) continue;
         if (item.type && item.type !== "output" && !(includePreview && item.type === "temp")) continue;

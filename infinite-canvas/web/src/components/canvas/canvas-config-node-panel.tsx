@@ -44,6 +44,10 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
               ? "both"
               : "first";
     const changeVideoMode = (value: "text" | "frames" | "reference") => {
+        if (videoWorkflowId(config, config.model) === "video-h3-fast") {
+            onConfigChange(node.id, { videoMode: value, ...(value === "frames" ? { frameMode } : {}) });
+            return;
+        }
         const baseId = value === "reference" ? "video-h3-ref2va" : value === "frames" ? "video-h3-frames" : "video-h3-t2v";
         const nextModel = videoModelForWorkflow(config, baseId, { noVdn: isNoVdnWorkflowId(videoWorkflowId(config, config.model)) });
         onConfigChange(node.id, { ...(nextModel ? { model: nextModel } : {}), videoMode: value, ...(value === "frames" ? { frameMode } : {}) });

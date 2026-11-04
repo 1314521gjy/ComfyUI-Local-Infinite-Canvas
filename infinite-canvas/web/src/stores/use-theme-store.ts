@@ -13,12 +13,14 @@ type ThemeStore = {
     unlockedCardSkins: CardSkinId[];
     fishWhipEnabled: boolean;
     fishWhipSide: FishWhipSide;
+    agentAvatarEnabled: boolean;
     setTheme: (theme: ThemeName) => void;
     setCardSkin: (cardSkin: CardSkinId) => void;
     unlockCardSkin: (skinId: CardSkinId) => void;
     mergeUnlockedCardSkins: (skinIds: CardSkinId[]) => void;
     setFishWhipEnabled: (enabled: boolean) => void;
     setFishWhipSide: (side: FishWhipSide) => void;
+    setAgentAvatarEnabled: (enabled: boolean) => void;
 };
 
 export const useThemeStore = create<ThemeStore>()(
@@ -29,6 +31,7 @@ export const useThemeStore = create<ThemeStore>()(
             unlockedCardSkins: [],
             fishWhipEnabled: true,
             fishWhipSide: "right",
+            agentAvatarEnabled: true,
             setTheme: (theme) => set({ theme }),
             setCardSkin: (cardSkin) =>
                 set((state) => {
@@ -47,6 +50,7 @@ export const useThemeStore = create<ThemeStore>()(
                 }),
             setFishWhipEnabled: (enabled) => set({ fishWhipEnabled: enabled }),
             setFishWhipSide: (side) => set({ fishWhipSide: side }),
+            setAgentAvatarEnabled: (enabled) => set({ agentAvatarEnabled: enabled }),
         }),
         { name: "infinite-canvas:theme_store" },
     ),

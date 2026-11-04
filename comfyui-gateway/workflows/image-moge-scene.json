@@ -1,0 +1,84 @@
+{
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "moge-input.png"
+    },
+    "_meta": { "title": "场景图片" }
+  },
+  "2": {
+    "class_type": "LoadMoGeModel",
+    "inputs": {
+      "model_name": "moge_2_vitl_normal_fp16.safetensors"
+    },
+    "_meta": { "title": "MoGe-2" }
+  },
+  "3": {
+    "class_type": "MoGeInference",
+    "inputs": {
+      "moge_model": ["2", 0],
+      "image": ["1", 0],
+      "resolution_level": 6,
+      "fov_x_degrees": 0.0,
+      "batch_size": 4,
+      "force_projection": true,
+      "apply_mask": true,
+      "refine_steps": 3
+    },
+    "_meta": { "title": "MoGe 几何推断" }
+  },
+  "4": {
+    "class_type": "MoGeRender",
+    "inputs": {
+      "moge_geometry": ["3", 0],
+      "output": "depth_colored"
+    },
+    "_meta": { "title": "深度图" }
+  },
+  "5": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["4", 0],
+      "filename_prefix": "3d/moge-depth"
+    },
+    "_meta": { "title": "保存深度图" }
+  },
+  "6": {
+    "class_type": "MoGePointMapToMesh",
+    "inputs": {
+      "moge_geometry": ["3", 0],
+      "batch_index": 0,
+      "decimation": 2,
+      "discontinuity_threshold": 0.04,
+      "texture": true
+    },
+    "_meta": { "title": "点图转网格" }
+  },
+  "7": {
+    "class_type": "RenderMesh",
+    "inputs": {
+      "mesh": ["6", 0],
+      "mode": "auto",
+      "width": 1024,
+      "height": 768,
+      "background": "#101010"
+    },
+    "_meta": { "title": "网格预览" }
+  },
+  "8": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["7", 0],
+      "filename_prefix": "3d/moge-render"
+    },
+    "_meta": { "title": "保存网格预览" }
+  },
+  "9": {
+    "class_type": "SaveGLB",
+    "inputs": {
+      "mesh": ["6", 0],
+      "filename_prefix": "3d/moge-scene"
+    },
+    "_meta": { "title": "保存 GLB" }
+  }
+}

@@ -1,0 +1,43 @@
+schema: comfy-build/1
+id: 864cd2bb-a66d-4910-87b7-9268c069bd99
+name: comfystreamerh3
+description: ComfyStreamerH3 custom nodes and pinned MiniMax-H3 runtime assets.
+syncedRevision: '2026-10-06T20:35:14.811458Z'
+definition:
+  schema: distribution-definition/0
+  baseComfyVersion: v0.36.0
+  baseImage: cuda130-py312
+  models:
+    - filename: mmh3-4b-ClipProj-v3.1-mlp.safetensors
+      sha256: 902a9b96ed041aedf7463251c59d917fba94963b944dd3196c00b23ff0f2b6b0
+      sourceUri: https://huggingface.co/NicoLab28/ClipProj-MiniMax-H3/resolve/2ebdbcdc27a29a9607efdb221a9afcb9a0cdd808/mmh3-4b-ClipProj-v3.1-mlp.safetensors
+      type: clip_projections
+    - filename: fastvideo_fasth3_8step_v2_pruned_int8_convrot.safetensors
+      sha256: 0922785978dc9bfe1adf27d8b291b0ca763f9f165f882e6cb297c72fbb6deda8
+      sourceUri: https://huggingface.co/FastVideo/FastVideo-FastH3-Comfy/resolve/ec1e3aa374a91c57b0b94a1623b7e657c0498cf2/diffusion_models/fastvideo_fasth3_8step_v2_pruned_int8_convrot.safetensors
+      type: diffusion_models
+    - filename: qwen3vl_4b_fp8_scaled.safetensors
+      sha256: 54bd5144df0bbc25dd6ccadfcb826b521445a1b06ae5a42570bdd2974ca87094
+      sourceUri: https://huggingface.co/Comfy-Org/Qwen3-VL/resolve/02f0d3eefb59528799653d16735818801177ef1f/text_encoders/qwen3vl_4b_fp8_scaled.safetensors
+      type: text_encoders
+    - filename: minimax_h3_audio_vae_fp32.safetensors
+      sha256: 8e505d95dd1561d47abd43d4238fd40d9bb1ae9e147ed0a4cba778d76ae4db48
+      sourceUri: https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/1c41cfca8ebba91d0af792a05c5761fb2c3a7975/vae/minimax_h3_audio_vae_fp32.safetensors
+      type: vae
+    - filename: minimax_h3_video_vae_int8_convrot.safetensors
+      sha256: 9bb2d96f218c76babd85e0611b85ca8fb330a90546c01a0005e8a58a59593410
+      sourceUri: https://huggingface.co/Kijai/MiniMax-H3-experimental/resolve/f4cac997f880e93cf6940af61ee8d58ef31ff7f3/minimax_h3_video_vae_int8_convrot.safetensors
+      type: vae
+  customNodes:
+    - blobId: c71ac010-cef9-4385-807a-a38d0c116715
+      localDigest: bd5310685a050482a985db4ca99de61d400619656e5cd585c1e10252af98d332
+      localPath: .
+      localSizeBytes: 11484211
+      name: ComfyStreamerH3
+      source: local
+    - gitRef: c01ba8fb8f41b4f2094dbd0b185cdc238fb6134c
+      name: ComfyUI-ClipProj
+      repository: https://github.com/nicolab28/ComfyUI-ClipProj
+  pipDependencies: |+
+    comfy-kitchen @ https://files.pythonhosted.org/packages/28/0f/c30f26d33bfa2685433a7d3993d438dcff9f6d97f0b8b531f9a6793562d2/comfy_kitchen-0.2.34-cp312-abi3-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl#sha256=71ba8bc72b54f2914b5e15d210eea2e25931006cf57ca14d033ae4050f4b0d1a
+    ziglang @ https://files.pythonhosted.org/packages/0c/b7/ecfdce6368cc3664d301f7f52db4fe1004aa7da7a12c4a9bf1de534ff6ab/ziglang-0.13.0-py3-none-manylinux_2_12_x86_64.manylinux2010_x86_64.musllinux_1_1_x86_64.whl#sha256=3ce0c9f16547e5d61b32e0d226926e9a2552ef4b91fccf7ab5ea1a623a77824b

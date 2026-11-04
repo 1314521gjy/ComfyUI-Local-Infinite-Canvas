@@ -7,7 +7,7 @@ import i18n from "@/i18n";
 import { ImageSettingsTheme, SeedSetting } from "@/components/image-settings-panel";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import { videoWorkflowId, baseVideoWorkflowId } from "@/lib/canvas/video-model-mode";
-import { clampVideoSeconds, computeVideoSize, inferVideoRatio, isCustomVideoSize, parseVideoResolution, readVideoDimensions, VIDEO_SECONDS_MAX, VIDEO_SECONDS_MIN, videoRatioOptions } from "@/lib/media-size";
+import { clampVideoSeconds, computeVideoSize, draftLongSideSize, draftShortSideSize, inferVideoRatio, isCustomVideoSize, parseVideoResolution, readVideoDimensions, VIDEO_SECONDS_MAX, VIDEO_SECONDS_MIN, videoRatioOptions } from "@/lib/media-size";
 import { type AiConfig } from "@/stores/use-config-store";
 
 const resolutionOptions = [
@@ -49,7 +49,8 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
     const videoMode = normalizeVideoModeValue(config.videoMode);
     const workflowId = baseVideoWorkflowId(videoWorkflowId(config, config.model));
     const isH3Reference = workflowId === "video-h3-ref2va" || workflowId === "video-h3-character-swap";
-    const isH3Frames = workflowId === "video-h3-frames";
+    const isFastH3 = workflowId === "video-h3-fast";
+    const isH3Frames = workflowId === "video-h3-frames" || isFastH3;
     const isH3Text = workflowId === "video-h3-t2v";
     const isH3 = isH3Reference || isH3Frames || isH3Text;
     const h3ModeOptions = [
@@ -63,11 +64,36 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
     const selectedRatio = inferVideoRatio(config.size || "auto");
     const dimensions = readVideoDimensions(config.size || "auto", resolution, selectedRatio);
     useEffect(() => {
+        if (!isFastH3) return;
+        const inferred = inferVideoRatio(config.size || "");
+        const ratio = inferred === "auto" ? "9:16" : inferred;
+        const tier = String(config.vquality || "") === "480" ? "480" : "448";
+        const nextSize = tier === "448" ? draftLongSideSize(ratio, 448) : draftShortSideSize(ratio, 480);
+        if (String(config.vquality || "") === tier && String(config.size || "") === nextSize) return;
+        onConfigChange("vquality", tier);
+        onConfigChange("size", nextSize);
+    }, [config.size, config.vquality, isFastH3, onConfigChange]);
+    useEffect(() => {
+        if (isFastH3) return;
+        const vquality = String(config.vquality || "");
+        const pixelSize = /^\d+x\d+$/.test(String(config.size || ""));
+        if (vquality === "448") {
+            onConfigChange("vquality", "720");
+            if (pixelSize) onConfigChange("size", "16:9");
+        }
+    }, [config.size, config.vquality, isFastH3, onConfigChange]);
+    useEffect(() => {
         if (isH3Reference && videoMode !== "reference") onConfigChange("videoMode", "reference");
-        else if (isH3Frames && videoMode !== "frames") onConfigChange("videoMode", "frames");
+        else if (isH3Frames && !isFastH3 && videoMode !== "frames") onConfigChange("videoMode", "frames");
         else if (isH3Text && videoMode !== "text") onConfigChange("videoMode", "text");
+        else if (isFastH3 && videoMode !== "text" && videoMode !== "frames" && videoMode !== "reference") onConfigChange("videoMode", "frames");
         else if (!isH3 && videoMode === "text") onConfigChange("videoMode", "frames");
-    }, [isH3, isH3Frames, isH3Reference, isH3Text, onConfigChange, videoMode]);
+    }, [isFastH3, isH3, isH3Frames, isH3Reference, isH3Text, onConfigChange, videoMode]);
+    const applyFastRatio = (ratio: string) => {
+        const tier = String(config.vquality || "") === "480" ? "480" : "448";
+        const target = ratio === "auto" ? "16:9" : ratio;
+        onConfigChange("size", tier === "448" ? draftLongSideSize(target, 448) : draftShortSideSize(target, 480));
+    };
     const applySize = (nextResolution: string, ratio: string) => {
         onConfigChange("vquality", nextResolution);
         onConfigChange("size", computeVideoSize(nextResolution, ratio));
@@ -81,40 +107,86 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
         <ImageSettingsTheme theme={theme}>
             <div className={className} style={{ color: theme.node.text }} onMouseDown={(event) => { event.stopPropagation(); if (event.target instanceof HTMLInputElement) return; if (document.activeElement instanceof HTMLInputElement && event.currentTarget.contains(document.activeElement)) document.activeElement.blur(); }}>
                 {showTitle ? <div className="text-lg font-semibold">{t("settingsPanels.video.title")}</div> : null}
-                <SettingGroup title={t("settingsPanels.video.resolution")} color={theme.node.muted}>
-                    <div className="grid grid-cols-4 gap-2.5">
-                        {resolutionOptions.map((item) => (
-                            <OptionPill key={item.value} selected={!customSize && resolution === item.value} theme={theme} onClick={() => selectResolution(item.value)}>
-                                {item.label}
-                            </OptionPill>
-                        ))}
-                        <ResolutionInput value={resolution} theme={theme} onChange={selectResolution} />
-                    </div>
-                </SettingGroup>
-                <SettingGroup title={`${t("settingsPanels.video.size")}${customSize ? ` · ${t("settingsPanels.video.customSize")}` : ""}`} color={theme.node.muted}>
-                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2.5">
-                        <DimensionInput prefix="W" value={dimensions.width} disabled={selectedRatio === "auto"} theme={theme} onChange={(value) => updateDimension("width", value, dimensions, onConfigChange)} />
-                        <span className="text-lg opacity-45">↔</span>
-                        <DimensionInput prefix="H" value={dimensions.height} disabled={selectedRatio === "auto"} theme={theme} onChange={(value) => updateDimension("height", value, dimensions, onConfigChange)} />
-                    </div>
-                </SettingGroup>
-                <SettingGroup title={t("settingsPanels.video.ratio")} color={theme.node.muted}>
-                    <div className="grid grid-cols-4 gap-2.5">
-                        {videoRatioOptions.map((item) => (
-                            <button
-                                key={item.value}
-                                type="button"
-                                className="flex h-[72px] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border bg-transparent text-sm transition hover:opacity-80"
-                                style={{ borderColor: selectedRatio === item.value ? theme.node.text : theme.node.stroke, color: theme.node.text }}
-                                onMouseDown={(event) => event.stopPropagation()}
-                                onClick={() => applySize(resolution, item.value)}
-                            >
-                                <SizePreview width={item.width} height={item.height} color={theme.node.text} />
-                                <span>{item.value === "auto" ? t("settingsPanels.common.auto") : item.value}</span>
-                            </button>
-                        ))}
-                    </div>
-                </SettingGroup>
+                {isFastH3 ? (
+                    <>
+                        <SettingGroup title={t("settingsPanels.video.speedTier")} color={theme.node.muted}>
+                            <div className="grid grid-cols-2 gap-2.5">
+                                {[
+                                    { value: "448", labelKey: "speedTierTurbo" },
+                                    { value: "480", labelKey: "speedTierFast" },
+                                ].map((item) => (
+                                    <OptionPill
+                                        key={item.value}
+                                        selected={(String(config.vquality || "") === "480" ? "480" : "448") === item.value}
+                                        theme={theme}
+                                        onClick={() => {
+                                            const inferred = inferVideoRatio(config.size || "");
+                                            const ratio = inferred === "auto" ? "9:16" : inferred;
+                                            onConfigChange("vquality", item.value);
+                                            onConfigChange("size", item.value === "448" ? draftLongSideSize(ratio, 448) : draftShortSideSize(ratio, 480));
+                                        }}
+                                    >
+                                        {t(`settingsPanels.video.${item.labelKey}`)}
+                                    </OptionPill>
+                                ))}
+                            </div>
+                        </SettingGroup>
+                        <SettingGroup title={t("settingsPanels.video.ratio")} color={theme.node.muted}>
+                            <div className="grid grid-cols-4 gap-2.5">
+                                {videoRatioOptions.map((item) => (
+                                    <button
+                                        key={item.value}
+                                        type="button"
+                                        className="flex h-[72px] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border bg-transparent text-sm transition hover:opacity-80"
+                                        style={{ borderColor: selectedRatio === item.value ? theme.node.text : theme.node.stroke, color: theme.node.text }}
+                                        onMouseDown={(event) => event.stopPropagation()}
+                                        onClick={() => applyFastRatio(item.value)}
+                                    >
+                                        <SizePreview width={item.width} height={item.height} color={theme.node.text} />
+                                        <span>{item.value === "auto" ? t("settingsPanels.common.auto") : item.value}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </SettingGroup>
+                    </>
+                ) : (
+                    <>
+                        <SettingGroup title={t("settingsPanels.video.resolution")} color={theme.node.muted}>
+                            <div className="grid grid-cols-4 gap-2.5">
+                                {resolutionOptions.map((item) => (
+                                    <OptionPill key={item.value} selected={!customSize && resolution === item.value} theme={theme} onClick={() => selectResolution(item.value)}>
+                                        {item.label}
+                                    </OptionPill>
+                                ))}
+                                <ResolutionInput value={resolution} theme={theme} onChange={selectResolution} />
+                            </div>
+                        </SettingGroup>
+                        <SettingGroup title={`${t("settingsPanels.video.size")}${customSize ? ` · ${t("settingsPanels.video.customSize")}` : ""}`} color={theme.node.muted}>
+                            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2.5">
+                                <DimensionInput prefix="W" value={dimensions.width} disabled={selectedRatio === "auto"} theme={theme} onChange={(value) => updateDimension("width", value, dimensions, onConfigChange)} />
+                                <span className="text-lg opacity-45">↔</span>
+                                <DimensionInput prefix="H" value={dimensions.height} disabled={selectedRatio === "auto"} theme={theme} onChange={(value) => updateDimension("height", value, dimensions, onConfigChange)} />
+                            </div>
+                        </SettingGroup>
+                        <SettingGroup title={t("settingsPanels.video.ratio")} color={theme.node.muted}>
+                            <div className="grid grid-cols-4 gap-2.5">
+                                {videoRatioOptions.map((item) => (
+                                    <button
+                                        key={item.value}
+                                        type="button"
+                                        className="flex h-[72px] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border bg-transparent text-sm transition hover:opacity-80"
+                                        style={{ borderColor: selectedRatio === item.value ? theme.node.text : theme.node.stroke, color: theme.node.text }}
+                                        onMouseDown={(event) => event.stopPropagation()}
+                                        onClick={() => applySize(resolution, item.value)}
+                                    >
+                                        <SizePreview width={item.width} height={item.height} color={theme.node.text} />
+                                        <span>{item.value === "auto" ? t("settingsPanels.common.auto") : item.value}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </SettingGroup>
+                    </>
+                )}
                 <SettingGroup title={t("settingsPanels.video.seconds")} color={theme.node.muted}>
                     {durationLocked ? (
                         <div className="flex h-8 items-center gap-1.5 text-xs" style={{ color: theme.node.muted }}>
@@ -143,7 +215,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                         ))}
                     </div>
                 </SettingGroup>
-                {isH3 ? (
+                {isH3 && !isFastH3 ? (
                     <SettingGroup title={t("settingsPanels.video.selfLiftMode")} color={theme.node.muted}>
                         <div className="grid grid-cols-2 gap-2.5">
                             {[
@@ -154,6 +226,9 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                                     {t(`settingsPanels.video.${item.labelKey}`)}
                                 </OptionPill>
                             ))}
+                        </div>
+                        <div className="text-xs leading-4" style={{ color: theme.node.muted }}>
+                            {t("settingsPanels.video.selfLiftHint")}
                         </div>
                     </SettingGroup>
                 ) : null}
@@ -175,7 +250,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                     </div>
                     {isH3 ? (
                         <div className="text-xs leading-4" style={{ color: theme.node.muted }}>
-                            {t(`settingsPanels.video.modes.${isH3Text ? "textHint" : isH3Frames ? "framesHint" : "referenceHint"}`)}
+                            {t(`settingsPanels.video.modes.${isFastH3 && videoMode === "reference" ? "fastReferenceHint" : isH3Text ? "textHint" : isH3Frames ? "framesHint" : "referenceHint"}`)}
                         </div>
                     ) : null}
                     {isH3Frames && videoMode === "frames" && onFrameModeChange ? (

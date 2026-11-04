@@ -100,9 +100,12 @@ export type AgentChatMessageItem = {
     skill?: AgentSkillReference;
     /** Present while the message is actively streaming; cleared on completion. */
     streamId?: string;
+    reasoning?: string;
 };
 
 export function AgentChatMessage({ item, theme, onRejectTool, onApproveTool }: { item: AgentChatMessageItem; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onRejectTool?: (id: string) => void; onApproveTool?: (id: string) => void }) {
+    const { t } = useTranslation();
+    const copyText = useCopyText();
     const isUser = item.role === "user";
     const isSystem = item.role === "system";
     const color = item.role === "error" ? "#dc2626" : item.role === "tool" ? "#2563eb" : theme.node.text;
@@ -126,14 +129,57 @@ export function AgentChatMessage({ item, theme, onRejectTool, onApproveTool }: {
                 className={isUser ? "min-w-0 max-w-[82%] py-1 text-right text-sm leading-6" : "min-w-0 w-full text-left text-sm leading-6"}
                 style={{ color }}
             >
+                {!isUser && item.reasoning?.trim() ? <AgentReasoningBlock reasoning={item.reasoning} theme={theme} live={!!item.streamId} /> : null}
                 {isUser ? (
                     <AgentUserMessageContent text={item.text} references={item.canvasReferences || []} skill={item.skill} theme={theme} />
                 ) : (
                     <Streamdown {...streamdownProps()} animated={streamdownAnimation} isAnimating={!!item.streamId}>{item.text}</Streamdown>
                 )}
+                {!isUser && !item.streamId && item.text.trim() ? (
+                    <div className="mt-1 flex justify-start">
+                        <button
+                            type="button"
+                            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] transition hover:bg-black/5 dark:hover:bg-white/10"
+                            style={{ color: theme.node.muted }}
+                            onClick={() => copyText(item.text, t("common.copied"))}
+                            title={t("common.copy")}
+                        >
+                            <Copy className="size-3" />
+                            {t("common.copy")}
+                        </button>
+                    </div>
+                ) : null}
                 {item.attachments?.length ? <AgentMessageAttachments attachments={item.attachments} alignRight={isUser} /> : null}
                 {item.meta ? <div className={`mt-1 text-[11px] tabular-nums opacity-55 ${isUser ? "text-right" : ""}`}>{item.meta}</div> : null}
             </div>
+        </div>
+    );
+}
+
+function AgentReasoningBlock({ reasoning, theme, live }: { reasoning: string; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; live?: boolean }) {
+    const { t } = useTranslation();
+    const [open, setOpen] = useState(true);
+    return (
+        <div className="mb-2 overflow-hidden rounded-xl border" style={{ borderColor: theme.node.stroke, background: theme.node.fill }}>
+            <button
+                type="button"
+                className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left text-[11px] font-medium transition hover:bg-black/[.03] dark:hover:bg-white/[.05]"
+                style={{ color: theme.node.muted }}
+                aria-expanded={open}
+                onClick={() => setOpen((value) => !value)}
+            >
+                {live ? <LoaderCircle className="size-3.5 animate-spin" /> : <Brain className="size-3.5" />}
+                <span>{t("agent.message.reasoning")}</span>
+                {open ? <ChevronDown className="ml-auto size-3.5" /> : <ChevronRight className="ml-auto size-3.5" />}
+            </button>
+            {open ? (
+                <div
+                    className="thin-scrollbar max-h-56 overflow-y-auto whitespace-pre-wrap break-words border-t px-2.5 py-2 text-xs leading-5"
+                    style={{ borderColor: theme.node.stroke, color: theme.node.muted }}
+                >
+                    {reasoning}
+                </div>
+            ) : null}
         </div>
     );
 }

@@ -30,9 +30,9 @@ type AssetStore = {
     assets: Asset[];
     addAsset: (asset: Omit<Asset, "id" | "createdAt" | "updatedAt">) => string;
     updateAsset: (id: string, patch: Partial<Omit<Asset, "id" | "createdAt">>) => void;
-    removeAsset: (id: string) => void;
+    removeAsset: (id: string) => Promise<void>;
     replaceAssets: (assets: Asset[]) => void;
-    cleanupImages: (extra?: unknown) => void;
+    cleanupImages: (extra?: unknown) => Promise<void>;
 };
 
 // 卡片用缩略图渲染，自定义封面（远程地址或单独上传的封面）保持原样。
@@ -43,6 +43,12 @@ export function assetCoverUrl(asset: Asset) {
 }
 
 const ASSET_STORE_KEY = "infinite-canvas:asset_store";
+let assetWriteQueue: Promise<unknown> = Promise.resolve();
+
+/** Wait until the latest asset catalog write is durable before reporting deletion success. */
+export function flushAssetPersistence() {
+    return assetWriteQueue;
+}
 
 const assetStorage: PersistStorage<AssetStore> = {
     getItem: async (name) => {
@@ -68,7 +74,11 @@ const assetStorage: PersistStorage<AssetStore> = {
         );
         return parsed;
     },
-    setItem: (name, value) => localForageStorage.setItem(name, JSON.stringify(value)),
+    setItem: (name, value) => {
+        const write = assetWriteQueue.then(() => localForageStorage.setItem(name, JSON.stringify(value)));
+        assetWriteQueue = write.catch(() => undefined);
+        return write;
+    },
     removeItem: (name) => localForageStorage.removeItem(name),
 };
 
@@ -87,20 +97,27 @@ export const useAssetStore = create<AssetStore>()(
                 set((state) => ({
                     assets: state.assets.map((asset) => (asset.id === id ? ({ ...asset, ...patch, updatedAt: new Date().toISOString() } as Asset) : asset)),
                 })),
-            removeAsset: (id) =>
-                set((state) => {
-                    const assets = state.assets.filter((asset) => asset.id !== id);
-                    get().cleanupImages({ assets });
-                    return { assets };
-                }),
+            removeAsset: async (id) => {
+                const previous = get().assets;
+                if (!previous.some((asset) => asset.id === id)) return;
+                const assets = previous.filter((asset) => asset.id !== id);
+                set({ assets });
+                try {
+                    await flushAssetPersistence();
+                } catch (error) {
+                    set({ assets: previous });
+                    await flushAssetPersistence().catch(() => undefined);
+                    throw error;
+                }
+                // Catalog removal is durable first; only then revoke media/preview and delete blobs.
+                await get().cleanupImages({ assets });
+            },
             replaceAssets: (assets) => set({ assets }),
-            cleanupImages: (extra) => {
-                window.setTimeout(async () => {
-                    const { useCanvasStore } = await import("@/stores/canvas/use-canvas-store");
-                    const usedData = () => ({ assets: get().assets, projects: useCanvasStore.getState().projects, extra });
-                    await cleanupUnusedImages(usedData);
-                    await cleanupUnusedMedia(usedData);
-                }, 0);
+            cleanupImages: async (extra) => {
+                const { useCanvasStore } = await import("@/stores/canvas/use-canvas-store");
+                const usedData = () => ({ assets: get().assets, projects: useCanvasStore.getState().projects, extra });
+                await cleanupUnusedImages(usedData);
+                await cleanupUnusedMedia(usedData);
             },
         }),
         {

@@ -1,0 +1,9 @@
+#define MPA_VALUE_GROUPS 4
+#define MPA_BLOCK_VALUE_SCALE 1
+#define MPA_ATTENTION_KERNEL_ENTRY fasth3_combined_g4_kernel
+#define MPA_ATTENTION_LAUNCH_ENTRY fasth3_combined_g4_launch
+#define ANEMOI_ENTRY combined_g4_attention
+#define ANEMOI_RESOURCES combined_g4_resources
+#define ANEMOI_KERNEL fasth3_combined_g4_kernel
+#define ANEMOI_LAUNCH fasth3_combined_g4_launch
+#include "int8_entry.cuh"

@@ -1,0 +1,255 @@
+{
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "idol-input.png"
+    },
+    "_meta": {
+      "title": "输入图片"
+    }
+  },
+  "2": {
+    "class_type": "LoadBackgroundRemovalModel",
+    "inputs": {
+      "bg_removal_name": "birefnet.safetensors"
+    },
+    "_meta": {
+      "title": "BiRefNet 去底"
+    }
+  },
+  "3": {
+    "class_type": "RemoveBackground",
+    "inputs": {
+      "bg_removal_model": [
+        "2",
+        0
+      ],
+      "image": [
+        "1",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "去底蒙版"
+    }
+  },
+  "4": {
+    "class_type": "IdolPreprocessImage",
+    "inputs": {
+      "image": [
+        "1",
+        0
+      ],
+      "mask": [
+        "3",
+        0
+      ],
+      "mode": "synthetic"
+    },
+    "_meta": {
+      "title": "Idol 取景"
+    }
+  },
+  "5": {
+    "class_type": "CLIPVisionLoader",
+    "inputs": {
+      "clip_name": "dino_v3_vit_h.safetensors"
+    },
+    "_meta": {
+      "title": "DINOv3 编码器"
+    }
+  },
+  "6": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "flux2-vae.safetensors"
+    },
+    "_meta": {
+      "title": "FLUX.2 VAE（条件）"
+    }
+  },
+  "7": {
+    "class_type": "TripoSplatConditioning",
+    "inputs": {
+      "clip_vision": [
+        "5",
+        0
+      ],
+      "vae": [
+        "6",
+        0
+      ],
+      "image": [
+        "4",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "TripoSplat 条件"
+    }
+  },
+  "8": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "idol_fp16.safetensors",
+      "weight_dtype": "default"
+    },
+    "_meta": {
+      "title": "Idol 去噪器"
+    }
+  },
+  "9": {
+    "class_type": "IdolPrecision",
+    "inputs": {
+      "model": [
+        "8",
+        0
+      ],
+      "precision": "default"
+    },
+    "_meta": {
+      "title": "Idol 精度"
+    }
+  },
+  "10": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "9",
+        0
+      ],
+      "positive": [
+        "7",
+        0
+      ],
+      "negative": [
+        "7",
+        1
+      ],
+      "latent_image": [
+        "7",
+        2
+      ],
+      "seed": 42,
+      "steps": 50,
+      "cfg": 4,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1
+    },
+    "_meta": {
+      "title": "Idol 采样 50 步"
+    }
+  },
+  "11": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "idol_vae_decoder_fp16.safetensors"
+    },
+    "_meta": {
+      "title": "Idol 解码器"
+    }
+  },
+  "12": {
+    "class_type": "VAEDecodeTripoSplat",
+    "inputs": {
+      "samples": [
+        "10",
+        0
+      ],
+      "vae": [
+        "11",
+        0
+      ],
+      "num_gaussians": 262144,
+      "seed": 42
+    },
+    "_meta": {
+      "title": "解码高斯"
+    }
+  },
+  "13": {
+    "class_type": "SplatToFile3D",
+    "inputs": {
+      "splat": [
+        "12",
+        0
+      ],
+      "format": "ply"
+    },
+    "_meta": {
+      "title": "导出 PLY"
+    }
+  },
+  "14": {
+    "class_type": "SaveGaussianSplat",
+    "inputs": {
+      "model_3d": [
+        "13",
+        0
+      ],
+      "filename_prefix": "3d/idol",
+      "viewport_state": {},
+      "width": 1024,
+      "height": 1024
+    },
+    "_meta": {
+      "title": "保存 3D 模型"
+    }
+  },
+  "15": {
+    "class_type": "IdolInputCamera",
+    "inputs": {
+      "samples": [
+        "10",
+        0
+      ],
+      "splat": [
+        "12",
+        0
+      ],
+      "mode": "synthetic"
+    },
+    "_meta": {
+      "title": "输入视角"
+    }
+  },
+  "16": {
+    "class_type": "RenderSplat",
+    "inputs": {
+      "splat": [
+        "12",
+        0
+      ],
+      "width": 1024,
+      "height": 1024,
+      "frames": 1,
+      "splat_scale": 1,
+      "sharpen": 2,
+      "headlight_shading": 0,
+      "opacity_threshold": 0,
+      "render_style": "color",
+      "background": "#000000",
+      "camera_info": [
+        "15",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "输入视角渲染"
+    }
+  },
+  "17": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "16",
+        0
+      ],
+      "filename_prefix": "3d/idol-preview"
+    },
+    "_meta": {
+      "title": "保存预览图"
+    }
+  }
+}

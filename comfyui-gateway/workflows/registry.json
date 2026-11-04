@@ -151,7 +151,7 @@
       "name": "video-h3-ref2va",
       "type": "video",
       "file": "h3-ref2va-drama-vdn.json",
-      "description": "MiniMax-H3 multi-reference on the VDN 8-step backend (Singularity + VDN stage-dmd-step-250; turbo adapter + TESpeed + Sage + SelfLift + SigmaRefiner, 9 NFE). Supports 1–6 images, 0–2 audio clips and 0–1 video (at least one media). Requires models/vdn/stage-dmd-step-250.",
+      "description": "MiniMax-H3 multi-reference on the VDN 8-step backend (Singularity + VDN stage-dmd-step-250; turbo adapter + TESpeed + Sage + SelfLift, 8 NFE). Supports 1–6 images, 0–2 audio clips and 0–1 video (at least one media). Requires models/vdn/stage-dmd-step-250.",
       "lora": {
         "filter": "H3|minimax_h3|TaoMate-H3",
         "source": "5"
@@ -304,7 +304,7 @@
           "max": 7,
           "step": 1,
           "default": 6,
-          "description": "8 步时最大 7"
+          "description": "总 8 步：快速 6 步低清 + 2 步全分辨率；质量 5 步低清 + 3 步全分辨率"
         },
         {
           "key": "lowres_scale",
@@ -351,7 +351,7 @@
       "name": "video-h3-t2v",
       "type": "video",
       "file": "h3-ref2va-drama-vdn.json",
-      "description": "MiniMax-H3 text-to-video on the VDN 8-step backend (Singularity + VDN stage-dmd-step-250; turbo adapter + TESpeed + Sage + SelfLift + SigmaRefiner, 9 NFE). No image/audio/video input. Requires models/vdn/stage-dmd-step-250.",
+      "description": "MiniMax-H3 text-to-video on the VDN 8-step backend (Singularity + VDN stage-dmd-step-250; turbo adapter + TESpeed + Sage + SelfLift, 8 NFE). No image/audio/video input. Requires models/vdn/stage-dmd-step-250.",
       "lora": {
         "filter": "H3|minimax_h3|TaoMate-H3",
         "source": "5"
@@ -479,7 +479,7 @@
           "max": 7,
           "step": 1,
           "default": 6,
-          "description": "8 步时最大 7"
+          "description": "总 8 步：快速 6 步低清 + 2 步全分辨率；质量 5 步低清 + 3 步全分辨率"
         },
         {
           "key": "lowres_scale",
@@ -525,7 +525,7 @@
       "name": "video-h3-frames",
       "type": "video",
       "file": "h3-ref2va-drama-vdn.json",
-      "description": "MiniMax-H3 first/last-frame video on the VDN 8-step backend (VDN stage-dmd-step-250 + TESpeed + Sage + SelfLift + SigmaRefiner, 9 NFE). Requires 1–2 images: first, last, or both; task_type switches I2VA/L2VA/FL2VA.",
+      "description": "MiniMax-H3 first/last-frame video on the VDN 8-step backend (VDN stage-dmd-step-250 + TESpeed + Sage + SelfLift, 8 NFE). Requires 1–2 images: first, last, or both; task_type switches I2VA/L2VA/FL2VA.",
       "lora": {
         "filter": "H3|minimax_h3|TaoMate-H3",
         "source": "5"
@@ -668,7 +668,7 @@
           "max": 7,
           "step": 1,
           "default": 6,
-          "description": "8 步时最大 7"
+          "description": "总 8 步：快速 6 步低清 + 2 步全分辨率；质量 5 步低清 + 3 步全分辨率"
         },
         {
           "key": "lowres_scale",
@@ -3156,6 +3156,259 @@
           "SinoXvision_Krea2_Aesthetics_fp8_scale.safetensors": "aesthetics"
         }
       }
+    },
+    {
+      "id": "video-h3-fast",
+      "name": "video-h3-fast",
+      "type": "video",
+      "label": "H3 极速草稿",
+      "description": "H3 极速草稿：FastH3 4 步采样，4B 文本编码器 + ClipProj 投影；用于快速预览，448/480 速度档。",
+      "file": "h3-fast-draft.json",
+      "bindings": {
+        "prompt": {
+          "node": "10",
+          "input": "prompt"
+        },
+        "width": {
+          "node": "10",
+          "input": "width",
+          "from": "size.width",
+          "transform": "snap32",
+          "default": 256
+        },
+        "height": {
+          "node": "10",
+          "input": "height",
+          "from": "size.height",
+          "transform": "snap32",
+          "default": 448
+        },
+        "length": {
+          "node": "10",
+          "input": "length",
+          "from": "seconds",
+          "transform": "secondsToFrames17",
+          "fps": 24,
+          "default": 243
+        },
+        "seed": {
+          "node": "13",
+          "input": "seed",
+          "from": "params.seed",
+          "transform": "int",
+          "random": true
+        },
+        "fps": {
+          "node": "16",
+          "input": "fps",
+          "default": 24
+        },
+        "preset": {
+          "node": "1",
+          "input": "preset",
+          "from": "params.preset",
+          "default": "fp4-mlp-fused-fasth3-v2-4step-vsa20-kitchen034-b1"
+        },
+        "contract": {
+          "node": "1",
+          "input": "sampling_contract_override",
+          "from": "params.contract",
+          "default": "pdmd-2step"
+        },
+        "decoderMode": {
+          "node": "14",
+          "input": "decoder_mode",
+          "from": "params.decoderMode",
+          "default": "fused_ff_qk_rope"
+        },
+        "outputBackend": {
+          "node": "16",
+          "input": "output_backend",
+          "from": "params.outputBackend",
+          "default": "nvenc"
+        },
+        "frames": {
+          "node": "10",
+          "input": "first_frame",
+          "from": "image",
+          "frameMode": true,
+          "firstInput": "first_frame",
+          "lastInput": "last_frame",
+          "max": 2,
+          "modes": [
+            "frames"
+          ]
+        },
+        "refs": {
+          "node": "10",
+          "input": "ref_image_",
+          "from": "image",
+          "array": true,
+          "min": 1,
+          "max": 9,
+          "inputPrefix": "ref_image_",
+          "indexBase": 1,
+          "modes": [
+            "reference"
+          ]
+        }
+      },
+      "defaults": {},
+      "presets": {},
+      "parameters": [
+        {
+          "key": "seed",
+          "label": "种子",
+          "type": "number",
+          "min": 1,
+          "max": 2147483647,
+          "step": 1,
+          "description": "留空则每次随机"
+        }
+      ],
+      "lora": null
+    },
+    {
+      "id": "image-idol-3d",
+      "name": "image-idol-3d",
+      "label": "Idol 图生 3D",
+      "type": "image",
+      "description": "Idol（speridlabs，Apache-2.0 权重）单图生成 3D 高斯泼溅；输出 .ply + 输入视角预览。插件 ComfyUI-Idol 只补取景/相机/精度三个节点，其余为 ComfyUI 原生 TripoSplat 链。",
+      "file": "image-idol-3d.json",
+      "hidden": true,
+      "bindings": {
+        "image": {
+          "node": "1",
+          "input": "image",
+          "from": "image",
+          "imageIndex": 0,
+          "required": true
+        },
+        "seed": {
+          "node": "10",
+          "input": "seed",
+          "from": "params.seed",
+          "transform": "int",
+          "random": true
+        },
+        "decodeSeed": {
+          "node": "12",
+          "input": "seed",
+          "from": "usedSeed",
+          "transform": "int",
+          "default": 42
+        },
+        "steps": {
+          "node": "10",
+          "input": "steps",
+          "from": "params.steps",
+          "transform": "int",
+          "default": 50
+        },
+        "cfg": {
+          "node": "10",
+          "input": "cfg",
+          "from": "params.cfg",
+          "default": 4
+        },
+        "mode": {
+          "node": "4",
+          "input": "mode",
+          "from": "params.idolMode",
+          "default": "synthetic"
+        },
+        "cameraMode": {
+          "node": "15",
+          "input": "mode",
+          "from": "params.idolMode",
+          "default": "synthetic"
+        },
+        "numGaussians": {
+          "node": "12",
+          "input": "num_gaussians",
+          "from": "params.numGaussians",
+          "transform": "int",
+          "default": 262144
+        },
+        "unet": {
+          "node": "8",
+          "input": "unet_name",
+          "from": "params.unet",
+          "default": "idol_fp16.safetensors"
+        },
+        "vae": {
+          "node": "11",
+          "input": "vae_name",
+          "from": "params.idolVae",
+          "default": "idol_vae_decoder_fp16.safetensors"
+        },
+        "clipVision": {
+          "node": "5",
+          "input": "clip_name",
+          "from": "params.idolClipVision",
+          "default": "dino_v3_vit_h.safetensors"
+        }
+      },
+      "defaults": {},
+      "presets": {},
+      "parameters": [],
+      "lora": null
+    },
+    {
+      "id": "image-moge-scene",
+      "name": "image-moge-scene",
+      "label": "MoGe 场景建3D",
+      "type": "image",
+      "description": "MoGe-2 单图场景重建：深度/点图 → 带纹理网格 GLB。只重建照片可见面，不生成未拍到的背面；适合室内/街景，不适合单个商品。",
+      "file": "image-moge-scene.json",
+      "hidden": true,
+      "bindings": {
+        "image": {
+          "node": "1",
+          "input": "image",
+          "from": "image",
+          "imageIndex": 0,
+          "required": true
+        },
+        "resolution": {
+          "node": "3",
+          "input": "resolution_level",
+          "from": "params.mogeResolution",
+          "transform": "int",
+          "default": 6
+        },
+        "decimation": {
+          "node": "6",
+          "input": "decimation",
+          "from": "params.mogeDecimation",
+          "transform": "int",
+          "default": 2
+        },
+        "fov": {
+          "node": "3",
+          "input": "fov_x_degrees",
+          "from": "params.mogeFov",
+          "default": 0
+        },
+        "mask": {
+          "node": "3",
+          "input": "apply_mask",
+          "from": "params.mogeMask",
+          "transform": "boolean",
+          "default": true
+        },
+        "texture": {
+          "node": "6",
+          "input": "texture",
+          "from": "params.mogeTexture",
+          "transform": "boolean",
+          "default": true
+        }
+      },
+      "defaults": {},
+      "presets": {},
+      "parameters": [],
+      "lora": null
     }
   ]
 }

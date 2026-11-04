@@ -120,6 +120,7 @@ export function applyBindings(workflow, entry, context, { logger, stats } = {}) 
 
   for (const [key, binding] of Object.entries(entry.bindings || {})) {
     if (!binding || !binding.node || !binding.input) continue;
+    if (Array.isArray(binding.modes) && !binding.modes.map(String).includes(String(context.mode || ""))) continue;
     const node = next[binding.node];
     const isImageBinding = binding.from === "image" || binding.imageIndex !== undefined;
     if (!node?.inputs || (!(binding.input in node.inputs) && !isImageBinding && !binding.array)) {

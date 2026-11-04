@@ -1,0 +1,8 @@
+#define MPA_BLOCK_VALUE_SCALE 1
+#define MPA_ATTENTION_KERNEL_ENTRY fasth3_combined_int8_kernel
+#define MPA_ATTENTION_LAUNCH_ENTRY fasth3_combined_int8_launch
+#define ANEMOI_ENTRY combined_attention
+#define ANEMOI_RESOURCES combined_resources
+#define ANEMOI_KERNEL fasth3_combined_int8_kernel
+#define ANEMOI_LAUNCH fasth3_combined_int8_launch
+#include "int8_entry.cuh"

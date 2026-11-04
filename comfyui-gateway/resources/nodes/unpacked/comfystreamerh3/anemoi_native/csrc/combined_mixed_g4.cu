@@ -1,0 +1,10 @@
+#define MPA_VALUE_GROUPS 4
+#define MPA_BLOCK_VALUE_SCALE 1
+#define MPA_NV_MEAN_CORRECTION 1
+#define MPA_ATTENTION_KERNEL_ENTRY fasth3_combined_mixed_g4_kernel
+#define MPA_ATTENTION_LAUNCH_ENTRY fasth3_combined_mixed_g4_launch
+#define ANEMOI_MIXED_ENTRY combined_mixed_g4_attention
+#define ANEMOI_MIXED_RESOURCES combined_mixed_g4_resources
+#define ANEMOI_MIXED_KERNEL fasth3_combined_mixed_g4_kernel
+#define ANEMOI_MIXED_LAUNCH fasth3_combined_mixed_g4_launch
+#include "mixed_entry.cuh"

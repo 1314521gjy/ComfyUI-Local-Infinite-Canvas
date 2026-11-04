@@ -1,6 +1,6 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type DragEvent, type ReactNode } from "react";
 import { Button, Dropdown, Tooltip } from "antd";
-import { ArrowUp, Check, ChevronUp, Cpu, Gauge, Hand, ImagePlus, LoaderCircle, RefreshCw, ShieldAlert, ShieldCheck, ShieldOff, Square, X } from "lucide-react";
+import { ArrowUp, Check, ChevronUp, Cpu, Gauge, Hand, ImagePlus, RefreshCw, ShieldAlert, ShieldCheck, ShieldOff, Square, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
@@ -56,11 +56,35 @@ export function AgentChatComposer({
 }) {
     const { t } = useTranslation();
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [dragging, setDragging] = useState(false);
     const canvasReferences = useAgentStore((state) => state.canvasReferences);
-    const canSubmit = !disabled && !sending && Boolean(prompt.trim() || attachments.length || canvasReferences.length);
+    const canSubmit = !disabled && Boolean(prompt.trim() || attachments.length || canvasReferences.length);
+    const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+        if (!onAddFiles) return;
+        if (!Array.from(event.dataTransfer.types).includes("Files")) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setDragging(true);
+    };
+    const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
+        if (event.currentTarget.contains(event.relatedTarget as Node)) return;
+        setDragging(false);
+    };
+    const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+        if (!onAddFiles) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setDragging(false);
+        void onAddFiles(event.dataTransfer.files);
+    };
     return (
-        <div className="px-2 pb-2 pt-2" onWheelCapture={(event) => event.stopPropagation()}>
-            <div className="rounded-[24px] border px-3 pb-3 pt-3 shadow-lg" style={{ background: theme.toolbar.panel, borderColor: theme.node.stroke }}>
+        <div className="px-2 pb-2 pt-2" onWheelCapture={(event) => event.stopPropagation()} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+            <div className="relative rounded-[24px] border px-3 pb-3 pt-3 shadow-lg" style={{ background: theme.toolbar.panel, borderColor: dragging ? theme.node.muted : theme.node.stroke }}>
+                {dragging ? (
+                    <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center rounded-[24px] border-2 border-dashed" style={{ borderColor: theme.node.muted, background: `${theme.node.panel}dd` }}>
+                        <span className="text-xs font-medium" style={{ color: theme.node.text }}>{t("agent.composer.dropImage")}</span>
+                    </div>
+                ) : null}
                 {attachments.length ? (
                     <div className="thin-scrollbar mb-2 flex gap-2 overflow-x-auto pb-1">
                         {attachments.map((item) => (
@@ -75,7 +99,7 @@ export function AgentChatComposer({
                         ))}
                     </div>
                 ) : null}
-                <AgentChatPromptInput value={prompt} disabled={disabled || sending} placeholder={placeholder} theme={theme} onChange={onPromptChange} onSubmit={() => { if (canSubmit) void onSubmit(); }} onAddFiles={onAddFiles} />
+                <AgentChatPromptInput value={prompt} disabled={Boolean(disabled)} placeholder={placeholder} theme={theme} onChange={onPromptChange} onSubmit={() => { if (canSubmit) void onSubmit(); }} onAddFiles={onAddFiles} />
                 <div className="@container mt-2 flex items-center justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-1">
                         {onAddFiles ? (
@@ -85,7 +109,7 @@ export function AgentChatComposer({
                                     event.target.value = "";
                                 }} />
                                 <Tooltip title={t("agent.composer.uploadImage")}>
-                                    <Button type="text" shape="circle" className="!h-9 !w-9 !min-w-9" disabled={disabled || sending} style={{ color: theme.node.muted }} icon={<ImagePlus className="size-4" />} onClick={() => fileInputRef.current?.click()} aria-label={t("agent.composer.uploadImage")} />
+                                    <Button type="text" shape="circle" className="!h-9 !w-9 !min-w-9" disabled={disabled} style={{ color: theme.node.muted }} icon={<ImagePlus className="size-4" />} onClick={() => fileInputRef.current?.click()} aria-label={t("agent.composer.uploadImage")} />
                                 </Tooltip>
                             </>
                         ) : null}
@@ -97,9 +121,10 @@ export function AgentChatComposer({
                     <div className="flex shrink-0 items-center gap-1.5">
                         {sending && onStop ? (
                             <Tooltip title={t("agent.composer.stop")} placement="top"><Button danger shape="circle" className="!h-10 !w-10 !min-w-10" icon={<Square className="size-4" />} onClick={() => void onStop()} aria-label={t("agent.composer.stop")} /></Tooltip>
-                        ) : (
-                            <Tooltip title={t("agent.composer.send")} placement="top"><Button type="primary" shape="circle" className="!h-10 !w-10 !min-w-10" disabled={!canSubmit} icon={sending ? <LoaderCircle className="size-4 animate-spin" /> : <ArrowUp className="size-4" />} onClick={() => void onSubmit()} aria-label={t("agent.composer.send")} /></Tooltip>
-                        )}
+                        ) : null}
+                        <Tooltip title={sending ? t("agent.composer.interject") : t("agent.composer.send")} placement="top">
+                            <Button type="primary" shape="circle" className="!h-10 !w-10 !min-w-10" disabled={!canSubmit} icon={<ArrowUp className="size-4" />} onClick={() => void onSubmit()} aria-label={sending ? t("agent.composer.interject") : t("agent.composer.send")} />
+                        </Tooltip>
                     </div>
                 </div>
             </div>

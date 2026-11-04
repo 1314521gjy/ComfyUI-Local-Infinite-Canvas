@@ -250,6 +250,10 @@ export default function (runtime) {
         const [serviceUrl, setServiceUrl] = useState("");
         const [serviceError, setServiceError] = useState("");
         const [canRepair, setCanRepair] = useState(false);
+        const [canDownload, setCanDownload] = useState(false);
+        const [runtimePackagePresent, setRuntimePackagePresent] = useState(false);
+        const [fullPackageUrl, setFullPackageUrl] = useState("");
+        const [downloadPending, setDownloadPending] = useState(false);
         const [recoveryNotice, setRecoveryNotice] = useState("");
         const [clearConfirm, setClearConfirm] = useState(false);
         const [clearNotice, setClearNotice] = useState("");
@@ -266,6 +270,7 @@ export default function (runtime) {
         const autoHeightRef = useRef(null);
         const clearNoticeTimerRef = useRef(null);
         const abortRef = useRef(null);
+        const downloadPendingRef = useRef(false);
         const threadRef = useRef("");
         const serviceUrlRef = useRef("");
         const stickRef = useRef(true);
@@ -329,10 +334,14 @@ export default function (runtime) {
             if (!payload || payload.ok === false) {
                 setLifecycle("error");
                 setCanRepair(false);
+                setCanDownload(false);
                 setServiceError((payload && (payload.error || payload.reason)) || "网关没有返回 Agent 状态");
                 return;
             }
             setCanRepair(payload.needFullPackage === true && payload.canRepair === true);
+            setCanDownload(payload.needFullPackage === true && payload.canDownload === true);
+            setRuntimePackagePresent(payload.runtimePackagePresent === true);
+            setFullPackageUrl(String(payload.fullPackageUrl || ""));
             if (payload.needFullPackage) {
                 serviceUrlRef.current = "";
                 setServiceUrl("");
@@ -366,6 +375,7 @@ export default function (runtime) {
         }, []);
 
         const refreshStatus = useCallback(async () => {
+            if (downloadPendingRef.current) return;
             try {
                 const response = await fetch(`${gatewayUrl}/api/assistant/status`, { cache: "no-store" });
                 const data = await response.json().catch(() => ({}));
@@ -376,25 +386,34 @@ export default function (runtime) {
             }
         }, [applyServiceStatus, gatewayUrl]);
 
-        const ensureService = useCallback(async () => {
+        const ensureService = useCallback(async (options) => {
             if (serviceUrlRef.current) return serviceUrlRef.current;
-            setLifecycle("starting");
+            const download = Boolean(options && options.download === true);
+            if (download) {
+                downloadPendingRef.current = true;
+                setDownloadPending(true);
+            }
+            setLifecycle(download ? "downloading" : "starting");
             setServiceError("");
             try {
                 const response = await fetch(`${gatewayUrl}/api/assistant/ensure`, {
                     method: "POST",
                     headers: { "content-type": "application/json" },
-                    body: "{}",
+                    body: JSON.stringify({ download }),
                 });
                 const data = await response.json().catch(() => ({}));
                 if (!response.ok || !data.ok) {
                     if (data.needFullPackage) {
                         setLifecycle("need-package");
                         setCanRepair(Boolean(data.canRepair));
+                        setCanDownload(Boolean(data.canDownload));
+                        setRuntimePackagePresent(Boolean(data.runtimePackagePresent));
+                        setFullPackageUrl(String(data.fullPackageUrl || ""));
                         setServiceError(data.error || "");
                     } else {
                         setLifecycle("error");
                         setCanRepair(false);
+                        setCanDownload(false);
                         setServiceError(data.error || `HTTP ${response.status}`);
                     }
                     return "";
@@ -408,6 +427,11 @@ export default function (runtime) {
                 setLifecycle("error");
                 setServiceError("无法连接本地网关");
                 return "";
+            } finally {
+                if (download) {
+                    downloadPendingRef.current = false;
+                    setDownloadPending(false);
+                }
             }
         }, [gatewayUrl]);
 
@@ -536,14 +560,14 @@ export default function (runtime) {
                 if (lifecycle === "need-package") {
                     setMessages((prev) => [
                         ...prev,
-                        { id: newId(), role: "assistant", text: "当前安装缺少 Agent 工作区。请使用包含 assistant-runtime.zip 的完整包，解压到程序根目录后重启应用；画布其他功能不受影响。", pending: false, failed: true, tools: [] },
+                        { id: newId(), role: "assistant", text: runtimePackagePresent ? "当前安装的 Agent 运行时解压不完整。请点右上角「重新解压」；画布其他功能不受影响。" : "当前安装未下载 Agent 运行时包。请点右上角「下载完整包」；画布其他功能不受影响。", pending: false, failed: true, tools: [] },
                     ]);
                     return;
                 }
                 let url = serviceUrlRef.current;
                 if (!url) url = await ensureService();
                 if (!url) {
-                    const reason = serviceError || (lifecycle === "need-package" ? "当前安装缺少 Agent 工作区，请下载完整包。" : "助手服务没有启动成功，请稍后重试。");
+                    const reason = serviceError || (lifecycle === "need-package" ? (runtimePackagePresent ? "当前安装的 Agent 运行时解压不完整，请重新解压。" : "当前安装未下载 Agent 运行时包，请下载完整包。") : "助手服务没有启动成功，请稍后重试。");
                     setMessages((prev) => [
                         ...prev,
                         { id: newId(), role: "assistant", text: `无法唤起修复引擎：${reason}`, pending: false, failed: true, tools: [] },
@@ -633,7 +657,7 @@ export default function (runtime) {
                     abortRef.current = null;
                 }
             },
-            [ctx, ensureService, gatewayUrl, input, lifecycle, messages, parseStream, refreshStatus, selectedProfile, serviceError, streaming, updateAssistant],
+            [ctx, ensureService, gatewayUrl, input, lifecycle, messages, parseStream, refreshStatus, runtimePackagePresent, selectedProfile, serviceError, streaming, updateAssistant],
         );
 
         const retryMessage = useCallback(
@@ -781,19 +805,31 @@ export default function (runtime) {
 
         const statusText =
             lifecycle === "need-package"
-                ? "需要完整包"
-                : lifecycle === "starting"
-                  ? "正在唤起"
-                  : lifecycle === "sleep"
-                    ? "已休眠，发消息唤醒"
-                    : lifecycle === "online"
-                      ? "修复引擎在线"
-                      : lifecycle === "error"
-                        ? "服务未就绪"
-                        : "连接中";
-        const dotColor = lifecycle === "need-package" ? "#f59e0b" : lifecycle === "error" ? "#ef4444" : lifecycle === "online" ? "#22c55e" : nodeFaint;
+                ? runtimePackagePresent
+                    ? "运行时解压不完整"
+                    : "需要下载完整包"
+                : lifecycle === "downloading"
+                  ? "正在下载完整包"
+                  : lifecycle === "starting"
+                    ? "正在唤起"
+                    : lifecycle === "sleep"
+                      ? "已休眠，发消息唤醒"
+                      : lifecycle === "online"
+                        ? "修复引擎在线"
+                        : lifecycle === "error"
+                          ? "服务未就绪"
+                          : "连接中";
+        const dotColor =
+            lifecycle === "need-package" || lifecycle === "downloading"
+                ? "#f59e0b"
+                : lifecycle === "error"
+                  ? "#ef4444"
+                  : lifecycle === "online"
+                    ? "#22c55e"
+                    : nodeFaint;
         const needPackage = lifecycle === "need-package";
-        const canSend = Boolean(input.trim()) && !streaming && !needPackage;
+        const packageBusy = lifecycle === "downloading";
+        const canSend = Boolean(input.trim()) && !streaming && !needPackage && !packageBusy;
 
         const headerStyle = { display: "flex", alignItems: "center", gap: 8, padding: "9px 11px 7px", color: nodeText };
         const controlStyle = { border: `1px solid ${nodeStroke}`, background: "transparent", color: nodeText, borderRadius: 7, cursor: "pointer", fontSize: 11, lineHeight: 1, padding: "5px 7px" };
@@ -820,8 +856,37 @@ export default function (runtime) {
                 lifecycle === "error"
                     ? h("button", { type: "button", style: iconButtonStyle, title: "重新唤起助手服务", onMouseDown: (event) => event.stopPropagation(), onPointerDown: (event) => event.stopPropagation(), onClick: () => void ensureService() }, "重试")
                     : null,
-                lifecycle === "need-package" && canRepair
+                lifecycle === "need-package" && runtimePackagePresent && canRepair
                     ? h("button", { type: "button", style: iconButtonStyle, title: "重新解压 assistant-runtime.zip", onMouseDown: (event) => event.stopPropagation(), onPointerDown: (event) => event.stopPropagation(), onClick: () => void ensureService() }, "重新解压")
+                    : null,
+                lifecycle === "need-package" && !runtimePackagePresent && canDownload
+                    ? h(
+                          "button",
+                          {
+                              type: "button",
+                              style: { ...iconButtonStyle, opacity: downloadPending ? 0.6 : 1, cursor: downloadPending ? "default" : "pointer" },
+                              title: "从镜像下载并解压 Agent 运行时包",
+                              disabled: downloadPending,
+                              onMouseDown: (event) => event.stopPropagation(),
+                              onPointerDown: (event) => event.stopPropagation(),
+                              onClick: () => void ensureService({ download: true }),
+                          },
+                          downloadPending ? "下载中…" : "下载完整包",
+                      )
+                    : null,
+                lifecycle === "need-package" && !runtimePackagePresent && !canDownload && fullPackageUrl
+                    ? h(
+                          "button",
+                          {
+                              type: "button",
+                              style: iconButtonStyle,
+                              title: "打开完整包下载页",
+                              onMouseDown: (event) => event.stopPropagation(),
+                              onPointerDown: (event) => event.stopPropagation(),
+                              onClick: () => window.open(fullPackageUrl, "_blank", "noopener,noreferrer"),
+                          },
+                          "下载完整包",
+                      )
                     : null,
                 h(
                     "button",
@@ -849,7 +914,13 @@ export default function (runtime) {
                       "div",
                       { style: { padding: "7px 11px", borderBottom: `1px solid ${nodeStroke}`, background: needPackage ? "#f59e0b12" : lifecycle === "error" ? "#ef444410" : `${ACCENT}0d`, color: needPackage ? "#b45309" : lifecycle === "error" ? "#ef4444" : nodeMuted, fontSize: 10, lineHeight: 1.6 } },
                       needPackage
-                          ? `${serviceError || "Agent 工作区未安装"}。${canRepair ? "已检测到 assistant-runtime.zip，可点右上角「重新解压」。" : "请使用包含 assistant-runtime.zip 的完整包，解压到程序根目录后重启应用。"}`
+                          ? runtimePackagePresent
+                              ? `${serviceError || "Agent 运行时解压不完整"}。${canRepair ? "可点右上角「重新解压」。" : "请重新解压完整包后重启应用。"}`
+                              : canDownload
+                                ? `${serviceError || "未下载 Agent 运行时包"}。点右上角「下载完整包」自动下载并解压。`
+                                : fullPackageUrl
+                                  ? `${serviceError || "未下载 Agent 运行时包"}。可点「下载完整包」打开完整包下载页，取出 assistant-runtime.zip 放到程序根目录后重启应用。`
+                                  : `${serviceError || "未下载 Agent 运行时包"}。请下载完整包后将 assistant-runtime.zip 放到程序根目录后重启应用。`
                           : lifecycle === "error"
                             ? `助手服务未就绪：${serviceError}`
                             : recoveryNotice,

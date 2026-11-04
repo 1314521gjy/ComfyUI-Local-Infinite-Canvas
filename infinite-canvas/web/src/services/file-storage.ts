@@ -65,7 +65,7 @@ export async function cleanupUnusedMedia(usedData: CleanupUsedData) {
     });
     // Recheck live references immediately before deletion so late additions survive GC.
     const latestUsedKeys = collectMediaStorageKeys(currentCleanupData(usedData));
-    await Promise.all(unused.filter((key) => !latestUsedKeys.has(key)).map((key) => store.removeItem(key)));
+    await deleteStoredMedia(unused.filter((key) => !latestUsedKeys.has(key)));
 }
 
 export function collectMediaStorageKeys(value: unknown, keys = new Set<string>()) {

@@ -3,7 +3,9 @@ import { nanoid } from "nanoid";
 
 import i18n from "@/i18n";
 import { dataUrlToFile, readFileAsDataUrl } from "@/lib/image-utils";
-import { clampVideoSeconds, computeVideoSize, inferVideoRatio } from "@/lib/media-size";
+import { clampVideoSeconds, computeVideoSize, draftLongSideSize, draftShortSideSize, inferVideoRatio } from "@/lib/media-size";
+import { buildAcceleratedReference } from "@/lib/canvas/reference-acceleration";
+import { baseVideoWorkflowId, videoWorkflowId } from "@/lib/canvas/video-model-mode";
 import { getMediaBlob, resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import { boolConfig, buildApiUrl, modelOptionName, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@/stores/use-config-store";
@@ -266,11 +268,21 @@ async function readFileDurationMs(file: File): Promise<number> {
 
 async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: VideoMediaOptions): Promise<VideoGenerationTask> {
     const mode = resolveVideoMode(config.videoMode, references.length);
+    const fastDraft = baseVideoWorkflowId(videoWorkflowId(config, model)) === "video-h3-fast";
     const frameMode = config.frameMode || (references.length >= 2 ? "both" : "first");
     const selectedImages = references.slice(0, mode === "text" ? 0 : mode === "frames" ? 2 : 6);
     const selectedVideos = mode === "reference" ? (options?.videos || []).slice(0, 1) : [];
     const selectedAudios = mode === "reference" ? (options?.audios || []).slice(0, 2) : [];
-    const images = await Promise.all(selectedImages.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
+    const requestSize = fastDraft ? normalizeFastDraftSize(config.size, config.vquality) : normalizeVideoSize(config.size, config.vquality) || "1280x720";
+    const accelerateReference = Boolean(config.referenceAcceleration) && mode === "reference" && !fastDraft && selectedImages.length > 1;
+    let images: File[];
+    if (accelerateReference) {
+        const match = /^(\d+)x(\d+)$/.exec(requestSize);
+        const target = { width: match ? Number(match[1]) : 1280, height: match ? Number(match[2]) : 720 };
+        images = [dataUrlToFile(await buildAcceleratedReference(selectedImages, target))];
+    } else {
+        images = await Promise.all(selectedImages.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
+    }
     const videos = await Promise.all(selectedVideos.map((video) => referenceMediaToFile(video, "ref.mp4", "invalidReferenceVideo", options)));
     const audios = await Promise.all(selectedAudios.map((audio) => referenceMediaToFile(audio, "ref.mp3", "invalidReferenceAudio", options)));
     const ratio = inferVideoRatio(config.size || "16:9");
@@ -278,7 +290,7 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
     body.append("model", modelOptionName(model));
     body.append("prompt", prompt);
     body.append("seconds", normalizeVideoSeconds(config.videoSeconds));
-    body.append("size", normalizeVideoSize(config.size, config.vquality) || "1280x720");
+    body.append("size", requestSize);
     if (ratio && ratio !== "auto") {
         body.append("ratio", ratio);
     }
@@ -497,6 +509,13 @@ function normalizeVideoSize(value: string, resolution?: string) {
     // A stale pixel size must not override the selected 480/720/1080 tier.
     const ratio = inferVideoRatio(value);
     return computeVideoSize(selectedResolution, ratio === "auto" ? "16:9" : ratio);
+}
+
+function normalizeFastDraftSize(value: string, resolution?: string) {
+    const tier = String(resolution || "") === "480" ? "480" : "448";
+    const ratio = inferVideoRatio(value || "16:9");
+    const safeRatio = ratio === "auto" ? "16:9" : ratio;
+    return tier === "480" ? draftShortSideSize(safeRatio, 480) : draftLongSideSize(safeRatio, 448);
 }
 
 function normalizeVideoResolution(value: string) {

@@ -1,4 +1,4 @@
-import { App, Button, Form, Input, Modal, Progress, Radio, Select, Switch, Tabs } from "antd";
+import { App, AutoComplete, Button, Form, Input, Modal, Progress, Radio, Select, Switch, Tabs } from "antd";
 import type { TFunction } from "i18next";
 import { ArrowLeft, ArrowRight, Cloud, ChevronDown, Download, Lock, Pencil, Plus, RefreshCw, Trash2, Upload, Wifi } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -16,6 +16,7 @@ import { ConfigLocalStorage } from "@/components/layout/config-local-storage";
 import { ResourceCenterPanel } from "@/components/layout/resource-center-panel";
 import type { AppLocale } from "@/i18n";
 import { exportAppConfig, importAppConfig } from "@/services/config-file";
+import { fetchImageModels } from "@/services/api/image";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
@@ -67,6 +68,11 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const [cloudApiEditorOpen, setCloudApiEditorOpen] = useState(false);
     const [editingCloudApiId, setEditingCloudApiId] = useState("");
     const [cloudApiForm] = Form.useForm<{ name: string; baseUrl: string; apiKey: string; model: string }>();
+    const [cloudModelOptions, setCloudModelOptions] = useState<string[]>([]);
+    const [cloudModelState, setCloudModelState] = useState<"idle" | "loading" | "success" | "empty" | "error">("idle");
+    const [cloudModelError, setCloudModelError] = useState("");
+    const cloudModelAbortRef = useRef<AbortController | null>(null);
+    const cloudModelSeqRef = useRef(0);
     const [testingWebdav, setTestingWebdav] = useState(false);
     const [syncingWebdav, setSyncingWebdav] = useState(false);
     const [webdavSyncStatus, setWebdavSyncStatus] = useState("");
@@ -86,6 +92,8 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const setFishWhipEnabled = useThemeStore((state) => state.setFishWhipEnabled);
     const fishWhipSide = useThemeStore((state) => state.fishWhipSide);
     const setFishWhipSide = useThemeStore((state) => state.setFishWhipSide);
+    const agentAvatarEnabled = useThemeStore((state) => state.agentAvatarEnabled);
+    const setAgentAvatarEnabled = useThemeStore((state) => state.setAgentAvatarEnabled);
     const webdav = useConfigStore((state) => state.webdav);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const addPromptCloudApi = useConfigStore((state) => state.addPromptCloudApi);
@@ -197,8 +205,69 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
         updateChannels(config.channels.map((item) => (item.id === channel.id ? channel : item)));
     };
 
+    const resetCloudModelFetch = () => {
+        cloudModelAbortRef.current?.abort();
+        cloudModelAbortRef.current = null;
+        cloudModelSeqRef.current += 1;
+        setCloudModelOptions([]);
+        setCloudModelError("");
+        setCloudModelState("idle");
+    };
+
+    const fetchCloudModels = async () => {
+        const values = cloudApiForm.getFieldsValue(["baseUrl", "apiKey"]);
+        const baseUrl = String(values.baseUrl || "").trim();
+        const apiKey = String(values.apiKey || "").trim();
+        cloudModelAbortRef.current?.abort();
+        if (!baseUrl || !apiKey) {
+            setCloudModelOptions([]);
+            setCloudModelError("");
+            setCloudModelState("idle");
+            return;
+        }
+        const controller = new AbortController();
+        const seq = ++cloudModelSeqRef.current;
+        cloudModelAbortRef.current = controller;
+        setCloudModelState("loading");
+        setCloudModelError("");
+        try {
+            const models = await fetchImageModels({ baseUrl, apiKey, apiFormat: "openai" }, { signal: controller.signal });
+            if (seq !== cloudModelSeqRef.current) return;
+            setCloudModelOptions(models);
+            setCloudModelState(models.length ? "success" : "empty");
+        } catch (error) {
+            if (controller.signal.aborted || seq !== cloudModelSeqRef.current) return;
+            setCloudModelOptions([]);
+            setCloudModelError(error instanceof Error ? error.message : t("config.modelSelect.fetchFailed"));
+            setCloudModelState("error");
+        }
+    };
+
+    useEffect(() => {
+        if (!cloudApiEditorOpen) {
+            cloudModelAbortRef.current?.abort();
+            return;
+        }
+        const timer = window.setTimeout(() => void fetchCloudModels(), 250);
+        return () => window.clearTimeout(timer);
+    }, [cloudApiEditorOpen, editingCloudApiId]);
+
+    useEffect(() => () => cloudModelAbortRef.current?.abort(), []);
+
+    const cloudModelHint =
+        cloudModelState === "loading"
+            ? t("config.cloudApi.fetching")
+            : cloudModelState === "success"
+              ? t("config.cloudApi.fetched", { count: cloudModelOptions.length })
+              : cloudModelState === "empty"
+                ? t("config.cloudApi.fetchedEmpty")
+                : cloudModelState === "error"
+                  ? t("config.cloudApi.fetchFailed", { error: cloudModelError })
+                  : t("config.cloudApi.fetchHint");
+
     const openCloudApiEditor = (api?: PromptCloudApi) => {
         setEditingCloudApiId(api?.id || "");
+        resetCloudModelFetch();
         cloudApiForm.setFieldsValue(api ? { name: api.name, baseUrl: api.baseUrl, apiKey: api.apiKey, model: api.model } : { name: "", baseUrl: "", apiKey: "", model: "" });
         setCloudApiEditorOpen(true);
     };
@@ -507,6 +576,13 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                         <div className="mt-3 rounded-lg border border-stone-200 bg-stone-50/80 px-3 py-3 dark:border-stone-800 dark:bg-white/5">
                                             <div className="flex items-start justify-between gap-4">
                                                 <div className="min-w-0">
+                                                    <div className="text-sm font-medium">{t("config.preferences.agentAvatar")}</div>
+                                                    <div className="mt-1 text-[11px] leading-5 opacity-60">{t("config.preferences.agentAvatarDescription")}</div>
+                                                </div>
+                                                <Switch checked={agentAvatarEnabled} onChange={setAgentAvatarEnabled} />
+                                            </div>
+                                            <div className="mt-3 flex items-start justify-between gap-4 border-t border-stone-200/70 pt-3 dark:border-stone-800/70">
+                                                <div className="min-w-0">
                                                     <div className="text-sm font-medium">{t("config.preferences.fishWhip")}</div>
                                                     <div className="mt-1 text-[11px] leading-5 opacity-60">{t("config.preferences.fishWhipDescription")}</div>
                                                 </div>
@@ -575,6 +651,12 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                     <div className="flex items-center justify-between gap-3">
                                         <span className="text-sm">{t("config.preferences.autoFocusOnSelect")}</span>
                                         <Switch checked={config.autoFocusOnSelect} onChange={(checked) => updateConfig("autoFocusOnSelect", checked)} />
+                                    </div>
+                                </Form.Item>
+                                <Form.Item className="mb-4">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <span className="text-sm">{t("config.preferences.referenceAcceleration")}</span>
+                                        <Switch checked={Boolean(config.referenceAcceleration)} onChange={(checked) => updateConfig("referenceAcceleration", checked)} />
                                     </div>
                                 </Form.Item>
                                 {!LOCAL_ONLY ? (
@@ -702,18 +784,50 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                 onOk={() => void saveCloudApi()}
                 onCancel={() => setCloudApiEditorOpen(false)}
             >
-                <Form form={cloudApiForm} layout="vertical" requiredMark={false}>
+                <Form
+                    form={cloudApiForm}
+                    layout="vertical"
+                    requiredMark={false}
+                    onValuesChange={(changed) => {
+                        if ("baseUrl" in changed || "apiKey" in changed) resetCloudModelFetch();
+                    }}
+                >
                     <Form.Item label={t("config.cloudApi.name")} name="name" rules={[{ required: true, whitespace: true, message: t("config.cloudApi.nameRequired") }]}>
                         <Input placeholder={t("config.cloudApi.namePlaceholder")} />
                     </Form.Item>
                     <Form.Item label={t("config.cloudApi.baseUrl")} name="baseUrl" rules={[{ required: true, whitespace: true, message: t("config.cloudApi.baseUrlRequired") }]}>
-                        <Input placeholder="https://api.deepseek.com/v1" />
+                        <Input placeholder="https://api.deepseek.com/v1" onBlur={() => void fetchCloudModels()} />
                     </Form.Item>
-                    <Form.Item label={t("config.cloudApi.model")} name="model" rules={[{ required: true, whitespace: true, message: t("config.cloudApi.modelRequired") }]}>
-                        <Input placeholder="deepseek-chat" />
+                    <Form.Item
+                        label={t("config.cloudApi.model")}
+                        name="model"
+                        rules={[{ required: true, whitespace: true, message: t("config.cloudApi.modelRequired") }]}
+                        extra={
+                            <div className="flex items-start justify-between gap-3 text-xs">
+                                <span className={cloudModelState === "error" ? "text-red-500" : "text-stone-500"}>{cloudModelHint}</span>
+                                <Button
+                                    type="link"
+                                    size="small"
+                                    className="!h-auto !shrink-0 !p-0"
+                                    icon={<RefreshCw className="size-3.5" />}
+                                    loading={cloudModelState === "loading"}
+                                    onClick={() => void fetchCloudModels()}
+                                >
+                                    {t("config.cloudApi.fetchModels")}
+                                </Button>
+                            </div>
+                        }
+                    >
+                        <AutoComplete
+                            options={cloudModelOptions.map((value) => ({ value }))}
+                            placeholder="deepseek-chat"
+                            onFocus={() => {
+                                if (cloudModelState === "idle") void fetchCloudModels();
+                            }}
+                        />
                     </Form.Item>
                     <Form.Item label={t("config.cloudApi.apiKey")} name="apiKey" rules={[{ required: true, whitespace: true, message: t("config.cloudApi.keyRequired") }]}>
-                        <Input.Password placeholder="sk-..." autoComplete="off" />
+                        <Input.Password placeholder="sk-..." autoComplete="off" onBlur={() => void fetchCloudModels()} />
                     </Form.Item>
                 </Form>
                 <div className="text-xs text-stone-500">{t("config.cloudApi.hint")}</div>

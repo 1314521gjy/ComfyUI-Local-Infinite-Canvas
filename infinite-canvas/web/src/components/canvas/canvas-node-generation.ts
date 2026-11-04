@@ -69,6 +69,37 @@ export function buildNodeGenerationContext(nodeId: string, nodes: CanvasNodeData
     };
 }
 
+// 二级/子卡自身没有 LoRA，沿连线往上游找最近一层带 LoRA 的节点。
+export function collectNodeLoras(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[], maxDepth = 8): NodeLora[] {
+    const seen = new Set<string>();
+    let queue = [nodeId];
+    for (let depth = 0; depth <= maxDepth && queue.length; depth += 1) {
+        const next: string[] = [];
+        for (const id of queue) {
+            if (seen.has(id)) continue;
+            seen.add(id);
+            const node = nodes.find((item) => item.id === id);
+            if (!node) continue;
+            const stored = node.metadata?.params?.loras;
+            if (Array.isArray(stored)) {
+                const loras = stored.flatMap((item) => {
+                    const name = typeof item?.name === "string" ? item.name.trim() : "";
+                    const strength = Number(item?.strength);
+                    return name && Number.isFinite(strength) ? [{ name, strength }] : [];
+                });
+                if (loras.length) return loras;
+            }
+            const contextLoras = buildNodeGenerationContext(id, nodes, connections, "").loras;
+            if (contextLoras.length) return contextLoras;
+            for (const connection of connections) {
+                if (connection.toNodeId === id && !seen.has(connection.fromNodeId)) next.push(connection.fromNodeId);
+            }
+        }
+        queue = next;
+    }
+    return [];
+}
+
 function buildComposerGenerationContext(inputs: NodeGenerationInput[], prompt: string): NodeGenerationContext {
     const inputByNodeId = new Map(inputs.map((input) => [input.nodeId, input]));
     const selectedInputs: NodeGenerationResourceInput[] = [];

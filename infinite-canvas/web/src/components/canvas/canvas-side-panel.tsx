@@ -22,13 +22,15 @@ import { usePromptSourceStore } from "@/stores/use-prompt-source-store";
 import { CANVAS_SIDE_PANEL_MAX_WIDTH, CANVAS_SIDE_PANEL_MIN_WIDTH, CANVAS_SIDE_PANEL_MOTION_MS, useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
+import type { StyleRecipe } from "@/stores/use-style-recipe-store";
 
 import type { InsertAssetPayload } from "./asset-picker-modal";
+import { CanvasStyleRecipesTab } from "./canvas-style-recipes-tab";
 
 const PANEL_MOTION_SECONDS = CANVAS_SIDE_PANEL_MOTION_MS / 1000;
 const PANEL_EASE = [0.22, 1, 0.36, 1] as const;
 
-type PanelTab = "canvas" | "assets" | "free" | "prompts";
+type PanelTab = "canvas" | "assets" | "free" | "prompts" | "styles";
 
 type Props = {
     nodes: CanvasNodeData[];
@@ -40,6 +42,7 @@ type Props = {
     onHoverImage?: (nodeId: string, imageId: string | null) => void;
     onInsertAsset: (payload: InsertAssetPayload) => void;
     onAddFreeCard?: (workflow: FreeWorkflowSummary) => void;
+    onApplyStyleRecipe: (recipe: StyleRecipe) => void;
 };
 
 const NODE_TYPE_ICON: Record<string, typeof Square> = {
@@ -59,7 +62,7 @@ const STATUS_COLOR: Record<string, string> = {
     idle: "transparent",
 };
 
-export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, onPreviewImage, onHoverNode, onHoverImage, onInsertAsset, onAddFreeCard }: Props) {
+export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, onPreviewImage, onHoverNode, onHoverImage, onInsertAsset, onAddFreeCard, onApplyStyleRecipe }: Props) {
     const { t } = useTranslation();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const [tab, setTab] = useState<PanelTab>("canvas");
@@ -113,6 +116,7 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreview
                     <TabButton label={t("canvas.sidePanel.assets")} active={tab === "assets"} theme={theme} onClick={() => setTab("assets")} />
                     {LOCAL_ONLY ? <TabButton label={t("canvas.sidePanel.freeCards")} active={tab === "free"} theme={theme} onClick={() => setTab("free")} /> : null}
                     {!LOCAL_ONLY ? <TabButton label={t("canvas.sidePanel.prompts")} active={tab === "prompts"} theme={theme} onClick={() => setTab("prompts")} /> : null}
+                    <TabButton label={t("canvas.styleRecipes.tab")} active={tab === "styles"} theme={theme} onClick={() => setTab("styles")} />
                 </div>
                 <div className="mt-2 min-h-0 flex-1 overflow-hidden">
                     {tab === "canvas" ? (
@@ -121,6 +125,8 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreview
                         <CanvasAssetsTab onInsert={onInsertAsset} theme={theme} />
                     ) : tab === "free" ? (
                         <CanvasFreeCardsTab theme={theme} onAdd={onAddFreeCard} />
+                    ) : tab === "styles" ? (
+                        <CanvasStyleRecipesTab theme={theme} onApply={onApplyStyleRecipe} />
                     ) : !LOCAL_ONLY ? (
                         <CanvasPromptsTab onInsert={onInsertAsset} theme={theme} />
                     ) : null}
@@ -554,7 +560,17 @@ const CanvasAssetsTab = memo(function CanvasAssetsTab({ onInsert, theme }: { onI
                                     {isCollapsed ? null : (
                                         <div className="grid grid-cols-2 gap-2 px-1 pb-2 pt-1">
                                             {group.items.map((asset) => (
-                                                <AssetCard key={asset.id} asset={asset} theme={theme} onInsert={() => onInsert(buildInsertPayload(asset))} onRemove={() => (removeAsset(asset.id), message.success(t("canvas.sidePanel.assetRemoved")))} />
+                                                <AssetCard
+                                                    key={asset.id}
+                                                    asset={asset}
+                                                    theme={theme}
+                                                    onInsert={() => onInsert(buildInsertPayload(asset))}
+                                                    onRemove={() =>
+                                                        void removeAsset(asset.id)
+                                                            .then(() => message.success(t("canvas.sidePanel.assetRemoved")))
+                                                            .catch((error) => message.error(error instanceof Error ? error.message : t("canvas.sidePanel.removeAssetFailed")))
+                                                    }
+                                                />
                                             ))}
                                         </div>
                                     )}

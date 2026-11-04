@@ -161,6 +161,22 @@ export function readVideoDimensions(size: string, resolution: string, ratio: str
     return parsePixelSize(computed) || { width: 0, height: 0 };
 }
 
+export function draftShortSideSize(ratio: string, shortSide: number) {
+    const [rawWidth, rawHeight] = ratio.split(":").map(Number);
+    const width = rawWidth > 0 ? rawWidth : 9;
+    const height = rawHeight > 0 ? rawHeight : 16;
+    const snap = (value: number) => Math.max(32, Math.round(value / 32) * 32);
+    return width >= height ? `${snap((shortSide * width) / height)}x${shortSide}` : `${shortSide}x${snap((shortSide * height) / width)}`;
+}
+
+export function draftLongSideSize(ratio: string, longSide: number) {
+    const [rawWidth, rawHeight] = ratio.split(":").map(Number);
+    const width = rawWidth > 0 ? rawWidth : 9;
+    const height = rawHeight > 0 ? rawHeight : 16;
+    const snap = (value: number) => Math.max(32, Math.round(value / 32) * 32);
+    return width >= height ? `${longSide}x${snap((longSide * height) / width)}` : `${snap((longSide * width) / height)}x${longSide}`;
+}
+
 // 像素尺寸与当前分辨率档 + 最近比例推导出的预设尺寸不一致时，视为用户自定义 W/H。
 export function isCustomVideoSize(size: string, resolution: string) {
     const pixels = parsePixelSize(size);

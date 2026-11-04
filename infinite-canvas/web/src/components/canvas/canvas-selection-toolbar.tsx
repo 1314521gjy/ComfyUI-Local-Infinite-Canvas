@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Columns2, Group, Play, Ungroup } from "lucide-react";
+import { Columns2, Download, Group, Play, Ungroup } from "lucide-react";
 import { Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
@@ -18,10 +18,12 @@ export function CanvasSelectionToolbar({
     canGroup,
     canUngroup,
     canSyncPlay,
+    canBatchDownload,
     onCompare,
     onGroup,
     onUngroup,
     onSyncPlay,
+    onBatchDownload,
 }: {
     nodes: CanvasNodeData[];
     viewport: ViewportTransform;
@@ -30,10 +32,12 @@ export function CanvasSelectionToolbar({
     canGroup: boolean;
     canUngroup: boolean;
     canSyncPlay: boolean;
+    canBatchDownload: boolean;
     onCompare: () => void;
     onGroup: () => void;
     onUngroup: () => void;
     onSyncPlay: () => void;
+    onBatchDownload: () => void;
 }) {
     const { t } = useTranslation();
     const theme = useCanvasTheme();
@@ -44,7 +48,7 @@ export function CanvasSelectionToolbar({
     const top = viewport.y + bounds.top * viewport.k - SELECTION_PAD;
     const width = (bounds.right - bounds.left) * viewport.k + SELECTION_PAD * 2;
     const height = (bounds.bottom - bounds.top) * viewport.k + SELECTION_PAD * 2;
-    const showActions = showToolbar && (canCompare || canGroup || canUngroup || canSyncPlay);
+    const showActions = showToolbar && (canCompare || canGroup || canUngroup || canSyncPlay || canBatchDownload);
 
     return (
         <>
@@ -72,6 +76,7 @@ export function CanvasSelectionToolbar({
                     onPointerDown={(event) => event.stopPropagation()}
                 >
                     {canCompare ? <SelectionAction title={t("canvas.nodeToolbar.compareTitle")} label={t("canvas.nodeToolbar.compare")} icon={<Columns2 className="size-4" />} onClick={onCompare} /> : null}
+                    {canBatchDownload ? <SelectionAction title={t("canvas.nodeToolbar.batchDownloadTitle")} label={t("canvas.nodeToolbar.batchDownload")} icon={<Download className="size-4" />} onClick={onBatchDownload} /> : null}
                     {canSyncPlay ? <SelectionAction title={t("canvas.nodeToolbar.syncPlayTitle")} label={t("canvas.nodeToolbar.syncPlay")} icon={<Play className="size-4" />} onClick={onSyncPlay} /> : null}
                     {canGroup ? <SelectionAction title={t("canvas.nodeToolbar.groupTitle")} label={t("canvas.nodeToolbar.group")} icon={<Group className="size-4" />} onClick={onGroup} /> : null}
                     {canUngroup ? <SelectionAction title={t("canvas.nodeToolbar.ungroupTitle")} label={t("canvas.nodeToolbar.ungroup")} icon={<Ungroup className="size-4" />} onClick={onUngroup} /> : null}

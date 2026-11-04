@@ -1,0 +1,38 @@
+{
+  "revision": "e5e0d020e2add85f50466bb79171bc04ef7492b6",
+  "version": "0.2.34",
+  "repository": "https://github.com/Comfy-Org/comfy-kitchen",
+  "source_directory": "comfy_kitchen/backends/cuda/sage_attention",
+  "license": "Apache-2.0",
+  "files": {
+    "sol_attn_producer.cu": {
+      "upstream_sha256": "677f202a83d5b676b9f08f62b1044585ec60229db761d45ddce4ce49c182720e",
+      "modified": true
+    },
+    "sol_attn_preprocess.cu": {
+      "upstream_sha256": "33f5d52ade1e0b49edc0b2ab854bb37e5c86ff553b8afab5cd54375f6dd2ce03",
+      "modified": false
+    },
+    "sol_attn_route.cu": {
+      "upstream_sha256": "bead3ce3ab382023655ec4f2eff93b9ab67c0465cc234f5993df550ccd89ed71",
+      "modified": true
+    },
+    "sol_attn_exact.cu": {
+      "upstream_sha256": "0c0b821d7be8e0f2f43ef63296a73677dcc13edbd66c768dade5285c206076f3",
+      "modified": true
+    },
+    "sol_layout.cuh": {
+      "upstream_sha256": "1ccdbb75157ed150bcd994bfc47a4b3bf638a27f3ed9fe94326b76342ba712a0",
+      "modified": true
+    },
+    "mma.cuh": {
+      "upstream_sha256": "1335e47299c6e178a4a0b0b2ba76db76ce4730e6ac347206e5e86f14681eeff0",
+      "modified": false
+    }
+  },
+  "changes": "producer: residual carrier/metadata, explicit centering flag and bounded pre-quantization BF16 hook; exact/layout: real-unit scaled PV and mean correction, original-stock prefix, token augmentation rejected; route: resource attribute query only.",
+  "derived_files": {
+    "vc_group_fine.cu": "sol_attn_exact.cu from the same pinned Kitchen source; separate G4 INT8/NVFP4 policy",
+    "vc_group_pv.cuh": "Project-owned grouped math; NVFP4 instruction wrapper adapted from Anemoi SM120 primitive, Apache-2.0, Copyright 2026 Anemoi Project Contributors"
+  }
+}

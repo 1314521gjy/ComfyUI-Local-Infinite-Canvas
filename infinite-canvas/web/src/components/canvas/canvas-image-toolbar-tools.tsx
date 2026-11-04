@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
-import { Brush, Camera, Copy, FileText, Grid2x2, LayoutGrid, Lock, LockOpen, Maximize2, Scissors, Sparkles, Upload, ZoomIn } from "lucide-react";
+import { Box, Brush, Camera, Copy, FileText, Grid2x2, LayoutGrid, Lock, LockOpen, Maximize2, Scissors, Sparkles, Upload, ZoomIn } from "lucide-react";
 
 import type { CanvasNodeData } from "@/types/canvas";
 import i18n from "@/i18n";
 
-export type ImageNodeActionToolId = "copyPrompt" | "reversePrompt" | "replace" | "resize" | "maskEdit" | "crop" | "split" | "upscale" | "superResolve" | "angle" | "fourView" | "view";
-export type ImageQuickToolId = "info" | "delete" | "saveAsset" | "download" | ImageNodeActionToolId;
+export type ImageNodeActionToolId = "copyPrompt" | "reversePrompt" | "replace" | "resize" | "maskEdit" | "crop" | "split" | "upscale" | "superResolve" | "angle" | "fourView" | "to3d" | "view";
+export type ImageQuickToolId = "info" | "delete" | "saveAsset" | "saveStyle" | "download" | ImageNodeActionToolId;
 
 export type ImageToolHandlers = {
     onUpload: (node: CanvasNodeData) => void;
@@ -17,6 +17,7 @@ export type ImageToolHandlers = {
     onSuperResolve: (node: CanvasNodeData) => void;
     onAngle: (node: CanvasNodeData) => void;
     onFourView: (node: CanvasNodeData) => void;
+    onTo3D: (node: CanvasNodeData) => void;
     onViewImage: (node: CanvasNodeData) => void;
     onCopyPrompt: (node: CanvasNodeData) => void;
     onReversePrompt: (node: CanvasNodeData) => void;
@@ -37,10 +38,12 @@ export type ImageQuickToolsConfig = {
     showLabels: boolean;
 };
 
-export const IMAGE_QUICK_TOOLS_STORAGE_KEY = "canvas-image-quick-tools-v9";
-export const LEGACY_IMAGE_QUICK_TOOLS_STORAGE_KEY = "canvas-image-quick-tools-v8";
+export const IMAGE_QUICK_TOOLS_STORAGE_KEY = "canvas-image-quick-tools-v12";
+export const LEGACY_IMAGE_QUICK_TOOLS_STORAGE_KEY = "canvas-image-quick-tools-v11";
+export const LEGACY_IMAGE_QUICK_TOOLS_STORAGE_KEY_V10 = "canvas-image-quick-tools-v10";
+export const LEGACY_IMAGE_QUICK_TOOLS_STORAGE_KEY_V9 = "canvas-image-quick-tools-v9";
 
-const defaultBaseToolIds: ImageQuickToolId[] = ["info", "delete", "saveAsset", "download"];
+const defaultBaseToolIds: ImageQuickToolId[] = ["info", "delete", "saveAsset", "saveStyle", "download"];
 
 export const imageToolDefinitions: ImageToolDefinition[] = [
     {
@@ -131,6 +134,14 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
         title: () => i18n.t("canvas.imageTools.fourViewTitle"),
         icon: () => <LayoutGrid className="size-4" />,
         run: (node, handlers) => handlers.onFourView(node),
+    },
+    {
+        id: "to3d",
+        defaultVisible: true,
+        label: () => i18n.t("canvas.imageTools.to3d"),
+        title: () => i18n.t("canvas.imageTools.to3dTitle"),
+        icon: () => <Box className="size-4" />,
+        run: (node, handlers) => handlers.onTo3D(node),
     },
     {
         id: "view",

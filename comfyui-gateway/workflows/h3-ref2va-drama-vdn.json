@@ -274,7 +274,7 @@
         0
       ],
       "sigmas": [
-        "112",
+        "74",
         0
       ],
       "upscaler_unload": true,
@@ -283,19 +283,6 @@
     "class_type": "SelfLiftH3Sampler",
     "_meta": {
       "title": "① 单采 SelfLift（日常版参数）"
-    }
-  },
-  "112": {
-    "class_type": "H3SigmaRefiner",
-    "inputs": {
-      "sigmas": [
-        "74",
-        0
-      ],
-      "extra_steps": 1,
-      "start_at_sigma": 0.7,
-      "end_at_sigma": 0,
-      "spacing": "cosine"
     }
   }
 }

@@ -11,6 +11,10 @@ export function isNoVdnWorkflowId(workflowId: string) {
     return String(workflowId || "").endsWith(NO_VDN_SUFFIX);
 }
 
+export function isFastH3Model(config: AiConfig, model: string) {
+    return baseVideoWorkflowId(videoWorkflowId(config, model)) === "video-h3-fast";
+}
+
 export function baseVideoWorkflowId(workflowId: string) {
     return String(workflowId || "").replace(/-novdn$/, "");
 }
@@ -28,6 +32,7 @@ export function videoModelModePatch(config: AiConfig, model: string): Partial<No
     if (workflowId === "video-h3-ref2va") return { model, videoMode: "reference" };
     if (workflowId === "video-h3-character-swap") return { model, videoMode: "reference" };
     if (workflowId === "video-h3-frames") return { model, videoMode: "frames" };
+    if (workflowId === "video-h3-fast") return { model, videoMode: "frames" };
     if (workflowId === "video-h3-t2v") return { model, videoMode: "text" };
     return { model };
 }

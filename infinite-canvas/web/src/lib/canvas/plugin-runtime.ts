@@ -1,4 +1,5 @@
 import React from "react";
+import { Button, InputNumber, Select } from "antd";
 
 import { emitCanvasEvent, onCanvasEvent } from "@/lib/canvas/canvas-event-bus";
 import type { CanvasPluginApp } from "@/types/canvas-plugin";
@@ -8,6 +9,7 @@ export type PluginRuntime = CanvasPluginApp & {
     React: typeof React;
     jsx: typeof React.createElement;
     Fragment: typeof React.Fragment;
+    antd: { Button: typeof Button; InputNumber: typeof InputNumber; Select: typeof Select };
     injectCSS: (css: string, key?: string) => () => void;
 };
 
@@ -31,6 +33,7 @@ export function getPluginRuntime(): PluginRuntime {
             React,
             jsx: React.createElement,
             Fragment: React.Fragment,
+            antd: { Button, InputNumber, Select },
             injectCSS,
             version: typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev",
             emit: emitCanvasEvent,

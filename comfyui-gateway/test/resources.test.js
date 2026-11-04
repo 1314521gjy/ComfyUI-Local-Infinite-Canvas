@@ -911,7 +911,7 @@ test("krea2 and four-view packs keep the base workflow and standalone resource e
     ]);
     assert.equal(index.resources.some((item) => item.id === "krea2_darkbrush_lora"), false);
     assert.equal(index.resources.some((item) => item.id === "krea2_retroanime_lora"), false);
-    assert.equal(index.resources.length, 73);
+    assert.equal(index.resources.length, 83);
 });
 
 test("moss pack no longer ships Balanced workflows or the local bake resource", () => {

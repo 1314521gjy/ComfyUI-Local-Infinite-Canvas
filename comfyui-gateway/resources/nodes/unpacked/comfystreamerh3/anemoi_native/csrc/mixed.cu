@@ -1,0 +1,7 @@
+#define MPA_ATTENTION_KERNEL_ENTRY fasth3_anemoi_mixed_kernel
+#define MPA_ATTENTION_LAUNCH_ENTRY fasth3_anemoi_mixed_launch
+#define ANEMOI_MIXED_ENTRY mixed_attention
+#define ANEMOI_MIXED_RESOURCES mixed_resources
+#define ANEMOI_MIXED_KERNEL fasth3_anemoi_mixed_kernel
+#define ANEMOI_MIXED_LAUNCH fasth3_anemoi_mixed_launch
+#include "mixed_entry.cuh"

@@ -1,0 +1,7 @@
+#define MPA_ATTENTION_KERNEL_ENTRY fasth3_anemoi_int8_kernel
+#define MPA_ATTENTION_LAUNCH_ENTRY fasth3_anemoi_int8_launch
+#define ANEMOI_ENTRY int8_attention
+#define ANEMOI_RESOURCES int8_resources
+#define ANEMOI_KERNEL fasth3_anemoi_int8_kernel
+#define ANEMOI_LAUNCH fasth3_anemoi_int8_launch
+#include "int8_entry.cuh"

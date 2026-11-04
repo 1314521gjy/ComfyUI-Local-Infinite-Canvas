@@ -25,6 +25,7 @@ const LABELS: Array<{ value: CanvasMossLayoutRegion["label"]; label: string; col
     { value: "character", label: "人物", color: "#22c55e" },
     { value: "text", label: "文字", color: "#f59e0b" },
 ];
+const MIN_REGION_SIZE = 0.02;
 
 function parseSize(value?: string) {
     const match = String(value || "").match(/^(\d+)x(\d+)$/);
@@ -56,11 +57,15 @@ export function CanvasNodeMossLayoutDialog({ open, dataUrl, promptDefault = "", 
     const boardRef = useRef<HTMLDivElement>(null);
     const drawRef = useRef<{ x: number; y: number } | null>(null);
     const moveRef = useRef<{ id: string; startX: number; startY: number; originX: number; originY: number; width: number; height: number } | null>(null);
+    const resizeRef = useRef<{ id: string; startX: number; startY: number; originWidth: number; originHeight: number; x: number; y: number } | null>(null);
+    const resizePreviewRef = useRef<{ id: string; width: number; height: number } | null>(null);
+    const resizeFrameRef = useRef<number | null>(null);
     const initRef = useRef<string | null>(null);
     const [summary, setSummary] = useState("");
     const [regions, setRegions] = useState<CanvasMossLayoutRegion[]>([]);
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [draft, setDraft] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+    const [resizePreview, setResizePreview] = useState<{ id: string; width: number; height: number } | null>(null);
     const [error, setError] = useState("");
     const output = parseSize(size);
     const boardWidth = output.width >= output.height ? 560 : Math.round(560 * (output.width / output.height));
@@ -80,10 +85,35 @@ export function CanvasNodeMossLayoutDialog({ open, dataUrl, promptDefault = "", 
         setRegions(layout?.regions ? layout.regions.map((region) => ({ ...region })) : []);
         setSelectedId(null);
         setDraft(null);
+        setResizePreview(null);
         moveRef.current = null;
         drawRef.current = null;
+        resizeRef.current = null;
+        resizePreviewRef.current = null;
+        if (resizeFrameRef.current !== null) {
+            cancelAnimationFrame(resizeFrameRef.current);
+            resizeFrameRef.current = null;
+        }
         setError("");
     }, [layout, open, promptDefault]);
+
+    const cancelResize = () => {
+        resizeRef.current = null;
+        resizePreviewRef.current = null;
+        if (resizeFrameRef.current !== null) {
+            cancelAnimationFrame(resizeFrameRef.current);
+            resizeFrameRef.current = null;
+        }
+        setResizePreview(null);
+    };
+
+    useEffect(() => {
+        window.addEventListener("blur", cancelResize);
+        return () => {
+            window.removeEventListener("blur", cancelResize);
+            if (resizeFrameRef.current !== null) cancelAnimationFrame(resizeFrameRef.current);
+        };
+    }, []);
 
     const pointFromClient = (clientX: number, clientY: number) => {
         const rect = boardRef.current?.getBoundingClientRect();
@@ -94,6 +124,80 @@ export function CanvasNodeMossLayoutDialog({ open, dataUrl, promptDefault = "", 
         };
     };
     const point = (event: ReactPointerEvent<HTMLDivElement>) => pointFromClient(event.clientX, event.clientY);
+    const resizeFrom = (resizing: NonNullable<typeof resizeRef.current>, clientX: number, clientY: number) => {
+        const current = pointFromClient(clientX, clientY);
+        const width = Math.min(Math.max(0, 1 - resizing.x), Math.max(MIN_REGION_SIZE, resizing.originWidth + current.x - resizing.startX));
+        const height = Math.min(Math.max(0, 1 - resizing.y), Math.max(MIN_REGION_SIZE, resizing.originHeight + current.y - resizing.startY));
+        return { id: resizing.id, width, height };
+    };
+    const queueResizePreview = (next: { id: string; width: number; height: number }) => {
+        resizePreviewRef.current = next;
+        if (resizeFrameRef.current !== null) return;
+        resizeFrameRef.current = requestAnimationFrame(() => {
+            resizeFrameRef.current = null;
+            const pending = resizePreviewRef.current;
+            if (pending) setResizePreview(pending);
+        });
+    };
+    const commitResizeAt = (clientX: number, clientY: number) => {
+        const resizing = resizeRef.current;
+        if (!resizing) return;
+        const final = resizeFrom(resizing, clientX, clientY);
+        resizeRef.current = null;
+        resizePreviewRef.current = null;
+        if (resizeFrameRef.current !== null) {
+            cancelAnimationFrame(resizeFrameRef.current);
+            resizeFrameRef.current = null;
+        }
+        setResizePreview(null);
+        setRegions((previous) => previous.map((region) => (region.id === final.id ? { ...region, width: final.width, height: final.height } : region)));
+    };
+    const startResize = (event: ReactPointerEvent<HTMLDivElement>, region: CanvasMossLayoutRegion) => {
+        if (event.button !== 0) return;
+        event.stopPropagation();
+        event.preventDefault();
+        setSelectedId(region.id);
+        setDraft(null);
+        const start = pointFromClient(event.clientX, event.clientY);
+        resizeRef.current = { id: region.id, startX: start.x, startY: start.y, originWidth: region.width, originHeight: region.height, x: region.x, y: region.y };
+        const initial = { id: region.id, width: region.width, height: region.height };
+        resizePreviewRef.current = initial;
+        setResizePreview(initial);
+        boardRef.current?.setPointerCapture(event.pointerId);
+    };
+    const endResize = (event: ReactPointerEvent<HTMLDivElement>, commit: boolean) => {
+        if (!resizeRef.current) return;
+        event.stopPropagation();
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+        if (commit) commitResizeAt(event.clientX, event.clientY);
+        else cancelResize();
+    };
+
+    useEffect(() => {
+        const onMove = (event: PointerEvent) => {
+            const resizing = resizeRef.current;
+            if (!resizing) return;
+            if ((event.buttons & 1) === 0) {
+                cancelResize();
+                return;
+            }
+            queueResizePreview(resizeFrom(resizing, event.clientX, event.clientY));
+        };
+        const onUp = (event: PointerEvent) => {
+            if (resizeRef.current) commitResizeAt(event.clientX, event.clientY);
+        };
+        const onCancel = () => {
+            if (resizeRef.current) cancelResize();
+        };
+        window.addEventListener("pointermove", onMove, true);
+        window.addEventListener("pointerup", onUp, true);
+        window.addEventListener("pointercancel", onCancel, true);
+        return () => {
+            window.removeEventListener("pointermove", onMove, true);
+            window.removeEventListener("pointerup", onUp, true);
+            window.removeEventListener("pointercancel", onCancel, true);
+        };
+    }, []);
     const startDraw = (event: ReactPointerEvent<HTMLDivElement>) => {
         if (event.button !== 0) return;
         moveRef.current = null;
@@ -104,6 +208,12 @@ export function CanvasNodeMossLayoutDialog({ open, dataUrl, promptDefault = "", 
         setSelectedId(null);
     };
     const moveDraw = (event: ReactPointerEvent<HTMLDivElement>) => {
+        const resizing = resizeRef.current;
+        if (resizing) {
+            event.stopPropagation();
+            queueResizePreview(resizeFrom(resizing, event.clientX, event.clientY));
+            return;
+        }
         const moving = moveRef.current;
         if (moving) {
             const current = point(event);
@@ -122,7 +232,11 @@ export function CanvasNodeMossLayoutDialog({ open, dataUrl, promptDefault = "", 
             height: Math.abs(current.y - start.y),
         });
     };
-    const endDraw = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const endDraw = (event: ReactPointerEvent<HTMLDivElement>, resizeCommit = true) => {
+        if (resizeRef.current) {
+            endResize(event, resizeCommit);
+            return;
+        }
         const moving = moveRef.current;
         moveRef.current = null;
         if (moving) {
@@ -189,17 +303,19 @@ export function CanvasNodeMossLayoutDialog({ open, dataUrl, promptDefault = "", 
                         style={{ width: boardWidth, height: boardHeight, margin: "0 auto", borderColor: theme.node.stroke, backgroundColor: theme.node.fill, touchAction: "none" }}
                         onPointerDown={startDraw}
                         onPointerMove={moveDraw}
-                        onPointerUp={endDraw}
-                        onPointerCancel={endDraw}
+                        onPointerUp={(event) => endDraw(event, true)}
+                        onPointerCancel={(event) => endDraw(event, false)}
                     >
                         {dataUrl ? <img src={dataUrl} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-fill opacity-25" draggable={false} /> : null}
                         {regions.map((region, index) => {
                             const color = LABELS.find((item) => item.value === region.label)?.color || "#3b82f6";
+                            const view = resizePreview && resizePreview.id === region.id ? resizePreview : region;
                             return (
                                 <div
                                     key={region.id}
+                                    data-moss-region={region.id}
                                     className="absolute cursor-move border-2"
-                                    style={{ left: `${region.x * 100}%`, top: `${region.y * 100}%`, width: `${region.width * 100}%`, height: `${region.height * 100}%`, borderColor: color, background: `${color}22` }}
+                                    style={{ left: `${region.x * 100}%`, top: `${region.y * 100}%`, width: `${view.width * 100}%`, height: `${view.height * 100}%`, borderColor: color, background: `${color}22` }}
                                     onPointerDown={(event) => {
                                         event.stopPropagation();
                                         event.preventDefault();
@@ -214,13 +330,27 @@ export function CanvasNodeMossLayoutDialog({ open, dataUrl, promptDefault = "", 
                                         {index + 1} · {LABELS.find((item) => item.value === region.label)?.label}
                                     </span>
                                     {region.caption ? <span className="absolute bottom-1 left-1 right-1 truncate rounded bg-black/45 px-1 text-[10px] text-white">{region.caption}</span> : null}
+                                    {selectedId === region.id ? (
+                                        <div
+                                            data-moss-resize-handle={region.id}
+                                            className="absolute bottom-0 right-0 z-10 h-9 w-9 cursor-nwse-resize"
+                                            style={{ touchAction: "none" }}
+                                            title="拖动右下角缩放"
+                                            onPointerDown={(event) => startResize(event, region)}
+                                        >
+                                            <span
+                                                className="pointer-events-none absolute h-2.5 w-2.5 rounded-[2px] border border-white/90 bg-black/60"
+                                                style={{ right: 3, bottom: 3 }}
+                                            />
+                                        </div>
+                                    ) : null}
                                 </div>
                             );
                         })}
                         {draft ? <div className="absolute border-2 border-dashed border-white/80" style={{ left: `${draft.x * 100}%`, top: `${draft.y * 100}%`, width: `${draft.width * 100}%`, height: `${draft.height * 100}%` }} /> : null}
                     </div>
                     <div className="text-center text-xs" style={{ color: theme.node.muted }}>
-                        拖拽空白画新框 · 拖拽已有框移动 · 点击框选中编辑 · {dataUrl ? "底图仅作参考，不参与生成 · " : ""}输出 {output.width} × {output.height}
+                        拖拽空白画新框 · 拖拽已有框移动 · 拖右下角缩放 · 点击框选中编辑 · {dataUrl ? "底图仅作参考，不参与生成 · " : ""}输出 {output.width} × {output.height}
                     </div>
                 </div>
 

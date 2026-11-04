@@ -118,6 +118,7 @@ const IMAGE_MAX_RATIO = 3;
 const IMAGE_OUTPUT_FORMAT = "png";
 // 与 image-storage 的下载超时保持一致，避免接口挂起时节点一直停在生成中。
 const IMAGE_REQUEST_TIMEOUT_MS = 10 * 60_000;
+const MODEL_FETCH_TIMEOUT_MS = 15_000;
 
 export function localGatewayRoot(baseUrl: string) {
     const url = String(baseUrl || "").trim().replace(/\/+$/, "");
@@ -1003,6 +1004,121 @@ export async function requestImageFourView(
     }
 }
 
+export type ImageTo3DParams = {
+    mode: "synthetic" | "real";
+    steps?: number;
+    numGaussians?: number;
+    seed?: number;
+};
+
+export type ImageTo3DResult = {
+    modelUrl: string;
+    modelBytes: number;
+    fileName: string;
+    previewUrl?: string;
+    seed: number | null;
+    mode: "synthetic" | "real";
+};
+
+type ImageTo3DApiResponse = {
+    model?: { url?: string; bytes?: number; filename?: string };
+    preview?: { url?: string };
+    seed?: number | null;
+    mode?: string;
+    error?: { message?: string };
+};
+
+export async function requestImageTo3D(config: AiConfig, file: File, params: ImageTo3DParams, options?: RequestOptions): Promise<ImageTo3DResult> {
+    const baseConfig = resolveModelRequestConfig(config, config.imageModel || config.model);
+    const requestConfig = { ...baseConfig, baseUrl: LOCAL_GATEWAY_BASE_URL, apiKey: "local", apiFormat: "openai" as const };
+    const root = localGatewayRoot(requestConfig.baseUrl);
+    if (!root) throw new Error(apiText("image3dLocalOnly"));
+    const formData = new FormData();
+    formData.set("image", file, file.name || "image.png");
+    formData.set("mode", params.mode);
+    formData.set("params", JSON.stringify({ steps: params.steps ?? 50, ...(params.numGaussians ? { numGaussians: params.numGaussians } : {}) }));
+    if (params.seed) formData.set("seed", String(params.seed));
+    const requestId = `img3d_${nanoid()}`;
+    const detachCancel = attachLocalCancel(requestConfig, requestId, options?.signal);
+    try {
+        const response = await axios.post<ImageTo3DApiResponse>(`${root}/v1/3d/generations`, formData, {
+            headers: { ...aiHeaders(requestConfig), ...(detachCancel ? { "X-Request-Id": requestId } : {}) },
+            signal: options?.signal,
+            timeout: IMAGE_REQUEST_TIMEOUT_MS,
+        });
+        const model = response.data?.model;
+        if (!model?.url) throw new Error(apiText("no3dReturned"));
+        return {
+            modelUrl: model.url,
+            modelBytes: Number(model.bytes) || 0,
+            fileName: model.filename || "model.ply",
+            previewUrl: response.data?.preview?.url,
+            seed: typeof response.data?.seed === "number" ? response.data.seed : null,
+            mode: response.data?.mode === "real" ? "real" : "synthetic",
+        };
+    } catch (error) {
+        throw new Error(readAxiosError(error, apiText("requestFailed")));
+    } finally {
+        detachCancel?.();
+    }
+}
+
+export type SceneTo3DParams = {
+    resolution?: number;
+    decimation?: number;
+    fov?: number;
+};
+
+export type SceneTo3DResult = {
+    modelUrl: string;
+    modelBytes: number;
+    fileName: string;
+    previewUrl?: string;
+    depthUrl?: string;
+    resolution: number;
+};
+
+type SceneTo3DApiResponse = {
+    model?: { url?: string; bytes?: number; filename?: string; format?: string };
+    preview?: { url?: string };
+    depth?: { url?: string };
+    resolution?: number;
+    error?: { message?: string };
+};
+
+export async function requestSceneTo3D(config: AiConfig, file: File, params: SceneTo3DParams = {}, options?: RequestOptions): Promise<SceneTo3DResult> {
+    const baseConfig = resolveModelRequestConfig(config, config.imageModel || config.model);
+    const requestConfig = { ...baseConfig, baseUrl: LOCAL_GATEWAY_BASE_URL, apiKey: "local", apiFormat: "openai" as const };
+    const root = localGatewayRoot(requestConfig.baseUrl);
+    if (!root) throw new Error(apiText("image3dLocalOnly"));
+    const formData = new FormData();
+    formData.set("image", file, file.name || "scene.png");
+    formData.set("params", JSON.stringify({ mogeResolution: params.resolution ?? 6, mogeDecimation: params.decimation ?? 2, ...(params.fov !== undefined ? { mogeFov: params.fov } : {}) }));
+    const requestId = `scene3d_${nanoid()}`;
+    const detachCancel = attachLocalCancel(requestConfig, requestId, options?.signal);
+    try {
+        const response = await axios.post<SceneTo3DApiResponse>(`${root}/v1/3d/scenes`, formData, {
+            headers: { ...aiHeaders(requestConfig), ...(detachCancel ? { "X-Request-Id": requestId } : {}) },
+            signal: options?.signal,
+            timeout: IMAGE_REQUEST_TIMEOUT_MS,
+        });
+        const model = response.data?.model;
+        if (!model?.url) throw new Error(apiText("noSceneReturned"));
+        return {
+            modelUrl: model.url,
+            modelBytes: Number(model.bytes) || 0,
+            fileName: model.filename || "scene.glb",
+            previewUrl: response.data?.preview?.url,
+            depthUrl: response.data?.depth?.url,
+            resolution: Number(response.data?.resolution) || params.resolution || 6,
+        };
+    } catch (error) {
+        throw new Error(readAxiosError(error, apiText("requestFailed")));
+    } finally {
+        detachCancel?.();
+    }
+}
+
 export type PromptOptimizeResult = { prompt: string; mode: string; duration: number };
 
 export async function requestPromptOptimize(
@@ -1205,32 +1321,73 @@ export async function requestImageQuestion(config: AiConfig, messages: AiTextMes
     }
 }
 
-export async function fetchImageModels(config: Pick<AiConfig, "baseUrl" | "apiKey" | "apiFormat">) {
-    try {
-        if (config.apiFormat === "gemini") {
-            const response = await axios.get<GeminiPayload>(geminiApiUrl({ ...defaultGeminiConfig, ...config }), { headers: geminiHeaders({ ...defaultGeminiConfig, ...config }) });
-            validateGeminiPayload(response.data);
-            return (response.data.models || [])
-                .map((model) => model.name?.replace(/^models\//, ""))
-                .filter((id): id is string => Boolean(id))
-                .sort((a, b) => a.localeCompare(b));
+export type FetchModelsOptions = { signal?: AbortSignal; timeoutMs?: number };
+
+function redactSecret(text: string, secret: string) {
+    const value = String(secret || "").trim();
+    if (!value) return text;
+    return String(text).split(value).join("[redacted]").split(encodeURIComponent(value)).join("[redacted]");
+}
+
+function modelFetchError(error: unknown, apiKey: string, timeoutMs: number) {
+    let message = "";
+    if (axios.isCancel(error) || (error instanceof DOMException && error.name === "AbortError")) {
+        message = apiText("requestCanceled");
+    } else if (axios.isAxiosError(error)) {
+        if (error.code === "ECONNABORTED" || error.code === "ETIMEDOUT") {
+            message = apiText("modelListTimeout", { seconds: Math.max(1, Math.round(timeoutMs / 1000)) });
+        } else if (!error.response) {
+            message = apiText("modelListNetwork");
+        } else if (error.response.status === 401 || error.response.status === 403) {
+            message = apiText("authenticationFailed");
+        } else if (error.response.status === 404) {
+            message = apiText("modelListNotFound");
+        } else if (error.response.status === 429) {
+            message = apiText("rateLimited");
+        } else {
+            message = readAxiosError(error, apiText("modelReadFailed"));
         }
-        const response = await axios.get<{ data?: Array<{ id?: string }>; error?: { message?: string } }>(buildApiUrl(config.baseUrl, "/models"), {
-            headers: {
-                Authorization: `Bearer ${config.apiKey}`,
-            },
-        });
-        return (response.data.data || [])
-            .map((model) => model.id)
-            .filter((id): id is string => Boolean(id))
-            .sort((a, b) => a.localeCompare(b));
+    } else {
+        message = error instanceof Error ? error.message : apiText("modelReadFailed");
+    }
+    return redactSecret(message || apiText("modelReadFailed"), apiKey);
+}
+
+export async function fetchImageModels(config: Pick<AiConfig, "baseUrl" | "apiKey" | "apiFormat">, options: FetchModelsOptions = {}) {
+    const apiKey = String(config.apiKey || "").trim();
+    const timeoutMs = options.timeoutMs ?? MODEL_FETCH_TIMEOUT_MS;
+    const requestOptions = {
+        signal: options.signal,
+        timeout: timeoutMs,
+        responseType: "text" as const,
+        transformResponse: [(data: unknown) => data],
+    };
+    try {
+        const url = config.apiFormat === "gemini" ? geminiApiUrl({ ...defaultGeminiConfig, ...config }) : buildApiUrl(config.baseUrl, "/models");
+        const headers = config.apiFormat === "gemini" ? geminiHeaders({ ...defaultGeminiConfig, ...config }) : { Authorization: `Bearer ${apiKey}` };
+        const response = await axios.get<string>(url, { ...requestOptions, headers });
+        let payload: unknown;
+        try {
+            payload = JSON.parse(String(response.data || ""));
+        } catch {
+            throw new Error(apiText("modelListNotJson"));
+        }
+        if (!isRecord(payload)) throw new Error(apiText("modelListFormat"));
+        if (config.apiFormat === "gemini") validateGeminiPayload(payload as GeminiPayload);
+        const rows = Array.isArray(payload.data) ? payload.data : Array.isArray(payload.models) ? payload.models : null;
+        if (!rows) throw new Error(apiText("modelListFormat"));
+        const models = rows
+            .map((row) => (isRecord(row) ? row.id ?? row.name : ""))
+            .map((value) => (typeof value === "string" ? value.trim().replace(/^models\//, "") : ""))
+            .filter(Boolean) as string[];
+        return Array.from(new Set(models)).sort((a, b) => a.localeCompare(b));
     } catch (error) {
-        throw new Error(readAxiosError(error, apiText("modelReadFailed")));
+        throw new Error(modelFetchError(error, apiKey, timeoutMs));
     }
 }
 
-export async function fetchChannelModels(channel: ModelChannel) {
-    return fetchImageModels({ baseUrl: channel.baseUrl, apiKey: channel.apiKey, apiFormat: channel.apiFormat });
+export async function fetchChannelModels(channel: ModelChannel, options: FetchModelsOptions = {}) {
+    return fetchImageModels({ baseUrl: channel.baseUrl, apiKey: channel.apiKey, apiFormat: channel.apiFormat }, options);
 }
 
 const defaultGeminiConfig: Pick<AiConfig, "baseUrl" | "apiKey" | "apiFormat" | "model" | "systemPrompt"> = {

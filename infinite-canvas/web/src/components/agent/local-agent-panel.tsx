@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { App, Button, Tooltip } from "antd";
 import dayjs from "dayjs";
-import { Bot, History, MessageSquare, PanelRightClose, PlugZap, Plus, Sparkles, Terminal } from "lucide-react";
+import { Bot, History, MessageSquare, PanelRightClose, PlugZap, Plus, ShieldCheck, Sparkles, Terminal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
@@ -65,6 +65,7 @@ import {
 import { AgentHistoryView } from "./agent-history-view";
 import { AgentLogView } from "./agent-log-view";
 import { AgentPanelTabs } from "./agent-panel-tabs";
+import { AgentPermissionsView } from "./agent-permissions-view";
 import { AgentSkillsView } from "./agent-skills-view";
 
 const MAX_ATTACHMENTS = 6;
@@ -1337,6 +1338,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                     { value: "chat", label: t("agent.panel.chat"), icon: <MessageSquare className="size-3.5" /> },
                     { value: "history", label: t("agent.panel.history"), icon: <History className="size-3.5" />, count: threads.length },
                     { value: "skills", label: t("agent.panel.skills"), icon: <Sparkles className="size-3.5" />, count: skillCount },
+                    { value: "permissions", label: t("agent.panel.permissions"), icon: <ShieldCheck className="size-3.5" /> },
                     { value: "log", label: t("agent.panel.logs"), icon: <Terminal className="size-3.5" />, count: eventLogs.length },
                 ]}
                 onChange={(activeTab) => {
@@ -1394,6 +1396,14 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
                     onClear={clearEventLogs}
                     onCopied={(text) => message.success(text)}
                     onCopyBlocked={(text) => message.warning(text)}
+                />
+            ) : activeTab === "permissions" ? (
+                <AgentPermissionsView
+                    theme={theme}
+                    permissionMode={permissionMode}
+                    confirmTools={confirmTools}
+                    onPermissionModeChange={changePermissionMode}
+                    onConfirmToolsChange={(next) => setAgentState({ confirmTools: next })}
                 />
             ) : (
                 <>

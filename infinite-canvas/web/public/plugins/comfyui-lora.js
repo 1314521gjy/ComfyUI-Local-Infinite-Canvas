@@ -1,30 +1,13 @@
 export default function (runtime) {
-    const { React } = runtime;
+    const { React, antd } = runtime;
     const h = React.createElement;
     const { useEffect, useState } = React;
+    const { Button, InputNumber, Select } = antd;
     const NODE_TYPE = "comfyui-lora:lora";
     const INTERNAL_LORAS = new Set(["MOSS-Image-SFT-8-steps.safetensors"]);
-
-    const inputStyle = (theme) => ({
-        width: "100%",
-        boxSizing: "border-box",
-        padding: "6px 8px",
-        borderRadius: 6,
-        border: `1px solid ${theme.node.stroke}`,
-        background: theme.node.panel,
-        color: theme.node.text,
-        fontSize: 12,
-        outline: "none",
-    });
-
-    function readSpec(node) {
-        const loras = node.metadata?.params?.loras;
-        return Array.isArray(loras) && loras[0] ? loras[0] : null;
-    }
-
+    const MAX_LORAS = 10;
     const STRENGTH_MIN = -6;
     const STRENGTH_MAX = 6;
-    const CENTER_SLOPE = 2.6;
 
     function shortName(name) {
         return String(name || "").split(/[\\/]/).pop() || "";
@@ -41,41 +24,52 @@ export default function (runtime) {
         return Object.is(snapped, -0) ? 0 : snapped;
     }
 
-    // 滑块位置 0..1 → 强度 -6..+6；±1 占中间 50%，两端灵敏度更高；强度按 0.05 吸附。
-    function sliderToStrength(value) {
-        const x = Math.max(-1, Math.min(1, Number(value) * 2 - 1));
-        return snapStrength(Math.sign(x) * Math.pow(Math.abs(x), CENTER_SLOPE) * STRENGTH_MAX);
+    function readLoras(node, keepEmpty = false) {
+        const loras = node.metadata?.params?.loras;
+        if (!Array.isArray(loras)) return [];
+        return loras
+            .filter((item) => item && (keepEmpty || String(item.name || "").trim()))
+            .slice(0, MAX_LORAS)
+            .map((item) => ({ name: String(item.name || "").trim(), strength: snapStrength(item.strength) }));
     }
 
-    function strengthToSlider(strength) {
-        const value = Math.max(STRENGTH_MIN, Math.min(STRENGTH_MAX, Number(strength) || 0));
-        const x = Math.sign(value) * Math.pow(Math.abs(value) / STRENGTH_MAX, 1 / CENTER_SLOPE);
-        return Math.max(0, Math.min(1, (x + 1) / 2));
+    function initialRows(node) {
+        // 空行也要保留：元数据更新会让面板重挂载，否则刚加的行会被丢掉。
+        const loras = readLoras(node, true);
+        return loras.length ? loras : [{ name: "", strength: 0.8 }];
     }
 
     function Content({ ctx }) {
         const theme = ctx.theme;
-        const spec = readSpec(ctx.node);
+        const loras = readLoras(ctx.node);
+        const first = loras[0];
+        const count = loras.length;
         return h(
             "div",
             { style: { height: "100%", display: "flex", flexDirection: "column", justifyContent: "center", gap: 5, padding: "10px 12px", color: theme.node.text, overflow: "hidden" } },
             h(
                 "div",
                 { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, color: theme.node.muted, fontSize: 10, lineHeight: 1.2 } },
-                h("span", { style: { letterSpacing: ".04em" } }, "LORA"),
-                h("span", { style: { fontVariantNumeric: "tabular-nums" } }, spec ? Number(spec.strength).toFixed(2) : "—"),
+                h("span", { style: { letterSpacing: ".04em" } }, count > 1 ? `LORA ×${count}` : "LORA"),
+                h("span", { style: { fontVariantNumeric: "tabular-nums" } }, count ? (count > 1 ? `${count} 项` : Number(first.strength).toFixed(2)) : "—"),
             ),
-            h("div", { style: { fontSize: 13, fontWeight: 600, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, spec ? shortName(spec.name) : "未选择"),
-            h("div", { style: { color: theme.node.faint, fontSize: 10, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, spec ? folderName(spec.name) || "根目录" : "点击设置"),
+            h("div", { style: { fontSize: 13, fontWeight: 600, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, count ? (count > 1 ? `${shortName(first.name)} +${count - 1}` : shortName(first.name)) : "未选择"),
+            h(
+                "div",
+                { style: { color: theme.node.faint, fontSize: 10, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
+                count ? (count > 1 ? loras.slice(0, 3).map((lora) => shortName(lora.name)).join(" · ") : folderName(first.name) || "根目录") : "点击设置",
+            ),
         );
     }
 
     function Panel({ ctx }) {
         const theme = ctx.theme;
-        const spec = readSpec(ctx.node);
-        const [name, setName] = useState(spec?.name || "");
-        const [strength, setStrength] = useState(snapStrength(spec?.strength ?? 0.8));
+        const [rows, setRows] = useState(() => initialRows(ctx.node));
         const [options, setOptions] = useState([]);
+
+        useEffect(() => {
+            setRows(initialRows(ctx.node));
+        }, [ctx.node.id]);
 
         useEffect(() => {
             let alive = true;
@@ -90,8 +84,9 @@ export default function (runtime) {
             };
         }, [ctx.ai]);
 
-        const apply = (nextName, nextStrength) => {
-            const loras = String(nextName || "").trim() ? [{ name: String(nextName).trim(), strength: Number(nextStrength) || 0 }] : [];
+        const commit = (nextRows) => {
+            setRows(nextRows);
+            const loras = nextRows.map((row) => ({ name: String(row.name || "").trim(), strength: snapStrength(row.strength) }));
             ctx.updateMetadata({ params: { ...(ctx.node.metadata?.params || {}), loras } });
         };
 
@@ -105,60 +100,82 @@ export default function (runtime) {
             }
             group.items.push(option);
         }
+        const groupedOptions = groups.map((group) => ({ label: group.folder, options: group.items.map((option) => ({ value: option, label: shortName(option) })) }));
 
         return h(
             "div",
-            { style: { display: "flex", flexDirection: "column", gap: 10, padding: "10px 2px 2px", color: theme.node.text, fontSize: 12 } },
+            {
+                className: "rounded-2xl border p-3 shadow-2xl backdrop-blur",
+                "data-canvas-no-zoom": true,
+                style: { display: "flex", flexDirection: "column", gap: 8, width: "min(560px, calc(100vw - 32px))", background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text, fontSize: 12 },
+                onMouseDown: (event) => event.stopPropagation(),
+                onPointerDown: (event) => event.stopPropagation(),
+                onWheel: (event) => event.stopPropagation(),
+            },
             h(
                 "div",
                 { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 } },
                 h("span", { style: { fontWeight: 600 } }, "LoRA"),
-                h("span", { style: { color: theme.node.muted, fontSize: 11 } }, options.length ? `${options.length} 个可用` : "读取中…"),
+                h("span", { style: { color: theme.node.muted, fontSize: 11 } }, options.length ? `${options.length} 个可用 · 最多 ${MAX_LORAS} 个` : "读取中…"),
             ),
             h(
-                "select",
-                {
-                    value: name,
-                    onChange: (event) => {
-                        const next = event.target.value;
-                        setName(next);
-                        apply(next, strength);
-                    },
-                    style: inputStyle(theme),
-                },
-                h("option", { value: "" }, "选择 LoRA"),
-                groups.map((group) =>
+                "div",
+                { style: { display: "flex", flexDirection: "column", gap: 6, maxHeight: 380, overflowY: "auto" } },
+                rows.map((row, index) =>
                     h(
-                        "optgroup",
-                        { key: group.folder, label: group.folder },
-                        group.items.map((option) => h("option", { key: option, value: option }, shortName(option))),
+                        "div",
+                        { key: index, style: { display: "flex", alignItems: "center", gap: 6 } },
+                        h(Select, {
+                            size: "small",
+                            showSearch: true,
+                            value: row.name || undefined,
+                            placeholder: "选择 LoRA",
+                            options: groupedOptions,
+                            optionFilterProp: "label",
+                            popupMatchSelectWidth: 320,
+                            style: { flex: 1, minWidth: 0 },
+                            onChange: (value) => commit(rows.map((item, itemIndex) => (itemIndex === index ? { ...item, name: value } : item))),
+                        }),
+                        h(InputNumber, {
+                            size: "small",
+                            min: STRENGTH_MIN,
+                            max: STRENGTH_MAX,
+                            step: 0.05,
+                            precision: 2,
+                            value: row.strength,
+                            style: { width: 78, flex: "none" },
+                            onChange: (value) => commit(rows.map((item, itemIndex) => (itemIndex === index ? { ...item, strength: snapStrength(value ?? 0) } : item))),
+                        }),
+                        h(
+                            Button,
+                            {
+                                size: "small",
+                                type: "text",
+                                title: "移除这条 LoRA",
+                                disabled: rows.length <= 1 && !row.name,
+                                onClick: () => {
+                                    const next = rows.filter((_, itemIndex) => itemIndex !== index);
+                                    commit(next.length ? next : [{ name: "", strength: 0.8 }]);
+                                },
+                            },
+                            "×",
+                        ),
                     ),
                 ),
             ),
             h(
-                "label",
-                { style: { display: "flex", flexDirection: "column", gap: 4, fontSize: 11, color: theme.node.muted } },
-                h("span", { style: { display: "flex", justifyContent: "space-between" } }, h("span", null, "强度"), h("span", { style: { fontVariantNumeric: "tabular-nums" } }, strength.toFixed(2))),
-                h("input", {
-                    type: "range",
-                    min: 0,
-                    max: 1,
-                    step: 0.001,
-                    value: strengthToSlider(strength),
-                    onChange: (event) => {
-                        const next = sliderToStrength(Number(event.target.value));
-                        setStrength(next);
-                        apply(name, next);
+                Button,
+                {
+                    size: "small",
+                    type: "dashed",
+                    block: true,
+                    disabled: rows.length >= MAX_LORAS,
+                    onClick: () => {
+                        if (rows.length >= MAX_LORAS) return;
+                        commit([...rows, { name: "", strength: 0.8 }]);
                     },
-                    style: { width: "100%", accentColor: theme.node.text },
-                }),
-                h(
-                    "span",
-                    { style: { display: "flex", justifyContent: "space-between", color: theme.node.faint, fontSize: 9, fontVariantNumeric: "tabular-nums" } },
-                    h("span", null, "-6"),
-                    h("span", null, "0"),
-                    h("span", null, "+6"),
-                ),
+                },
+                rows.length >= MAX_LORAS ? `已达上限 ${MAX_LORAS} 个` : "+ 添加 LoRA",
             ),
         );
     }
@@ -166,8 +183,8 @@ export default function (runtime) {
     return {
         id: "comfyui-lora",
         name: "LoRA 叠层",
-        version: "1.0.1",
-        description: "独立的 LoRA 注入卡：选择 LoRA 与强度，接到图片或视频节点前。",
+        version: "1.1.1",
+        description: "独立的 LoRA 注入卡：最多叠加 10 个 LoRA 并分别调节强度，接到图片或视频节点前。",
         defaultEnabled: true,
         nodes: [
             {
@@ -183,8 +200,8 @@ export default function (runtime) {
                 Content,
                 Panel,
                 resource: (node) => {
-                    const item = readSpec(node);
-                    return item ? { kind: "lora", loras: [{ name: item.name, strength: Number(item.strength) || 0 }] } : null;
+                    const loras = readLoras(node);
+                    return loras.length ? { kind: "lora", loras } : null;
                 },
             },
         ],

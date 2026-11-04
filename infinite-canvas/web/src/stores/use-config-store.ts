@@ -86,6 +86,7 @@ export type AiConfig = {
     proxyUrl: string;
     nodeRegenerateBehavior: "new-node" | "overwrite";
     autoFocusOnSelect: boolean;
+    referenceAcceleration?: boolean;
     progressRingSkin: ProgressRingSkinId;
     seed?: string;
     seedFixed?: string;
@@ -186,6 +187,7 @@ const cloudDefaultConfig: AiConfig = {
     proxyUrl: DEFAULT_LOCAL_PROXY_URL,
     nodeRegenerateBehavior: "new-node",
     autoFocusOnSelect: false,
+    referenceAcceleration: false,
     progressRingSkin: "cyan",
 };
 
@@ -601,6 +603,7 @@ export const useConfigStore = create<ConfigStore>()(
                         proxyUrl: config.proxyUrl || DEFAULT_LOCAL_PROXY_URL,
                         nodeRegenerateBehavior: config.nodeRegenerateBehavior === "overwrite" ? "overwrite" : "new-node",
                         autoFocusOnSelect: Boolean(config.autoFocusOnSelect),
+                        referenceAcceleration: Boolean(config.referenceAcceleration),
                         progressRingSkin: normalizeProgressRingSkin(config.progressRingSkin),
                     },
                 };

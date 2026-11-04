@@ -154,6 +154,14 @@ export type CanvasNodeMetadata = {
     groupId?: string;
     interactive?: boolean; // Plugin node interaction/move state; see CanvasNodeDefinition.interactionToggle.
     params?: Record<string, unknown>; // Per-node model params (e.g. LoRA stack).
+    model3d?: { url: string; bytes?: number; filename?: string; mode?: "synthetic" | "real"; steps?: number; format?: "ply" | "glb" };
+    model3dEngine?: "idol" | "moge";
+    stage3d?: {
+        scene: { url: string; filename?: string; bytes?: number };
+        character?: { url: string; filename?: string; bytes?: number };
+        characters?: Array<{ id?: string; url: string; filename?: string; bytes?: number; transform?: { x: number; y?: number; z: number; rotation: number; scale: number } }>;
+        transform?: { x: number; y?: number; z: number; rotation: number; scale: number };
+    };
 };
 
 export type CanvasNodeData = {

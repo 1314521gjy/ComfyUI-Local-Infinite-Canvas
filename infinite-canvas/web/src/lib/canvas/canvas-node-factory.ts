@@ -7,11 +7,12 @@ import type { UploadedFile } from "@/services/file-storage";
 import type { ReferenceImage } from "@/types/image";
 import { CanvasNodeType, type CanvasImageGenerationType, type CanvasNodeData, type CanvasNodeMetadata, type CanvasNodeTypeId, type Position } from "@/types/canvas";
 
-export function createCanvasNode(type: CanvasNodeTypeId, position: Position, metadata?: CanvasNodeMetadata): CanvasNodeData {
+export function createCanvasNode(type: CanvasNodeTypeId, position: Position, metadata?: CanvasNodeMetadata, options?: { remember?: boolean; inherit?: boolean }): CanvasNodeData {
     const spec = getNodeSpec(type);
     const id = `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const finalMetadata = { ...spec.metadata, ...(recallNodeSettings(type, metadata) || {}), ...metadata };
-    rememberNodeSettings(type, finalMetadata);
+    const inherited = options?.inherit === false ? undefined : recallNodeSettings(type, metadata);
+    const finalMetadata = { ...spec.metadata, ...(inherited || {}), ...metadata };
+    if (options?.remember !== false) rememberNodeSettings(type, finalMetadata);
 
     return {
         id,

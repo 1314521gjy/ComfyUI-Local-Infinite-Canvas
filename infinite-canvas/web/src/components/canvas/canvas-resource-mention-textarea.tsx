@@ -93,7 +93,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
         caretColor: style?.color || theme.node.text,
         cursor: "text",
         // The highlight layer covers the textarea when showOverlay is active, so keep the textarea above it to preserve the native caret.
-        ...(showOverlay ? { position: "relative", zIndex: 1, background: "transparent", backgroundColor: "transparent" } : {}),
+        ...(showOverlay ? { position: "relative", zIndex: 1, background: "transparent" } : {}),
         scrollbarGutter: "stable",
         whiteSpace: "pre-wrap",
         overflowWrap: "break-word",

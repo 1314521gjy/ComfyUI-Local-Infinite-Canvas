@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { App, Modal, Segmented, Tooltip } from "antd";
-import { Clapperboard, Download, Ellipsis, FolderPlus, Image as ImageIcon, Info, Maximize2, MessageSquare, Minus, Music2, Plus, RefreshCw, Settings2, Trash2, Ungroup, Upload, Video } from "lucide-react";
+import { Clapperboard, Download, Ellipsis, FolderPlus, Image as ImageIcon, Info, Maximize2, MessageSquare, Minus, Music2, Palette, Plus, RefreshCw, Settings2, Trash2, Ungroup, Upload, Video, Zap } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 
@@ -12,7 +12,7 @@ import { useCopyText } from "@/hooks/use-copy-text";
 import { CanvasNodeType, type CanvasNodeData, type ViewportTransform } from "@/types/canvas";
 import type { CanvasNodeToolbarItem } from "@/types/canvas-plugin";
 import { ImageToolSettingsModal, type ImageToolbarSettingsTool } from "./canvas-image-toolbar-settings-modal";
-import { IMAGE_QUICK_TOOLS_STORAGE_KEY, LEGACY_IMAGE_QUICK_TOOLS_STORAGE_KEY, buildImageToolbarTools, defaultImageQuickToolIds, readImageQuickToolsConfig, type ImageQuickToolId } from "./canvas-image-toolbar-tools";
+import { IMAGE_QUICK_TOOLS_STORAGE_KEY, LEGACY_IMAGE_QUICK_TOOLS_STORAGE_KEY, LEGACY_IMAGE_QUICK_TOOLS_STORAGE_KEY_V10, LEGACY_IMAGE_QUICK_TOOLS_STORAGE_KEY_V9, buildImageToolbarTools, defaultImageQuickToolIds, readImageQuickToolsConfig, type ImageQuickToolId } from "./canvas-image-toolbar-tools";
 
 type CanvasNodeHoverToolbarProps = {
     node: CanvasNodeData | null;
@@ -27,8 +27,10 @@ type CanvasNodeHoverToolbarProps = {
     onUpload: (node: CanvasNodeData) => void;
     onVideoUpscale: (node: CanvasNodeData) => void;
     onInterpolateVideo: (node: CanvasNodeData) => void;
+    onDraftVideo: (node: CanvasNodeData) => void;
     onDownload: (node: CanvasNodeData) => void;
     onSaveAsset: (node: CanvasNodeData) => void;
+    onSaveStyle: (node: CanvasNodeData) => void;
     onMaskEdit: (node: CanvasNodeData) => void;
     onCrop: (node: CanvasNodeData) => void;
     onSplit: (node: CanvasNodeData) => void;
@@ -36,6 +38,7 @@ type CanvasNodeHoverToolbarProps = {
     onSuperResolve: (node: CanvasNodeData) => void;
     onAngle: (node: CanvasNodeData) => void;
     onFourView: (node: CanvasNodeData) => void;
+    onTo3D: (node: CanvasNodeData) => void;
     onViewImage: (node: CanvasNodeData) => void;
     onReversePrompt: (node: CanvasNodeData) => void;
     onRetry: (node: CanvasNodeData) => void;
@@ -68,8 +71,10 @@ export function CanvasNodeHoverToolbar({
     onUpload,
     onVideoUpscale,
     onInterpolateVideo,
+    onDraftVideo,
     onDownload,
     onSaveAsset,
+    onSaveStyle,
     onMaskEdit,
     onCrop,
     onSplit,
@@ -77,6 +82,7 @@ export function CanvasNodeHoverToolbar({
     onSuperResolve,
     onAngle,
     onFourView,
+    onTo3D,
     onViewImage,
     onReversePrompt,
     onRetry,
@@ -98,10 +104,10 @@ export function CanvasNodeHoverToolbar({
         try {
             let stored = window.localStorage.getItem(IMAGE_QUICK_TOOLS_STORAGE_KEY);
             if (!stored) {
-                const legacy = window.localStorage.getItem(LEGACY_IMAGE_QUICK_TOOLS_STORAGE_KEY);
+                const legacy = window.localStorage.getItem(LEGACY_IMAGE_QUICK_TOOLS_STORAGE_KEY) || window.localStorage.getItem(LEGACY_IMAGE_QUICK_TOOLS_STORAGE_KEY_V10) || window.localStorage.getItem(LEGACY_IMAGE_QUICK_TOOLS_STORAGE_KEY_V9);
                 if (legacy) {
                     const config = readImageQuickToolsConfig(JSON.parse(legacy) as unknown);
-                    const ids = config.ids.includes("fourView") ? config.ids : [...config.ids, "fourView"];
+                    const ids = [...new Set([...config.ids, "fourView", "saveStyle", "to3d"])] as ImageQuickToolId[];
                     stored = JSON.stringify({ ...config, ids });
                     window.localStorage.setItem(IMAGE_QUICK_TOOLS_STORAGE_KEY, stored);
                 }
@@ -144,7 +150,7 @@ export function CanvasNodeHoverToolbar({
         }
         copyText(prompt, t("common.promptCopied"));
     };
-    const imageTools = buildImageToolbarTools(node, { onUpload, onToggleFreeResize, onMaskEdit, onCrop, onSplit, onUpscale, onSuperResolve, onAngle, onFourView, onViewImage, onCopyPrompt: copyImagePrompt, onReversePrompt });
+    const imageTools = buildImageToolbarTools(node, { onUpload, onToggleFreeResize, onMaskEdit, onCrop, onSplit, onUpscale, onSuperResolve, onAngle, onFourView, onTo3D, onViewImage, onCopyPrompt: copyImagePrompt, onReversePrompt });
 
     function openImageToolSettings() {
         onKeep(activeNode.id);
@@ -162,8 +168,10 @@ export function CanvasNodeHoverToolbar({
         ...(canQueryVideoTask ? [{ id: "queryVideoTask", title: t("canvas.nodeToolbar.queryVideoTaskTitle"), label: t("canvas.nodeToolbar.queryVideoTask"), icon: <RefreshCw className="size-4" />, onClick: () => onRetry(node) }] : []),
         ...(canRetry ? [{ id: "retry", title: t("canvas.nodeToolbar.retryTitle"), label: t("canvas.node.retry"), icon: <RefreshCw className="size-4" />, onClick: () => onRetry(node) }] : []),
         ...(hasImage || hasVideo || isText ? [{ id: "saveAsset", title: t("common.addToAssets"), label: t("canvas.nodeToolbar.saveAsset"), icon: <FolderPlus className="size-4" />, onClick: () => onSaveAsset(node) }] : []),
+        ...(hasImage ? [{ id: "saveStyle", title: t("canvas.styleRecipes.saveTitle"), label: t("canvas.nodeToolbar.saveStyle"), icon: <Palette className="size-4" />, onClick: () => onSaveStyle(node) }] : []),
         ...(hasImage || hasVideo || hasAudio ? [{ id: "download", title: t(hasAudio ? "canvas.nodeToolbar.downloadAudio" : hasVideo ? "canvas.nodeToolbar.downloadVideo" : "canvas.nodeToolbar.downloadImage"), label: t("common.download"), icon: <Download className="size-4" />, onClick: () => onDownload(node) }] : []),
         ...(isVideo ? [{ id: "edit", title: t("common.edit"), label: t("common.edit"), icon: <MessageSquare className="size-4" />, onClick: () => onToggleDialog(node) }] : []),
+        ...(isVideo ? [{ id: "videoDraft", title: t("canvas.nodeToolbar.draftTitle"), label: t("canvas.nodeToolbar.draft"), icon: <Zap className="size-4" />, onClick: () => onDraftVideo(node) }] : []),
         ...(hasVideo ? [{ id: "videoInterpolate", title: t("canvas.nodeToolbar.interpolateTitle"), label: t("canvas.nodeToolbar.interpolate"), icon: <Clapperboard className="size-4" />, onClick: () => onInterpolateVideo(node) }] : []),
         ...(hasVideo ? [{ id: "videoUpscale", title: "SeedVR2 视频超分", label: "超分", icon: <Maximize2 className="size-4" />, onClick: () => onVideoUpscale(node) }] : []),
         ...(isText ? [{ id: "generateImage", title: t("canvas.node.generateImage"), label: t("canvas.node.generate"), icon: <ImageIcon className="size-4" />, onClick: () => onGenerateImage(node) }] : []),

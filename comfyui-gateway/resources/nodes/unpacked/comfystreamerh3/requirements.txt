@@ -1,0 +1,3 @@
+# Linux CPython 3.12+ compiled wheel; never substitute the pure-Python wheel.
+# Triton builds small host launchers at runtime; managed workers have no gcc.
+ziglang @ https://files.pythonhosted.org/packages/0c/b7/ecfdce6368cc3664d301f7f52db4fe1004aa7da7a12c4a9bf1de534ff6ab/ziglang-0.13.0-py3-none-manylinux_2_12_x86_64.manylinux2010_x86_64.musllinux_1_1_x86_64.whl#sha256=3ce0c9f16547e5d61b32e0d226926e9a2552ef4b91fccf7ab5ea1a623a77824b
