@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026.11.01-34",
+  "version": "2026.11.05-35",
   "channel": "stable",
   "updatedAt": "2026-11-03",
   "packs": [
@@ -593,6 +593,90 @@
       "tier": "utility",
       "optional": true,
       "autoRecommend": false
+    },
+    {
+      "id": "h3-fast",
+      "label": "H3 极速草稿",
+      "description": "H3 极速草稿：4B 文本编码器 + ClipProj 投影 + FastH3 4 步采样，约 448 长边快速出片；依赖 H3 极速草稿工作流与对应节点。",
+      "family": "h3",
+      "tier": "quality",
+      "optional": true,
+      "autoRecommend": false,
+      "resources": [
+        "h3_fasth3_node",
+        "h3_clipproj_node",
+        "h3_clipproj_4b_mlp",
+        "h3_video_vae_int8",
+        "qwen3vl_4b_fp8_scaled",
+        "h3_audio_vae_fp32"
+      ],
+      "optionalResources": [
+        "h3_fasth3_node",
+        "h3_clipproj_node",
+        "h3_clipproj_4b_mlp",
+        "h3_video_vae_int8",
+        "qwen3vl_4b_fp8_scaled",
+        "h3_audio_vae_fp32"
+      ],
+      "workflows": [
+        "video-h3-fast"
+      ],
+      "workflowDependencies": {
+        "video-h3-fast": [
+          "h3_fasth3_node",
+          "h3_clipproj_node",
+          "h3_clipproj_4b_mlp",
+          "h3_video_vae_int8",
+          "qwen3vl_4b_fp8_scaled",
+          "h3_audio_vae_fp32"
+        ]
+      },
+      "optionalLabel": "H3 极速草稿"
+    },
+    {
+      "id": "image3d",
+      "label": "3D 生成（Idol / MoGe）",
+      "description": "仅 ComfyUI 0.44.0 及以上可用，版本过低将无法使用。 Idol 单物体图生高斯 PLY，MoGe 单图场景重建 GLB；插件与权重不随程序包分发，需在资源中心手动勾选安装。",
+      "family": "image3d",
+      "tier": "quality",
+      "optional": true,
+      "autoRecommend": false,
+      "resources": [
+        "image3d_idol_node",
+        "image3d_birefnet",
+        "image3d_dino_v3_vit_h",
+        "image3d_idol_fp16",
+        "image3d_idol_vae_fp16",
+        "flux2-vae",
+        "image3d_moge2"
+      ],
+      "optionalResources": [
+        "image3d_idol_node",
+        "image3d_birefnet",
+        "image3d_dino_v3_vit_h",
+        "image3d_idol_fp16",
+        "image3d_idol_vae_fp16",
+        "flux2-vae",
+        "image3d_moge2"
+      ],
+      "workflows": [
+        "image-idol-3d",
+        "image-moge-scene"
+      ],
+      "workflowDependencies": {
+        "image-idol-3d": [
+          "image3d_idol_node",
+          "image3d_birefnet",
+          "image3d_dino_v3_vit_h",
+          "image3d_idol_fp16",
+          "image3d_idol_vae_fp16",
+          "flux2-vae"
+        ],
+        "image-moge-scene": [
+          "image3d_moge2"
+        ]
+      },
+      "optionalLabel": "3D 生成"
     }
   ],
   "resources": [
@@ -1842,6 +1926,189 @@
         }
       ],
       "autoInstall": false
+    },
+    {
+      "id": "h3_video_vae_int8",
+      "type": "model",
+      "label": "H3 视频 VAE int8（原生）",
+      "target": "vae/minimax_h3_video_vae_int8_convrot.safetensors",
+      "size": 2811065184,
+      "sha256": "52a2c8c73583c86e4f41cdcce3a6ad0ea562987bc0bf3d60a0cef5f5c8e60c0e",
+      "license": "MiniMax H3",
+      "note": "H3 极速草稿的原生视频 VAE；与 fp16 版本二选一。",
+      "sources": [
+        "https://www.modelscope.cn/models/Comfy-Org/MiniMax-H3/resolve/master/vae/minimax_h3_video_vae_int8_convrot.safetensors"
+      ]
+    },
+    {
+      "id": "h3_clipproj_4b_mlp",
+      "type": "model",
+      "label": "H3 ClipProj 4B v3.1 MLP 投影",
+      "target": "clip_projections/mmh3-4b-ClipProj-v3.1-mlp.safetensors",
+      "size": 503423800,
+      "sha256": "902a9b96ed041aedf7463251c59d917fba94963b944dd3196c00b23ff0f2b6b0",
+      "license": "见上游模型页",
+      "note": "配合 Qwen3-VL-4B 编码器使用；极速草稿的 ClipProj 必装。",
+      "sources": [
+        "https://huggingface.co/NicoLab28/ClipProj-MiniMax-H3/resolve/main/mmh3-4b-ClipProj-v3.1-mlp.safetensors"
+      ]
+    },
+    {
+      "id": "h3_fasth3_node",
+      "type": "node",
+      "label": "FastH3 极速草稿节点（ComfyStreamerH3）",
+      "target": "custom_nodes/comfystreamerh3",
+      "autoInstall": false,
+      "bundleDir": "resources/nodes/unpacked/comfystreamerh3",
+      "size": 2600702,
+      "license": "MIT",
+      "note": "提供 FastH3OptimizedLoader / FastH3BenchmarkSampler 等极速草稿节点；随包内置但需用户手动安装，安装后重启 ComfyUI。",
+      "provides": [
+        "FastH3OptimizedLoader",
+        "ComfyStreamerH3ImageToVideo",
+        "FastH3BenchmarkSampler",
+        "FastH3BenchmarkVAEDecode",
+        "FastH3BenchmarkVAEDecodeAudio",
+        "FastH3BenchmarkOutput"
+      ],
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/unpacked/comfystreamerh3",
+          "label": "内置"
+        },
+        {
+          "url": "https://github.com/Comfy-Org/comfystreamerh3.git",
+          "label": "上游"
+        }
+      ],
+      "sha256": "8265c4461297d7716986081b352b7d242ea28174e1d3c7b6339dfcff8448945b"
+    },
+    {
+      "id": "h3_clipproj_node",
+      "type": "node",
+      "label": "ClipProj 投影节点（ComfyUI-ClipProj）",
+      "target": "custom_nodes/ComfyUI-ClipProj",
+      "autoInstall": false,
+      "bundleDir": "resources/nodes/unpacked/ComfyUI-ClipProj",
+      "size": 1838529,
+      "license": "MIT",
+      "note": "极速草稿用 4B 文本编码器替换 32B 编码器；随包内置但需用户手动安装，安装后重启 ComfyUI。",
+      "provides": [
+        "ClipProjApply"
+      ],
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/unpacked/ComfyUI-ClipProj",
+          "label": "内置"
+        },
+        {
+          "url": "https://github.com/nicolab28/ComfyUI-ClipProj",
+          "label": "上游"
+        }
+      ],
+      "sha256": "f38d198d1975e1232e70fcb01f137859bc6edf27a4a2a723c14d421a5182fd11"
+    },
+    {
+      "id": "image3d_idol_node",
+      "type": "node",
+      "label": "ComfyUI-Idol 节点（图生 3D）",
+      "target": "custom_nodes/ComfyUI-Idol",
+      "autoInstall": false,
+      "size": 7173208,
+      "sha256": "60a1cfb86f6a7b54bd3d9439d7668fef05ba9a4a80f6cfd2417293147cacadc0",
+      "license": "GPL-3.0",
+      "provides": [
+        "IdolPreprocessImage",
+        "IdolInputCamera",
+        "IdolPrecision"
+      ],
+      "note": "仅 ComfyUI 0.44.0 及以上可用，版本过低将无法使用。 安装后需重启 ComfyUI；仅提供节点代码，不包含权重。",
+      "sources": [
+        {
+          "url": "https://ghfast.top/https://github.com/PedroMarinhoDev/ComfyUI-Idol/archive/59ed4b43f0d04a2c8bac689f99e51901dd7c2329.zip",
+          "label": "国内加速",
+          "size": 7173208,
+          "sha256": "60a1cfb86f6a7b54bd3d9439d7668fef05ba9a4a80f6cfd2417293147cacadc0"
+        },
+        {
+          "url": "https://github.com/PedroMarinhoDev/ComfyUI-Idol/archive/59ed4b43f0d04a2c8bac689f99e51901dd7c2329.zip",
+          "label": "GitHub",
+          "size": 7173208,
+          "sha256": "60a1cfb86f6a7b54bd3d9439d7668fef05ba9a4a80f6cfd2417293147cacadc0"
+        }
+      ]
+    },
+    {
+      "id": "image3d_birefnet",
+      "type": "model",
+      "label": "BiRefNet 去背景权重（3D）",
+      "target": "background_removal/birefnet.safetensors",
+      "size": 444473596,
+      "sha256": "9ab37426bf4de0567af6b5d21b16151357149139362e6e8992021b8ce356a154",
+      "license": "见上游（BiRefNet）",
+      "note": "仅 ComfyUI 0.44.0 及以上可用，版本过低将无法使用。 Idol 图生 3D 去背景必需；不随程序包分发。",
+      "sources": [
+        "https://hf-mirror.com/VAST-AI/TripoSplat/resolve/main/background_removal/birefnet.safetensors",
+        "https://huggingface.co/VAST-AI/TripoSplat/resolve/main/background_removal/birefnet.safetensors"
+      ]
+    },
+    {
+      "id": "image3d_dino_v3_vit_h",
+      "type": "model",
+      "label": "DINOv3 ViT-H 视觉权重（3D）",
+      "target": "clip_vision/dino_v3_vit_h.safetensors",
+      "size": 1681247696,
+      "sha256": "a29ef35101a16966972a0d50732a6f3a608ff7cfffb2afa9bbe9007cb842cc53",
+      "license": "见上游（DINOv3 License）",
+      "note": "仅 ComfyUI 0.44.0 及以上可用，版本过低将无法使用。 Idol 图生 3D 视觉编码必需；不随程序包分发。",
+      "sources": [
+        "https://hf-mirror.com/VAST-AI/TripoSplat/resolve/main/clip_vision/dino_v3_vit_h.safetensors",
+        "https://huggingface.co/VAST-AI/TripoSplat/resolve/main/clip_vision/dino_v3_vit_h.safetensors"
+      ]
+    },
+    {
+      "id": "image3d_idol_fp16",
+      "type": "model",
+      "label": "Idol UNet fp16（3D）",
+      "target": "diffusion_models/idol_fp16.safetensors",
+      "size": 741107026,
+      "sha256": "67351976358b7393dbba57b5e03555b84daed6489d40ac4c3739409c34c51a63",
+      "license": "Apache-2.0（Idol 权重）",
+      "note": "仅 ComfyUI 0.44.0 及以上可用，版本过低将无法使用。 Idol 图生 3D 主模型；不随程序包分发。",
+      "sources": [
+        "https://hf-mirror.com/PedroMarinhoDev/Idol-ComfyUI/resolve/main/diffusion_models/idol_fp16.safetensors",
+        "https://huggingface.co/PedroMarinhoDev/Idol-ComfyUI/resolve/main/diffusion_models/idol_fp16.safetensors"
+      ]
+    },
+    {
+      "id": "image3d_idol_vae_fp16",
+      "type": "model",
+      "label": "Idol VAE 解码器 fp16（3D）",
+      "target": "vae/idol_vae_decoder_fp16.safetensors",
+      "size": 576148474,
+      "sha256": "5d4d37e10def1a2282a820fba1bcae042428f3ff669fa1897dc3b45e4b0d0700",
+      "license": "Apache-2.0（Idol 权重）",
+      "note": "仅 ComfyUI 0.44.0 及以上可用，版本过低将无法使用。 Idol 高斯解码必需；不随程序包分发。",
+      "sources": [
+        "https://hf-mirror.com/PedroMarinhoDev/Idol-ComfyUI/resolve/main/vae/idol_vae_decoder_fp16.safetensors",
+        "https://huggingface.co/PedroMarinhoDev/Idol-ComfyUI/resolve/main/vae/idol_vae_decoder_fp16.safetensors"
+      ]
+    },
+    {
+      "id": "image3d_moge2",
+      "type": "model",
+      "label": "MoGe-2 ViT-L 法线权重（3D）",
+      "target": "geometry_estimation/moge_2_vitl_normal_fp16.safetensors",
+      "size": 661859924,
+      "sha256": "cb1a692d03235671e959e81360d7b4d9f44aefadb1f852d6ca6aa17799d5e31f",
+      "license": "见上游（MoGe）",
+      "note": "仅 ComfyUI 0.44.0 及以上可用，版本过低将无法使用。 MoGe 场景建 3D 必需；不随程序包分发。",
+      "sources": [
+        "https://www.modelscope.cn/models/Comfy-Org/MoGe/resolve/master/geometry_estimation/moge_2_vitl_normal_fp16.safetensors",
+        "https://hf-mirror.com/Comfy-Org/MoGe/resolve/main/geometry_estimation/moge_2_vitl_normal_fp16.safetensors"
+      ]
     }
   ]
 }
