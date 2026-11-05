@@ -11,6 +11,7 @@ import multer from "multer";
 import { buildContext } from "./bindings.js";
 import { imageInputCapacity } from "./base-models.js";
 import { createAssistantManager } from "./assistant.js";
+import { attachAssistantProxy, withAssistantProxyUrl } from "./assistant-proxy.js";
 import { createComfyBridge } from "./comfy-bridge.js";
 import { createComfyClient } from "./comfy-client.js";
 import { createLogger, loadConfig } from "./config.js";
@@ -734,6 +735,11 @@ export async function createGatewayApp(overrides = {}) {
     }
     next();
   });
+  /* Expose the loopback-only assistant service through the gateway so remote devices can
+     use it with the exact same origin they load the canvas from. Raw stream, no JSON
+     pre-parsing: it must be mounted before express.json(). */
+  attachAssistantProxy(app, assistant, config);
+
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ extended: true, limit: "50mb" }));
   const upload = multer({
@@ -1051,8 +1057,12 @@ export async function createGatewayApp(overrides = {}) {
   });
 
   app.post("/api/system/shutdown", (req, res) => {
-    if (!isLoopbackPeer(req.socket.remoteAddress)) {
-      throw new HttpError("仅允许本机发起关停请求", { status: 403, code: "shutdown_forbidden" });
+    // Loopback always wins. A remote device may only shut the stack down when the operator
+    // deliberately exposed the gateway (allowRemote) AND its browser origin is one of the
+    // corsOrigins they whitelisted for canvas access.
+    const remoteShutdownOk = Boolean(config.allowRemote && req.headers.origin && isAllowedOrigin(String(req.headers.origin)));
+    if (!isLoopbackPeer(req.socket.remoteAddress) && !remoteShutdownOk) {
+      throw new HttpError("仅允许本机或白名单来源发起关停请求", { status: 403, code: "shutdown_forbidden" });
     }
     if (typeof app.locals.requestShutdown !== "function") {
       throw new HttpError("当前网关不是由启动器托管的主进程，无法自动关停", { status: 409, code: "shutdown_unavailable" });
@@ -1062,8 +1072,13 @@ export async function createGatewayApp(overrides = {}) {
   });
 
   app.post("/api/agent/provider", (req, res) => {
-    if (!isLoopbackPeer(req.socket.remoteAddress)) {
-      throw new HttpError("仅允许本机同步 Agent API", { status: 403, code: "provider_forbidden" });
+    // The same gateway hands the canvas to remote devices, but this route stayed loopback-only,
+    // so a phone or a second machine could never save its cloud-API profile: the browser got a
+    // silent 403 and the assistant then reported 「还没有配置 API». Trust boundary mirrors the
+    // rest of this file: allowRemote (operator opted into exposure) + origin in corsOrigins.
+    const remoteProviderOk = Boolean(config.allowRemote && req.headers.origin && isAllowedOrigin(String(req.headers.origin)));
+    if (!isLoopbackPeer(req.socket.remoteAddress) && !remoteProviderOk) {
+      throw new HttpError("仅允许本机或白名单来源同步 Agent API", { status: 403, code: "provider_forbidden" });
     }
     const origin = String(req.headers.origin || "");
     if (origin) {
@@ -1071,8 +1086,8 @@ export async function createGatewayApp(overrides = {}) {
       try {
         host = new URL(origin).hostname.toLowerCase();
       } catch {}
-      if (!["127.0.0.1", "localhost", "::1", "[::1]"].includes(host)) {
-        throw new HttpError("仅允许本机 origin 同步 Agent API", { status: 403, code: "provider_origin_forbidden" });
+      if (!["127.0.0.1", "localhost", "::1", "[::1]"].includes(host) && !isAllowedOrigin(origin)) {
+        throw new HttpError("仅允许本机或 CORS 白名单 origin 同步 Agent API", { status: 403, code: "provider_origin_forbidden" });
       }
     }
     const value = req.body && typeof req.body === "object" ? req.body : {};
@@ -1105,12 +1120,12 @@ export async function createGatewayApp(overrides = {}) {
   });
 
   app.get("/api/assistant/status", async (_req, res) => {
-    res.json(await assistant.status());
+    res.json(withAssistantProxyUrl(config, await assistant.status()));
   });
 
   app.post("/api/assistant/ensure", async (req, res) => {
     const result = await assistant.ensure({ download: req.body?.download === true });
-    res.status(result.ok ? 200 : result.needFullPackage ? 409 : 503).json(result);
+    res.status(result.ok ? 200 : result.needFullPackage ? 409 : 503).json(withAssistantProxyUrl(config, result));
   });
 
   app.post("/api/assistant/stop", async (_req, res) => {
