@@ -1,16 +1,16 @@
 {
-  "version": "v0.24.8",
+  "version": "v0.24.9",
   "publishedAt": "2026-11-05",
-  "notes": "本次新增画布 3D：图片快捷工具「转 3D」可选 Idol 单物体图生高斯 PLY 或 MoGe 单图场景重建 GLB，并提供可拖拽合并多角色、移动/删除、拍照与持久化的 3D 展示台；3D 插件与权重不随程序包分发，资源中心新增可选「3D 生成（Idol / MoGe）」资源包（仅 ComfyUI 0.44.0 及以上，国内下载源，需用户主动安装）。同时新增风格配方库、LoRA 叠层卡（最多 10 条）、画布多选批量下载、多图切换、MOSS 区域布局缩放、API 渠道自动拉取模型、H3 极速草稿与参考压缩，VDN 视频工作流统一为 8 步；新增 Agent 桌宠/云聊/权限视图与运行时包修复入口；删除资产会同步清理浏览器缓存。其余行为与 v0.24.7 一致。",
+  "notes": "本次修复自由卡片导入的静默兜底：SetNode/GetNode、UI 辅助节点与 object_info 未识别的节点不再在画布侧产生提醒，导入继续 best-effort，只有 ComfyUI 运行时明确报错才显示。另将 H3 极速草稿 ClipProj 4B MLP 的主下载源改为国内 hf-mirror（HuggingFace 保留兜底）。其余行为与 v0.24.8 一致。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.24.8.zip",
-    "sha256": "62755a6cbf07469911c1f94c68c2dacffa861a86ab88e00ff4028c2a8f39f156",
-    "size": 32208953
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.24.9.zip",
+    "sha256": "7a2adb9a75a0c2b92145e060449b62b41f6aa499ee19a33dde73e3ffa9352876",
+    "size": 32208998
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

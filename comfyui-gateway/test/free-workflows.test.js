@@ -139,7 +139,7 @@ test("UI conversion keeps importing when a used GetNode has no matching SetNode"
   };
   const result = convertUiWorkflow(ui, info);
   assert.equal(result.workflow["2"].inputs.positive, undefined);
-  assert.ok(result.warnings.some((line) => /GetNode.*missing_cond.*找不到对应的 SetNode/.test(line)));
+  assert.equal(result.warnings.some((line) => /GetNode/.test(line)), false);
 });
 
 test("UI conversion ignores an unused GetNode without a SetNode", () => {
@@ -172,7 +172,7 @@ test("UI conversion keeps importing duplicate SetNodes with a deterministic firs
   };
   const result = convertUiWorkflow(ui, objectInfo);
   assert.equal(result.workflow["6"].inputs.text, "first");
-  assert.ok(result.warnings.some((line) => /SetNode「dup」重名/.test(line)));
+  assert.equal(result.warnings.some((line) => /SetNode/.test(line)), false);
 });
 
 test("UI conversion keeps unknown nodes as best-effort API graph entries", () => {
@@ -187,7 +187,7 @@ test("UI conversion keeps unknown nodes as best-effort API graph entries", () =>
   assert.equal(result.workflow["1"].class_type, "TotallyUnknownNode");
   assert.equal(result.workflow["1"].inputs.value, 42);
   assert.deepEqual(result.workflow["2"].inputs.images, ["1", 0]);
-  assert.ok(result.warnings.some((line) => /未找到节点「TotallyUnknownNode」的 object_info/.test(line)));
+  assert.equal(result.warnings.some((line) => /TotallyUnknownNode/.test(line)), false);
 });
 
 test("UI conversion maps VHS widgets and normalizes display labels", () => {
@@ -433,5 +433,5 @@ test("UI conversion skips frontend-only group control nodes", () => {
   };
   const result = convertUiWorkflow(ui, objectInfo);
   assert.equal(result.workflow["2"], undefined);
-  assert.ok(result.warnings.some((warning) => warning.includes("UI 辅助节点")));
+  assert.equal(result.warnings.some((warning) => warning.includes("UI 辅助节点")), false);
 });

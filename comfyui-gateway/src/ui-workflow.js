@@ -211,11 +211,7 @@ export function convertUiWorkflow(ui, objectInfo = {}) {
     if (node.type !== SET_NODE_TYPE) continue;
     const name = setGetName(node);
     if (!name) continue;
-    if (setNodesByName.has(name)) {
-      warnings.push(`SetNode「${name}」重名，已按节点顺序使用第一个；生成时可能失败。`);
-    } else {
-      setNodesByName.set(name, node);
-    }
+    if (!setNodesByName.has(name)) setNodesByName.set(name, node);
   }
 
   function resolveEndpoint(nodeId, slot, seen = new Set()) {
@@ -237,10 +233,7 @@ export function convertUiWorkflow(ui, objectInfo = {}) {
         if (mode === BYPASS_MODE) return undefined;
         const name = setGetName(node);
         source = setNodesByName.get(name);
-        if (!source) {
-          warnings.push(`GetNode「${name || "未命名"}」找不到对应的 SetNode，已省略该输入；生成时由 ComfyUI 校验。`);
-          return undefined;
-        }
+        if (!source) return undefined;
         if (Number(source.mode || 0) === MUTE_MODE) return undefined;
       }
       const linked = (source.inputs || []).find((input) => input.link !== null && input.link !== undefined);
@@ -251,14 +244,10 @@ export function convertUiWorkflow(ui, objectInfo = {}) {
     if (mode === BYPASS_MODE) {
       const outputType = node.outputs?.[slot]?.type;
       const candidates = (node.inputs || []).filter((input) => input.type === outputType && input.link !== null && input.link !== undefined);
-      if (candidates.length > 1) {
-        warnings.push(`节点「${node.title || node.type}」有多个 ${outputType} 输入，旁路时只取第一个。`);
-      }
       const linked = candidates[0];
       if (linked) return resolveLink(linked.link, seen);
       const widget = (node.inputs || []).find((input) => input.type === outputType && input.widget && node.widgets_values_named?.[input.name] !== undefined);
       if (widget) return { value: node.widgets_values_named[input.name] };
-      warnings.push(`旁路节点「${node.title || node.type}」的 ${outputType} 输出没有同类型输入，相关输入会被省略。`);
       return undefined;
     }
     return { link: [nodeId, slot] };
@@ -275,10 +264,7 @@ export function convertUiWorkflow(ui, objectInfo = {}) {
     if (NOTE_TYPES.has(node.type) || node.type === REROUTE_TYPE || node.type === PRIMITIVE_TYPE || node.type === SET_NODE_TYPE || node.type === GET_NODE_TYPE) continue;
     const mode = Number(node.mode || 0);
     if (mode === MUTE_MODE || mode === BYPASS_MODE) continue;
-    if (isUiOnlyNode(node)) {
-      warnings.push(`已忽略 UI 辅助节点「${node.title || node.type}」`);
-      continue;
-    }
+    if (isUiOnlyNode(node)) continue;
     const specs = inputSpecs(objectInfo, node.type);
     if (!specs.length) {
       // object_info 里没有的节点不能直接丢掉；保留 class_type 和能映射的连线/控件，
@@ -292,10 +278,7 @@ export function convertUiWorkflow(ui, objectInfo = {}) {
       for (const uiInput of node.inputs || []) {
         if (uiInput.link === null || uiInput.link === undefined) continue;
         const resolved = resolveLink(uiInput.link);
-        if (resolved === undefined) {
-          warnings.push(`未知节点「${node.title || node.type}」的输入 ${uiInput.name} 无法解析，已省略；生成时由 ComfyUI 校验。`);
-          continue;
-        }
+        if (resolved === undefined) continue;
         setUnknown(uiInput.name, resolved);
       }
       const named = isPlainObject(node.widgets_values_named) ? node.widgets_values_named : null;
@@ -310,16 +293,12 @@ export function convertUiWorkflow(ui, objectInfo = {}) {
           if (!name || name in unknownInputs || name === "control_after_generate" || name === "upload") return;
           unknownInputs[name] = value;
         });
-        if (widgetNames.length < node.widgets_values.length) {
-          warnings.push(`未知节点「${node.type}」有 ${node.widgets_values.length - widgetNames.length} 个控件值无法按名称映射，已省略；生成时由 ComfyUI 校验。`);
-        }
       }
       workflow[nodeId] = {
         class_type: node.type,
         inputs: unknownInputs,
         ...(node.title || node._meta?.title ? { _meta: { title: node.title || node._meta.title } } : {}),
       };
-      warnings.push(`未找到节点「${node.type}」的 object_info，已按 UI 连线保留 class_type；生成时由 ComfyUI 校验。`);
       continue;
     }
     const specByName = new Map(specs.map((spec) => [spec.name, spec]));
@@ -339,10 +318,7 @@ export function convertUiWorkflow(ui, objectInfo = {}) {
     for (const uiInput of node.inputs || []) {
       if (uiInput.link === null || uiInput.link === undefined) continue;
       const resolved = resolveLink(uiInput.link);
-      if (resolved === undefined) {
-        if (specByName.get(uiInput.name)?.required) warnings.push(`节点「${node.title || node.type}」的输入 ${uiInput.name} 无法解析。`);
-        continue;
-      }
+      if (resolved === undefined) continue;
       setResolved(uiInput.name, resolved);
     }
 

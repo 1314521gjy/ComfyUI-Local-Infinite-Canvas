@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## v0.24.9 - 2026-11-05
+
++ [修复] 自由卡片导入改为静默 best-effort：SetNode/GetNode、UI 辅助节点以及 object_info 未识别的节点不再在画布侧产生提醒；导入继续成功并保留可映射的 API 图，只有 ComfyUI 运行时明确报错才显示。
++ [优化] H3 极速草稿的 ClipProj 4B v3.1 MLP 主下载源改为国内 hf-mirror，HuggingFace 保留为兜底。
+
 ## v0.24.8 - 2026-11-05
 
 + [新增] 画布 3D：图片快捷工具新增「转 3D」，可选 Idol（单物体图生高斯 PLY）或 MoGe（单图场景重建 GLB）；生成结果可直接在画布查看、下载。
