@@ -1023,6 +1023,7 @@ function spawnGateway(cfg, comfyUrl, workflowsDir) {
     HOST: cfg.gatewayHost || "127.0.0.1",
     ...(isLoopbackHost(cfg.gatewayHost || "127.0.0.1") ? {} : { ALLOW_REMOTE: "1" }),
     ...(cfg.corsOrigins ? { CORS_ORIGINS: cfg.corsOrigins } : {}),
+    ...(cfg.gatewayPublicHost ? { PUBLIC_BASE_URL: `http://${cfg.gatewayPublicHost}:${cfg.gatewayPort || 8190}` } : {}),
     COMFY_URL: comfyUrl,
     ...(cfg.comfyDir ? { COMFYUI_DIR: cfg.comfyDir } : {}),
     ...(cfg.launcherControlUrl ? { LAUNCHER_CONTROL_URL: cfg.launcherControlUrl } : {}),
