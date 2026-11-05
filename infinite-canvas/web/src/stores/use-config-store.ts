@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 
 import i18n from "@/i18n";
 import { isLocalGatewayUrl, LOCAL_GATEWAY_BASE_URL, LOCAL_GATEWAY_CHANNEL_ID, LOCAL_GATEWAY_MODELS, LOCAL_GATEWAY_MODEL_VALUES, LOCAL_ONLY } from "@/constant/app-mode";
+import { clearAgentProvider, syncAgentProvider } from "@/services/api/agent-provider";
 import { normalizeProgressRingSkin, type ProgressRingSkinId } from "@/lib/canvas/progress-ring-skins";
 
 export type ApiCallFormat = "openai" | "gemini";
@@ -891,3 +892,29 @@ export function withLocalProxy(url: string) {
     if (!base || url.startsWith(`${base}/`)) return url;
     return `${base}/${url}`;
 }
+
+let lastAgentProviderSignature = "";
+useConfigStore.subscribe((state) => {
+    const api = activePromptCloudApi(state.config);
+    if (!api) {
+        if (lastAgentProviderSignature) {
+            lastAgentProviderSignature = "";
+            void clearAgentProvider().catch(() => undefined);
+        }
+        return;
+    }
+    const baseUrl = api.baseUrl.trim();
+    const apiKey = api.apiKey.trim();
+    const model = api.model.trim();
+    if (!baseUrl || !apiKey || !model) {
+        if (lastAgentProviderSignature) {
+            lastAgentProviderSignature = "";
+            void clearAgentProvider().catch(() => undefined);
+        }
+        return;
+    }
+    const signature = `${api.id}|${baseUrl}|${apiKey}|${model}`;
+    if (signature === lastAgentProviderSignature) return;
+    lastAgentProviderSignature = signature;
+    void syncAgentProvider({ baseUrl, apiKey, model, label: api.name }).catch(() => undefined);
+});

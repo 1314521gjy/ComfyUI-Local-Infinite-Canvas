@@ -82,6 +82,21 @@ test("assistant manager gates on missing full package", async () => {
     fs.rmSync(root, { recursive: true, force: true });
 });
 
+test("assistant manager reports an available runtime update from the local version", async () => {
+    const root = buildAppRoot();
+    write(path.join(root, "assistant", "workspace", "VERSION"), "v0.23.1\n");
+    write(path.join(root, "assistant", "runtime.zip"), "zip");
+    write(path.join(root, "update.json"), JSON.stringify({ assistantRuntime: { url: "http://127.0.0.1/runtime.zip", sha256: "a".repeat(64), runtimeVersion: "v0.24.10" } }));
+    const config = { ...configFor(root), launcherControlUrl: "http://127.0.0.1:9999" };
+    const manager = createAssistantManager({ config, logger: null });
+    const status = await manager.status();
+    assert.equal(status.runtimeVersion, "v0.23.1");
+    assert.equal(status.runtimeTargetVersion, "v0.24.10");
+    assert.equal(status.runtimeUpdateAvailable, true);
+    assert.equal(status.canDownload, true);
+    fs.rmSync(root, { recursive: true, force: true });
+});
+
 test("assistant manager repairs a present runtime package through the launcher", async () => {
     const root = buildAppRoot();
     fs.rmSync(path.join(root, "assistant", "workspace"), { recursive: true, force: true });

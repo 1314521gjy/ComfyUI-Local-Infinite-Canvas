@@ -652,8 +652,37 @@ export function assistantRuntimeConfig(root = ROOT) {
     url: typeof value.url === "string" ? value.url.trim() : "",
     sha256: typeof value.sha256 === "string" ? value.sha256.trim().toLowerCase() : "",
     size: Math.max(0, Number(value.size) || 0),
+    runtimeVersion: typeof value.runtimeVersion === "string" ? value.runtimeVersion.trim() : "",
     fullPackageUrl: typeof value.fullPackageUrl === "string" ? value.fullPackageUrl.trim() : "",
   };
+}
+
+function readVersionFile(file) {
+  try {
+    return fs.readFileSync(file, "utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
+function runtimeVersionOf(dir) {
+  return (
+    readVersionFile(path.join(dir, "workspace", "VERSION")) ||
+    readVersionFile(path.join(dir, "workspace", "infinite-canvas", "VERSION")) ||
+    ""
+  );
+}
+
+export function compareRuntimeVersions(left, right) {
+  const parse = (value) => String(value || "").replace(/^v/i, "").split(/[.+-]/).map((part) => Number.parseInt(part, 10) || 0);
+  const a = parse(left);
+  const b = parse(right);
+  const length = Math.max(a.length, b.length);
+  for (let index = 0; index < length; index += 1) {
+    const diff = (a[index] || 0) - (b[index] || 0);
+    if (diff) return diff < 0 ? -1 : 1;
+  }
+  return 0;
 }
 
 async function fileSha256(file) {
@@ -697,6 +726,39 @@ async function downloadAssistantRuntime(destination, { url, sha256, size, logger
   }
   await fsp.rename(temp, destination);
   return destination;
+}
+
+function extractRuntimeArchive(archive, destination, { logger = log } = {}) {
+  const tar = process.env.SystemRoot ? path.join(process.env.SystemRoot, "System32", "tar.exe") : "tar";
+  let result = spawnSync(tar, ["-xf", archive, "-C", destination], { timeout: 600000, windowsHide: true });
+  if (result.status !== 0) {
+    const powershell = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+    const quote = (value) => `'${String(value).replace(/'/g, "''")}'`;
+    result = spawnSync(powershell, ["-NoProfile", "-Command", `Expand-Archive -LiteralPath ${quote(archive)} -DestinationPath ${quote(destination)} -Force`], {
+      timeout: 600000,
+      windowsHide: true,
+    });
+  }
+  if (result.status !== 0) throw new Error("解压 Agent 运行时失败");
+  logger(`已解压 Agent 运行时到临时目录（${path.basename(destination)}）`);
+}
+
+async function replaceAssistantRuntime(assistantDir, staging, archive, markerFile, marker) {
+  const backup = path.join(path.dirname(assistantDir), `.assistant-backup-${Date.now()}`);
+  const hadExisting = isDir(assistantDir);
+  if (hadExisting) await fsp.rename(assistantDir, backup);
+  try {
+    await fsp.rename(staging, assistantDir);
+  } catch (error) {
+    if (hadExisting) await fsp.rename(backup, assistantDir).catch(() => {});
+    throw error;
+  }
+  try {
+    fs.writeFileSync(markerFile, `${JSON.stringify(marker, null, 2)}\n`, "utf8");
+    if (hadExisting) await fsp.rm(backup, { recursive: true, force: true });
+  } catch {
+    // 新运行时已经就位；标记/备份清理失败不阻塞使用。
+  }
 }
 
 export async function ensureAssistantRuntime(
@@ -772,64 +834,83 @@ export async function ensureAssistantRuntime(
   } catch {
     marker = null;
   }
-  if (assistantRuntimeReady(assistantDir) && marker && marker.size === stat.size && marker.mtimeMs === stat.mtimeMs) {
-    return { ok: true, ready: true, extracted: false, reason: "already-ready", runtimePackagePresent: true, downloadAvailable, fullPackageUrl };
-  }
-  if (assistantRuntimeReady(assistantDir)) {
-    // 运行时已经完整；仅缺标记时不能重新解压，否则旧 runtime.zip 会覆盖较新的源码。
+  const readyBefore = assistantRuntimeReady(assistantDir);
+  const installedVersion = runtimeVersionOf(assistantDir) || String(marker?.runtimeVersion || "").trim();
+  const targetVersion = config.runtimeVersion;
+  const needsUpdate = Boolean(readyBefore && targetVersion && installedVersion && compareRuntimeVersions(installedVersion, targetVersion) < 0);
+  if (readyBefore && !needsUpdate) {
+    // 本地版本等于或新于目标时绝不动；只补标记，避免旧包覆盖新源码。
     try {
-      fs.writeFileSync(markerFile, `${JSON.stringify({ size: stat.size, mtimeMs: stat.mtimeMs, extractedAt: new Date().toISOString() }, null, 2)}\n`, "utf8");
+      fs.writeFileSync(markerFile, `${JSON.stringify({ size: stat.size, mtimeMs: stat.mtimeMs, extractedAt: new Date().toISOString(), runtimeVersion: installedVersion || targetVersion || "", runtimeSha256: sha256 }, null, 2)}\n`, "utf8");
     } catch {
-      // 标记失败时下次仍走就绪检查，不影响本次使用。
+      // 标记失败不影响本次使用。
     }
-    return { ok: true, ready: true, extracted: false, reason: "already-ready", runtimePackagePresent: true, downloadAvailable, fullPackageUrl };
+    return { ok: true, ready: true, extracted: false, reason: "already-ready", runtimePackagePresent: true, downloadAvailable, fullPackageUrl, runtimeVersion: installedVersion || targetVersion || "" };
+  }
+  if (needsUpdate && sha256) {
+    let archiveDigest = "";
+    try {
+      archiveDigest = await fileSha256(archive);
+    } catch {}
+    if (archiveDigest !== sha256) {
+      if (!downloadAvailable || !download) {
+        const error = `本地运行时 ${installedVersion} 旧于目标 ${targetVersion}，但包不是目标版本；请重新下载运行时。`;
+        logger(error, "WARN");
+        return { ok: false, ready: true, extracted: false, reason: "runtime-update-required", error, runtimePackagePresent: true, downloadAvailable, fullPackageUrl, runtimeVersion: installedVersion, runtimeTargetVersion: targetVersion };
+      }
+      try {
+        archive = await downloadAssistantRuntime(downloadedArchive, { url, sha256, size: config.size, logger });
+        downloadedNow = true;
+      } catch (error) {
+        const message = `下载 Agent 运行时更新包失败：${error.message}`;
+        logger(message, "WARN");
+        return { ok: false, ready: true, extracted: false, reason: "download-failed", error: message, runtimePackagePresent: true, downloadAvailable, fullPackageUrl, runtimeVersion: installedVersion, runtimeTargetVersion: targetVersion };
+      }
+    }
   }
   const sizeMb = Math.round(stat.size / 1024 / 1024);
-  logger(`正在解压画布修复助手运行时（${sizeMb} MB，仅首次或整包更新后执行）…`);
-  const preservedSources = new Map();
-  for (const name of ["server.mjs", "repair-tools.mjs", "diagnostics.mjs", "skill.mjs", "package.json", "package-lock.json", "repair-security.test.mjs"]) {
-    const file = path.join(assistantDir, name);
-    if (!isFile(file)) continue;
-    try {
-      preservedSources.set(name, fs.readFileSync(file));
-    } catch {
-      // 读不到就交给解压结果，后续就绪检查会处理。
-    }
-  }
-  const tar = process.env.SystemRoot ? path.join(process.env.SystemRoot, "System32", "tar.exe") : "tar";
-  let result = spawnSync(tar, ["-xf", archive, "-C", assistantDir], { timeout: 600000, windowsHide: true });
-  if (result.status !== 0) {
-    const powershell = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
-    const quote = (value) => `'${String(value).replace(/'/g, "''")}'`;
-    result = spawnSync(powershell, ["-NoProfile", "-Command", `Expand-Archive -LiteralPath ${quote(archive)} -DestinationPath ${quote(assistantDir)} -Force`], {
-      timeout: 600000,
-      windowsHide: true,
-    });
-  }
-  if (result.status !== 0) {
-    const error = "解压 Agent 运行时失败；画布其他功能不受影响，助手卡会提示需要完整包。";
-    logger(error, "WARN");
-    return { ok: false, ready: false, extracted: false, reason: "extract-failed", error, runtimePackagePresent: true, downloadAvailable, fullPackageUrl };
-  }
-  for (const [name, content] of preservedSources) {
-    try {
-      fs.writeFileSync(path.join(assistantDir, name), content);
-    } catch {
-      // 保留源码失败属于严重异常，交由下方就绪检查和运维日志暴露。
-    }
-  }
-  if (!assistantRuntimeReady(assistantDir)) {
-    const error = "Agent 运行时包解压后仍缺少文件；助手卡会提示需要完整包。";
-    logger(error, "WARN");
-    return { ok: false, ready: false, extracted: false, reason: "incomplete-extract", error, runtimePackagePresent: true, downloadAvailable, fullPackageUrl };
-  }
+  logger(`正在解压画布修复助手运行时（${sizeMb} MB，${needsUpdate ? `更新 ${installedVersion} → ${targetVersion}` : "首次安装"}）…`);
+  const staging = path.join(root, ".update", "assistant-runtime", `staging-${Date.now()}`);
   try {
-    fs.writeFileSync(markerFile, `${JSON.stringify({ size: stat.size, mtimeMs: stat.mtimeMs, extractedAt: new Date().toISOString() }, null, 2)}\n`, "utf8");
-  } catch {
-    // 标记写失败只会导致下次重复解压，不影响本次使用。
+    await fsp.rm(staging, { recursive: true, force: true });
+    await fsp.mkdir(staging, { recursive: true });
+    extractRuntimeArchive(archive, staging, { logger });
+    const stagedVersion = runtimeVersionOf(staging);
+    if (targetVersion && stagedVersion && compareRuntimeVersions(stagedVersion, targetVersion) !== 0) {
+      throw new Error(`运行时包版本 ${stagedVersion} 与目标 ${targetVersion} 不一致`);
+    }
+    if (!assistantRuntimeReady(staging)) throw new Error("运行时包解压后仍缺少关键文件");
+    const preservedSources = new Map();
+    for (const name of ["server.mjs", "repair-tools.mjs", "diagnostics.mjs", "skill.mjs", "package.json", "package-lock.json", "repair-security.test.mjs"]) {
+      const file = path.join(assistantDir, name);
+      if (!isFile(file)) continue;
+      try {
+        preservedSources.set(name, fs.readFileSync(file));
+      } catch {
+        // 读不到就交给包内文件。
+      }
+    }
+    for (const [name, content] of preservedSources) fs.writeFileSync(path.join(staging, name), content);
+    const dataDir = path.join(assistantDir, "data");
+    if (isDir(dataDir)) await fsp.cp(dataDir, path.join(staging, "data"), { recursive: true });
+    await fsp.copyFile(archive, path.join(staging, "runtime.zip")).catch(() => {});
+    const nextStat = fs.statSync(archive);
+    await replaceAssistantRuntime(assistantDir, staging, archive, markerFile, {
+      size: nextStat.size,
+      mtimeMs: nextStat.mtimeMs,
+      extractedAt: new Date().toISOString(),
+      runtimeVersion: stagedVersion || targetVersion || "",
+      runtimeSha256: sha256,
+    });
+    logger(needsUpdate ? `画布修复助手运行时已更新到 ${stagedVersion || targetVersion}。` : "画布修复助手运行时已就绪。");
+    return { ok: true, ready: true, extracted: true, updated: needsUpdate, reason: needsUpdate ? "updated" : "extracted", runtimePackagePresent: true, downloadAvailable, fullPackageUrl, runtimeVersion: stagedVersion || targetVersion || "" };
+  } catch (error) {
+    await fsp.rm(staging, { recursive: true, force: true }).catch(() => {});
+    const incomplete = /缺少关键文件|版本 .* 不一致/.test(error.message);
+    const message = `${needsUpdate ? "更新" : "解压"} Agent 运行时失败：${error.message}；旧运行时保持不变。`;
+    logger(message, "WARN");
+    return { ok: false, ready: readyBefore, extracted: false, reason: needsUpdate ? "runtime-update-failed" : incomplete ? "incomplete-extract" : "extract-failed", error: message, runtimePackagePresent: true, downloadAvailable, fullPackageUrl, runtimeVersion: installedVersion, runtimeTargetVersion: targetVersion };
   }
-  logger("画布修复助手运行时已就绪。");
-  return { ok: true, ready: true, extracted: true, reason: "extracted", runtimePackagePresent: true, downloadAvailable, fullPackageUrl };
 }
 
 async function downloadGatewayDeps(destination) {

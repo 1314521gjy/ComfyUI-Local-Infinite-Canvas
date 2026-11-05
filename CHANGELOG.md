@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## v0.24.10 - 2026-11-05
+
++ [新增] 内置 Agent 改为 pi Agent 主路径：设置中选中的云端 API 通过仅回环接口注入 pi Agent 驱动工具循环；云 API 直连仅作为未安装运行时的兜底。
++ [修复] 本地 Agent 连接：缺少 Connect token 时不再静默，连接设置写明 Local URL 与 Connect token 的来源。
++ [新增] 资源中心新增「内置 Agent（含 pi Agent 执行器）」运行时卡片：包含 pi Agent 库、桥、工作区和修复工具，支持下载、校验、解压、启动与旧版本安全更新，失败保留旧版并给出可读错误。
+
 ## v0.24.9 - 2026-11-05
 
 + [修复] 自由卡片导入改为静默 best-effort：SetNode/GetNode、UI 辅助节点以及 object_info 未识别的节点不再在画布侧产生提醒；导入继续成功并保留可映射的 API 图，只有 ComfyUI 运行时明确报错才显示。

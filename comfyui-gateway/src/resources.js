@@ -1502,6 +1502,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                 id: pack.id,
                 label: pack.label || pack.id,
                 description: pack.description || "",
+                kind: pack.kind || "",
+                runtime: pack.runtime || null,
                 family: pack.family || pack.id,
                 tier: pack.tier || "standard",
                 optional: Boolean(pack.optional),

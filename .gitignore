@@ -7,6 +7,7 @@ assistant/workspace/
 assistant/data/
 assistant/backups/
 assistant/runtime.zip
+assistant/agent-provider.json
 assistant/runtime.json
 assistant-runtime.zip
 assistant/*.log

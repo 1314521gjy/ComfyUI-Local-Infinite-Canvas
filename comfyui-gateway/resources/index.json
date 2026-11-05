@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "version": "2026.11.05-36",
+  "version": "2026.11.05-37",
   "channel": "stable",
-  "updatedAt": "2026-11-03",
+  "updatedAt": "2026-11-05",
   "packs": [
     {
       "id": "core",
@@ -677,6 +677,37 @@
         ]
       },
       "optionalLabel": "3D 生成"
+    },
+    {
+      "id": "agent",
+      "label": "内置 Agent（含 pi Agent 执行器）",
+      "description": "为补丁升级用户补齐内置 Agent 运行时；包含 pi Agent 库、桥、工作区与修复工具，约 131MB，下载、校验、解压和启动由启动器完成。",
+      "family": "agent",
+      "optional": true,
+      "standalone": true,
+      "autoRecommend": false,
+      "kind": "runtime",
+      "runtime": {
+        "id": "agent_runtime",
+        "type": "runtime",
+        "label": "pi Agent 运行时",
+        "target": "assistant/runtime.zip",
+        "size": 131205897,
+        "sha256": "759f93fdedf60696d351abbae7ca4515ceb37470475b345a6e6b664ad09a0ce3",
+        "runtimeVersion": "v0.24.10",
+        "license": "MIT（本项目）；第三方组件见 THIRD_PARTY_NOTICES.md",
+        "note": "不进入补丁；安装/更新由启动器完成，已安装则跳过。",
+        "sources": [
+          {
+            "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/assistant/assistant-runtime.zip",
+            "label": "魔搭"
+          }
+        ],
+        "fullPackageUrl": "https://pan.quark.cn/s/a4a8eead0730"
+      },
+      "resources": [],
+      "optionalResources": [],
+      "workflows": []
     }
   ],
   "resources": [

@@ -141,6 +141,7 @@ export function AgentConnectView({
                                 onChange={(event) => onTokenChange(event.target.value)}
                                 placeholder={t("agent.connect.tokenPlaceholder")}
                             />
+                            <span className="text-[11px] leading-5" style={{ color: theme.node.muted }}>{t("agent.connect.tokenHint")}</span>
                         </label>
                         {connectError ? (
                             <div className="rounded-md border px-2.5 py-2 text-xs leading-5" style={{ borderColor: "rgba(220,38,38,.35)", color: "#dc2626" }}>

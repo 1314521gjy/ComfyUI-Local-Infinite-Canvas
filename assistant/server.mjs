@@ -23,6 +23,7 @@ const WORKSPACE_ROOT = path.resolve(process.env.ASSISTANT_WORKSPACE || path.join
 const WORKSPACE_WEB = path.join(WORKSPACE_ROOT, "infinite-canvas", "web");
 const WEB_DIST = path.resolve(process.env.ASSISTANT_WEB_DIST || path.join(APP_ROOT, "infinite-canvas", "web", "dist"));
 const DATA_DIR = path.resolve(process.env.ASSISTANT_DATA_DIR || path.join(ROOT, "data"));
+const PROVIDER_FILE = path.resolve(process.env.ASSISTANT_PROVIDER_FILE || path.join(ROOT, "agent-provider.json"));
 const BACKUP_ROOT = path.join(DATA_DIR, "backups");
 const FIXES_FILE = path.join(DATA_DIR, "fixes.json");
 const PROPOSALS_FILE = path.join(DATA_DIR, "proposals.json");
@@ -184,14 +185,24 @@ function normalizeBaseUrl(value) {
 }
 
 function validateProfile(api) {
-    if (!api || typeof api !== "object") return { error: "缺少 API 配置" };
+    if (!api || typeof api !== "object") return { error: "还没有配置 API，请先在设置 → 云端 API 配置一个文本 API。" };
     const baseUrl = normalizeBaseUrl(api.baseUrl);
     const apiKey = String(api.apiKey || "").trim();
     const model = String(api.model || "").trim();
     if (!baseUrl) return { error: "API 地址无效（只支持 http/https）" };
-    if (!apiKey) return { error: "API Key 为空，请先在画布设置里配置" };
+    if (!apiKey) return { error: "API Key 为空，请先在设置 → 云端 API 中补全" };
     if (!model) return { error: "API 模型为空" };
-    return { ok: true, baseUrl, apiKey, model, name: String(api.name || "").trim() };
+    return { ok: true, baseUrl, apiKey, model, name: String(api.name || api.label || "").trim() };
+}
+
+function readProviderProfile() {
+    try {
+        const value = JSON.parse(fs.readFileSync(PROVIDER_FILE, "utf8"));
+        if (!value || typeof value !== "object") return null;
+        return { baseUrl: value.baseUrl, apiKey: value.apiKey, model: value.model, name: value.label || value.name || "" };
+    } catch {
+        return null;
+    }
 }
 
 function buildModel(profile) {
@@ -344,6 +355,7 @@ function updateThreadContext(record, { systemPrompt, profile }) {
         record.model = profile.model;
         record.apiKey = profile.apiKey;
         record.agent.state.model = buildModel(profile);
+        record.agent.getApiKey = () => profile.apiKey;
     }
     if (record.gatewayUrl !== profile.gatewayUrl) {
         record.gatewayUrl = profile.gatewayUrl;
@@ -793,7 +805,8 @@ function handleChat(req, res, origin) {
             sendJson(res, 400, { ok: false, error: `消息过长（上限 ${MAX_MESSAGE_CHARS} 字）` }, origin);
             return;
         }
-        const validated = validateProfile(body.api);
+        const apiInput = body.api && typeof body.api === "object" ? body.api : readProviderProfile();
+        const validated = validateProfile(apiInput);
         if (!validated.ok) {
             endActivity();
             sendJson(res, 400, { ok: false, error: validated.error }, origin);
@@ -1179,7 +1192,8 @@ const server = http.createServer((req, res) => {
         void (async () => {
             try {
                 const body = await readBody(req);
-                const validated = validateProfile(body.api);
+                const apiInput = body.api && typeof body.api === "object" ? body.api : readProviderProfile();
+                const validated = validateProfile(apiInput);
                 if (!validated.ok) {
                     sendJson(res, 400, { ok: false, error: validated.error }, origin);
                     return;

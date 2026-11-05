@@ -155,7 +155,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         const silent = options?.silent ?? false;
         const endpoint = get().url.trim().replace(/\/$/, "");
         const token = get().token.trim();
-        if (!endpoint || !token) return set({ connectError: silent ? "" : i18n.t("agent.state.connectionRequired") });
+        if (!endpoint || !token) return set({ connectError: i18n.t(!endpoint ? "agent.state.connectionRequired" : "agent.state.tokenRequired") });
         try {
             const parsed = new URL(endpoint);
             if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();

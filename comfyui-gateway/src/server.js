@@ -1061,6 +1061,49 @@ export async function createGatewayApp(overrides = {}) {
     setTimeout(() => app.locals.requestShutdown(), 30);
   });
 
+  app.post("/api/agent/provider", (req, res) => {
+    if (!isLoopbackPeer(req.socket.remoteAddress)) {
+      throw new HttpError("仅允许本机同步 Agent API", { status: 403, code: "provider_forbidden" });
+    }
+    const origin = String(req.headers.origin || "");
+    if (origin) {
+      let host = "";
+      try {
+        host = new URL(origin).hostname.toLowerCase();
+      } catch {}
+      if (!["127.0.0.1", "localhost", "::1", "[::1]"].includes(host)) {
+        throw new HttpError("仅允许本机 origin 同步 Agent API", { status: 403, code: "provider_origin_forbidden" });
+      }
+    }
+    const value = req.body && typeof req.body === "object" ? req.body : {};
+    const providerFile = path.join(config.appRoot, "assistant", "agent-provider.json");
+    if (value.clear === true) {
+      fs.rmSync(providerFile, { force: true });
+      logger.info?.("Agent provider cleared");
+      res.json({ ok: true, cleared: true });
+      return;
+    }
+    let baseUrl = "";
+    try {
+      const parsed = new URL(String(value.baseUrl || "").trim());
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error();
+      baseUrl = parsed.toString().replace(/\/+$/, "");
+    } catch {
+      throw new HttpError("API 地址无效（只支持 http/https）", { status: 400, code: "provider_base_url_invalid" });
+    }
+    const apiKey = String(value.apiKey || "").trim();
+    const model = String(value.model || "").trim();
+    const label = String(value.label || "").trim();
+    if (!apiKey) throw new HttpError("缺少 API Key", { status: 400, code: "provider_key_missing" });
+    if (!model) throw new HttpError("缺少 API 模型", { status: 400, code: "provider_model_missing" });
+    fs.mkdirSync(path.dirname(providerFile), { recursive: true });
+    const temp = `${providerFile}.${process.pid}.tmp`;
+    fs.writeFileSync(temp, `${JSON.stringify({ baseUrl, apiKey, model, label, updatedAt: new Date().toISOString() }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    fs.renameSync(temp, providerFile);
+    logger.info?.("Agent provider updated (key redacted)");
+    res.json({ ok: true, model, label });
+  });
+
   app.get("/api/assistant/status", async (_req, res) => {
     res.json(await assistant.status());
   });

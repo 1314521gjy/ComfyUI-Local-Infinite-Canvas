@@ -87,6 +87,7 @@ const EXCLUDE = [
     /node_modules(\/|$)/i,
     /^assistant\/(workspace|data|backups|logs)(\/|$)/i,
     /^assistant\/runtime\.(zip|json)$/i,
+    /^assistant\/agent-provider\.json$/i,
     /^assistant\/.*\.log$/i,
     /^assistant\/fixes\.json$/i,
     /^comfyui-gateway\/resources\/nodes\/unpacked\/TE_MAN\/data(\/|$)/i,

@@ -14,6 +14,10 @@ import {
     setResourceReplacement,
     setPackMainModel,
     setWorkflowVisibility,
+    fetchAssistantRuntimeStatus,
+    ensureAssistantRuntime,
+    type AgentRuntimeResource,
+    type AssistantRuntimeStatus,
     type ResourceItem,
     type ResourceJob,
     type ResourcePack,
@@ -113,6 +117,17 @@ const copyByLocale = {
         autoMatch: "按本机 Python 自动匹配",
         pipManual: "当前 {version} 没有匹配的预编译运行库，请手动安装：{command}",
         localBake: "本地烘焙",
+        runtimeInstalled: "已安装",
+        runtimeInstall: "下载并安装",
+        runtimeUpdate: "更新运行时",
+        runtimeRepair: "重新解压",
+        runtimeInstalling: "正在下载/解压…",
+        runtimeUpdateAvailable: "可更新",
+        runtimeCurrent: "当前",
+        runtimeTarget: "目标",
+        runtimeFullPackage: "获取完整包",
+        runtimeStatusFailed: "读取运行时状态失败",
+        runtimeNoPackage: "未安装运行时",
         noResources: "此包没有需要下载的资源。",
         downloadProgress: "安装进度",
         copying: "安装中",
@@ -250,6 +265,17 @@ const copyByLocale = {
         autoMatch: "Auto-matched to local Python",
         pipManual: "No prebuilt runtime matches {version}. Install manually: {command}",
         localBake: "Local bake",
+        runtimeInstalled: "Installed",
+        runtimeInstall: "Download and install",
+        runtimeUpdate: "Update runtime",
+        runtimeRepair: "Re-extract",
+        runtimeInstalling: "Downloading / extracting…",
+        runtimeUpdateAvailable: "Update available",
+        runtimeCurrent: "Current",
+        runtimeTarget: "Target",
+        runtimeFullPackage: "Get full package",
+        runtimeStatusFailed: "Failed to read runtime status",
+        runtimeNoPackage: "Runtime not installed",
         noResources: "This pack has no downloadable resources.",
         downloadProgress: "Install progress",
         copying: "Installing",
@@ -495,6 +521,81 @@ function WorkflowResourceRow({
                     </Button>
                 </div>
             ) : null}
+        </div>
+    );
+}
+
+function AgentRuntimePackCard({ pack, copy }: { pack: ResourcePack; copy: (typeof copyByLocale)["zh"] }) {
+    const runtime = pack.runtime as AgentRuntimeResource | undefined;
+    const [status, setStatus] = useState<AssistantRuntimeStatus | null>(null);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState("");
+    const refresh = useCallback(async (clearError = false) => {
+        try {
+            setStatus(await fetchAssistantRuntimeStatus());
+            if (clearError) setError("");
+        } catch (reason) {
+            setError(reason instanceof Error ? reason.message : copy.runtimeStatusFailed);
+        }
+    }, [copy.runtimeStatusFailed]);
+    useEffect(() => {
+        void refresh();
+        const timer = window.setInterval(() => void refresh(), 3000);
+        return () => window.clearInterval(timer);
+    }, [refresh]);
+    if (!runtime) return null;
+    const installed = Boolean(status?.available);
+    const updateAvailable = Boolean(status?.runtimeUpdateAvailable);
+    const canRun = Boolean(status?.canDownload || status?.canRepair);
+    const source = runtime.sources?.[0];
+    const install = async (download: boolean) => {
+        setBusy(true);
+        setError("");
+        try {
+            await ensureAssistantRuntime(download);
+            await refresh(true);
+        } catch (reason) {
+            setError(reason instanceof Error ? reason.message : copy.runtimeStatusFailed);
+            await refresh().catch(() => undefined);
+        } finally {
+            setBusy(false);
+        }
+    };
+    return (
+        <div className="overflow-hidden rounded-xl border border-stone-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.06),0_12px_28px_-20px_rgba(15,23,42,0.45)] dark:border-stone-700/80 dark:bg-stone-900/70">
+            <div className="flex flex-wrap items-center gap-2 p-3">
+                <Bot className="size-4 shrink-0" />
+                <span className="text-sm font-medium">{pack.label}</span>
+                {pack.optional ? <Tag>{copy.optional}</Tag> : null}
+                {installed ? <Tag color="green">{copy.runtimeInstalled}{status?.runtimeVersion ? ` ${status.runtimeVersion}` : ""}</Tag> : <Tag color="orange">{copy.runtimeNoPackage}</Tag>}
+                {updateAvailable ? <Tag color="blue">{copy.runtimeUpdateAvailable}</Tag> : null}
+                <span className="text-[11px] text-stone-500 dark:text-stone-400">{copy.size} {formatBytes(runtime.size)}</span>
+            </div>
+            <div className="border-t px-3 py-2.5 text-xs leading-5 text-stone-600 dark:border-stone-700/70 dark:text-stone-300">
+                <div>{runtime.note || pack.description}</div>
+                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-stone-500 dark:text-stone-400">
+                    <span>{copy.runtimeCurrent}: {status?.runtimeVersion || "—"}</span>
+                    <span>{copy.runtimeTarget}: {status?.runtimeTargetVersion || runtime.sha256.slice(0, 12)}</span>
+                    <span>{runtime.license}</span>
+                    {source ? <span>{copy.sources}: {source.label || "ModelScope"}</span> : null}
+                </div>
+                {busy ? <Progress className="mt-2" percent={0} showInfo={false} status="active" /> : null}
+                {error ? <div className="mt-2 rounded-md border border-red-300 px-2.5 py-2 text-xs text-red-600 dark:border-red-800 dark:text-red-400">{error}</div> : null}
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {installed && !updateAvailable ? null : busy ? (
+                        <Button size="small" disabled>{copy.runtimeInstalling}</Button>
+                    ) : canRun ? (
+                        <Button size="small" type="primary" icon={<Download className="size-3.5" />} onClick={() => void install(true)}>
+                            {installed ? copy.runtimeUpdate : copy.runtimeInstall}
+                        </Button>
+                    ) : runtime.fullPackageUrl ? (
+                        <Button size="small" href={runtime.fullPackageUrl} target="_blank" rel="noreferrer">{copy.runtimeFullPackage}</Button>
+                    ) : (
+                        <Button size="small" disabled>{copy.runtimeNoPackage}</Button>
+                    )}
+                    {!busy && status && !canRun && !installed ? <span className="text-[11px] text-stone-500">{status.reason || status.lastError || ""}</span> : null}
+                </div>
+            </div>
         </div>
     );
 }
@@ -1047,6 +1148,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
 
             <div className="space-y-4 rounded-2xl bg-stone-100/60 p-2.5 dark:bg-white/[0.03]">
                 {visiblePacks.map((pack) => {
+                    if (pack.kind === "runtime") return <AgentRuntimePackCard key={pack.id} pack={pack} copy={copy} />;
                     const expanded = expandedPacks.has(pack.id);
                     const workflowDependencies = pack.workflowDependencies || [];
                     const workflowResourceIds = new Set<string>();

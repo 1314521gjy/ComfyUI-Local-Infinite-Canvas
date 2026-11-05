@@ -1,5 +1,5 @@
 {
-  "version": "v0.24.9",
+  "version": "v0.24.10",
   "publishedAt": "2026-11-05",
   "notes": "本次修复自由卡片导入的静默兜底：SetNode/GetNode、UI 辅助节点与 object_info 未识别的节点不再在画布侧产生提醒，导入继续 best-effort，只有 ComfyUI 运行时明确报错才显示。另将 H3 极速草稿 ClipProj 4B MLP 的主下载源改为国内 hf-mirror（HuggingFace 保留兜底）。其余行为与 v0.24.8 一致。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
@@ -8,9 +8,9 @@
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.24.9.zip",
-    "sha256": "7a2adb9a75a0c2b92145e060449b62b41f6aa499ee19a33dde73e3ffa9352876",
-    "size": 32208998
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.24.10.zip",
+    "sha256": "8435e4c5df449a4ff45810c673eaa8017cc08ff2677751d230f7d67df7c0e336",
+    "size": 32215301
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
@@ -18,8 +18,10 @@
     "size": 6063
   },
   "assistantRuntime": {
-    "sha256": "fd28f89d1028e9614085513377082de5507ce7a25e6aef24ab42ea7907fc4eff",
-    "size": 206716015,
-    "fullPackageUrl": "https://pan.quark.cn/s/a4a8eead0730"
+    "sha256": "759f93fdedf60696d351abbae7ca4515ceb37470475b345a6e6b664ad09a0ce3",
+    "size": 131205897,
+    "fullPackageUrl": "https://pan.quark.cn/s/a4a8eead0730",
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/assistant/assistant-runtime.zip",
+    "runtimeVersion": "v0.24.10"
   }
 }

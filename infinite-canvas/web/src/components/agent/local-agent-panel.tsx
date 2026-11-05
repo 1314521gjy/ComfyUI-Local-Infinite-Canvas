@@ -924,7 +924,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             return;
         }
         if (!nextToken) {
-            const text = rt("agentNotFound");
+            const text = rt("tokenRequired");
             if (!silent) {
                 setAgentState({ connectError: text });
                 if (!headless) message.warning(text);
@@ -947,11 +947,11 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     };
 
     useLayoutEffect(() => {
-        const bootstrap = readAgentUrlBootstrap(hash);
+        const bootstrap = readAgentUrlBootstrap(hash, window.location.search);
         if (!bootstrap) return;
-        navigate(`${window.location.pathname}${window.location.search}${bootstrap.remainingHash}`, { replace: true });
+        navigate(`${window.location.pathname}${bootstrap.remainingSearch}${bootstrap.remainingHash}`, { replace: true });
         if (!bootstrap.url || !bootstrap.token) {
-            setAgentState({ fragmentBootstrap: false, activeTab: "setup", connectError: rt(!bootstrap.url ? "addressRequired" : "agentNotFound") });
+            setAgentState({ fragmentBootstrap: false, activeTab: "setup", connectError: rt(!bootstrap.url ? "addressRequired" : "tokenRequired") });
             useAgentStore.getState().openPanel();
             return;
         }
@@ -964,7 +964,10 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             return;
         }
         errorLoggedRef.current = false;
-        setAgentState({ url: bootstrap.url.replace(/\/$/, ""), token: bootstrap.token, enabled: true, connected: false, silentConnect: true, fragmentBootstrap: true, confirmTools: false, activity: rt("connecting"), connectError: "", activeTab: "setup" });
+        const nextUrl = bootstrap.url.replace(/\/$/, "");
+        localStorage.setItem("canvas-agent-url", nextUrl);
+        localStorage.setItem("canvas-agent-token", bootstrap.token);
+        setAgentState({ url: nextUrl, token: bootstrap.token, enabled: true, connected: false, silentConnect: true, fragmentBootstrap: true, confirmTools: false, activity: rt("connecting"), connectError: "", activeTab: "setup" });
     }, [hash, navigate, setAgentState]);
 
     useEffect(() => {

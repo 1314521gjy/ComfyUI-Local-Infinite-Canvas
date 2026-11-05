@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { browseHostFor, comfyInstallInfo, comfyPortCandidates, createCanvasServer, ensureAssistantRuntime, isLoopbackHost, listenCanvasServer, normalizeHost, probeAnyComfy, requestGatewayShutdown, resolveLaunchPlan, runtimeGatewayForRequest } from "../start.mjs";
+import { browseHostFor, comfyInstallInfo, comfyPortCandidates, compareRuntimeVersions, createCanvasServer, ensureAssistantRuntime, isLoopbackHost, listenCanvasServer, normalizeHost, probeAnyComfy, requestGatewayShutdown, resolveLaunchPlan, runtimeGatewayForRequest } from "../start.mjs";
 
 async function fake(files) {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), "launch-plan-"));
@@ -205,7 +205,7 @@ test("assistant runtime zip extracts once and is skipped when ready", async () =
   }
 });
 
-async function makeRuntimeZip(root) {
+async function makeRuntimeZip(root, version = "v0.23.1") {
   const payload = path.join(root, "runtime-payload");
   for (const rel of [
     "server.mjs",
@@ -213,16 +213,49 @@ async function makeRuntimeZip(root) {
     "node_modules/@mariozechner/pi-ai/package.json",
     "workspace/infinite-canvas/web/package.json",
     "workspace/infinite-canvas/web/node_modules/.keep",
+    "workspace/VERSION",
   ]) {
     const full = path.join(payload, rel);
     await fsp.mkdir(path.dirname(full), { recursive: true });
-    await fsp.writeFile(full, "{}", "utf8");
+    await fsp.writeFile(full, rel === "workspace/VERSION" ? `${version}
+` : "{}", "utf8");
   }
   const archive = path.join(root, "mirror-runtime.zip");
   const tar = process.env.SystemRoot ? path.join(process.env.SystemRoot, "System32", "tar.exe") : "tar";
   execFileSync(tar, ["-a", "-c", "-f", archive, "-C", payload, "."], { timeout: 120000, windowsHide: true });
   return archive;
 }
+
+test("runtime versions compare numerically and never downgrade", () => {
+  assert.equal(compareRuntimeVersions("v0.23.1", "v0.24.10"), -1);
+  assert.equal(compareRuntimeVersions("v0.24.10", "v0.24.10"), 0);
+  assert.equal(compareRuntimeVersions("v0.25.0", "v0.24.10"), 1);
+  assert.equal(compareRuntimeVersions("0.9.9", "v0.10.0"), -1);
+});
+
+test("assistant runtime upgrades an older workspace and keeps the old data", async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), "assistant-runtime-update-"));
+  const oldZip = await makeRuntimeZip(root, "v0.23.1");
+  await fsp.mkdir(path.join(root, "assistant", "data"), { recursive: true });
+  await fsp.writeFile(path.join(root, "assistant", "data", "keep.txt"), "keep", "utf8");
+  await fsp.copyFile(oldZip, path.join(root, "assistant", "runtime.zip"));
+  try {
+    const first = await ensureAssistantRuntime(root, { logger: () => {} });
+    assert.equal(first.ok, true);
+    assert.equal(first.runtimeVersion, "v0.23.1");
+    const newZip = await makeRuntimeZip(root, "v0.24.10");
+    await fsp.copyFile(newZip, path.join(root, "assistant", "runtime.zip"));
+    await fsp.writeFile(path.join(root, "update.json"), JSON.stringify({ assistantRuntime: { runtimeVersion: "v0.24.10" } }), "utf8");
+    const updated = await ensureAssistantRuntime(root, { logger: () => {} });
+    assert.equal(updated.ok, true);
+    assert.equal(updated.updated, true);
+    assert.equal(updated.runtimeVersion, "v0.24.10");
+    assert.equal(fs.readFileSync(path.join(root, "assistant", "workspace", "VERSION"), "utf8").trim(), "v0.24.10");
+    assert.equal(fs.readFileSync(path.join(root, "assistant", "data", "keep.txt"), "utf8"), "keep");
+  } finally {
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+});
 
 test("assistant runtime without a package fails honestly instead of reporting ready", async () => {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), "assistant-runtime-missing-"));
@@ -247,6 +280,7 @@ test("assistant runtime already installed without a package stays usable with a 
     "node_modules/@mariozechner/pi-ai/package.json",
     "workspace/infinite-canvas/web/package.json",
     "workspace/infinite-canvas/web/node_modules/.keep",
+    "workspace/VERSION",
   ]) {
     const full = path.join(assistantDir, rel);
     await fsp.mkdir(path.dirname(full), { recursive: true });

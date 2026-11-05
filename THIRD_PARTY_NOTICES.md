@@ -10,6 +10,12 @@
 - **FFmpeg** — 由 ComfyUI 节点或本机环境提供；按 FFmpeg 的许可证使用。
 - **three.js** — MIT；随前端 dist 分发（`three.webgpu` 独立 chunk 约 715KB，以及 GaussianSplat / PLY / GLTF 加载器）；上游 https://github.com/mrdoob/three.js 。
 
+## 内置助手运行时（assistant-runtime）
+
+- **assistant-runtime.zip** — 本项目 MIT；包含 `assistant/server.mjs`、`skill.mjs`、诊断/修复工具、`@mariozechner/pi-agent-core@0.73.1` / `@mariozechner/pi-ai@0.73.1` 及其依赖，以及画布前端工作区源码和随包 `node_modules`；不包含 Node.js 可执行文件，运行依赖应用自带 Node。pi Agent 库为 MIT，作者 Mario Zechner，上游 https://github.com/badlogic/pi-mono ；随包根目录附 `LICENSE` 与 `NOTICE`。
+- 随包 npm 依赖以 MIT / Apache-2.0 / BSD / ISC 为主；另含 MPL-2.0（lightningcss）、CC-BY-4.0（caniuse-lite）、Python-2.0、BlueOak、Unlicense 等许可。完整许可文本随包内 1,365 个 license/notice 文件提供；未发现 GPL/AGPL/SSPL/LGPL。
+- 本运行时是画布助手桥，不是 pi Agent / OpenClaw；本项目不包含、也不提供 pi Agent / OpenClaw 的下载。
+
 ## 随包分发的第三方节点
 
 以下节点允许随工作台一起分发，安装时复制到 ComfyUI 的 `custom_nodes`：
