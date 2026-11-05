@@ -123,6 +123,7 @@ export type AssistantRuntimeStatus = {
     runtimeVersion?: string;
     runtimeTargetVersion?: string;
     runtimeUpdateAvailable?: boolean;
+    runtimeVersionMismatch?: boolean;
     fullPackageUrl?: string;
     runtimeState?: string;
     reason?: string;
@@ -131,6 +132,7 @@ export type AssistantRuntimeStatus = {
     url?: string;
     online?: boolean;
     lastError?: string;
+    runtimeUpdateError?: string;
 };
 
 export type ResourcePack = {

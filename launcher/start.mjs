@@ -880,17 +880,19 @@ export async function ensureAssistantRuntime(
       throw new Error(`运行时包版本 ${stagedVersion} 与目标 ${targetVersion} 不一致`);
     }
     if (!assistantRuntimeReady(staging)) throw new Error("运行时包解压后仍缺少关键文件");
-    const preservedSources = new Map();
-    for (const name of ["server.mjs", "repair-tools.mjs", "diagnostics.mjs", "skill.mjs", "package.json", "package-lock.json", "repair-security.test.mjs"]) {
-      const file = path.join(assistantDir, name);
-      if (!isFile(file)) continue;
-      try {
-        preservedSources.set(name, fs.readFileSync(file));
-      } catch {
-        // 读不到就交给包内文件。
+    if (!needsUpdate) {
+      const preservedSources = new Map();
+      for (const name of ["server.mjs", "repair-tools.mjs", "diagnostics.mjs", "skill.mjs", "package.json", "package-lock.json", "repair-security.test.mjs"]) {
+        const file = path.join(assistantDir, name);
+        if (!isFile(file)) continue;
+        try {
+          preservedSources.set(name, fs.readFileSync(file));
+        } catch {
+          // 读不到就交给包内文件。
+        }
       }
+      for (const [name, content] of preservedSources) fs.writeFileSync(path.join(staging, name), content);
     }
-    for (const [name, content] of preservedSources) fs.writeFileSync(path.join(staging, name), content);
     const dataDir = path.join(assistantDir, "data");
     if (isDir(dataDir)) await fsp.cp(dataDir, path.join(staging, "data"), { recursive: true });
     await fsp.copyFile(archive, path.join(staging, "runtime.zip")).catch(() => {});
@@ -1800,7 +1802,7 @@ async function startControlServer(cfg) {
       if (req.method === "POST" && pathname === "/ensure-assistant") {
         res.setTimeout(900000);
         const body = await readJsonBody(req);
-        const result = await ensureAssistantRuntime(ROOT, { download: body.download === true });
+        const result = await ensureAssistantRuntime(ROOT, { download: body.download === true, mirrorUrl: body.mirrorUrl, mirrorSha256: body.mirrorSha256 });
         res.end(JSON.stringify({ ...result, ok: result.ok !== false }));
         return;
       }

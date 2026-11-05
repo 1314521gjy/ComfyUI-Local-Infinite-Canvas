@@ -195,7 +195,7 @@ test("assistant manager downloads the runtime only on explicit request", async (
         const downloaded = await manager.ensure({ download: true });
         assert.equal(downloaded.ok, true);
         assert.equal(bodies.length, 1);
-        assert.deepEqual(JSON.parse(bodies[0]), { download: true });
+        assert.equal(JSON.parse(bodies[0]).download, true);
         const status = await manager.status();
         assert.equal(status.available, true);
         assert.equal(status.runtimeState, "ready-without-package");
@@ -251,6 +251,74 @@ test("assistant manager clears state when service exits by itself", async () => 
         assert.equal(status.running, false);
     } finally {
         await manager.stop("cleanup");
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
+test("healthy runtime update downloads, restarts and reports the new version", async () => {
+    const root = buildAppRoot();
+    write(path.join(root, "assistant", "workspace", "VERSION"), "v0.23.1\n");
+    write(path.join(root, "assistant", "runtime.zip"), "zip");
+    const calls = [];
+    const launcher = http.createServer((req, res) => {
+        const chunks = [];
+        req.on("data", (chunk) => chunks.push(chunk));
+        req.on("end", () => {
+            const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : {};
+            calls.push(body);
+            write(path.join(root, "assistant", "workspace", "VERSION"), "v0.24.10\n");
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(JSON.stringify({ ok: true, extracted: true }));
+        });
+    });
+    await new Promise((resolve) => launcher.listen(0, "127.0.0.1", resolve));
+    const config = { ...configFor(root), launcherControlUrl: `http://127.0.0.1:${launcher.address().port}` };
+    const manager = createAssistantManager({ config, logger: null, readyTimeoutMs: 3000 });
+    try {
+        assert.equal((await manager.ensure()).ok, true);
+        write(path.join(root, "update.json"), JSON.stringify({ assistantRuntime: { url: "http://mirror/runtime.zip", sha256: "a".repeat(64), runtimeVersion: "v0.24.10" } }));
+        const passive = await manager.ensure();
+        assert.equal(passive.reused, true);
+        assert.equal(calls.length, 0);
+        const updated = await manager.ensure({ download: true });
+        assert.equal(updated.ok, true);
+        assert.equal(calls.length, 1);
+        assert.equal(calls[0].download, true);
+        assert.equal(calls[0].mirrorUrl, "http://mirror/runtime.zip");
+        assert.equal(calls[0].mirrorSha256, "a".repeat(64));
+        const status = await manager.status();
+        assert.equal(status.runtimeVersion, "v0.24.10");
+        assert.equal(status.runtimeUpdateAvailable, false);
+    } finally {
+        await manager.stop("cleanup");
+        await new Promise((resolve) => launcher.close(resolve));
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
+test("failed runtime update keeps the old service and exposes a readable error", async () => {
+    const root = buildAppRoot();
+    write(path.join(root, "assistant", "workspace", "VERSION"), "v0.23.1\n");
+    write(path.join(root, "assistant", "runtime.zip"), "zip");
+    const launcher = http.createServer((_req, res) => {
+        res.writeHead(500, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "模拟下载失败" }));
+    });
+    await new Promise((resolve) => launcher.listen(0, "127.0.0.1", resolve));
+    const config = { ...configFor(root), launcherControlUrl: `http://127.0.0.1:${launcher.address().port}` };
+    const manager = createAssistantManager({ config, logger: null, readyTimeoutMs: 3000 });
+    try {
+        assert.equal((await manager.ensure()).ok, true);
+        write(path.join(root, "update.json"), JSON.stringify({ assistantRuntime: { url: "http://mirror/runtime.zip", sha256: "a".repeat(64), runtimeVersion: "v0.24.10" } }));
+        const result = await manager.ensure({ download: true });
+        assert.equal(result.ok, true);
+        assert.match(result.updateError, /模拟下载失败/);
+        const status = await manager.status();
+        assert.equal(status.runtimeVersion, "v0.23.1");
+        assert.match(status.runtimeUpdateError, /模拟下载失败/);
+    } finally {
+        await manager.stop("cleanup");
+        await new Promise((resolve) => launcher.close(resolve));
         fs.rmSync(root, { recursive: true, force: true });
     }
 });

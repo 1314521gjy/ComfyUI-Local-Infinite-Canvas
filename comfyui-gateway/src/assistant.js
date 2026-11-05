@@ -137,6 +137,7 @@ export function createAssistantManager({
         port: 0,
         startedAt: "",
         error: "",
+        runtimeUpdateError: "",
         stderrTail: [],
         stopping: false,
     };
@@ -224,10 +225,11 @@ export function createAssistantManager({
                 const controller = new AbortController();
                 const timer = setTimeout(() => controller.abort(), 840_000);
                 try {
+                    const runtimeConfig = readRuntimeConfig(config.appRoot);
                     const response = await fetchFn(`${config.launcherControlUrl}/ensure-assistant`, {
                         method: "POST",
                         headers: { "content-type": "application/json" },
-                        body: JSON.stringify({ download: download === true }),
+                        body: JSON.stringify({ download: download === true, mirrorUrl: runtimeConfig.url, mirrorSha256: runtimeConfig.sha256 }),
                         signal: controller.signal,
                     });
                     const data = await response.json().catch(() => ({}));
@@ -358,9 +360,11 @@ export function createAssistantManager({
 
     async function ensure(options = {}) {
         let info = availability();
+        let updateError = "";
         const wantsDownload = options.download === true && (!info.runtimePackagePresent || info.runtimeUpdateAvailable);
         const needsUpdate = info.runtimeUpdateAvailable === true;
-        if ((!info.available && (info.canRepair || (wantsDownload && info.canDownload))) || (needsUpdate && info.canRepair)) {
+        const canUpdate = needsUpdate && wantsDownload && info.canDownload;
+        if ((!info.available && (info.canRepair || (wantsDownload && info.canDownload))) || canUpdate) {
             if (state.child) await stop("runtime-update");
             const repair = await repairRuntime({ download: wantsDownload });
             info = availability();
@@ -376,11 +380,18 @@ export function createAssistantManager({
                     runtimeVersion: info.runtimeVersion,
                     runtimeTargetVersion: info.runtimeTargetVersion,
                     runtimeUpdateAvailable: info.runtimeUpdateAvailable,
+                    runtimeVersionMismatch: info.runtimeUpdateAvailable === true,
                     fullPackageUrl: info.fullPackageUrl,
                     runtimeState: info.runtimeState,
                 };
             }
-            if (!repair.ok && needsUpdate) state.error = repair.error || "Agent 运行时更新失败，继续使用旧版本";
+            if (!repair.ok && needsUpdate) {
+                updateError = repair.error || "Agent 运行时更新失败，继续使用旧版本";
+                state.runtimeUpdateError = updateError;
+                state.error = updateError;
+            } else if (repair.ok && needsUpdate) {
+                state.runtimeUpdateError = "";
+            }
         }
         if (!info.available) {
             return {
@@ -417,7 +428,8 @@ export function createAssistantManager({
         })().finally(() => {
             ensurePromise = null;
         });
-        return ensurePromise;
+        const result = await ensurePromise;
+        return updateError ? { ...result, updateError, runtimeUpdateAvailable: true } : result;
     }
 
     async function stop(reason = "requested") {
@@ -479,6 +491,7 @@ export function createAssistantManager({
             runtimeVersion: info.runtimeVersion || "",
             runtimeTargetVersion: info.runtimeTargetVersion || "",
             runtimeUpdateAvailable: info.runtimeUpdateAvailable === true,
+            runtimeVersionMismatch: info.runtimeUpdateAvailable === true,
             fullPackageUrl: info.fullPackageUrl || "",
             runtimeState: info.runtimeState || "",
             reason: info.reason,
@@ -489,6 +502,7 @@ export function createAssistantManager({
             pid: state.child?.pid || 0,
             startedAt: state.startedAt,
             lastError: state.error,
+            runtimeUpdateError: state.runtimeUpdateError,
             idleMs,
             workspaceVersion:
                 readVersion(path.join(paths.workspace, "VERSION")) ||

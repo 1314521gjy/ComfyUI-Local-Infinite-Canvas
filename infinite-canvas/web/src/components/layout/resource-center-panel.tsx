@@ -118,11 +118,11 @@ const copyByLocale = {
         pipManual: "当前 {version} 没有匹配的预编译运行库，请手动安装：{command}",
         localBake: "本地烘焙",
         runtimeInstalled: "已安装",
-        runtimeInstall: "下载并安装",
-        runtimeUpdate: "更新运行时",
         runtimeRepair: "重新解压",
         runtimeInstalling: "正在下载/解压…",
-        runtimeUpdateAvailable: "可更新",
+        runtimeVersionMismatch: "版本不一致",
+        runtimeReinstall: "重装为随包版本",
+        runtimeInstall: "安装运行时",
         runtimeCurrent: "当前",
         runtimeTarget: "目标",
         runtimeFullPackage: "获取完整包",
@@ -266,11 +266,11 @@ const copyByLocale = {
         pipManual: "No prebuilt runtime matches {version}. Install manually: {command}",
         localBake: "Local bake",
         runtimeInstalled: "Installed",
-        runtimeInstall: "Download and install",
-        runtimeUpdate: "Update runtime",
         runtimeRepair: "Re-extract",
         runtimeInstalling: "Downloading / extracting…",
-        runtimeUpdateAvailable: "Update available",
+        runtimeVersionMismatch: "Version mismatch",
+        runtimeReinstall: "Reinstall bundled version",
+        runtimeInstall: "Install runtime",
         runtimeCurrent: "Current",
         runtimeTarget: "Target",
         runtimeFullPackage: "Get full package",
@@ -545,7 +545,7 @@ function AgentRuntimePackCard({ pack, copy }: { pack: ResourcePack; copy: (typeo
     }, [refresh]);
     if (!runtime) return null;
     const installed = Boolean(status?.available);
-    const updateAvailable = Boolean(status?.runtimeUpdateAvailable);
+    const versionMismatch = Boolean(status?.runtimeVersionMismatch);
     const canRun = Boolean(status?.canDownload || status?.canRepair);
     const source = runtime.sources?.[0];
     const install = async (download: boolean) => {
@@ -568,7 +568,7 @@ function AgentRuntimePackCard({ pack, copy }: { pack: ResourcePack; copy: (typeo
                 <span className="text-sm font-medium">{pack.label}</span>
                 {pack.optional ? <Tag>{copy.optional}</Tag> : null}
                 {installed ? <Tag color="green">{copy.runtimeInstalled}{status?.runtimeVersion ? ` ${status.runtimeVersion}` : ""}</Tag> : <Tag color="orange">{copy.runtimeNoPackage}</Tag>}
-                {updateAvailable ? <Tag color="blue">{copy.runtimeUpdateAvailable}</Tag> : null}
+                {versionMismatch ? <Tag>{copy.runtimeVersionMismatch}</Tag> : null}
                 <span className="text-[11px] text-stone-500 dark:text-stone-400">{copy.size} {formatBytes(runtime.size)}</span>
             </div>
             <div className="border-t px-3 py-2.5 text-xs leading-5 text-stone-600 dark:border-stone-700/70 dark:text-stone-300">
@@ -580,13 +580,15 @@ function AgentRuntimePackCard({ pack, copy }: { pack: ResourcePack; copy: (typeo
                     {source ? <span>{copy.sources}: {source.label || "ModelScope"}</span> : null}
                 </div>
                 {busy ? <Progress className="mt-2" percent={0} showInfo={false} status="active" /> : null}
-                {error ? <div className="mt-2 rounded-md border border-red-300 px-2.5 py-2 text-xs text-red-600 dark:border-red-800 dark:text-red-400">{error}</div> : null}
+                {error || (versionMismatch && (status?.runtimeUpdateError || status?.lastError)) ? (
+                    <div className="mt-2 rounded-md border border-red-300 px-2.5 py-2 text-xs text-red-600 dark:border-red-800 dark:text-red-400">{error || status?.runtimeUpdateError || status?.lastError}</div>
+                ) : null}
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                    {installed && !updateAvailable ? null : busy ? (
+                    {installed && !versionMismatch ? null : busy ? (
                         <Button size="small" disabled>{copy.runtimeInstalling}</Button>
                     ) : canRun ? (
                         <Button size="small" type="primary" icon={<Download className="size-3.5" />} onClick={() => void install(true)}>
-                            {installed ? copy.runtimeUpdate : copy.runtimeInstall}
+                            {installed ? copy.runtimeReinstall : copy.runtimeInstall}
                         </Button>
                     ) : runtime.fullPackageUrl ? (
                         <Button size="small" href={runtime.fullPackageUrl} target="_blank" rel="noreferrer">{copy.runtimeFullPackage}</Button>
