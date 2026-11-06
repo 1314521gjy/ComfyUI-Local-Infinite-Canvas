@@ -3,9 +3,10 @@ import { nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
 import { isInheritableNodeField, recallNodeSettings, rememberNodeSettings } from "@/lib/canvas/node-settings-memory";
 import type { AiConfig } from "@/stores/use-config-store";
 import type { UploadedImage } from "@/services/image-storage";
+import { nanoid } from "nanoid";
 import type { UploadedFile } from "@/services/file-storage";
 import type { ReferenceImage } from "@/types/image";
-import { CanvasNodeType, type CanvasImageGenerationType, type CanvasNodeData, type CanvasNodeMetadata, type CanvasNodeTypeId, type Position } from "@/types/canvas";
+import { CanvasNodeType, type CanvasImageGenerationInfo, type CanvasImageGenerationType, type CanvasNodeData, type CanvasNodeImage, type CanvasNodeMetadata, type CanvasNodeTypeId, type Position } from "@/types/canvas";
 
 export function createCanvasNode(type: CanvasNodeTypeId, position: Position, metadata?: CanvasNodeMetadata, options?: { remember?: boolean; inherit?: boolean }): CanvasNodeData {
     const spec = getNodeSpec(type);
@@ -28,8 +29,23 @@ export function createCanvasNode(type: CanvasNodeTypeId, position: Position, met
     };
 }
 
-export function imageMetadata(image: UploadedImage): CanvasNodeMetadata {
-    return { content: image.url, storageKey: image.storageKey, status: "success", naturalWidth: image.width, naturalHeight: image.height, bytes: image.bytes, mimeType: image.mimeType };
+export function canvasImageItem(image: UploadedImage, generationInfo?: CanvasImageGenerationInfo, id = nanoid()): CanvasNodeImage {
+    return { id, status: "success", content: image.url, storageKey: image.storageKey, naturalWidth: image.width, naturalHeight: image.height, bytes: image.bytes, mimeType: image.mimeType, ...(generationInfo ? { generationInfo } : {}) };
+}
+
+export function imageMetadata(image: UploadedImage, generationInfo?: CanvasImageGenerationInfo, imageId = nanoid()): CanvasNodeMetadata {
+    const item = canvasImageItem(image, generationInfo, imageId);
+    return {
+        content: item.content,
+        storageKey: item.storageKey,
+        status: item.status,
+        naturalWidth: item.naturalWidth,
+        naturalHeight: item.naturalHeight,
+        bytes: item.bytes,
+        mimeType: item.mimeType,
+        images: [item],
+        primaryImageId: item.id,
+    };
 }
 
 export function videoMetadata(video: UploadedFile): CanvasNodeMetadata {
@@ -38,6 +54,32 @@ export function videoMetadata(video: UploadedFile): CanvasNodeMetadata {
 
 export function audioMetadata(audio: UploadedFile): CanvasNodeMetadata {
     return { content: audio.url, storageKey: audio.storageKey, status: "success", bytes: audio.bytes, mimeType: audio.mimeType || "audio/mpeg", durationMs: audio.durationMs };
+}
+
+export function normalizeCanvasImageItems(node: CanvasNodeData): CanvasNodeData {
+    if (node.type !== CanvasNodeType.Image || node.metadata?.images?.length || !node.metadata?.content) return node;
+    const image: CanvasNodeImage = {
+        id: node.metadata.primaryImageId || node.metadata.storageKey || node.id,
+        status: node.metadata.status || "success",
+        errorDetails: node.metadata.errorDetails,
+        content: node.metadata.content,
+        storageKey: node.metadata.storageKey,
+        naturalWidth: node.metadata.naturalWidth || 0,
+        naturalHeight: node.metadata.naturalHeight || 0,
+        bytes: node.metadata.bytes || 0,
+        mimeType: node.metadata.mimeType || "image/png",
+    };
+    return { ...node, metadata: { ...node.metadata, images: [image], primaryImageId: image.id } };
+}
+
+export function restorePrimaryImageGeneration(node: CanvasNodeData, workflowModelForId?: (workflowId: string) => string | undefined): CanvasNodeData {
+    const images = node.metadata?.images || [];
+    const primary = images.find((image) => image.id === node.metadata?.primaryImageId) || images[0];
+    const info = primary?.generationInfo;
+    if (!info) return node;
+    const model = info.sourceType === "workflow" ? workflowModelForId?.(info.sourceId) : undefined;
+    if (node.metadata?.prompt === info.prompt && node.metadata?.composerContent === info.prompt && (!model || node.metadata?.model === model)) return node;
+    return { ...node, metadata: { ...node.metadata, prompt: info.prompt, composerContent: info.prompt, ...(model ? { model } : {}) } };
 }
 
 export function removeBatchImage(node: CanvasNodeData, imageId: string): CanvasNodeData {
@@ -52,6 +94,7 @@ export function removeBatchImage(node: CanvasNodeData, imageId: string): CanvasN
             ...node.metadata,
             ...(removingPrimary
                 ? {
+                      ...(primary?.generationInfo?.prompt !== undefined ? { prompt: primary.generationInfo.prompt, composerContent: primary.generationInfo.prompt } : {}),
                       content: primary?.content,
                       storageKey: primary?.storageKey,
                       naturalWidth: primary?.naturalWidth,

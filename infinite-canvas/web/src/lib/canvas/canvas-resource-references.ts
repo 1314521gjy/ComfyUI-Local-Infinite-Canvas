@@ -24,6 +24,10 @@ export function buildNodeMentionReferences(node: CanvasNodeData, nodes: CanvasNo
     return labelResourceNodes(getMentionResourceNodes(node.id, nodes, connections), true);
 }
 
+export function buildNodeGenerationReferences(node: CanvasNodeData, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
+    return labelResourceNodes(getGenerationResourceNodes(node.id, nodes, connections), true);
+}
+
 export function buildCanvasResourceReferences(nodes: CanvasNodeData[]) {
     return labelResourceNodes(nodes, true);
 }
@@ -147,6 +151,27 @@ export function getMentionResourceNodes(nodeId: string, nodes: CanvasNodeData[],
 
 export function getGenerationResourceNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
   return mergedInputNodes(nodeId, nodes, connections);
+}
+
+function nodeMediaKeys(node: CanvasNodeData) {
+    return [node.metadata?.storageKey, node.metadata?.content, ...(node.metadata?.images || []).flatMap((image) => [image.storageKey, image.content])].filter((key): key is string => Boolean(key));
+}
+
+function uniqueNodeIdForKeys(keys: string[], nodes: CanvasNodeData[], excludedNodeId?: string) {
+    const wanted = new Set(keys.filter(Boolean));
+    if (!wanted.size) return null;
+    const matches = nodes.filter((node) => node.id !== excludedNodeId && nodeMediaKeys(node).some((key) => wanted.has(key)));
+    return matches.length === 1 ? matches[0].id : null;
+}
+
+export function findCanvasReferenceSourceNodeIds(references: ReferenceImage[], nodes: CanvasNodeData[], excludedNodeId?: string) {
+    const ids = references.flatMap((reference) => {
+        const exact = nodes.find((node) => node.id !== excludedNodeId && (reference.id === node.id || reference.id === `canvas:${node.id}`));
+        if (exact) return [exact.id];
+        const matched = uniqueNodeIdForKeys([reference.storageKey || "", reference.url || "", reference.dataUrl], nodes, excludedNodeId);
+        return matched ? [matched] : [];
+    });
+    return [...new Set(ids)];
 }
 
 // 配置节点是「组装提示词」的入口，但画布也允许把图片/视频直接连到生成节点。

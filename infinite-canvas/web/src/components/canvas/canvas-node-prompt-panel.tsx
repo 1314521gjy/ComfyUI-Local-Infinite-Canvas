@@ -94,6 +94,17 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     const sourceVideoDurationSeconds = sourceVideoNode?.metadata?.durationMs && sourceVideoNode.metadata.durationMs > 0 ? sourceVideoNode.metadata.durationMs / 1000 : undefined;
     const isH3 = mode === "video" && (workflowId === "video-h3-t2v" || workflowId === "video-h3-frames" || workflowId === "video-h3-fast" || isH3Reference);
     const isImage = mode === "image";
+    const nodeImages = node.metadata?.images || [];
+    const primaryImage = nodeImages.find((image) => image.id === node.metadata?.primaryImageId) || nodeImages[0];
+    const generationInfo = isImage ? primaryImage?.generationInfo : undefined;
+    const freeNodeMissing = generationInfo?.sourceType === "free-node" && !nodes.some((candidate) => candidate.id === generationInfo.sourceId && candidate.type === CanvasNodeType.FreeCard);
+    const historyOnlyImage = isImage && hasImageContent && generationInfo?.sourceType !== "workflow";
+    const generationSourceLabel =
+        generationInfo?.sourceType === "workflow"
+            ? generationInfo.sourceName || generationInfo.sourceId
+            : generationInfo?.sourceType === "free-node"
+              ? `自由节点 · ${generationInfo.sourceName || generationInfo.sourceId}${freeNodeMissing ? "（当前已不存在）" : ""}`
+              : "历史工作流未记录";
     const imageInputLimit = modelImageInputs(config, config.model || config.imageModel);
     const imageModeValue = String(config.imageMode || "").trim();
     const textOnlyImageMode = isImage && (imageModeValue === "t2i" || (!imageModeValue && workflowId === "image-qwen21"));
@@ -143,13 +154,13 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
         onConfigChange(node.id, { ...(nextModel ? { model: nextModel } : {}), videoMode: value, ...(value === "frames" ? { frameMode } : {}) });
     };
 
-    // Restore prompts only when switching nodes; preserve the current input after generation on the same node.
+    // Restore prompts when switching nodes or selecting another generated image in the same batch.
     useEffect(() => {
         const initial = node.metadata?.composerContent ?? node.metadata?.prompt ?? "";
         setPrompt(initial);
         setDraft(initial);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [node.id]);
+    }, [node.id, node.metadata?.primaryImageId, generationInfo?.prompt]);
 
     const commitPrompt = (value = textareaRef.current?.value ?? draft) => {
         if (value === promptRef.current) return;
@@ -435,7 +446,13 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                 </div>
             ) : null}
             {sourceVideoTooLong && !textVideoHasReferences ? <div className="mb-2 text-xs leading-4 text-amber-600 dark:text-amber-400">{t("canvas.promptPanel.sourceVideoLimit")}</div> : null}
-            <CanvasResourceMentionTextarea
+            {historyOnlyImage ? (
+                <div className="mb-2 space-y-1 rounded-xl border px-3 py-2 text-sm" style={{ borderColor: theme.toolbar.border, background: theme.toolbar.panel }}>
+                    <div><span className="opacity-60">生成来源：</span>{generationSourceLabel}</div>
+                    {generationInfo?.prompt ? <div className="whitespace-pre-wrap"><span className="opacity-60">提示词：</span>{generationInfo.prompt}</div> : null}
+                </div>
+            ) : null}
+            {historyOnlyImage ? null : <CanvasResourceMentionTextarea
                 ref={textareaRef}
                 value={draft}
                 data-onboarding="prompt-input"
@@ -449,7 +466,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                 className="thin-scrollbar h-full w-full cursor-text resize-none rounded-xl px-3 py-2 text-sm leading-5 outline-none"
                 style={{ background: "transparent", color: theme.node.text }}
                 placeholder={promptPlaceholder}
-            />
+            />}
 
             <div className="mt-2 flex min-w-0 items-center gap-2">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">

@@ -147,7 +147,16 @@ export function normalizeConnection(firstNodeId: string, secondNodeId: string, n
     if (second.type === CanvasNodeType.Config) return { fromNodeId: first.id, toNodeId: second.id };
     if (first.type === CanvasNodeType.Config && firstHandleType === "target") return { fromNodeId: second.id, toNodeId: first.id };
     if (first.type === CanvasNodeType.Config) return { fromNodeId: first.id, toNodeId: second.id };
-    return { fromNodeId: first.id, toNodeId: second.id };
+    return firstHandleType === "target" ? { fromNodeId: second.id, toNodeId: first.id } : { fromNodeId: first.id, toNodeId: second.id };
+}
+
+export function normalizeCreatedNodeConnection(firstNodeId: string, secondNodeId: string, nodes: CanvasNodeData[], firstHandleType: "source" | "target") {
+    const first = nodes.find((node) => node.id === firstNodeId);
+    const second = nodes.find((node) => node.id === secondNodeId);
+    // Creating an image from an image card is a downstream generation action even
+    // when the drag starts on the card's left handle.
+    if (firstHandleType === "target" && first?.type === CanvasNodeType.Image && second?.type === CanvasNodeType.Image) return { fromNodeId: first.id, toNodeId: second.id };
+    return normalizeConnection(firstNodeId, secondNodeId, nodes, firstHandleType);
 }
 
 export type FocusFrame = {
