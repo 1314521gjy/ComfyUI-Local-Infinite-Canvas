@@ -328,6 +328,11 @@ export function workflowModelOptions(config: AiConfig, capability?: ModelCapabil
         .map((entry) => entry.value);
 }
 
+export function modelValueForWorkflowId(config: AiConfig, workflowId: string, capability?: ModelCapability) {
+    const entry = channelModelEntries(config).find((item) => item.model.workflowId === workflowId && !item.model.baseModel && (!capability || item.model.capability === capability));
+    return entry?.value;
+}
+
 /** 当前模型所属工作流的底模入口，用于一级下拉回显。 */
 export function workflowModelValue(config: AiConfig, value: string) {
     const found = channelModelOf(config, value);

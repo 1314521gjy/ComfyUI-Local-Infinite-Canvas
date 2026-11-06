@@ -45,6 +45,13 @@ export type CanvasFreeCardInfo = {
     archived?: boolean;
 };
 
+export type CanvasImageGenerationInfo = {
+    sourceType: "workflow" | "free-node";
+    sourceId: string;
+    sourceName: string;
+    prompt: string;
+};
+
 export type CanvasNodeImage = {
     id: string;
     status: CanvasNodeStatus;
@@ -55,6 +62,7 @@ export type CanvasNodeImage = {
     naturalHeight: number;
     bytes: number;
     mimeType: string;
+    generationInfo?: CanvasImageGenerationInfo;
 };
 
 export type CanvasNodeText = {

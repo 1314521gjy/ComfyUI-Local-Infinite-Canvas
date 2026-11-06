@@ -10,7 +10,7 @@ import { createFreeWorkflowVideoTask, fetchFreeWorkflows, requestFreeWorkflowIma
 import { bindStepProgress, unbindStepProgress } from "@/services/api/step-progress";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { createVideoGenerationTask, createVideoInterpolateTask, createVideoUpscaleTask, isVideoTaskFailed, readVideoTaskResumeInfo, storeGeneratedVideo, waitForVideoGenerationTask, type VideoPreview } from "@/services/api/video";
-import { channelModelOf, defaultConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
+import { channelModelOf, defaultConfig, modelOptionLabel, modelOptionName, modelValueForWorkflowId, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { ensureImagePreview, imageToDataUrl, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { nanoid } from "nanoid";
@@ -57,15 +57,16 @@ import { normalizeStyleRecipeLoras, useStyleRecipeStore, type StyleRecipe } from
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
 import { usePluginHost } from "@/pages/canvas/hooks/use-plugin-host";
-import { buildNodeMentionReferences, getGroupResourceNodes, isCanvasReferenceNode, resolveCanvasBaseImage, type CanvasBaseImage, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+import { buildNodeGenerationReferences, buildNodeMentionReferences, findCanvasReferenceSourceNodeIds, getGroupResourceNodes, isCanvasReferenceNode, resolveCanvasBaseImage, type CanvasBaseImage, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { dedupeReferenceImages } from "@/lib/canvas/reference-dedupe";
 import { DRAFT_REFERENCE_MAX, prepareDraftReferenceImages } from "@/lib/canvas/draft-references";
 import { exportCanvasProjects } from "@/lib/canvas/canvas-export";
 import { fetchAvailableLoras } from "@/services/api/loras";
-import { applyNodeConfigPatch, audioMetadata, buildAudioGenerationMetadata, buildImageGenerationMetadata, createCanvasNode, imageMetadata, removeBatchImage, videoMetadata } from "@/lib/canvas/canvas-node-factory";
+import { applyNodeConfigPatch, audioMetadata, buildAudioGenerationMetadata, buildImageGenerationMetadata, createCanvasNode, imageMetadata, normalizeCanvasImageItems, removeBatchImage, restorePrimaryImageGeneration, videoMetadata } from "@/lib/canvas/canvas-node-factory";
+import { applyEmbeddedWorkflowRecovery, embeddedGenerationForImage } from "@/lib/canvas/canvas-image-workflow-recovery";
 import { recallNodeSettings } from "@/lib/canvas/node-settings-memory";
 import { MODEL3D_DEFAULT_SIZE, MODEL3D_NODE_TYPE, STAGE3D_DEFAULT_SIZE, STAGE3D_NODE_TYPE } from "@/lib/canvas/model3d";
-import { applyGroupSelection, applyUngroupSelection, canGroupSelectedNodes, canUngroupSelectedNodes, collectGroupMemberNodes, findContainingGroupId, findGroupDropTarget, focusViewportForNode, getConnectionTargetAnchor, getGroupWrapRect, normalizeConnection, snapNodesIntoGroup } from "@/lib/canvas/canvas-node-geometry";
+import { applyGroupSelection, applyUngroupSelection, canGroupSelectedNodes, canUngroupSelectedNodes, collectGroupMemberNodes, findContainingGroupId, findGroupDropTarget, focusViewportForNode, getConnectionTargetAnchor, getGroupWrapRect, normalizeConnection, normalizeCreatedNodeConnection, snapNodesIntoGroup } from "@/lib/canvas/canvas-node-geometry";
 import {
     audioExtension,
     buildAngleLabel,
@@ -99,6 +100,7 @@ import {
     type CanvasAssistantImage,
     type CanvasAssistantSession,
     type CanvasConnection,
+    type CanvasImageGenerationInfo,
     type CanvasNodeData,
     type CanvasNodeImage,
     type CanvasNodeText,
@@ -161,6 +163,12 @@ function primaryImageContentOf(node: CanvasNodeData) {
     const images = node.metadata?.images || [];
     const primary = images.find((image) => image.id === node.metadata?.primaryImageId) || images[0];
     return primary?.content || node.metadata?.content || "";
+}
+
+function workflowGenerationInfo(config: AiConfig, prompt: string): CanvasImageGenerationInfo {
+    const model = config.model || config.imageModel;
+    const workflowId = channelModelOf(config, model)?.model.workflowId || modelOptionName(model);
+    return { sourceType: "workflow", sourceId: workflowId, sourceName: modelOptionLabel(config, model), prompt };
 }
 
 function applyGeneratedVideo(item: CanvasNodeData, video: UploadedFile, extra: CanvasNodeData["metadata"] = {}): CanvasNodeData {
@@ -805,6 +813,47 @@ function InfiniteCanvasPage() {
     }, [projectLoaded]);
 
     useEffect(() => {
+        if (!projectLoaded) return;
+        setNodes((currentNodes) => {
+            let changed = false;
+            const nextNodes = currentNodes.map((node) => {
+                const next = normalizeCanvasImageItems(node);
+                if (next !== node) changed = true;
+                return next;
+            });
+            return changed ? nextNodes : currentNodes;
+        });
+    }, [projectLoaded]);
+
+    const dialogPrimaryImageId = (() => {
+        const node = nodes.find((item) => item.id === dialogNodeId);
+        const images = node?.metadata?.images || [];
+        return node?.metadata?.primaryImageId || images[0]?.id || "";
+    })();
+
+    useEffect(() => {
+        if (!dialogNodeId) return;
+        const node = nodesRef.current.find((item) => item.id === dialogNodeId);
+        if (!node || node.type !== CanvasNodeType.Image) return;
+        const images = node.metadata?.images || [];
+        const primary = images.find((image) => image.id === node.metadata?.primaryImageId) || images[0];
+        if (!primary) return;
+        const resolveHistoricalModel = (workflowId: string) => modelValueForWorkflowId(effectiveConfig, workflowId, "image");
+        if (primary.generationInfo) {
+            setNodes((current) => current.map((item) => (item.id === dialogNodeId ? restorePrimaryImageGeneration(item, resolveHistoricalModel) : item)));
+            return;
+        }
+        let canceled = false;
+        void embeddedGenerationForImage(primary).then((embedded) => {
+            if (canceled || !embedded) return;
+            setNodes((current) => current.map((item) => (item.id === dialogNodeId ? restorePrimaryImageGeneration(applyEmbeddedWorkflowRecovery(item, embedded.workflow, embedded.prompt), resolveHistoricalModel) : item)));
+        });
+        return () => {
+            canceled = true;
+        };
+    }, [dialogNodeId, dialogPrimaryImageId, effectiveConfig]);
+
+    useEffect(() => {
         if (!projectLoaded || searchParams.get("guide") !== "1") return;
         setOnboardingOpen(true);
         const next = new URLSearchParams(searchParams);
@@ -962,7 +1011,7 @@ function InfiniteCanvasPage() {
             // 注入型插件（如 LoRA 卡）应位于当前节点上游，而不是把当前节点当作它的上游。
             const connection = insertBefore
                 ? normalizeConnection(newNode.id, pending.connection.nodeId, [...nodesRef.current, newNode], "source")
-                : normalizeConnection(pending.connection.nodeId, newNode.id, [...nodesRef.current, newNode], pending.connection.handleType);
+                : normalizeCreatedNodeConnection(pending.connection.nodeId, newNode.id, [...nodesRef.current, newNode], pending.connection.handleType);
             if (!connection) {
                 message.warning(t("canvas.projectPage.configConnection"));
                 return;
@@ -2141,12 +2190,13 @@ function InfiniteCanvasPage() {
                 if (!image?.content) return node;
                 const edge = Math.max(node.width, node.height);
                 const size = node.metadata?.freeResize ? { width: node.width, height: node.height } : fitNodeSize(image.naturalWidth, image.naturalHeight, edge, edge);
-                return {
+                return restorePrimaryImageGeneration({
                     ...node,
                     position: { x: node.position.x + node.width / 2 - size.width / 2, y: node.position.y + node.height / 2 - size.height / 2 },
                     ...size,
                     metadata: {
                         ...node.metadata,
+                        ...(image.generationInfo?.prompt !== undefined ? { prompt: image.generationInfo.prompt, composerContent: image.generationInfo.prompt } : {}),
                         content: image.content,
                         storageKey: image.storageKey,
                         naturalWidth: image.naturalWidth,
@@ -2155,10 +2205,10 @@ function InfiniteCanvasPage() {
                         mimeType: image.mimeType,
                         primaryImageId: image.id,
                     },
-                };
+                }, (workflowId) => modelValueForWorkflowId(effectiveConfig, workflowId, "image"));
             }),
         );
-    }, []);
+    }, [effectiveConfig]);
 
     const duplicateBatchImage = useCallback((node: CanvasNodeData, imageId: string) => {
         const image = node.metadata?.images?.find((item) => item.id === imageId);
@@ -2180,9 +2230,9 @@ function InfiniteCanvasPage() {
                 bytes: image.bytes,
                 mimeType: image.mimeType,
                 status: NODE_STATUS_SUCCESS,
-                prompt: node.metadata?.prompt,
-                generationType: node.metadata?.generationType,
-                model: node.metadata?.model,
+                images: [{ ...image }],
+                primaryImageId: image.id,
+                ...(image.generationInfo?.prompt !== undefined ? { prompt: image.generationInfo.prompt, composerContent: image.generationInfo.prompt } : {}),
                 size: node.metadata?.size,
                 quality: node.metadata?.quality,
                 background: node.metadata?.background,
@@ -3620,23 +3670,23 @@ function InfiniteCanvasPage() {
                     const isImageNode = sourceNode?.type === CanvasNodeType.Image;
                     const isEmptyImageNode = isImageNode && !sourceNode?.metadata?.content;
                     const reuseImageNode = isImageNode && (overwriteExisting || isEmptyImageNode);
-                    // 自动新建卡继承上一张卡生成时的参考，而不是把上一张结果本身当参考；
-                    // 主动拉线到新卡仍通过 generationContext.referenceImages 走 edit。
-                    const inheritedReferences = isImageNode && sourceNode?.metadata?.references?.length
-                        ? (await resolveMetadataReferences(sourceNode.metadata)) || []
-                        : [];
-                    const referenceImages = dedupeReferenceImages<ReferenceImage>(inheritedReferences, generationContext.referenceImages);
+                    // Only current incoming edges/references decide image-to-image mode.
+                    // A node's own result and historical metadata are not live inputs.
+                    const referenceImages = dedupeReferenceImages<ReferenceImage>(generationContext.referenceImages);
                     const generationType = referenceImages.length ? ("edit" as const) : ("generation" as const);
                     if ((generationConfig.imageMode || "").trim() && !referenceImages.length) {
                         // 没有参考却沿用 edit/inpaint/outpaint 会让请求直接缺图；空参考时回到文生图。
                         generationConfig.imageMode = "t2i";
                     }
                     const generationMetadata = buildImageGenerationMetadata(generationType, generationConfig, count, referenceImages);
+                    const generationInfo = workflowGenerationInfo(generationConfig, effectivePrompt);
                     const parentConfig = NODE_DEFAULT_SIZE[isConfigNode ? CanvasNodeType.Config : isImageNode ? CanvasNodeType.Image : CanvasNodeType.Text];
                     const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
                     const parentPosition = sourceNode?.position || { x: 0, y: 0 };
                     const rootId = reuseImageNode ? nodeId : nanoid();
+                    const referenceSourceNodeIds = findCanvasReferenceSourceNodeIds(referenceImages, nodesRef.current, rootId);
                     const imageIds = Array.from({ length: count }, () => nanoid());
+                    const previousImages = reuseImageNode ? sourceNode?.metadata?.images || [] : [];
                     pendingChildIds = [rootId];
                     const rootNode: CanvasNodeData = {
                         id: rootId,
@@ -3649,10 +3699,11 @@ function InfiniteCanvasPage() {
                         width: reuseImageNode ? sourceNode?.width || imageConfig.width : imageConfig.width,
                         height: reuseImageNode ? sourceNode?.height || imageConfig.height : imageConfig.height,
                         metadata: {
+                            ...(reuseImageNode ? sourceNode?.metadata : {}),
                             prompt: effectivePrompt,
                             status: NODE_STATUS_LOADING,
-                            images: imageIds.map((id) => ({ id, status: NODE_STATUS_LOADING, content: "", naturalWidth: 0, naturalHeight: 0, bytes: 0, mimeType: "" })),
-                            primaryImageId: undefined,
+                            images: [...previousImages, ...imageIds.map((id) => ({ id, status: NODE_STATUS_LOADING, content: "", naturalWidth: 0, naturalHeight: 0, bytes: 0, mimeType: "", generationInfo }))],
+                            primaryImageId: imageIds[0],
                             ...generationMetadata,
                         },
                     };
@@ -3691,7 +3742,15 @@ function InfiniteCanvasPage() {
                         ),
                         ...(reuseImageNode ? [] : [rootNode]),
                     ]);
-                    if (!reuseImageNode && !isImageNode) setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: nodeId, toNodeId: rootId }]);
+                    if (!reuseImageNode) {
+                        const sourceNodeIds = isImageNode ? referenceSourceNodeIds : [nodeId];
+                        setConnections((prev) => {
+                            const additions = sourceNodeIds
+                                .filter((fromNodeId) => !prev.some((connection) => connection.fromNodeId === fromNodeId && connection.toNodeId === rootId))
+                                .map((fromNodeId) => ({ id: nanoid(), fromNodeId, toNodeId: rootId }));
+                            return additions.length ? [...prev, ...additions] : prev;
+                        });
+                    }
                     setSelectedNodeIds(new Set([nodeId]));
                     setSelectedConnectionId(null);
                     setDialogNodeId(nodeId);
@@ -3709,7 +3768,7 @@ function InfiniteCanvasPage() {
                                     : await requestGeneration({ ...generationConfig, count: "1" }, effectivePrompt, { signal: controller.signal }).then((items) => items[0]);
                                 const uploaded = await uploadImage(image.dataUrl, { signal: controller.signal });
                                 const imageSize = fitNodeSize(uploaded.width, uploaded.height, imageConfig.width, imageConfig.height);
-                                const item: CanvasNodeImage = { id: imageId, status: NODE_STATUS_SUCCESS, content: uploaded.url, storageKey: uploaded.storageKey, naturalWidth: uploaded.width, naturalHeight: uploaded.height, bytes: uploaded.bytes, mimeType: uploaded.mimeType };
+                                const item: CanvasNodeImage = { id: imageId, status: NODE_STATUS_SUCCESS, content: uploaded.url, storageKey: uploaded.storageKey, naturalWidth: uploaded.width, naturalHeight: uploaded.height, bytes: uploaded.bytes, mimeType: uploaded.mimeType, generationInfo };
                                 setNodes((prev) =>
                                     prev.map((node) => {
                                         if (node.id !== rootId) return node;
@@ -4124,6 +4183,7 @@ function InfiniteCanvasPage() {
                     naturalHeight: uploadedImage.height,
                     bytes: uploadedImage.bytes,
                     mimeType: uploadedImage.mimeType,
+                    generationInfo: workflowGenerationInfo(generationConfig, prompt),
                 };
                 const generationMetadata = savedImageMetadata?.generationType
                     ? {
@@ -4140,6 +4200,7 @@ function InfiniteCanvasPage() {
                     prev.map((item) => {
                         if (item.id !== node.id) return item;
                         const makePrimary = !imageId || !item.metadata?.content;
+                        const updatePrimaryGeneration = makePrimary || item.metadata?.primaryImageId === retryImage.id;
                         const edge = imageId ? Math.max(item.width, item.height) : 0;
                         const imageSize = imageId && item.metadata?.freeResize ? { width: item.width, height: item.height } : imageId ? fitNodeSize(uploadedImage.width, uploadedImage.height, edge, edge) : fitNodeSize(uploadedImage.width, uploadedImage.height, imageConfig.width, imageConfig.height);
                         return {
@@ -4151,8 +4212,7 @@ function InfiniteCanvasPage() {
                                 ...(makePrimary ? imageMetadata(uploadedImage) : { status: NODE_STATUS_SUCCESS }),
                                 images: item.metadata?.images?.map((current) => (current.id === retryImage.id ? retryImage : current)),
                                 primaryImageId: makePrimary ? retryImage.id : item.metadata?.primaryImageId,
-                                prompt,
-                                ...generationMetadata,
+                                ...(updatePrimaryGeneration ? { prompt, ...generationMetadata } : {}),
                             },
                         };
                     }),
@@ -4390,6 +4450,7 @@ function InfiniteCanvasPage() {
                     childId = nanoid();
                     const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
                     const imageIds = Array.from({ length: count }, () => nanoid());
+                    const generationInfo: CanvasImageGenerationInfo = { sourceType: "free-node", sourceId: nodeId, sourceName: info.name, prompt: effectivePrompt };
                     const imageNode: CanvasNodeData = {
                         id: childId,
                         type: CanvasNodeType.Image,
@@ -4405,7 +4466,7 @@ function InfiniteCanvasPage() {
                             generationType: "generation",
                             count,
                             freeWorkflowId: info.id,
-                            images: imageIds.map((id) => ({ id, status: NODE_STATUS_LOADING, content: "", naturalWidth: 0, naturalHeight: 0, bytes: 0, mimeType: "" })),
+                            images: imageIds.map((id) => ({ id, status: NODE_STATUS_LOADING, content: "", naturalWidth: 0, naturalHeight: 0, bytes: 0, mimeType: "", generationInfo })),
                         },
                     };
                     setNodes((prev) => [...prev, imageNode]);
@@ -4417,7 +4478,7 @@ function InfiniteCanvasPage() {
                     for (let index = 0; index < images.length; index += 1) {
                         const uploaded = await uploadImage(images[index].dataUrl, { signal: controller.signal });
                         if (!firstUploaded) firstUploaded = uploaded;
-                        uploadedItems.push({ id: imageIds[index] || nanoid(), status: NODE_STATUS_SUCCESS, content: uploaded.url, storageKey: uploaded.storageKey, naturalWidth: uploaded.width, naturalHeight: uploaded.height, bytes: uploaded.bytes, mimeType: uploaded.mimeType });
+                        uploadedItems.push({ id: imageIds[index] || nanoid(), status: NODE_STATUS_SUCCESS, content: uploaded.url, storageKey: uploaded.storageKey, naturalWidth: uploaded.width, naturalHeight: uploaded.height, bytes: uploaded.bytes, mimeType: uploaded.mimeType, generationInfo });
                     }
                     if (!firstUploaded || !uploadedItems.length) throw new Error(t("canvas.projectPage.generationFailed"));
                     const imageSize = fitNodeSize(firstUploaded.width, firstUploaded.height, imageConfig.width, imageConfig.height);
