@@ -53,6 +53,7 @@ import { CanvasSidePanel } from "@/components/canvas/canvas-side-panel";
 import { CanvasSaveStyleModal, type StyleRecipeDraft } from "@/components/canvas/canvas-save-style-modal";
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
 import { useAgentStore } from "@/stores/use-agent-store";
+import { buildStyleRecipeConfig, resolveStyleRecipeModel, styleRecipeModelLabel } from "@/lib/canvas/style-recipe";
 import { normalizeStyleRecipeLoras, useStyleRecipeStore, type StyleRecipe } from "@/stores/use-style-recipe-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
@@ -2390,19 +2391,13 @@ function InfiniteCanvasPage() {
             });
             const prompt = node.metadata?.prompt?.trim() || "";
             const context = buildNodeGenerationContext(node.id, nodesRef.current, connectionsRef.current, prompt);
-            const generationConfig = buildGenerationConfig(effectiveConfig, node, "image");
-            const resolvedModel = channelModelOf(effectiveConfig, generationConfig.model)?.model;
-            const model = node.metadata?.model || generationConfig.model;
             const params = (node.metadata?.params || {}) as Record<string, unknown>;
             const storedLoras = normalizeStyleRecipeLoras(params.loras);
             const loras = storedLoras.length ? storedLoras : normalizeStyleRecipeLoras(context.loras);
             setStyleRecipeDraft({
                 thumbAssetId,
                 loras,
-                config: {
-                    model,
-                    modelLabel: resolvedModel?.label || model,
-                },
+                config: buildStyleRecipeConfig(effectiveConfig, node),
                 defaultName: t("canvas.styleRecipes.defaultName"),
             });
         },
@@ -2452,8 +2447,8 @@ function InfiniteCanvasPage() {
     const applyStyleRecipe = useCallback(
         (recipe: StyleRecipe) => {
             const loras = normalizeStyleRecipeLoras(recipe.loras);
-            const resolved = recipe.config.model ? channelModelOf(effectiveConfig, recipe.config.model) : null;
-            const modelMissing = !resolved || resolved.model.capability !== "image";
+            const resolved = resolveStyleRecipeModel(effectiveConfig, recipe.config.model);
+            const modelMissing = resolved.missing;
             const finish = (missingLoras: string[]) => {
                 if (modelMissing || missingLoras.length) {
                     setBlockedStyleRecipe({ recipe: { ...recipe, loras }, missingModel: modelMissing, missingLoras });
@@ -2463,7 +2458,7 @@ function InfiniteCanvasPage() {
                 if (stored && !stored.loras.length && loras.length) {
                     useStyleRecipeStore.setState((state) => ({ recipes: state.recipes.map((item) => (item.id === recipe.id ? { ...item, loras } : item)) }));
                 }
-                createStyleRecipeCard({ ...recipe, loras });
+                createStyleRecipeCard({ ...recipe, loras, config: { ...recipe.config, model: resolved.model, modelLabel: resolved.label } });
             };
             if (!loras.length) {
                 finish([]);
@@ -5037,8 +5032,8 @@ function InfiniteCanvasPage() {
                             {blockedStyleRecipe.missingModel ? (
                                 <div className="rounded-lg border border-stone-200 px-3 py-2 dark:border-stone-700">
                                     <div className="text-xs opacity-45">{t("canvas.styleRecipes.missingModel")}</div>
-                                    <div className="truncate" title={blockedStyleRecipe.recipe.config.modelLabel || blockedStyleRecipe.recipe.config.model}>
-                                        {blockedStyleRecipe.recipe.config.modelLabel || blockedStyleRecipe.recipe.config.model || "-"}
+                                    <div className="truncate" title={styleRecipeModelLabel(effectiveConfig, blockedStyleRecipe.recipe.config.model, blockedStyleRecipe.recipe.config.modelLabel)}>
+                                        {styleRecipeModelLabel(effectiveConfig, blockedStyleRecipe.recipe.config.model, blockedStyleRecipe.recipe.config.modelLabel)}
                                     </div>
                                 </div>
                             ) : null}

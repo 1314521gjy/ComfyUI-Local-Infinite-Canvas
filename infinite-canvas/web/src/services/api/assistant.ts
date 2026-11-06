@@ -13,6 +13,18 @@ export async function resolvePiAgentUrl(): Promise<string> {
 
 export type PiAgentEvent = { event: string; data: Record<string, unknown> };
 
+export async function sendPiAgentToolResult(url: string, payload: { callId: string; result?: unknown; error?: string }) {
+    const response = await fetch(`${url.replace(/\/+$/, "")}/api/assistant/tool-result`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(String(data?.error || `画布工具结果提交失败（HTTP ${response.status}）`));
+    }
+}
+
 export async function streamPiAgentChat(
     url: string,
     payload: Record<string, unknown>,

@@ -5,9 +5,11 @@ import { useTranslation } from "react-i18next";
 
 import { collectNodeLoras } from "@/components/canvas/canvas-node-generation";
 import type { CanvasTheme } from "@/lib/canvas-theme";
+import { styleRecipeModelLabel } from "@/lib/canvas/style-recipe";
 import { getImagePreviewRevision, subscribeImagePreviews } from "@/services/image-storage";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { assetCoverUrl, useAssetStore } from "@/stores/use-asset-store";
+import { useEffectiveConfig } from "@/stores/use-config-store";
 import { normalizeStyleRecipeLoras, useStyleRecipeStore, type StyleRecipe, type StyleRecipeLora } from "@/stores/use-style-recipe-store";
 
 const ACTION_BUTTON = "flex size-8 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-colors hover:bg-black/80";
@@ -16,6 +18,7 @@ export function CanvasStyleRecipesTab({ theme, onApply }: { theme: CanvasTheme; 
     const { message } = App.useApp();
     const { t } = useTranslation();
     const recipes = useStyleRecipeStore((state) => state.recipes);
+    const config = useEffectiveConfig();
     const assets = useAssetStore((state) => state.assets);
     useSyncExternalStore(subscribeImagePreviews, getImagePreviewRevision);
     const assetById = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets]);
@@ -77,7 +80,7 @@ export function CanvasStyleRecipesTab({ theme, onApply }: { theme: CanvasTheme; 
         message.success(t("canvas.styleRecipes.removed", { name: recipe.name }));
     };
 
-    const modelLabel = viewing ? viewing.config.modelLabel || viewing.config.model || "-" : "-";
+    const modelLabel = viewing ? styleRecipeModelLabel(config, viewing.config.model, viewing.config.modelLabel) : "-";
 
     return (
         <div className="flex h-full flex-col">
@@ -92,7 +95,7 @@ export function CanvasStyleRecipesTab({ theme, onApply }: { theme: CanvasTheme; 
                             const asset = assetById.get(recipe.thumbAssetId);
                             const cover = asset ? assetCoverUrl(asset) : "";
                             const loras = lorasByRecipeId.get(recipe.id) || [];
-                            const meta = [recipe.config.modelLabel || recipe.config.model || "", loras.length ? t("canvas.styleRecipes.loraSummary", { count: loras.length }) : ""].filter(Boolean).join(" · ");
+                            const meta = [styleRecipeModelLabel(config, recipe.config.model, recipe.config.modelLabel), loras.length ? t("canvas.styleRecipes.loraSummary", { count: loras.length }) : ""].filter(Boolean).join(" · ");
                             return (
                                 <div key={recipe.id} className="group relative overflow-hidden rounded-xl border" style={{ borderColor: theme.toolbar.border }}>
                                     <button type="button" className="block w-full text-left" onClick={() => setViewingId(recipe.id)} aria-label={t("canvas.styleRecipes.viewRecipe")}>

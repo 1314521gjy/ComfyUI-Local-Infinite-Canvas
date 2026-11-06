@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { App, Button, Popconfirm, Popover, Tooltip } from "antd";
-import { Bot, Gauge, LoaderCircle, MessagesSquare, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import { Bot, Code2, Gauge, LoaderCircle, MessagesSquare, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { AgentChatComposer } from "./agent-chat-composer";
@@ -12,20 +12,17 @@ import { useEffectiveCardSkin } from "@/lib/canvas/use-canvas-theme";
 import { readImageMeta } from "@/lib/image-utils";
 import { useAgentChatStore } from "@/stores/use-agent-chat-store";
 import { useAgentStore } from "@/stores/use-agent-store";
-import { agentCloudLabel, formatAgentApiError, selectAgentBackend } from "@/lib/agent/agent-runtime";
+import { useDevAgentStore } from "@/stores/use-dev-agent-store";
 import { syncAgentProvider } from "@/services/api/agent-provider";
-import { resolvePiAgentUrl, streamPiAgentChat } from "@/services/api/assistant";
+import { resolvePiAgentUrl, sendPiAgentToolResult, streamPiAgentChat } from "@/services/api/assistant";
 import { ensureAssistantRuntime, fetchAssistantRuntimeStatus, type AssistantRuntimeStatus } from "@/services/api/resources";
 import { activePromptCloudApi, modelOptionLabel, modelOptionName, selectableModelsByCapability, useConfigStore } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 
 type CloudAttachment = AgentChatAttachment & { dataUrl: string; mimeType: string; size: number };
-type ApiMessage = { role: "system" | "user" | "assistant" | "tool"; content?: unknown; tool_calls?: unknown[]; tool_call_id?: string; name?: string };
-type ToolCall = { id?: string; function?: { name?: string; arguments?: string } };
 
 const MAX_ATTACHMENTS = 6;
 const MAX_PAYLOAD_BYTES = 30 * 1024 * 1024;
-const MAX_TOOL_STEPS = 8;
 
 function readFileDataUrl(file: File) {
     return new Promise<string>((resolve, reject) => {
@@ -34,132 +31,6 @@ function readFileDataUrl(file: File) {
         reader.onerror = () => reject(reader.error);
         reader.readAsDataURL(file);
     });
-}
-
-function chatEndpoint(baseUrl: string) {
-    const base = baseUrl.trim().replace(/\/+$/, "");
-    return /\/chat\/completions$/i.test(base) ? base : `${base}/chat/completions`;
-}
-
-function messageContentText(value: unknown) {
-    if (typeof value === "string") return value;
-    if (!Array.isArray(value)) return "";
-    return value.map((part) => (part && typeof part === "object" && "text" in part ? String((part as { text?: unknown }).text || "") : "")).join("");
-}
-
-function replyReasoningText(message: { reasoning_content?: unknown; reasoning?: unknown } | undefined) {
-    const raw = message?.reasoning_content ?? message?.reasoning;
-    return typeof raw === "string" ? raw : "";
-}
-
-type StreamDelta = { reasoning?: string; content?: string };
-type ChatReply = { content: string; reasoning: string; toolCalls: ToolCall[] };
-
-async function requestChatStream(params: {
-    baseUrl: string;
-    apiKey: string;
-    model: string;
-    messages: ApiMessage[];
-    signal: AbortSignal;
-    onDelta?: (delta: StreamDelta) => void;
-}): Promise<ChatReply> {
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (params.apiKey) headers.Authorization = `Bearer ${params.apiKey}`;
-    const body: Record<string, unknown> = { model: params.model, messages: params.messages, tools: cloudTools(), tool_choice: "auto", temperature: 0.4, stream: true };
-    const response = await fetch(chatEndpoint(params.baseUrl), {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-        signal: params.signal,
-    });
-    if (!response.ok) throw new Error(formatAgentApiError(response.status, await response.text()));
-    const contentType = response.headers.get("content-type") || "";
-    if (!response.body || !contentType.includes("text/event-stream")) {
-        const text = await response.text();
-        let data: { choices?: Array<{ message?: { content?: unknown; reasoning_content?: unknown; reasoning?: unknown; tool_calls?: ToolCall[] } }> };
-        try {
-            data = JSON.parse(text) as typeof data;
-        } catch {
-            throw new Error(formatAgentApiError(response.status, text));
-        }
-        const reply = data.choices?.[0]?.message;
-        if (!reply) throw new Error("API 没有返回消息。");
-        const reasoning = replyReasoningText(reply);
-        const content = messageContentText(reply.content);
-        if (reasoning) params.onDelta?.({ reasoning });
-        if (content) params.onDelta?.({ content });
-        return { content, reasoning, toolCalls: Array.isArray(reply.tool_calls) ? reply.tool_calls : [] };
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let content = "";
-    let reasoning = "";
-    const drafts: Array<{ id?: string; name: string; arguments: string }> = [];
-    let fallback: { content?: unknown; reasoning_content?: unknown; reasoning?: unknown; tool_calls?: ToolCall[] } | null = null;
-    while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-        for (const rawLine of lines) {
-            const line = rawLine.trim();
-            if (!line.startsWith("data:")) continue;
-            const payload = line.slice(5).trim();
-            if (!payload || payload === "[DONE]") continue;
-            let json: {
-                error?: { message?: string };
-                choices?: Array<{
-                    delta?: { content?: unknown; reasoning_content?: unknown; reasoning?: unknown; tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }> };
-                    message?: { content?: unknown; reasoning_content?: unknown; reasoning?: unknown; tool_calls?: ToolCall[] };
-                }>;
-            };
-            try {
-                json = JSON.parse(payload);
-            } catch {
-                continue;
-            }
-            if (json.error?.message) throw new Error(json.error.message);
-            const choice = json.choices?.[0];
-            const delta = choice?.delta;
-            if (delta) {
-                const nextReasoning = typeof delta.reasoning_content === "string" ? delta.reasoning_content : typeof delta.reasoning === "string" ? delta.reasoning : "";
-                if (nextReasoning) {
-                    reasoning += nextReasoning;
-                    params.onDelta?.({ reasoning: nextReasoning });
-                }
-                const nextContent = messageContentText(delta.content);
-                if (nextContent) {
-                    content += nextContent;
-                    params.onDelta?.({ content: nextContent });
-                }
-                if (Array.isArray(delta.tool_calls)) {
-                    delta.tool_calls.forEach((call, fallbackIndex) => {
-                        const index = typeof call.index === "number" ? call.index : fallbackIndex;
-                        const draft = drafts[index] || (drafts[index] = { name: "", arguments: "" });
-                        if (call.id) draft.id = call.id;
-                        if (call.function?.name) draft.name += call.function.name;
-                        if (call.function?.arguments) draft.arguments += call.function.arguments;
-                    });
-                }
-            }
-            if (!delta && choice?.message) fallback = choice.message;
-        }
-    }
-    if (!content && !reasoning && !drafts.length && fallback) {
-        content = messageContentText(fallback.content);
-        reasoning = replyReasoningText(fallback);
-        if (reasoning) params.onDelta?.({ reasoning });
-        if (content) params.onDelta?.({ content });
-        return { content, reasoning, toolCalls: Array.isArray(fallback.tool_calls) ? fallback.tool_calls : [] };
-    }
-    return {
-        content,
-        reasoning,
-        toolCalls: drafts.filter((draft) => draft.name || draft.arguments).map((draft) => ({ id: draft.id, function: { name: draft.name, arguments: draft.arguments || "{}" } })),
-    };
 }
 
 function canvasFeatureCatalog() {
@@ -288,15 +159,17 @@ function compactCanvasState() {
     };
 }
 
-function AgentSettingToggle({ icon, title, description, checked, theme, onChange }: { icon: ReactNode; title: string; description: string; checked: boolean; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onChange: () => void }) {
+function AgentSettingToggle({ icon, title, description, checked, theme, onChange, disabled = false }: { icon: ReactNode; title: string; description: string; checked: boolean; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onChange: () => void; disabled?: boolean }) {
     const { t } = useTranslation();
     return (
         <button
             type="button"
-            className="flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left transition"
+            disabled={disabled}
+            className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left transition ${disabled ? "cursor-not-allowed opacity-55" : ""}`}
             style={{ borderColor: checked ? theme.node.muted : theme.node.stroke, background: checked ? theme.toolbar.activeBg : "transparent", color: theme.node.text }}
             aria-pressed={checked}
-            onClick={onChange}
+            aria-disabled={disabled}
+            onClick={disabled ? undefined : onChange}
         >
             <span className="flex min-w-0 items-center gap-2">
                 <span className="shrink-0">{icon}</span>
@@ -336,9 +209,9 @@ export function AgentCloudChat() {    const { t } = useTranslation();
     const [error, setError] = useState("");
     const [piUrl, setPiUrl] = useState(() => (typeof window === "undefined" ? "" : localStorage.getItem("canvas-pi-agent-url") || ""));
     const [piStatus, setPiStatus] = useState<AssistantRuntimeStatus | null>(null);
-    const [piInstalling, setPiInstalling] = useState(false);
-    const piEnsureAttemptedRef = useRef(false);
-    const apiMessagesRef = useRef<ApiMessage[]>([]);
+    const [piError, setPiError] = useState("");
+    const piEnsureInFlightRef = useRef(false);
+    const piEnsureLastAtRef = useRef(0);
     const listRef = useRef<HTMLDivElement>(null);
     const abortRef = useRef<AbortController | null>(null);
     const pendingRef = useRef<{ resolve: (approved: boolean) => void } | null>(null);
@@ -347,59 +220,71 @@ export function AgentCloudChat() {    const { t } = useTranslation();
     const queueRef = useRef<Array<{ text: string; attachments: CloudAttachment[] }>>([]);
     const [queueCount, setQueueCount] = useState(0);
     const confirmTools = useAgentStore((state) => state.confirmTools);
+    const panelOpen = useAgentStore((state) => state.panelOpen);
     const skin = useEffectiveCardSkin() as string;
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
-    const backend = selectAgentBackend(piUrl, api);
-    const cloudApi = backend.source === "none" ? null : api;
-    const runtime = api?.baseUrl?.trim() && api?.apiKey?.trim() && api?.model?.trim()
-        ? { baseUrl: api.baseUrl.trim(), apiKey: api.apiKey.trim(), model: api.model.trim(), label: agentCloudLabel(api) }
-        : null;
-    const runtimeLabel = backend.source === "pi" ? `pi Agent · ${cloudApi?.model || ""}`.trim() : runtime?.label || t("agent.cloud.noApiTitle");
-    const runtimeModel = cloudApi?.model || "—";
-    const cloudReady = backend.source === "cloud";
+    const devAgent = useDevAgentStore();
+    const devEnabled = devAgent.enabled;
+    const providerReady = Boolean(api?.baseUrl?.trim() && api?.apiKey?.trim() && api?.model?.trim());
+    const piInstalled = Boolean(piStatus?.available);
+    const piOnline = Boolean(piStatus?.running && piStatus.online && piUrl);
+    const backend = { source: piOnline && providerReady ? ("pi" as const) : ("none" as const) };
+    const developerAvailable = piOnline && providerReady;
+    const modeLabel = developerAvailable && devEnabled ? t("agent.dev.title") : t("agent.dev.normalMode");
+    const cloudApi = api;
+    const runtimeLabel = piOnline ? `pi Agent · ${api?.model || ""}`.trim() : t("agent.dev.idle");
+    const runtimeModel = api?.model || "—";
 
-    const refreshPi = useCallback(async () => {
-        try {
-            let status = await fetchAssistantRuntimeStatus();
-            if (!status.running && status.available && !piEnsureAttemptedRef.current) {
-                piEnsureAttemptedRef.current = true;
-                try {
-                    await ensureAssistantRuntime(false);
-                    status = await fetchAssistantRuntimeStatus();
-                } catch {
-                    // 保持 status 的可读状态；不自动下载运行时。
-                }
-            }
+    const refreshPi = useCallback(async ({ ensure = false, force = false }: { ensure?: boolean; force?: boolean } = {}) => {
+        const applyStatus = (status: AssistantRuntimeStatus) => {
             setPiStatus(status);
             const nextUrl = status.running && status.online && status.url ? status.url : "";
             setPiUrl(nextUrl);
-            if (nextUrl) localStorage.setItem("canvas-pi-agent-url", nextUrl);
-            else localStorage.removeItem("canvas-pi-agent-url");
-        } catch {
+            if (nextUrl) {
+                localStorage.setItem("canvas-pi-agent-url", nextUrl);
+                setPiError("");
+            } else {
+                localStorage.removeItem("canvas-pi-agent-url");
+            }
+        };
+        try {
+            let status = await fetchAssistantRuntimeStatus();
+            applyStatus(status);
+            const online = Boolean(status.running && status.online && status.url);
+            const now = Date.now();
+            if (ensure && status.available && !online && !piEnsureInFlightRef.current && (force || now - piEnsureLastAtRef.current > 3000)) {
+                piEnsureInFlightRef.current = true;
+                piEnsureLastAtRef.current = now;
+                setPiError("");
+                try {
+                    await ensureAssistantRuntime(false);
+                    status = await fetchAssistantRuntimeStatus();
+                    applyStatus(status);
+                } catch (reason) {
+                    setPiError(reason instanceof Error ? reason.message : String(reason));
+                } finally {
+                    piEnsureInFlightRef.current = false;
+                }
+            }
+        } catch (reason) {
             setPiStatus(null);
             setPiUrl("");
+            setPiError(reason instanceof Error ? reason.message : String(reason));
         }
     }, []);
 
     useEffect(() => {
-        void refreshPi();
-        const timer = window.setInterval(() => void refreshPi(), 5000);
-        return () => window.clearInterval(timer);
+        void refreshPi({ ensure: true });
     }, [refreshPi]);
 
-    const installPi = async () => {
-        setPiInstalling(true);
-        setError("");
-        try {
-            await ensureAssistantRuntime(!piStatus?.runtimePackagePresent);
-            piEnsureAttemptedRef.current = true;
-            await refreshPi();
-        } catch (reason) {
-            setError(reason instanceof Error ? reason.message : String(reason));
-        } finally {
-            setPiInstalling(false);
-        }
-    };
+    useEffect(() => {
+        const timer = window.setInterval(() => void refreshPi({ ensure: panelOpen }), 5000);
+        return () => window.clearInterval(timer);
+    }, [refreshPi, panelOpen]);
+
+    useEffect(() => {
+        if (panelOpen) void refreshPi({ ensure: true });
+    }, [panelOpen, refreshPi]);
 
     useEffect(() => {
         if (!cloudApi) return;
@@ -424,7 +309,6 @@ export function AgentCloudChat() {    const { t } = useTranslation();
         if (!active || loadedConversationRef.current === active.id) return;
         loadedConversationRef.current = active.id;
         setMessages(active.messages);
-        apiMessagesRef.current = active.messages.flatMap((item) => (item.role === "user" || item.role === "assistant" ? [{ role: item.role, content: item.text }] : []));
         setError("");
     }, [conversations, activeId]);
     useEffect(() => {
@@ -528,170 +412,13 @@ export function AgentCloudChat() {    const { t } = useTranslation();
         return { error: `未知工具：${name}` };
     };
 
-    const runChat = async (userText: string, userAttachments: CloudAttachment[]) => {
-        if (!runtime) {
-            openConfigDialog(false, "cloud-api");
-            return;
-        }
-        setError("");
-        setSending(true);
-        const controller = new AbortController();
-        abortRef.current = controller;
-        const defaultImageModel = config.imageModel || config.model;
-        const defaultVideoModel = config.videoModel || config.model;
-        const imageModels = selectableModelsByCapability(config, "image").slice(0, 10).map((value) => modelOptionLabel(config, value));
-        const videoModels = selectableModelsByCapability(config, "video").slice(0, 10).map((value) => modelOptionLabel(config, value));
-        const personaRule = skin === "fish"
-            ? "角色设定：你当前使用充电皮肤角色「提灯水母娘」，是用户的画布助手。用户打招呼、问你是谁或需要自我介绍时，用提灯水母娘的口吻回答，并在开头加上尊称“尊敬的充电用户，”，例如“尊敬的充电用户，我是提灯水母娘，你的画布助手。今天想做点什么？”不要自称通用 AI 助手。"
-            : skin === "angel"
-              ? "角色设定：你当前使用皮肤角色「天使娘」，是用户的画布助手。用户打招呼、问你是谁或需要自我介绍时，用天使娘的口吻回答，例如“我是天使娘，你的画布助手。想做点什么？”不要自称通用 AI 助手。"
-              : "角色设定：当前没有角色皮肤。用户打招呼、问你是谁或需要自我介绍时，自称“无界画布的 AI 助手”。";
-        const boundaryRule = "当前运行在云端 API 上：只有对话、画布读取和画布工具，不能读写本地文件或运行命令。用户要求改代码、新增卡片类型、修改卡片 UI 或增加参数控件时，说明需要使用画布助手卡，不要声称已经修改代码。区域布局、局部编辑、四视图、提示词优化/反推、超分/插帧是独立 UI，说明入口即可，不要声称已执行。";
-        const systemPrompt = [
-            "你是「无界画布」的画布助手，不是只做修复的工具。你可以读取和修改当前画布，也可以调用卡片生成。",
-            personaRule,
-            boundaryRule,
-            "读取画布用 canvas_get_state；查询画布功能、入口和限制用 canvas_get_features；修改画布用 canvas_apply_ops。",
-            "canvas_apply_ops 的 ops 支持：add_node、update_node、delete_node、delete_connections、connect_nodes、select_nodes、set_viewport、run_generation。",
-            "add_node 示例：{\"type\":\"add_node\",\"id\":\"agent-img-1\",\"nodeType\":\"image\",\"metadata\":{\"prompt\":\"...\",\"model\":\"...\",\"size\":\"1:1\",\"count\":1,\"generationMode\":\"image\"}}，随后用 {\"type\":\"run_generation\",\"nodeId\":\"agent-img-1\"} 触发生成。",
-            "修改已有卡片提示词用 update_node：{\"type\":\"update_node\",\"id\":\"节点ID\",\"metadata\":{\"prompt\":\"...\"}}；重跑用 run_generation。",
-            "生成卡默认新建：用户说“用 X 模型生成 Y”时，先调用 canvas_get_features 取 models.image 的 value/label，匹配用户说的模型（如 Z Image → label 含 Z-Image 的项），然后 add_node 新建一张图片卡（metadata.prompt=Y、metadata.model=对应的 value、metadata.generationMode=\"image\"），再 run_generation 指向新卡。不要复用旧卡，不要改旧卡模型后重跑，也不要把旧生成结果接成参考图。",
-            "只有用户明确说“重跑/再生成/用这张卡”时才复用已有卡。用户指出模型用错时，新建一张正确模型的新卡，保留旧卡；旧结果不要作为新卡参考，除非用户明确要求。",
-            "模型必须严格匹配用户指定：Z Image 不能用 Krea2 或默认模型；列表里没有精确匹配时先问，不要自动替换。",
-            "画布权限已放开：自动确认模式下 canvas_apply_ops 直接执行，不要用“没有权限”推辞画布内操作。除提示词外，你还可以改标题、位置、尺寸、模型，以及 metadata 里的生成参数（size、count、seed、seconds、vquality、videoMode、frameMode、imageMode、aspectRatio、params.loras 等）；先 canvas_get_state 读取 params，再 update_node 写回。",
-            "可创建的卡片：文本、图片、配置、视频、音频、分组、自由卡片（free-card）、LoRA 卡（comfyui-lora:lora）。新建图片/视频卡后可用 connect_nodes 接 LoRA/参考/配置卡，再 run_generation。",
-            "步数由模型型号或档位决定，不是所有卡片都能通过 metadata 改；不要承诺给任意图片卡增加步数控件。",
-            "执行任何画布写入前先调用 canvas_get_state 获取真实节点 ID，不要编造 ID。",
-            "画布功能索引（用户问具体功能时先调用 canvas_get_features 获取入口、步骤和限制，不要凭记忆说不知道或编造）：MOSS 区域布局、局部编辑（蒙版）、四视图、提示词优化/反推、裁剪、切图、放大、AI 超分、多角度、替换图片；视频首尾帧/全能参考、视频超分、RIFE 插帧、角色替换、极速草稿；风格配方、LoRA 叠层、自由卡片、资产库、提示词库。",
-            "关键区分：MOSS 区域布局是在 MOSS 图上画多个区域并分别写提示词，背景先画、主体/文字后画，仅 MOSS 模型；局部编辑是用蒙版只改图片的一块区域。四视图是从角色图生成一张四视图设定图（固定 image-krea2-four-view），不是四张普通图，也不是多角度。",
-            "回答画布功能时，优先使用 canvas_get_features 返回的 name/entry/how/limits 原文；不要用通用模型知识替代画布的实际入口和固定工作流（尤其四视图和 MOSS 区域布局）。",
-            "提示词：优化提示词在配置卡/提示词面板；反推提示词在图片卡，引擎可选 Qwen3.5-9B、Florence-2 PromptGen、云端 API；提示词库在左侧。写提示词时覆盖主体、构图、光线、色彩、材质、镜头和氛围，给可直接使用的完整提示词，不要只给一句短句。",
-            "生成前的模型规则：如果用户在当前消息或最近对话里已经指定了模型（型号、别名、带空格或连字符的写法如 Z image / Z-Image 都算），或者用户用“对的/是的/确认/用这个”同意你上一轮提议的模型，就直接执行，不要重复询问，也不要要求用户写出完整模型名；只有完全没指定也没确认时才问。执行时必须使用用户指定或确认的那个模型，不能换成 Krea2、默认模型或其他模型。",
-            "工具执行边界：canvas_apply_ops 可直接读取/改节点/连线/选中/视口/run_generation；区域布局编辑器、局部编辑、四视图、提示词优化/反推、视频超分/插帧等是独立 UI，能说明入口，不要声称已执行。",
-            `默认生图模型：${modelOptionLabel(config, defaultImageModel)}；默认视频模型：${modelOptionLabel(config, defaultVideoModel)}。`,
-            `可用生图模型：${imageModels.join("、") || "无"}。`,
-            `可用视频模型：${videoModels.join("、") || "无"}。`,
-            `当前页面：${location.pathname}。需要切换页面时用 site_navigate。`,
-            "生成任务只是触发，未返回结果前不要声称已经生成完成。",
-            "回答风格（重要）：语气可以轻松可爱，但必须简短、直接。默认 1-3 句话；复杂操作最多 3 个短点。不要复述用户的话，不要解释原理，不要列通用建议清单；只有用户明确说“详细/展开”才展开。功能问题只答入口+一句用法；操作完成只报结果和下一步。canvas_get_features 是给你自己查的，不要把整段贴给用户。",
-        ].join("\n");
-        apiMessagesRef.current[0] = { role: "system", content: systemPrompt };
-        const content: unknown = userAttachments.length
-            ? [{ type: "text", text: userText || "请查看这些图片。" }, ...userAttachments.map((item) => ({ type: "image_url", image_url: { url: item.dataUrl } }))]
-            : userText;
-        apiMessagesRef.current.push({ role: "user", content });
-        appendMessage({ role: "user", text: userText || (userAttachments.length ? `发送了 ${userAttachments.length} 张图片` : ""), attachments: userAttachments.map(({ id, name, url }) => ({ id, name, url })) });
-        setPrompt("");
-        setAttachments([]);
-        let liveId: string | null = null;
-        let allReasoning = "";
-        const ensureLive = () => {
-            if (liveId) return liveId;
-            liveId = `cloud-live-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-            const id = liveId;
-            setMessages((current) => [...current, { id, role: "assistant", text: "", reasoning: "", streamId: id }]);
-            return id;
-        };
-        const patchLive = (patch: Partial<AgentChatMessageItem>) => {
-            if (!liveId) return;
-            const id = liveId;
-            setMessages((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
-        };
-        try {
-            for (let step = 0; step < MAX_TOOL_STEPS; step += 1) {
-                let roundContent = "";
-                let roundReasoning = "";
-                const reply = await requestChatStream({
-                    baseUrl: runtime.baseUrl,
-                    apiKey: runtime.apiKey,
-                    model: runtime.model,
-                    messages: apiMessagesRef.current,
-                    signal: controller.signal,
-                    onDelta: (delta) => {
-                        if (delta.reasoning) {
-                            roundReasoning += delta.reasoning;
-                            allReasoning += delta.reasoning;
-                            const id = ensureLive();
-                            patchLive({ reasoning: allReasoning, streamId: id });
-                        }
-                        if (delta.content) {
-                            roundContent += delta.content;
-                            const id = ensureLive();
-                            patchLive({ text: roundContent, streamId: id });
-                        }
-                    },
-                });
-                if (reply.reasoning && !roundReasoning) {
-                    allReasoning += reply.reasoning;
-                    const id = ensureLive();
-                    patchLive({ reasoning: allReasoning, streamId: id });
-                }
-                if (reply.content && !roundContent) {
-                    roundContent = reply.content;
-                    const id = ensureLive();
-                    patchLive({ text: roundContent, streamId: id });
-                }
-                const toolCalls = reply.toolCalls;
-                if (toolCalls.length) {
-                    apiMessagesRef.current.push({ role: "assistant", content: reply.content || null, tool_calls: toolCalls });
-                    patchLive({ text: "" });
-                    for (const call of toolCalls) {
-                        const name = call.function?.name || "";
-                        let input: Record<string, unknown> = {};
-                        try {
-                            input = JSON.parse(call.function?.arguments || "{}") as Record<string, unknown>;
-                        } catch {}
-                        const result = await executeTool(name, input);
-                        apiMessagesRef.current.push({ role: "tool", tool_call_id: call.id || "", content: JSON.stringify(result) });
-                    }
-                    continue;
-                }
-                const answer = reply.content.trim();
-                if (!answer) throw new Error("API 返回了空消息。");
-                apiMessagesRef.current.push({ role: "assistant", content: answer });
-                ensureLive();
-                patchLive({ text: answer, reasoning: allReasoning || undefined, streamId: undefined });
-                liveId = null;
-                return;
-            }
-            ensureLive();
-            patchLive({ text: "工具调用次数过多，已停止本轮操作。", reasoning: allReasoning || undefined, streamId: undefined });
-            liveId = null;
-        } catch (err) {
-            if (liveId) {
-                patchLive({ streamId: undefined });
-                liveId = null;
-            }
-            if (controller.signal.aborted) {
-                appendMessage({ role: "system", text: t("agent.runtime.taskStopped") });
-            } else {
-                const raw = err instanceof Error ? err.message : String(err);
-                const sanitized = runtime.apiKey ? raw.split(runtime.apiKey).join("[已隐藏]") : raw;
-                const message = /failed to fetch|networkerror|load failed/i.test(sanitized) ? "无法连接 API：网络不可达或跨域被拦截。" : sanitized;
-                const text = `云 API：${message}`;
-                setError(text);
-                appendMessage({ role: "error", text });
-            }
-        } finally {
-            abortRef.current = null;
-            const next = queueRef.current.shift();
-            setQueueCount(queueRef.current.length);
-            if (next) {
-                void dispatch(next.text, next.attachments);
-            } else {
-                setSending(false);
-            }
-        }
-    };
-
     const runPiChat = async (userText: string, userAttachments: CloudAttachment[]) => {
         if (!cloudApi) {
             openConfigDialog(false, "cloud-api");
             return;
         }
         if (userAttachments.length) {
-            // pi Agent 桥只接收文本和画布上下文；有附件时使用云直连兜底。
-            void runChat(userText, userAttachments);
+            message.warning(t("agent.dev.noAttachments"));
             return;
         }
         setError("");
@@ -731,6 +458,7 @@ export function AgentCloudChat() {    const { t } = useTranslation();
                     gatewayUrl: "",
                     history,
                     context: compactCanvasState(),
+                    mode: devEnabled ? "developer" : "normal",
                 },
                 {
                     signal: controller.signal,
@@ -744,6 +472,20 @@ export function AgentCloudChat() {    const { t } = useTranslation();
                         } else if (event === "tool_start") {
                             const label = String(data.label || data.name || "工具");
                             appendMessage({ role: "tool", title: label, text: label });
+                        } else if (event === "canvas_tool") {
+                            const callId = String(data.callId || "");
+                            const name = String(data.name || "");
+                            const args = data.args && typeof data.args === "object" ? (data.args as Record<string, unknown>) : {};
+                            const label = name === "canvas_get_state" ? "读取画布" : name === "canvas_get_features" ? "查询画布功能" : name === "canvas_apply_ops" ? "操作画布" : name === "site_navigate" ? "打开页面" : name || "画布工具";
+                            appendMessage({ role: "tool", title: label, text: label });
+                            void (async () => {
+                                try {
+                                    const result = await executeTool(name, args);
+                                    await sendPiAgentToolResult(url, { callId, result });
+                                } catch (reason) {
+                                    await sendPiAgentToolResult(url, { callId, error: reason instanceof Error ? reason.message : String(reason) }).catch(() => undefined);
+                                }
+                            })();
                         } else if (event === "error") {
                             streamError = String(data.message || "pi Agent 请求失败");
                         } else if (event === "done") {
@@ -783,9 +525,11 @@ export function AgentCloudChat() {    const { t } = useTranslation();
     };
 
     const dispatch = (text: string, userAttachments: CloudAttachment[]) => {
-        const selected = selectAgentBackend(piUrl, api);
-        if (selected.source === "pi") return void runPiChat(text, userAttachments);
-        return void runChat(text, userAttachments);
+        if (!canUse) {
+            void refreshPi({ ensure: true, force: true });
+            return;
+        }
+        void runPiChat(text, userAttachments);
     };
 
     const canUse = backend.source !== "none";
@@ -793,9 +537,21 @@ export function AgentCloudChat() {    const { t } = useTranslation();
     const contextChars = messages.reduce((total, item) => total + item.text.length + (item.reasoning?.length || 0), 0) + prompt.length;
     const contextTokens = Math.ceil(contextChars / 4);
     const snapshot = useAgentStore((state) => state.canvasContext?.snapshot);
+    const statusTitle = !piStatus ? t("agent.dev.checking") : !piInstalled ? t("agent.dev.notInstalled") : !piOnline ? t("agent.dev.notLoaded") : t("agent.dev.apiMissing");
+    const statusHint = !piStatus
+        ? ""
+        : !piInstalled
+          ? [piStatus.reason || piStatus.missing?.join("、"), t("agent.dev.notInstalledHint")].filter(Boolean).join(" · ")
+          : !piOnline
+            ? piError || piStatus.reason || piStatus.lastError || t("agent.dev.notLoadedHint")
+            : t("agent.cloud.noApiHint");
+    const statusAction = !piStatus ? "refresh" : !piInstalled ? "install" : !piOnline ? "retry" : "config";
 
     const submit = () => {
-        if (!canUse) return;
+        if (!canUse) {
+            void refreshPi({ ensure: true, force: true });
+            return;
+        }
         const text = prompt.trim();
         if (!text && !attachments.length) return;
         if (sending) {
@@ -864,11 +620,11 @@ export function AgentCloudChat() {    const { t } = useTranslation();
             {[
                 [t("agent.dev.contextAgent"), runtimeLabel],
                 [t("agent.dev.contextModel"), modelLabel],
-                [t("agent.dev.contextMode"), backend.source === "pi" ? "pi Agent" : cloudReady ? t("agent.dev.cloudApi") : t("agent.cloud.noApiTitle")],
+                [t("agent.dev.contextMode"), modeLabel],
                 [t("agent.dev.contextSession"), `${activeConversation?.title || t("agent.dev.newChat")} · ${t("agent.dev.messages", { count: messages.length })}`],
                 [t("agent.dev.contextCanvas"), `${snapshot?.nodes.length || 0} ${t("agent.dev.nodes")} · ${snapshot?.connections.length || 0} ${t("agent.dev.connections")}`],
                 [t("agent.dev.contextTokens"), t("agent.dev.tokens", { count: contextTokens.toLocaleString() })],
-                [t("agent.dev.contextSkills"), t("agent.dev.skillsNormal")],
+                [t("agent.dev.contextSkills"), developerAvailable && devEnabled ? t("agent.dev.skillsDev") : t("agent.dev.skillsNormal")],
             ].map(([label, value]) => (
                 <div key={String(label)} className="flex items-start justify-between gap-3">
                     <span className="shrink-0" style={{ color: theme.node.muted }}>{label}</span>
@@ -890,7 +646,7 @@ export function AgentCloudChat() {    const { t } = useTranslation();
                         <span className="truncate" title={runtimeLabel}>{runtimeLabel}</span>
                     </div>
                     <div className="truncate text-[10px] leading-4" style={{ color: theme.node.muted }}>
-                        {activeConversation?.title || t("agent.dev.newChat")} · {backend.source === "pi" ? "pi Agent" : cloudReady ? t("agent.dev.cloudApi") : t("agent.cloud.noApiTitle")}
+                        {activeConversation?.title || t("agent.dev.newChat")} · {piOnline ? "pi Agent" : !piInstalled ? t("agent.dev.notInstalled") : !piStatus ? t("agent.dev.checking") : t("agent.dev.notLoaded")}
                     </div>
                 </div>
                 <Popover trigger="click" placement="bottomRight" content={conversationMenu}>
@@ -910,9 +666,18 @@ export function AgentCloudChat() {    const { t } = useTranslation();
             {settingsOpen ? (
                 <div className="shrink-0 border-b px-4 py-2.5 text-xs" style={{ borderColor: theme.node.stroke, background: theme.node.fill }}>
                     <div className="mt-1.5 text-[11px] leading-5" style={{ color: theme.node.muted }}>
-                        <span>{backend.source === "pi" ? `pi Agent：${cloudApi?.model || "—"} · ${t("agent.dev.skillsNormal")}` : runtime ? `${t("agent.dev.cloudApi")}：${runtime.label} · ${t("agent.dev.skillsNormal")}` : t("agent.cloud.noApiHint")}</span>
+                        <span>{piOnline ? `pi Agent：${api?.model || "—"} · ${modeLabel} · ${developerAvailable && devEnabled ? t("agent.dev.skillsDev") : t("agent.dev.skillsNormal")}` : !piInstalled ? t("agent.dev.notInstalledHint") : t("agent.dev.notLoadedHint")}</span>
                     </div>
-                    <div className="mt-2">
+                    <div className="mt-2 space-y-2">
+                        <AgentSettingToggle
+                            icon={<Code2 className="size-4" />}
+                            title={t("agent.dev.title")}
+                            description={developerAvailable ? t("agent.dev.description") : !piInstalled ? t("agent.dev.notInstalledHint") : !piOnline ? t("agent.dev.notLoadedHint") : t("agent.dev.apiMissing")}
+                            checked={developerAvailable && devEnabled}
+                            theme={theme}
+                            disabled={!developerAvailable}
+                            onChange={() => devAgent.setEnabled(!devEnabled)}
+                        />
                         <AgentSettingToggle
                             icon={<ShieldCheck className="size-4" />}
                             title={t("agent.permissions.canvasTitle")}
@@ -928,16 +693,18 @@ export function AgentCloudChat() {    const { t } = useTranslation();
                 {!messages.length && !pending && !sending ? (
                     <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
                         <Bot className="size-8 opacity-35" />
-                        <div className="text-sm font-medium">{canUse ? t("agent.cloud.emptyTitle") : t("agent.cloud.noApiTitle")}</div>
-                        <div className="text-xs leading-5" style={{ color: theme.node.muted }}>{canUse ? t("agent.cloud.emptyHint") : t("agent.cloud.noApiHint")}</div>
+                        <div className="text-sm font-medium">{canUse ? t("agent.cloud.emptyTitle") : statusTitle}</div>
+                        <div className="text-xs leading-5" style={{ color: theme.node.muted }}>{canUse ? t("agent.cloud.emptyHint") : statusHint}</div>
                         {!canUse ? (
                             <div className="mt-2 flex flex-wrap justify-center gap-2">
-                                <Button type="primary" size="small" onClick={() => openConfigDialog(false, "cloud-api")}>
-                                    {t("agent.cloud.configureApi")}
-                                </Button>
-                                {piStatus && (!piStatus.runtimePackagePresent || !piStatus.available) ? (
-                                    <Button size="small" loading={piInstalling} onClick={() => void installPi()}>
-                                        {t("agent.cloud.installPi")}
+                                {statusAction === "retry" || statusAction === "refresh" ? (
+                                    <Button type={statusAction === "retry" ? "primary" : "default"} size="small" onClick={() => void refreshPi({ ensure: true, force: true })}>
+                                        {t("agent.dev.retry")}
+                                    </Button>
+                                ) : null}
+                                {statusAction === "config" ? (
+                                    <Button type="primary" size="small" onClick={() => openConfigDialog(false, "cloud-api")}>
+                                        {t("agent.cloud.configureApi")}
                                     </Button>
                                 ) : null}
                             </div>
@@ -946,6 +713,12 @@ export function AgentCloudChat() {    const { t } = useTranslation();
                 ) : null}
                 <div className="space-y-4">
                     {messages.map((item) => <AgentChatMessage key={item.id} item={item} theme={theme} />)}
+                    {!canUse ? (
+                        <div className="rounded-lg border px-3 py-2 text-xs leading-5" style={{ borderColor: theme.node.stroke, color: theme.node.muted }}>
+                            {statusTitle}
+                            {statusHint ? ` · ${statusHint}` : ""}
+                        </div>
+                    ) : null}
                     {pending ? <AgentPendingToolCard summary={pending.summary} theme={theme} onReject={() => { pending.resolve(false); pendingRef.current = null; setPending(null); }} onApprove={() => { pending.resolve(true); pendingRef.current = null; setPending(null); }} /> : null}
                     {sending ? (
                         <div className="flex items-center gap-2 text-xs" style={{ color: theme.node.muted }}>
@@ -964,7 +737,7 @@ export function AgentCloudChat() {    const { t } = useTranslation();
                 attachments={attachments.map(({ id, name, url }) => ({ id, name, url }))}
                 disabled={!canUse}
                 sending={sending}
-                placeholder={canUse ? t("agent.cloud.placeholder") : t("agent.cloud.noApiPlaceholder")}
+                placeholder={canUse ? t("agent.cloud.placeholder") : !piStatus ? t("agent.dev.checking") : !piInstalled ? t("agent.dev.notInstalled") : !piOnline ? t("agent.dev.notLoaded") : t("agent.dev.apiMissing")}
                 theme={theme}
                 onPromptChange={setPrompt}
                 onSubmit={submit}
@@ -976,71 +749,4 @@ export function AgentCloudChat() {    const { t } = useTranslation();
             />
         </div>
     );
-}
-
-function cloudTools() {
-    return [
-        {
-            type: "function",
-            function: {
-                name: "canvas_get_features",
-                description: "返回画布功能目录：MOSS 区域布局、局部编辑、四视图、提示词优化/反推、图片工具、视频工具、风格配方、LoRA、资产与自由卡片，以及当前可用的生图/视频模型。只用于自己查，回答时摘 1-2 句，不要整段复述。",
-                parameters: { type: "object", properties: {}, additionalProperties: false },
-            },
-        },
-        {
-            type: "function",
-            function: {
-                name: "canvas_get_state",
-                description: "读取当前画布的节点、样线、选中项和视口。修改画布前先调用，获取真实节点 ID。",
-                parameters: { type: "object", properties: {}, additionalProperties: false },
-            },
-        },
-        {
-            type: "function",
-            function: {
-                name: "canvas_apply_ops",
-                description: "对当前画布批量执行操作。ops 支持 add_node、update_node、delete_node、delete_connections、connect_nodes、select_nodes、set_viewport、run_generation。新建生成卡时给 add_node 指定 id，再用 run_generation 指向该 id。",
-                parameters: {
-                    type: "object",
-                    properties: {
-                        ops: {
-                            type: "array",
-                            description: "按顺序执行的操作列表",
-                            items: {
-                                type: "object",
-                                properties: {
-                                    type: { type: "string", enum: ["add_node", "update_node", "delete_node", "delete_connections", "connect_nodes", "select_nodes", "set_viewport", "run_generation"] },
-                                    id: { type: "string" },
-                                    ids: { type: "array", items: { type: "string" } },
-                                    nodeId: { type: "string" },
-                                    nodeType: { type: "string" },
-                                    title: { type: "string" },
-                                    metadata: { type: "object", additionalProperties: true },
-                                    patch: { type: "object", additionalProperties: true },
-                                    fromNodeId: { type: "string" },
-                                    toNodeId: { type: "string" },
-                                    viewport: { type: "object", additionalProperties: true },
-                                    prompt: { type: "string" },
-                                    mode: { type: "string" },
-                                },
-                                required: ["type"],
-                                additionalProperties: true,
-                            },
-                        },
-                    },
-                    required: ["ops"],
-                    additionalProperties: false,
-                },
-            },
-        },
-        {
-            type: "function",
-            function: {
-                name: "site_navigate",
-                description: "打开站内页面：/、/canvas、/canvas/:id、/image、/video、/assets、/config。",
-                parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"], additionalProperties: false },
-            },
-        },
-    ];
 }

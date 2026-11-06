@@ -4,6 +4,10 @@ import path from "node:path";
 
 import { nowIso, randomId, safeFileName, writeJsonAtomic } from "./util.js";
 
+function fileUrl(filename) {
+  return `/files/${encodeURIComponent(filename)}`;
+}
+
 function publicTask(task) {
   if (!task) return null;
   return {
@@ -25,7 +29,7 @@ function publicTask(task) {
   };
 }
 
-export function createTaskStore({ dataDir, publicBaseUrl, logger, retentionDays = 0, maxTasks = 0 } = {}) {
+export function createTaskStore({ dataDir, logger, retentionDays = 0, maxTasks = 0 } = {}) {
   const tasks = new Map();
   const queue = [];
   const file = path.join(dataDir, "tasks.json");
@@ -116,7 +120,7 @@ export function createTaskStore({ dataDir, publicBaseUrl, logger, retentionDays 
           if (fs.existsSync(candidate)) task.file = candidate;
         }
         if (task.file && fs.existsSync(task.file)) {
-          task.url = task.url || `${publicBaseUrl}/files/${encodeURIComponent(path.basename(task.file))}`;
+          task.url = fileUrl(path.basename(task.file));
           if (task.status !== "completed") {
             task.status = "completed";
             task.progress = 1;
@@ -240,7 +244,7 @@ export function createTaskStore({ dataDir, publicBaseUrl, logger, retentionDays 
     const filename = `${id}.${safeFileName(ext).replace(/^\./, "") || "bin"}`;
     const target = path.join(outputDir, filename);
     await fsp.writeFile(target, buffer);
-    return { file: target, url: `${publicBaseUrl}/files/${encodeURIComponent(filename)}`, bytes: buffer.length };
+    return { file: target, url: fileUrl(filename), bytes: buffer.length };
   }
 
   async function cancel(id, comfy) {

@@ -1,16 +1,16 @@
 {
-  "version": "v0.24.11",
-  "publishedAt": "2026-11-05",
-  "notes": "本次修复自由卡片导入的静默兜底：SetNode/GetNode、UI 辅助节点与 object_info 未识别的节点不再在画布侧产生提醒，导入继续 best-effort，只有 ComfyUI 运行时明确报错才显示。另将 H3 极速草稿 ClipProj 4B MLP 的主下载源改为国内 hf-mirror（HuggingFace 保留兜底）。其余行为与 v0.24.8 一致。",
+  "version": "v0.24.12",
+  "publishedAt": "2026-11-06",
+  "notes": "本批更新：H3 极速草稿文案更正为 2 步；风格配方按底模 id 精确匹配，缺模型只提示不替换；内置 Agent 恢复开发者模式（普通=画布+只读，开发者=读写/命令/画布），去掉云 API 兜底，未安装仅文字提示、未启动自动拉起；云端视频文件地址按反代请求推导，修复云端视频黑屏/无法播放。云端镜像不随本批更新。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.24.11.zip",
-    "sha256": "20812a6e439a2ea836e620791aac9bbacd7f563f50e35f9263f143d783575f5f",
-    "size": 32215658
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.24.12.zip",
+    "sha256": "f3b51ae3e32a5ff91d2620fb440dca3cacf8fb45953c9b0edc4a7a72cde995ae",
+    "size": 32217027
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

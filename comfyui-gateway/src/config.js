@@ -43,6 +43,7 @@ export function loadConfig(overrides = {}) {
     throw new Error("网关默认只允许绑定本机回环地址；如确需局域网访问，请设置 ALLOW_REMOTE=1。");
   }
   const gatewayToken = String(overrides.gatewayToken ?? process.env.GATEWAY_TOKEN ?? "").trim();
+  const publicBaseUrlRaw = String(overrides.publicBaseUrl ?? process.env.PUBLIC_BASE_URL ?? "").trim();
   const maxUploadBytes = num(overrides.maxUploadBytes ?? process.env.MAX_UPLOAD_BYTES, 512 * 1024 * 1024);
   const config = {
     rootDir,
@@ -60,7 +61,8 @@ export function loadConfig(overrides = {}) {
     canvasDist: path.resolve(overrides.canvasDist ?? process.env.CANVAS_DIST ?? path.join(appRoot, "infinite-canvas", "web", "dist")),
     dataDir: path.resolve(overrides.dataDir ?? process.env.DATA_DIR ?? path.join(rootDir, "data")),
     outputDir: path.resolve(overrides.outputDir ?? process.env.OUTPUT_DIR ?? path.join(rootDir, "data", "outputs")),
-    publicBaseUrl: String(overrides.publicBaseUrl ?? process.env.PUBLIC_BASE_URL ?? `http://${host}:${port}`).replace(/\/+$/, ""),
+    publicBaseUrl: (publicBaseUrlRaw || `http://${host}:${port}`).replace(/\/+$/, ""),
+    publicBaseUrlExplicit: Boolean(publicBaseUrlRaw),
     launcherControlUrl: String(overrides.launcherControlUrl ?? process.env.LAUNCHER_CONTROL_URL ?? "").replace(/\/+$/, ""),
     corsOrigins: overrides.corsOrigins ?? list(process.env.CORS_ORIGINS, "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8188,http://127.0.0.1:8188"),
     requestTimeoutMs: num(overrides.requestTimeoutMs ?? process.env.REQUEST_TIMEOUT_MS, 10 * 60 * 1000),

@@ -27,6 +27,7 @@ import { createPromptOptimizer } from "./prompt-optimizer.js";
 import { reorderQwenEditFiles, reorderQwenEditPrompt, stripImageLabelPreamble } from "./qwen-edit.js";
 import { createVideoInterpolator } from "./video-interpolation.js";
 import { createPreviewHub } from "./preview-hub.js";
+import { absoluteTaskUrl } from "./public-url.js";
 import { createFreeWorkflowStore, applyFreeInputs } from "./free-workflows.js";
 import { applyMossLayoutPrompt } from "./layout-prompt.js";
 import { runImage, runVideo, runWorkflow } from "./runner.js";
@@ -518,12 +519,15 @@ export async function createGatewayApp(overrides = {}) {
   await registry.load();
   const tasks = createTaskStore({
     dataDir: config.dataDir,
-    publicBaseUrl: config.publicBaseUrl,
     logger,
     retentionDays: config.taskRetentionDays,
     maxTasks: config.maxStoredTasks,
   });
   await tasks.load();
+  const taskResponse = (req, task) => {
+    const data = tasks.publicTask(task);
+    return { ...data, url: data.url ? absoluteTaskUrl(config, req, data.url) : null };
+  };
   const freeWorkflows = createFreeWorkflowStore({
     dataDir: config.dataDir,
     comfyWorkflowsDir: config.comfyWorkflowsDir,
@@ -1264,8 +1268,13 @@ export async function createGatewayApp(overrides = {}) {
     res.sendFile(path.join(config.rootDir, "src", "admin.html"));
   });
 
-  app.get("/api/tasks", (_req, res) => {
-    res.json({ tasks: tasks.list().slice(0, 50) });
+  app.get("/api/tasks", (req, res) => {
+    res.json({
+      tasks: tasks.list().slice(0, 50).map((task) => ({
+        ...task,
+        url: task.url ? absoluteTaskUrl(config, req, task.url) : null,
+      })),
+    });
   });
 
   app.get("/api/models/events", (req, res) => {
@@ -1529,7 +1538,7 @@ export async function createGatewayApp(overrides = {}) {
     for (const file of files) {
       if (responseFormat === "url") {
         const saved = await tasks.saveOutput(randomId("img_"), file.buffer, extFromMime(file.mimeType, file.filename, "png"));
-        data.push({ url: saved.url });
+        data.push({ url: absoluteTaskUrl(config, req, saved.url) });
       } else {
         data.push({ b64_json: file.buffer.toString("base64") });
       }
@@ -1650,7 +1659,7 @@ export async function createGatewayApp(overrides = {}) {
     for (const file of result.files) {
       if (responseFormat === "url") {
         const saved = await tasks.saveOutput(randomId("img_"), file.buffer, extFromMime(file.mimeType, file.filename, "png"));
-        data.push({ url: saved.url });
+        data.push({ url: absoluteTaskUrl(config, req, saved.url) });
       } else {
         data.push({ b64_json: file.buffer.toString("base64") });
       }
@@ -1707,7 +1716,7 @@ export async function createGatewayApp(overrides = {}) {
     for (const file of result.files) {
       if (responseFormat === "url") {
         const saved = await tasks.saveOutput(randomId("img_"), file.buffer, extFromMime(file.mimeType, file.filename, "png"));
-        data.push({ url: saved.url });
+        data.push({ url: absoluteTaskUrl(config, req, saved.url) });
       } else {
         data.push({ b64_json: file.buffer.toString("base64") });
       }
@@ -1773,9 +1782,9 @@ export async function createGatewayApp(overrides = {}) {
       prompt_id: result.promptId,
       seed: result.usedSeed ?? null,
       mode: params.idolMode,
-      model: { url: savedModel.url, bytes: savedModel.bytes, filename: model.filename },
-      video: savedVideo ? { url: savedVideo.url, bytes: savedVideo.bytes, filename: video.filename } : null,
-      preview: savedPreview ? { url: savedPreview.url, bytes: savedPreview.bytes, filename: preview.filename } : null,
+      model: { url: absoluteTaskUrl(config, req, savedModel.url), bytes: savedModel.bytes, filename: model.filename },
+      video: savedVideo ? { url: absoluteTaskUrl(config, req, savedVideo.url), bytes: savedVideo.bytes, filename: video.filename } : null,
+      preview: savedPreview ? { url: absoluteTaskUrl(config, req, savedPreview.url), bytes: savedPreview.bytes, filename: preview.filename } : null,
     });
   });
 
@@ -1832,9 +1841,9 @@ export async function createGatewayApp(overrides = {}) {
       created: Math.floor(Date.now() / 1000),
       prompt_id: result.promptId,
       resolution: params.mogeResolution ?? 6,
-      model: { url: savedModel.url, bytes: savedModel.bytes, filename: model.filename, format: "glb" },
-      preview: savedPreview ? { url: savedPreview.url, bytes: savedPreview.bytes, filename: preview.filename } : null,
-      depth: savedDepth ? { url: savedDepth.url, bytes: savedDepth.bytes, filename: depth.filename } : null,
+      model: { url: absoluteTaskUrl(config, req, savedModel.url), bytes: savedModel.bytes, filename: model.filename, format: "glb" },
+      preview: savedPreview ? { url: absoluteTaskUrl(config, req, savedPreview.url), bytes: savedPreview.bytes, filename: preview.filename } : null,
+      depth: savedDepth ? { url: absoluteTaskUrl(config, req, savedDepth.url), bytes: savedDepth.bytes, filename: depth.filename } : null,
     });
   });
 
@@ -1924,7 +1933,7 @@ export async function createGatewayApp(overrides = {}) {
     for (const file of result.files) {
       if (responseFormat === "url") {
         const saved = await tasks.saveOutput(randomId("img_"), file.buffer, extFromMime(file.mimeType, file.filename, "png"));
-        data.push({ url: saved.url });
+        data.push({ url: absoluteTaskUrl(config, req, saved.url) });
       } else {
         data.push({ b64_json: file.buffer.toString("base64") });
       }
@@ -2302,7 +2311,7 @@ export async function createGatewayApp(overrides = {}) {
   app.get("/v1/videos/:id", (req, res) => {
     const task = tasks.get(req.params.id);
     if (!task) throw new HttpError("视频任务不存在", { status: 404, code: "video_not_found" });
-    const data = tasks.publicTask(task);
+    const data = taskResponse(req, task);
     const preview = task.promptId ? previewHub.get(task.promptId) : null;
     const stepProgress = task.promptId ? previewHub.getProgress(task.promptId) : null;
     res.json({
@@ -2360,13 +2369,13 @@ export async function createGatewayApp(overrides = {}) {
     const task = tasks.get(req.params.id);
     if (!task) throw new HttpError("视频任务不存在", { status: 404, code: "video_not_found" });
     const result = await tasks.cancel(req.params.id, comfy);
-    res.json(result);
+    res.json({ ...result, url: result.url ? absoluteTaskUrl(config, req, result.url) : null });
   });
 
   app.get("/v1/tasks/:id", (req, res) => {
     const task = tasks.get(req.params.id);
     if (!task) throw new HttpError("任务不存在", { status: 404, code: "task_not_found" });
-    res.json(tasks.publicTask(task));
+    res.json(taskResponse(req, task));
   });
 
   app.get("/files/:name", (req, res) => {

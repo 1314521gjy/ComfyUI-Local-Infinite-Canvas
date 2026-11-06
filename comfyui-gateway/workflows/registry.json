@@ -3162,7 +3162,7 @@
       "name": "video-h3-fast",
       "type": "video",
       "label": "H3 极速草稿",
-      "description": "H3 极速草稿：FastH3 4 步采样，4B 文本编码器 + ClipProj 投影；用于快速预览，448/480 速度档。",
+      "description": "H3 极速草稿：FastH3 2 步采样，4B 文本编码器 + ClipProj 投影；用于快速预览，448/480 速度档。",
       "file": "h3-fast-draft.json",
       "bindings": {
         "prompt": {

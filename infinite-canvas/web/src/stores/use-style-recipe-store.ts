@@ -3,35 +3,10 @@ import { persist, type PersistStorage, type StorageValue } from "zustand/middlew
 
 import { nanoid } from "nanoid";
 import { localForageStorage } from "@/lib/localforage-storage";
+import { normalizeStyleRecipe, type StyleRecipe } from "@/lib/canvas/style-recipe";
 
-export type StyleRecipeLora = { name: string; strength: number };
-
-export function normalizeStyleRecipeLoras(value: unknown): StyleRecipeLora[] {
-    if (!Array.isArray(value)) return [];
-    const result: StyleRecipeLora[] = [];
-    for (const item of value) {
-        if (!item || typeof item !== "object") continue;
-        const name = typeof (item as { name?: unknown }).name === "string" ? (item as { name: string }).name.trim() : "";
-        const strength = Number((item as { strength?: unknown }).strength);
-        if (!name || !Number.isFinite(strength)) continue;
-        result.push({ name, strength });
-    }
-    return result;
-}
-
-export type StyleRecipeConfig = {
-    model?: string;
-    modelLabel?: string;
-};
-
-export type StyleRecipe = {
-    id: string;
-    name: string;
-    thumbAssetId: string;
-    createdAt: string;
-    loras: StyleRecipeLora[];
-    config: StyleRecipeConfig;
-};
+export type { StyleRecipe, StyleRecipeConfig, StyleRecipeLora } from "@/lib/canvas/style-recipe";
+export { normalizeStyleRecipeLoras } from "@/lib/canvas/style-recipe";
 
 type StyleRecipeStore = {
     hydrated: boolean;
@@ -50,7 +25,8 @@ const recipeStorage: PersistStorage<StyleRecipeStore> = {
         try {
             const parsed = JSON.parse(value) as StorageValue<StyleRecipeStore>;
             if (!Array.isArray(parsed.state?.recipes)) return null;
-            return parsed;
+            const recipes = parsed.state.recipes.map(normalizeStyleRecipe).filter((recipe): recipe is StyleRecipe => Boolean(recipe));
+            return { ...parsed, state: { ...parsed.state, recipes } };
         } catch {
             return null;
         }

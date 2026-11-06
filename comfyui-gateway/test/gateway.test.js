@@ -157,6 +157,16 @@ test("video task completes and serves mp4 content", async () => {
   }
   assert.equal(task.status, "completed");
   assert.ok(task.url.includes("/files/"));
+  const proxied = await jsonFetch(`${baseUrl}/v1/videos/${created.data.id}`, {
+    headers: { "x-forwarded-proto": "https", "x-forwarded-host": "canvas.example.com" },
+  });
+  assert.match(proxied.data.url, /^https:\/\/canvas\.example\.com\/files\//);
+  const local = await jsonFetch(`${baseUrl}/v1/videos/${created.data.id}`);
+  assert.match(local.data.url, /^http:\/\/127\.0\.0\.1:18199\/files\//);
+  const ranged = await fetch(`${baseUrl}${new URL(local.data.url).pathname}`, { headers: { Range: "bytes=0-1023" } });
+  assert.equal(ranged.status, 206);
+  assert.match(ranged.headers.get("content-range") || "", /^bytes 0-1023\/\d+$/);
+  assert.equal((await ranged.arrayBuffer()).byteLength, 1024);
   const content = await fetch(`${baseUrl}/v1/videos/${created.data.id}/content`);
   assert.equal(content.status, 200);
   assert.match(content.headers.get("content-type") || "", /video\/mp4/);

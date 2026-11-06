@@ -2,8 +2,10 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { App, Input, Modal } from "antd";
 import { useTranslation } from "react-i18next";
 
+import { styleRecipeModelLabel } from "@/lib/canvas/style-recipe";
 import { getImagePreviewRevision, subscribeImagePreviews } from "@/services/image-storage";
 import { assetCoverUrl, useAssetStore } from "@/stores/use-asset-store";
+import { useEffectiveConfig } from "@/stores/use-config-store";
 import { useStyleRecipeStore, type StyleRecipeConfig, type StyleRecipeLora } from "@/stores/use-style-recipe-store";
 
 export type StyleRecipeDraft = {
@@ -16,6 +18,7 @@ export type StyleRecipeDraft = {
 export function CanvasSaveStyleModal({ open, draft, onClose }: { open: boolean; draft: StyleRecipeDraft | null; onClose: () => void }) {
     const { message } = App.useApp();
     const { t } = useTranslation();
+    const config = useEffectiveConfig();
     const [name, setName] = useState("");
     const assetId = draft?.thumbAssetId;
     const asset = useAssetStore((state) => state.assets.find((item) => item.id === assetId));
@@ -54,7 +57,7 @@ export function CanvasSaveStyleModal({ open, draft, onClose }: { open: boolean; 
                             <Input value={name} maxLength={40} placeholder={t("canvas.styleRecipes.namePlaceholder")} onChange={(event) => setName(event.target.value)} />
                         </div>
                         <div className="text-xs opacity-55">
-                            {t("canvas.styleRecipes.summary", { model: draft.config.modelLabel || draft.config.model || "-" })}
+                            {t("canvas.styleRecipes.summary", { model: styleRecipeModelLabel(config, draft.config.model, draft.config.modelLabel) })}
                             {draft.loras.length ? ` · ${t("canvas.styleRecipes.loraSummary", { count: draft.loras.length })}` : ""}
                         </div>
                     </div>
