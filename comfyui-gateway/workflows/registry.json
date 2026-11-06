@@ -1602,63 +1602,51 @@
       "name": "image-qwen21",
       "label": "Qwen Image 2.1",
       "type": "image",
-      "description": "Qwen-Image 2.1 Turbo. Text-to-image, multi-image edit, true-mask inpaint, outpaint; native RGBA via prompt template.",
-      "file": "image-qwen21-edit-turbo.json",
+      "description": "Qwen-Image 2.1 Turbo 整合包（新版）：文生图 / 图像编辑 / 局部重绘 / 图像扩展 / 元素移除；文生图 8 步，其余 9 步。",
+      "file": "image-qwen21v2-edit.json",
       "variantLabels": {
+        "t2i": "文生图",
         "edit": "多图编辑",
         "inpaint": "局部重绘",
         "outpaint": "扩图",
-        "t2i": "文生图"
+        "remove": "元素移除"
       },
       "lora": {
-        "filter": "Qwen21|qwen_image_2.1|Qwen-Image-2.1"
+        "filter": "Qwen21|qwen_image_2.1|Qwen-Image-2.1|Qwen-功能2.1"
       },
       "bindings": {
         "prompt": {
-          "node": "5",
+          "node": "430",
           "input": "prompt"
         },
         "negative": {
-          "node": "5",
+          "node": "430",
           "input": "negative_prompt",
           "default": "artifacts, low quality, blurry, deformed, watermark"
         },
-        "cfg": {
-          "node": "6",
-          "input": "cfg",
-          "from": "params.cfg",
-          "default": 1
-        },
-        "steps": {
-          "node": "9",
-          "input": "sigmas",
-          "from": "params.steps",
-          "transform": "qwenSigmas",
-          "default": 8
-        },
         "seed": {
-          "node": "7",
+          "node": "456",
           "input": "noise_seed",
           "from": "params.seed",
           "transform": "int",
           "random": true
         },
         "resolution": {
-          "node": "5",
+          "node": "430",
           "input": "resolution",
           "from": "params.resolution",
           "transform": "int",
           "default": 1024
         },
         "refs": {
-          "node": "5",
+          "node": "430",
           "input": "images",
           "from": "image",
           "array": true,
           "inputPrefix": "images.image_",
           "indexBase": 1,
           "min": 1,
-          "max": 4
+          "max": 3
         }
       },
       "parameters": [
@@ -1669,26 +1657,7 @@
           "min": 1,
           "max": 2147483647,
           "step": 1,
-          "description": "留空则每次随机"
-        },
-        {
-          "key": "cfg",
-          "label": "CFG",
-          "type": "number",
-          "min": 1,
-          "max": 20,
-          "step": 0.5,
-          "default": 1
-        },
-        {
-          "key": "steps",
-          "label": "步数",
-          "type": "number",
-          "min": 4,
-          "max": 50,
-          "step": 1,
-          "default": 8,
-          "description": "8 步为默认 Turbo 调度；更高步数按官方 8 步 sigma 轨迹插值"
+          "description": "留空每次随机"
         },
         {
           "key": "resolution",
@@ -1697,72 +1666,126 @@
           "min": 512,
           "max": 2048,
           "step": 32,
-          "default": 1024,
-          "description": "参考图缩放到约该边长；输出尺寸跟随第一张参考图"
+          "default": 1024
         }
       ],
       "variants": {
-        "edit": {
-          "file": "image-qwen21-edit-turbo.json",
-          "label": "多图编辑",
-          "description": "1–4 张参考图的指令编辑与融合",
-          "outputSize": {
-            "node": "13",
-            "latentNode": "10",
-            "latentInput": "latent_image",
-            "latentSource": "14"
-          }
-        },
-        "inpaint": {
-          "file": "image-qwen21-inpaint.json",
-          "label": "局部重绘",
-          "description": "原图 + 二值蒙版，latent 蒙版约束，只改框内",
+        "t2i": {
+          "file": "image-qwen21v2-t2i.json",
+          "label": "文生图",
+          "description": "纯文生图，8 步 turbo",
           "bindings": {
             "prompt": {
-              "node": "7",
+              "node": "493",
               "input": "prompt"
             },
             "negative": {
-              "node": "7",
+              "node": "493",
               "input": "negative_prompt",
               "default": "artifacts, low quality, blurry, deformed, watermark"
             },
-            "cfg": {
-              "node": "9",
-              "input": "cfg",
-              "from": "params.cfg",
-              "default": 1
-            },
-            "steps": {
-              "node": "12",
-              "input": "sigmas",
-              "from": "params.steps",
-              "transform": "qwenSigmas",
-              "default": 8
-            },
             "seed": {
-              "node": "10",
+              "node": "484",
               "input": "noise_seed",
               "from": "params.seed",
               "transform": "int",
               "random": true
             },
             "resolution": {
-              "node": "7",
+              "node": "493",
               "input": "resolution",
               "from": "params.resolution",
               "transform": "int",
               "default": 1024
+            }
+          },
+          "outputSize": {
+            "node": "502",
+            "latentNode": "482",
+            "latentInput": "latent_image",
+            "latentSource": "502",
+            "fromSize": true
+          }
+        },
+        "edit": {
+          "file": "image-qwen21v2-edit.json",
+          "label": "图像编辑",
+          "description": "1–3 张参考图，一致性无偏移 LoRA 0.48",
+          "outputSize": {
+            "node": "445",
+            "latentNode": "444",
+            "latentInput": "latent_image",
+            "latentSource": "445"
+          }
+        },
+        "inpaint": {
+          "file": "image-qwen21v2-inpaint.json",
+          "label": "局部重绘",
+          "description": "原图 + 二值蒙版；蒙版裁切放大重画后贴回",
+          "bindings": {
+            "prompt": {
+              "node": "255",
+              "input": "prompt"
+            },
+            "negative": {
+              "node": "255",
+              "input": "negative_prompt",
+              "default": "artifacts, low quality, blurry, deformed, watermark"
+            },
+            "seed": {
+              "node": "364",
+              "input": "noise_seed",
+              "from": "params.seed",
+              "transform": "int",
+              "random": true
             },
             "source": {
-              "node": "1",
+              "node": "9101",
               "input": "image",
               "from": "image",
               "imageIndex": 0,
               "required": true
             },
             "mask": {
-              "node": "2",
+              "node": "9102",
+              "input": "image",
+              "from": "image",
+              "imageIndex": 1,
+              "required": true
+            }
+          }
+        },
+        "remove": {
+          "file": "image-qwen21v2-remove.json",
+          "label": "元素移除",
+          "description": "原图 + 二值蒙版；蒙版区涂绿后整块移除（万物移除 LoRA 1.0）",
+          "bindings": {
+            "prompt": {
+              "node": "118",
+              "input": "prompt",
+              "default": "移除图像中的绿色区域"
+            },
+            "negative": {
+              "node": "118",
+              "input": "negative_prompt",
+              "default": "artifacts, low quality, blurry, deformed, watermark"
+            },
+            "seed": {
+              "node": "267",
+              "input": "noise_seed",
+              "from": "params.seed",
+              "transform": "int",
+              "random": true
+            },
+            "source": {
+              "node": "9101",
+              "input": "image",
+              "from": "image",
+              "imageIndex": 0,
+              "required": true
+            },
+            "mask": {
+              "node": "9102",
               "input": "image",
               "from": "image",
               "imageIndex": 1,
@@ -1771,163 +1794,59 @@
           }
         },
         "outpaint": {
-          "file": "image-qwen21-outpaint.json",
-          "label": "扩图",
-          "description": "原图 + 四边 padding，Qwen outpaint LoRA 补画新区域",
+          "file": "image-qwen21v2-outpaint.json",
+          "label": "图像扩展",
+          "description": "原图外扩；扩图 LoRA 0.7，像素级 padding",
           "bindings": {
             "prompt": {
-              "node": "10",
-              "input": "prompt"
-            },
-            "negative": {
-              "node": "10",
-              "input": "negative_prompt",
-              "default": "artifacts, low quality, blurry, deformed, watermark"
-            },
-            "cfg": {
-              "node": "11",
-              "input": "cfg",
-              "from": "params.cfg",
-              "default": 1
-            },
-            "steps": {
-              "node": "14",
-              "input": "sigmas",
-              "from": "params.steps",
-              "transform": "qwenSigmas",
-              "default": 8
+              "node": "352",
+              "input": "value"
             },
             "seed": {
-              "node": "12",
+              "node": "333",
               "input": "noise_seed",
               "from": "params.seed",
               "transform": "int",
               "random": true
             },
-            "resolution": {
-              "node": "10",
-              "input": "resolution",
-              "from": "params.resolution",
-              "transform": "int",
-              "default": 0
-            },
             "source": {
-              "node": "1",
+              "node": "9101",
               "input": "image",
               "from": "image",
               "imageIndex": 0,
               "required": true
             },
             "left": {
-              "node": "2",
-              "input": "left",
+              "node": "338",
+              "input": "左",
               "from": "params.left",
               "transform": "int",
               "default": 0
             },
             "top": {
-              "node": "2",
-              "input": "top",
+              "node": "338",
+              "input": "上",
               "from": "params.top",
               "transform": "int",
               "default": 0
             },
             "right": {
-              "node": "2",
-              "input": "right",
+              "node": "338",
+              "input": "右",
               "from": "params.right",
               "transform": "int",
               "default": 0
             },
             "bottom": {
-              "node": "2",
-              "input": "bottom",
+              "node": "338",
+              "input": "下",
               "from": "params.bottom",
               "transform": "int",
               "default": 0
-            },
-            "feathering": {
-              "node": "2",
-              "input": "feathering",
-              "from": "params.feathering",
-              "transform": "int",
-              "default": 40
-            },
-            "megapixels": {
-              "node": "4",
-              "input": "megapixels",
-              "from": "params.megapixels",
-              "default": 1.5
-            },
-            "outpaintWidth": {
-              "node": "18",
-              "input": "width",
-              "from": "params.outpaintWidth",
-              "transform": "int",
-              "default": 1024
-            },
-            "outpaintHeight": {
-              "node": "18",
-              "input": "height",
-              "from": "params.outpaintHeight",
-              "transform": "int",
-              "default": 1024
             }
-          }
-        },
-        "t2i": {
-          "file": "image-qwen21-t2i.json",
-          "label": "文生图",
-          "description": "纯文生图，不需要参考图；支持原生透明背景",
-          "bindings": {
-            "prompt": {
-              "node": "5",
-              "input": "prompt"
-            },
-            "negative": {
-              "node": "5",
-              "input": "negative_prompt",
-              "default": "artifacts, low quality, blurry, deformed, watermark"
-            },
-            "cfg": {
-              "node": "6",
-              "input": "cfg",
-              "from": "params.cfg",
-              "default": 1
-            },
-            "steps": {
-              "node": "9",
-              "input": "sigmas",
-              "from": "params.steps",
-              "transform": "qwenSigmas",
-              "default": 8
-            },
-            "seed": {
-              "node": "7",
-              "input": "noise_seed",
-              "from": "params.seed",
-              "transform": "int",
-              "random": true
-            },
-            "resolution": {
-              "node": "5",
-              "input": "resolution",
-              "from": "params.resolution",
-              "transform": "int",
-              "default": 1024
-            }
-          },
-          "outputSize": {
-            "node": "13",
-            "latentNode": "10",
-            "latentInput": "latent_image",
-            "latentSource": "14",
-            "fromSize": true,
-            "skipNativeSquare": true
           }
         }
-      },
-      "backgroundPrompt": "qwen-rgba"
+      }
     },
     {
       "id": "image-moss-sft-8step",
@@ -2302,13 +2221,13 @@
       "name": "image-qwen21-angle",
       "label": "Qwen Image 2.1 多角度",
       "type": "image",
-      "description": "Qwen-Image 2.1 Turbo + Qwen Multiangle Camera. Local angle regeneration with 0-360 horizontal, -30-60 vertical and zoom.",
-      "file": "image-qwen21-angle.json",
+      "description": "Qwen-Image 2.1 新版图像编辑链路 + Qwen Multiangle Camera。本地转视角：水平 0-360、垂直 -30~60、缩放。",
+      "file": "image-qwen21v2-angle.json",
       "hidden": true,
       "bindings": {
         "prompt": {
           "node": "21",
-          "input": "base_prompt",
+          "input": "prompt",
           "default": "保持主体、颜色、材质和画面风格一致，只改变相机视角与构图。"
         },
         "horizontal": {
@@ -2333,27 +2252,27 @@
           "default": 5
         },
         "seed": {
-          "node": "7",
+          "node": "456",
           "input": "noise_seed",
           "from": "params.seed",
           "transform": "int",
           "random": true
         },
         "cfg": {
-          "node": "6",
+          "node": "450",
           "input": "cfg",
           "from": "params.cfg",
           "default": 1
         },
         "resolution": {
-          "node": "5",
+          "node": "430",
           "input": "resolution",
           "from": "params.resolution",
           "transform": "int",
           "default": 1024
         },
         "refs": {
-          "node": "5",
+          "node": "430",
           "input": "images",
           "from": "image",
           "array": true,
@@ -2361,6 +2280,139 @@
           "indexBase": 1,
           "min": 1,
           "max": 1
+        }
+      },
+      "variantLabels": {
+        "scene": "场景人物同转",
+        "character": "只转人物"
+      },
+      "defaultMode": "scene",
+      "variants": {
+        "scene": {
+          "file": "image-qwen21v2-angle.json",
+          "label": "场景人物同转",
+          "description": "新版图像编辑链路：人物和场景一起按新机位重建",
+          "bindings": {
+            "prompt": {
+              "node": "21",
+              "input": "prompt",
+              "default": "保持主体、颜色、材质和画面风格一致，只改变相机视角与构图。"
+            },
+            "horizontal": {
+              "node": "20",
+              "input": "horizontal_angle",
+              "from": "params.horizontalAngle",
+              "transform": "int",
+              "default": 0
+            },
+            "vertical": {
+              "node": "20",
+              "input": "vertical_angle",
+              "from": "params.pitchAngle",
+              "transform": "int",
+              "default": 0
+            },
+            "zoom": {
+              "node": "20",
+              "input": "zoom",
+              "from": "params.cameraDistance",
+              "transform": "invert10",
+              "default": 5
+            },
+            "seed": {
+              "node": "456",
+              "input": "noise_seed",
+              "from": "params.seed",
+              "transform": "int",
+              "random": true
+            },
+            "cfg": {
+              "node": "450",
+              "input": "cfg",
+              "from": "params.cfg",
+              "default": 1
+            },
+            "resolution": {
+              "node": "430",
+              "input": "resolution",
+              "from": "params.resolution",
+              "transform": "int",
+              "default": 1024
+            },
+            "refs": {
+              "node": "430",
+              "input": "images",
+              "from": "image",
+              "array": true,
+              "inputPrefix": "images.image_",
+              "indexBase": 1,
+              "min": 1,
+              "max": 1
+            }
+          }
+        },
+        "character": {
+          "file": "image-qwen21-angle-character.json",
+          "label": "只转人物",
+          "description": "老链路：只换人物机位，尽量保持背景",
+          "bindings": {
+            "prompt": {
+              "node": "21",
+              "input": "prompt",
+              "default": "保持主体、颜色、材质和画面风格一致，只改变相机视角与构图。"
+            },
+            "horizontal": {
+              "node": "20",
+              "input": "horizontal_angle",
+              "from": "params.horizontalAngle",
+              "transform": "int",
+              "default": 0
+            },
+            "vertical": {
+              "node": "20",
+              "input": "vertical_angle",
+              "from": "params.pitchAngle",
+              "transform": "int",
+              "default": 0
+            },
+            "zoom": {
+              "node": "20",
+              "input": "zoom",
+              "from": "params.cameraDistance",
+              "transform": "invert10",
+              "default": 5
+            },
+            "seed": {
+              "node": "7",
+              "input": "noise_seed",
+              "from": "params.seed",
+              "transform": "int",
+              "random": true
+            },
+            "cfg": {
+              "node": "6",
+              "input": "cfg",
+              "from": "params.cfg",
+              "default": 1
+            },
+            "resolution": {
+              "node": "5",
+              "input": "resolution",
+              "from": "params.resolution",
+              "transform": "int",
+              "default": 1024
+            },
+            "refs": {
+              "node": "5",
+              "input": "images",
+              "from": "image",
+              "array": true,
+              "inputPrefix": "images.image_",
+              "indexBase": 1,
+              "min": 1,
+              "max": 1
+            }
+          }
         }
       }
     },

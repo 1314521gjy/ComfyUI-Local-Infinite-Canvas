@@ -1,16 +1,16 @@
 {
-  "version": "v0.24.12",
+  "version": "v0.24.13",
   "publishedAt": "2026-11-06",
-  "notes": "本批更新：H3 极速草稿文案更正为 2 步；风格配方按底模 id 精确匹配，缺模型只提示不替换；内置 Agent 恢复开发者模式（普通=画布+只读，开发者=读写/命令/画布），去掉云 API 兜底，未安装仅文字提示、未启动自动拉起；云端视频文件地址按反代请求推导，修复云端视频黑屏/无法播放。云端镜像不随本批更新。",
+  "notes": "本批更新：Qwen 2.1 图像整合包升级到 v2（文生图/编辑/局部重绘/扩图/元素移除五合一，多角度新增视角范围）；随包内置 Goohai 工具节点，3 个配套 LoRA 改为魔搭自托管下载；去掉 Qwen 采样步数选择器；旧的单功能 Qwen 工作流归档，已有图片卡继续可用。云端镜像不随本批更新。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.24.12.zip",
-    "sha256": "f3b51ae3e32a5ff91d2620fb440dca3cacf8fb45953c9b0edc4a7a72cde995ae",
-    "size": 32217027
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.24.13.zip",
+    "sha256": "58ab24515cfb75bb26731314c6c184228caf8756e8da5d3bbddf0e6ed63b8c36",
+    "size": 93809368
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

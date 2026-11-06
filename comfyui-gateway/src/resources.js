@@ -17,7 +17,7 @@ import { nowIso, truncate, writeJsonAtomic } from "./util.js";
 
 const MODEL_DIRS = new Set(["diffusion_models", "text_encoders", "vae", "vae_approx", "loras", "checkpoints", "upscale_models", "latent_upscale_models", "vdn", "clip_vision", "clip_projections", "background_removal", "geometry_estimation", "LLM", "SEEDVR2"]);
 const VDN_STAGE_RESOURCE_PREFIX = "h3_vdn_stage_";
-const RETIRED_RESOURCE_IDS = new Set(["h3_character_swap_lora", "h3_vdn_node"]);
+const RETIRED_RESOURCE_IDS = new Set(["h3_character_swap_lora", "h3_vdn_node", "qwen21_outpaint_lora"]);
 const H3_PACK_ID = "h3";
 const H3_PUBLIC_WORKFLOW_IDS = ["video-h3-ref2va-novdn", "video-h3-t2v-novdn", "video-h3-frames-novdn"];
 const FOUR_VIEW_PACK_ID = "krea2-four-view";

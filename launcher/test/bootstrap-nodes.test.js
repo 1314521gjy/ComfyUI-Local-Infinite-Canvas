@@ -7,7 +7,7 @@ import test from "node:test";
 
 import { installBundledNodes } from "../bootstrap-nodes.mjs";
 
-async function fixture(version, content) {
+async function fixture(version, content, provides = []) {
     const root = await fsp.mkdtemp(path.join(os.tmpdir(), "bootstrap-nodes-test-"));
     const comfyRoot = path.join(root, "ComfyUI");
     const bundleDir = path.join(root, "comfyui-gateway", "resources", "nodes", "TestNode");
@@ -26,6 +26,7 @@ async function fixture(version, content) {
                 target: "custom_nodes/TestNode",
                 autoInstall: true,
                 bundleDir: "resources/nodes/TestNode",
+                provides,
                 sources: [],
             }],
         }),
@@ -133,6 +134,34 @@ test("user-modified nodes are backed up and never overwritten", async () => {
 
         assert.deepEqual(await installBundledNodes({ root: state.root, comfyRoot: state.comfyRoot, log: () => {} }), []);
         assert.deepEqual(await fsp.readdir(backupRoot), backups, "a preserved directory must not create a new backup every launch");
+    } finally {
+        await fsp.rm(state.root, { recursive: true, force: true });
+    }
+});
+
+test("offline install skips a pack already registered under another folder name", async () => {
+    const state = await fixture("v1", "NODE_CLASS_MAPPINGS = {\"TestNodeClass\": object}\n", ["TestNodeClass"]);
+    const existing = path.join(state.comfyRoot, "custom_nodes", "TestNode-main");
+    await fsp.mkdir(existing, { recursive: true });
+    await fsp.writeFile(path.join(existing, "__init__.py"), "NODE_CLASS_MAPPINGS = {\"TestNodeClass\": object}\n", "utf8");
+    const logs = [];
+    try {
+        assert.deepEqual(await installBundledNodes({ root: state.root, comfyRoot: state.comfyRoot, log: (message) => logs.push(message) }), []);
+        assert.equal(fs.existsSync(state.target), false, "must not duplicate a node supplied by another folder");
+        assert.ok(logs.some((line) => line.includes("已有插件目录注册同类节点")), "must explain the skip");
+    } finally {
+        await fsp.rm(state.root, { recursive: true, force: true });
+    }
+});
+
+test("offline install still copies when no existing pack maps the classes", async () => {
+    const state = await fixture("v1", "NODE_CLASS_MAPPINGS = {\"TestNodeClass\": object}\n", ["TestNodeClass"]);
+    const existing = path.join(state.comfyRoot, "custom_nodes", "OtherNode");
+    await fsp.mkdir(existing, { recursive: true });
+    await fsp.writeFile(path.join(existing, "__init__.py"), "NODE_CLASS_MAPPINGS = {\"OtherClass\": object}\n", "utf8");
+    try {
+        assert.deepEqual(await installBundledNodes({ root: state.root, comfyRoot: state.comfyRoot, log: () => {} }), ["Test node"]);
+        assert.equal(fs.existsSync(state.target), true);
     } finally {
         await fsp.rm(state.root, { recursive: true, force: true });
     }

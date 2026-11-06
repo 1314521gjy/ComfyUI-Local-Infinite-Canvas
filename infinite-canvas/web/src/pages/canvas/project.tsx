@@ -2577,11 +2577,12 @@ function InfiniteCanvasPage() {
     const maskEditImageNode = useCallback(
         async (node: CanvasNodeData, payload: CanvasImageMaskEditPayload, base: CanvasBaseImage) => {
             const isQwenImage = channelModelOf(effectiveConfig, buildGenerationConfig(effectiveConfig, node, "image").model)?.model.workflowId === "image-qwen21";
+            const baseGenerationConfig = buildGenerationConfig(effectiveConfig, node, "image");
             const generationConfig = {
-                ...buildGenerationConfig(effectiveConfig, node, "image"),
+                ...baseGenerationConfig,
                 count: "1",
                 size: node.metadata?.size || "auto",
-                ...(isQwenImage ? { imageMode: "inpaint" } : {}),
+                ...(isQwenImage ? { imageMode: baseGenerationConfig.imageMode === "remove" ? "remove" : "inpaint" } : {}),
             };
             if (payload.generate && !isAiConfigReady(generationConfig, generationConfig.model)) {
                 openConfigDialog(true);

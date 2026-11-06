@@ -1,0 +1,154 @@
+{
+  "479": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "481",
+        0
+      ],
+      "filename_prefix": "QW21-%date:yyyyMMddhhmmss%"
+    }
+  },
+  "481": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "482",
+        0
+      ],
+      "vae": [
+        "496",
+        0
+      ]
+    }
+  },
+  "482": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": [
+        "484",
+        0
+      ],
+      "guider": [
+        "485",
+        0
+      ],
+      "sampler": [
+        "483",
+        0
+      ],
+      "sigmas": [
+        "489",
+        0
+      ],
+      "latent_image": [
+        "502",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Sampler Custom Advanced"
+    }
+  },
+  "483": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "_meta": {
+      "title": "KSampler Select (euler)"
+    }
+  },
+  "484": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": 123456789
+    },
+    "_meta": {
+      "title": "Random Noise"
+    }
+  },
+  "485": {
+    "class_type": "CFGGuider",
+    "inputs": {
+      "model": [
+        "497",
+        0
+      ],
+      "positive": [
+        "493",
+        0
+      ],
+      "negative": [
+        "493",
+        1
+      ],
+      "cfg": 1
+    }
+  },
+  "489": {
+    "class_type": "ManualSigmas",
+    "inputs": {
+      "sigmas": "1.0, 0.978453, 0.95418, 0.926626, 0.89508, 0.845148, 0.704534, 0.414568, 0"
+    },
+    "_meta": {
+      "title": "Sigmas (Qwen2.1-Turbo 8step)"
+    }
+  },
+  "493": {
+    "class_type": "TextEncodeQwenImage21",
+    "inputs": {
+      "clip": [
+        "495",
+        0
+      ],
+      "vae": [
+        "496",
+        0
+      ],
+      "negative_prompt": "",
+      "resolution": 1024,
+      "prompt": ""
+    }
+  },
+  "494": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "Qwen\\qwen_image_2.1_turbo_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "495": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3vl_8b_int8_convrot.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    }
+  },
+  "496": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
+    }
+  },
+  "497": {
+    "class_type": "QwenImage21Cache",
+    "inputs": {
+      "model": [
+        "494",
+        0
+      ],
+      "device": "auto",
+      "dtype": "default"
+    }
+  },
+  "502": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "batch_size": 1,
+      "width": 1024,
+      "height": 1024
+    }
+  }
+}

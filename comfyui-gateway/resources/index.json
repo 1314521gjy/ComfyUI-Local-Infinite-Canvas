@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "version": "2026.11.05-37",
+  "version": "2026.11.06-39",
   "channel": "stable",
-  "updatedAt": "2026-11-05",
+  "updatedAt": "2026-11-06",
   "packs": [
     {
       "id": "core",
@@ -114,12 +114,14 @@
     {
       "id": "qwen21",
       "label": "千问 2.1 全能工作流",
-      "description": "按工作流安装：生图/编辑（文生图、多图编辑、局部重绘、扩图）共用三件套；扩图另含 Outpaint LoRA，局部重绘/扩图节点随包安装；多角度从画布「多角度」进入。",
+      "description": "按工作流安装：文生图共用底模三件套；多图编辑/局部重绘需一致性 LoRA；元素移除需万物移除 LoRA + Goohai 节点；扩图需 GH 扩图 LoRA + Goohai 节点；多角度·场景人物同转需一致性 LoRA，·只转人物只需底模三件套。",
       "resources": [
         "qwen_image_2.1_turbo_int8_convrot",
         "qwen3vl_8b_int8_convrot",
         "qwen_image_2.1_vae_bf16",
-        "qwen21_outpaint_lora"
+        "qwen21_consistency_lora",
+        "qwen21_remove_lora",
+        "qwen21_outpaint_gh_lora"
       ],
       "workflows": [
         "image-qwen21",
@@ -129,7 +131,7 @@
       "tier": "standard",
       "requirements": {
         "vramFloorGb": 8,
-        "weightsGb": 19.2,
+        "weightsGb": 17.8,
         "ramBaseGb": 8,
         "safety": 0.15,
         "recommendVramGb": 12
@@ -139,19 +141,25 @@
           "qwen_image_2.1_turbo_int8_convrot",
           "qwen3vl_8b_int8_convrot",
           "qwen_image_2.1_vae_bf16",
-          "qwen21_outpaint_lora"
+          "qwen21_consistency_lora",
+          "qwen21_remove_lora",
+          "qwen21_outpaint_gh_lora",
+          "goohai_tools"
         ],
         "image-qwen21-angle": [
           "qwen_image_2.1_turbo_int8_convrot",
           "qwen3vl_8b_int8_convrot",
-          "qwen_image_2.1_vae_bf16"
+          "qwen_image_2.1_vae_bf16",
+          "qwen21_consistency_lora"
         ]
       },
       "optionalResources": [
         "qwen_image_2.1_turbo_int8_convrot",
         "qwen3vl_8b_int8_convrot",
         "qwen_image_2.1_vae_bf16",
-        "qwen21_outpaint_lora"
+        "qwen21_consistency_lora",
+        "qwen21_remove_lora",
+        "qwen21_outpaint_gh_lora"
       ]
     },
     {
@@ -567,7 +575,8 @@
         "prompt_te_man",
         "seedvr2_node",
         "qwen_angle_prompt",
-        "krea2_edit_node"
+        "krea2_edit_node",
+        "goohai_tools"
       ],
       "optionalResources": [
         "qwenmultiangle",
@@ -586,7 +595,8 @@
         "prompt_te_man",
         "seedvr2_node",
         "qwen_angle_prompt",
-        "krea2_edit_node"
+        "krea2_edit_node",
+        "goohai_tools"
       ],
       "workflows": [],
       "family": "plugins",
@@ -814,6 +824,7 @@
       "size": 159436576,
       "sha256": "3611a5ccae5f790405eeacf1dfb2c89285c1e4f2987b9abc88cd0161a60eca28",
       "license": "Qwen research license",
+      "downloadable": false,
       "note": "扩图变体使用；公开源 ausboss / bozoyan，权重与本机一致。",
       "sources": [
         "https://www.modelscope.cn/models/ausboss/Qwen-Image-2.1-Outpaint-LoRA/resolve/master/qwen-image-2.1-outpaint-v2.safetensors",
@@ -2140,6 +2151,76 @@
       "sources": [
         "https://www.modelscope.cn/models/Comfy-Org/MoGe/resolve/master/geometry_estimation/moge_2_vitl_normal_fp16.safetensors",
         "https://hf-mirror.com/Comfy-Org/MoGe/resolve/main/geometry_estimation/moge_2_vitl_normal_fp16.safetensors"
+      ]
+    },
+    {
+      "id": "qwen21_consistency_lora",
+      "type": "model",
+      "label": "Qwen 2.1 一致性无偏移 LoRA",
+      "target": "loras/Qwen-功能2.1/Qwen2.1 一致性无偏移_GH_V1.0.safetensors",
+      "size": 159436400,
+      "sha256": "cb7835fe76a0c5daee5c1bffbb178af7281f7afeacab8e58a73f461aacc5a78c",
+      "license": "社区开源",
+      "note": "编辑/局部重绘使用，强度 0.48（作者 GooHAI）",
+      "sources": [
+        "https://www.modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/comfyui-gateway/resources/loras/qwen21-consistency-gh-v1.safetensors"
+      ]
+    },
+    {
+      "id": "qwen21_remove_lora",
+      "type": "model",
+      "label": "Qwen 2.1 万物移除 LoRA",
+      "target": "loras/Qwen-功能2.1/Qwen2.1_万物移除Remove_GH.safetensors",
+      "size": 159436392,
+      "sha256": "232291942500dd1f2277918797af2185f6d90f46e9fc5cb43041e7fa8f763c6f",
+      "license": "社区开源",
+      "note": "元素移除使用，强度 1.0（作者 GooHAI）",
+      "sources": [
+        "https://www.modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/comfyui-gateway/resources/loras/qwen21-remove-gh.safetensors"
+      ]
+    },
+    {
+      "id": "qwen21_outpaint_gh_lora",
+      "type": "model",
+      "label": "Qwen 2.1 扩图 GH LoRA",
+      "target": "loras/Qwen-功能2.1/Qwen2.1_扩图_GH_3750.safetensors",
+      "size": 159436392,
+      "sha256": "7eeef3266793bc0265311cec472b86483879fef83f3a8b481c4525d539bfd0c6",
+      "license": "社区开源",
+      "note": "扩图使用，强度 0.7（作者 GooHAI）",
+      "sources": [
+        "https://www.modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/comfyui-gateway/resources/loras/qwen21-outpaint-gh-3750.safetensors"
+      ]
+    },
+    {
+      "id": "goohai_tools",
+      "type": "node",
+      "label": "Goohai 工具节点（Qwen 2.1 v2）",
+      "target": "custom_nodes/Goohaitools-comfyui",
+      "autoInstall": true,
+      "bundleDir": "resources/nodes/unpacked/Goohaitools-comfyui",
+      "size": 92008047,
+      "license": "GPL-3.0",
+      "note": "随包安装；Qwen 2.1 新版局部重绘/元素移除/扩图所需；安装后需重启 ComfyUI。",
+      "provides": [
+        "GH_CropRestore",
+        "GH_MaskCropV2",
+        "GoohaiUniversalSlider",
+        "GulfSeaImageMergeMask",
+        "TextEncodeQwenImage21GH",
+        "图像缩放V2_孤海",
+        "图像缩放范围孤海",
+        "孤海外补画板可视化",
+        "孤海遮罩分析",
+        "数学运算_孤海",
+        "长边短边"
+      ],
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/unpacked/Goohaitools-comfyui",
+          "label": "随包"
+        }
       ]
     }
   ]

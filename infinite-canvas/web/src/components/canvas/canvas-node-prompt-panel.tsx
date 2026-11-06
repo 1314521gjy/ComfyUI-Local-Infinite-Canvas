@@ -228,7 +228,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
             const baseAvailable = imageReferences.length > 0 || Boolean(node.metadata?.content);
             // 遮罩导出节点本身没有底图，但存了「底图 + 遮罩」两条参考；直接按原参考重跑。
             const storedMask = !node.metadata?.content && (node.metadata?.references?.length || 0) >= 2;
-            if (config.imageMode === "inpaint") {
+            if (config.imageMode === "inpaint" || config.imageMode === "remove") {
                 if (!baseAvailable) {
                     message.warning(t("canvas.promptPanel.imageBaseRequired"));
                     return;

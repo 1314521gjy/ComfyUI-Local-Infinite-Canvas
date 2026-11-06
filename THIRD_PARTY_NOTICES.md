@@ -28,6 +28,13 @@
 - **ComfyUI-SeedVR2_VideoUpscaler** — Apache-2.0；上游 https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler ；随工作台提供预解压目录，未改动源码。
 - **comfystreamerh3** — MIT，Copyright (c) 2026 Comfy Org；上游 https://github.com/Comfy-Org/comfystreamerh3 ；随工作台提供预解压目录，未改动源码。
 - **ComfyUI-ClipProj** — MIT，Copyright (c) 2026 nicolab28；上游 https://github.com/nicolab28/ComfyUI-ClipProj ；随工作台提供预解压目录，未改动源码。
+- **Goohaitools-comfyui** — GPL-3.0；上游 https://github.com/goohai/Goohaitools-comfyui ；随工作台提供预解压目录，未改动源码。
+
+## 自托管的 Qwen 2.1 LoRA（资源卡下载）
+
+以下 LoRA 由本项目镜像到 ModelScope 数据集 `shensanshu/ComfyUI-Local-Infinite-Canvas` 供资源卡下载，不进入主程序包：
+
+- **Qwen 2.1 一致性无偏移 / 万物移除 / GH 扩图** — 社区开源，作者 GooHAI，上游 https://huggingface.co/GooHAI/Qwen-image-2.1_loras ；未改动权重。
 
 ## 按需下载的第三方运行库
 

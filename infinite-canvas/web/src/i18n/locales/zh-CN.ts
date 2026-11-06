@@ -371,6 +371,7 @@ export default {
         reverseComposer: "参考图片：@[node:{{imageId}}]\n任务说明：@[node:{{textId}}]",
         editors: {
             reset: "重置", zoomOut: "缩小", zoomIn: "放大", loading: "读取中", unknown: "未知", cancel: "取消",
+            scope: "视角范围", scopeScene: "场景人物同转", scopeCharacter: "只转人物",
             angleTitle: "AI 多角度", angleDescription: "左侧预览机位方向；结果由本地 Qwen Image 2.1 多角度工作流重新生成", orbitHint: "拖拽旋转机位 · 滚轮调距离", horizontal: "水平角度", pitch: "俯仰角度", distance: "镜头距离", lens: "广角镜头", standard: "标准", wide: "广角", aiGenerate: "AI 生成",
             upscaleTitle: "图片放大", source: "源图", targetPixels: "目标像素", maxReached: "图片已达到 4K，无需放大", targetReached: "图片已达到当前目标像素，无需放大", algorithm: "放大算法", outputSize: "输出尺寸", upscale: "生成放大图", high: "高清插值", highDescription: "适合照片和细节图", bilinear: "双线性", bilinearDescription: "平滑、速度快", nearest: "最近邻", nearestDescription: "适合像素风格",
             cropTitle: "裁剪图片", adjustCrop: "调整裁剪框", cropHint: "滚轮缩放 · 中键或空格+左键拖动画面", cropSize: "裁剪尺寸 {{size}}", ratio: "比例 {{ratio}}", original: "原图 {{width}} x {{height}}", confirmCrop: "确认裁剪", free: "自由", fixed: "固定", originalMode: "原图",

@@ -119,7 +119,7 @@ async function findNodeRoot(directory, depth = 0) {
 }
 
 async function comfyHasClasses(comfyUrl, classes) {
-    if (!comfyUrl || !classes.length) return false;
+    if (!comfyUrl || !classes.length) return null;
     for (const name of classes) {
         try {
             const res = await fetch(`${String(comfyUrl).replace(/\/+$/, "")}/object_info/${encodeURIComponent(name)}`, { signal: AbortSignal.timeout(5000) });
@@ -127,10 +127,52 @@ async function comfyHasClasses(comfyUrl, classes) {
             const data = await res.json();
             if (!data || !data[name]) return false;
         } catch {
-            return false;
+            return null;
         }
     }
     return true;
+}
+
+const CLASS_SCAN_SKIP = /(^|\/)(?:\.git|__pycache__|node_modules|venv|\.venv|site-packages)(\/|$)/i;
+const CLASS_SCAN_MAX_FILES = 4000;
+const CLASS_SCAN_MAX_BYTES = 48 * 1024 * 1024;
+
+// ComfyUI 未启动时拿不到 /object_info，只能扫已有插件目录里的 NODE_CLASS_MAPPINGS。
+// 仅在目标目录不存在时用来避免同名插件换目录后再装一份。
+async function scanMappedClasses(nodeRoots) {
+    const names = new Set();
+    let files = 0;
+    let bytes = 0;
+    const walk = async (dir, base) => {
+        if (files >= CLASS_SCAN_MAX_FILES || bytes >= CLASS_SCAN_MAX_BYTES) return;
+        let entries = [];
+        try {
+            entries = await fsp.readdir(dir, { withFileTypes: true });
+        } catch {
+            return;
+        }
+        for (const entry of entries) {
+            if (files >= CLASS_SCAN_MAX_FILES || bytes >= CLASS_SCAN_MAX_BYTES) return;
+            const full = path.join(dir, entry.name);
+            const rel = path.relative(base, full).replace(/\\/g, "/");
+            if (CLASS_SCAN_SKIP.test(`/${rel}`)) continue;
+            if (!rel.includes("/") && (entry.name.startsWith(".") || /\.disabled$/i.test(entry.name))) continue;
+            if (entry.isDirectory()) {
+                await walk(full, base);
+                continue;
+            }
+            if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".py")) continue;
+            const stat = await fsp.stat(full).catch(() => null);
+            if (!stat || stat.size > 1024 * 1024) continue;
+            const text = await fsp.readFile(full, "utf8").catch(() => "");
+            files += 1;
+            bytes += stat.size;
+            if (!text.includes("NODE_CLASS_MAPPINGS")) continue;
+            for (const match of text.matchAll(/["']([^"'\r\n]{1,120})["']\s*:/g)) names.add(match[1]);
+        }
+    };
+    for (const root of nodeRoots) await walk(root, root);
+    return names;
 }
 
 export async function installBundledNodes({ root, comfyRoot, comfyUrl = "", customNodesDirs = [], log = console.log } = {}) {
@@ -165,6 +207,7 @@ export async function installBundledNodes({ root, comfyRoot, comfyUrl = "", cust
         return [];
     }
     const installed = [];
+    let mappedClasses = null;
     for (const resource of index.resources || []) {
         if (resource.type !== "node" || resource.autoInstall !== true) continue;
         const parts = String(resource.target || "").replace(/\\/g, "/").split("/").filter(Boolean);
@@ -192,9 +235,20 @@ export async function installBundledNodes({ root, comfyRoot, comfyUrl = "", cust
         const backupDirName = insideCustomRoot ? ".canvas-install-backups.disabled" : ".canvas-install-backups";
         // 用户可能已经装了同一个插件的另一个目录名；目标不存在时才按类跳过。
         const provides = Array.isArray(resource.provides) ? resource.provides.filter(Boolean) : [];
-        if (!fs.existsSync(target) && provides.length && (await comfyHasClasses(comfyUrl, provides))) {
-            log(`[bootstrap] 已由其他目录提供同类节点，跳过：${resource.label || resource.id}`);
-            continue;
+        if (!fs.existsSync(target) && provides.length) {
+            const live = await comfyHasClasses(comfyUrl, provides);
+            if (live === true) {
+                log(`[bootstrap] 已由其他目录提供同类节点，跳过：${resource.label || resource.id}`);
+                continue;
+            }
+            if (live === null) {
+                if (!mappedClasses) mappedClasses = scanMappedClasses(nodeRoots).catch(() => new Set());
+                const known = await mappedClasses;
+                if (provides.every((name) => known.has(name))) {
+                    log(`[bootstrap] 已有插件目录注册同类节点，跳过：${resource.label || resource.id}`);
+                    continue;
+                }
+            }
         }
 
         const bundleDir = resource.bundleDir

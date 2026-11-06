@@ -10,6 +10,7 @@ export type CanvasImageAngleParams = {
     pitchAngle: number;
     cameraDistance: number;
     wideAngle: boolean;
+    angleScope: "scene" | "character";
 };
 
 const defaultParams: CanvasImageAngleParams = {
@@ -17,6 +18,7 @@ const defaultParams: CanvasImageAngleParams = {
     pitchAngle: 9,
     cameraDistance: 4.8,
     wideAngle: false,
+    angleScope: "scene",
 };
 
 export function CanvasNodeAngleDialog({ dataUrl, open, onClose, onConfirm }: { dataUrl: string; open: boolean; onClose: () => void; onConfirm: (params: CanvasImageAngleParams) => void }) {
@@ -47,6 +49,18 @@ export function CanvasNodeAngleDialog({ dataUrl, open, onClose, onConfirm }: { d
                         </div>
                     </div>
                     <div className="space-y-6 py-2">
+                        <div className="grid grid-cols-[88px_1fr] items-center gap-4">
+                            <span className="font-medium opacity-75">{t("canvas.editors.scope")}</span>
+                            <Segmented
+                                className="w-fit"
+                                value={params.angleScope}
+                                options={[
+                                    { label: t("canvas.editors.scopeScene"), value: "scene" },
+                                    { label: t("canvas.editors.scopeCharacter"), value: "character" },
+                                ]}
+                                onChange={(value) => update("angleScope", value as "scene" | "character")}
+                            />
+                        </div>
                         <AngleSlider label={t("canvas.editors.horizontal")} value={params.horizontalAngle} min={0} max={360} step={1} suffix="deg" onChange={(value) => update("horizontalAngle", value)} />
                         <AngleSlider label={t("canvas.editors.pitch")} value={params.pitchAngle} min={-30} max={60} step={1} suffix="deg" onChange={(value) => update("pitchAngle", value)} />
                         <AngleSlider label={t("canvas.editors.distance")} value={params.cameraDistance} min={1} max={10} step={0.1} onChange={(value) => update("cameraDistance", value)} />

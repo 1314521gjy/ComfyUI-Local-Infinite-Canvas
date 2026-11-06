@@ -38,6 +38,7 @@ export function CameraOrbitPreview({ dataUrl, params, onChange }: CameraOrbitPre
                     pitchAngle: Math.round(state.elevation),
                     cameraDistance: clampDistance(Math.round((10 - state.distance) * 10) / 10),
                     wideAngle: current.wideAngle,
+                    angleScope: current.angleScope,
                 };
                 if (
                     Math.abs(next.horizontalAngle - current.horizontalAngle) < 0.01 &&

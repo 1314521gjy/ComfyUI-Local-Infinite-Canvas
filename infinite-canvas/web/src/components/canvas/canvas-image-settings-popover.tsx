@@ -25,12 +25,13 @@ type CanvasImageSettingsPopoverProps = {
     autoAdjustOverflow?: boolean;
 };
 
-const qwenModeLabels: Record<string, string> = { t2i: "文生图", edit: "多图编辑", inpaint: "局部重绘", outpaint: "扩图" };
+const qwenModeLabels: Record<string, string> = { t2i: "文生图", edit: "多图编辑", inpaint: "局部重绘", outpaint: "扩图", remove: "元素移除" };
 const qwenModeHints: Record<string, string> = {
     t2i: "纯文生图：不需要参考图，按提示词生成完整画面",
-    edit: "接 1–4 张参考图，按提示词编辑或融合；可跟随首图或手动选画布比例",
+    edit: "接 1–3 张参考图，按提示词编辑或融合；可跟随首图或手动选画布比例",
     inpaint: "选择后自动打开蒙版，只修改蒙版覆盖区域",
     outpaint: "打开扩图画布，拖图 / 滚轮调整扩图范围",
+    remove: "选择后自动打开蒙版；蒙版覆盖的物体整块移除",
 };
 const editRatioOptions = ["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3"] as const;
 
@@ -140,7 +141,6 @@ function ImageSettingsPortal({
     const qwenMode = String(config.imageMode || "t2i");
     const refResolution = String((config.params as Record<string, unknown> | undefined)?.resolution ?? 1024);
     const editCanvasRatio = String((config.params as Record<string, unknown> | undefined)?.editCanvasRatio || "auto");
-    const qwenSteps = Math.max(4, Math.min(50, Math.round(Number((config.params as Record<string, unknown> | undefined)?.steps) || 8)));
     const width = 356;
     const gap = 8;
     const margin = 12;
@@ -177,15 +177,15 @@ function ImageSettingsPortal({
                     <div className="space-y-2.5">
                         <SettingTitle color={theme.node.muted}>功能</SettingTitle>
                         <div className="grid grid-cols-2 gap-2.5">
-                            {["t2i", "edit", "inpaint", "outpaint"].filter((mode) => qwen.modes.includes(mode)).map((mode) => (
+                            {["t2i", "edit", "inpaint", "outpaint", "remove"].filter((mode) => qwen.modes.includes(mode)).map((mode) => (
                                 <OptionPill
                                     key={mode}
                                     selected={qwenMode === mode}
                                     theme={theme}
                                     onClick={() => {
                                         onConfigChange("imageMode", mode);
-                                        if (mode === "inpaint" || mode === "outpaint") onClose();
-                                        if (mode === "inpaint") onOpenMaskEditor?.();
+                                        if (mode === "inpaint" || mode === "outpaint" || mode === "remove") onClose();
+                                        if (mode === "inpaint" || mode === "remove") onOpenMaskEditor?.();
                                         if (mode === "outpaint") onOpenOutpaintEditor?.();
                                     }}
                                 >
@@ -195,19 +195,6 @@ function ImageSettingsPortal({
                         </div>
                         <div className="text-xs leading-4" style={{ color: theme.node.muted }}>
                             {qwenModeHints[qwenMode] || qwenModeHints.t2i}
-                        </div>
-                        <div className="space-y-2 rounded-xl border p-3" style={{ borderColor: theme.node.stroke }}>
-                            <SettingTitle color={theme.node.muted}>采样步数</SettingTitle>
-                            <div className="grid grid-cols-4 gap-2">
-                                {[8, 16, 25, 32].map((step) => (
-                                    <OptionPill key={step} selected={qwenSteps === step} theme={theme} onClick={() => onParamsChange?.({ steps: step })}>
-                                        {step} 步
-                                    </OptionPill>
-                                ))}
-                            </div>
-                            <div className="text-xs leading-4" style={{ color: theme.node.muted }}>
-                                8 步为默认 Turbo 调度；更高步数按官方 8 步 sigma 轨迹插值，耗时和显存会随步数增加。
-                            </div>
                         </div>
                         {qwenMode === "t2i" ? (
                             <ImageSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" maxCount={10} />

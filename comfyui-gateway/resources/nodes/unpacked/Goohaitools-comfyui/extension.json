@@ -1,0 +1,41 @@
+{
+  "title": "Goohaitools-comfyui",
+  "description": "孤海ComfyUI自定义节点合集，批处理实用工具箱。",
+  "author": "goohai",
+  "tags": ["孤海", "tool", "utility", "image-processing", "face-detection"],
+  "install_mode": "copy",
+  "files": [
+    {
+      "src": "nodes/*.py",
+      "dst": "custom_nodes/Goohaitools-comfyui/nodes/"
+    },
+    {
+      "src": "fonts/",
+      "dst": "custom_nodes/Goohaitools-comfyui/fonts/"
+    },
+    {
+      "src": "web/",
+      "dst": "custom_nodes/Goohaitools-comfyui/web/"
+    },
+    {
+      "src": "requirements.txt",
+      "dst": "custom_nodes/Goohaitools-comfyui/"
+    },
+    {
+      "src": "shape_predictor_5_face_landmarks.dat",
+      "dst": "custom_nodes/Goohaitools-comfyui/"
+    },
+    {
+      "src": "__init__.py",
+      "dst": "custom_nodes/Goohaitools-comfyui/"
+    },
+    {
+      "src": "extension.json",
+      "dst": "custom_nodes/Goohaitools-comfyui/"
+    },
+    {
+      "src": ".gitignore",
+      "dst": "custom_nodes/Goohaitools-comfyui/"
+    }
+  ]
+}

@@ -108,7 +108,7 @@ export type CanvasNodeMetadata = {
     videoInterpolation?: string;
     videoSelfLiftMode?: string;
     frameMode?: "first" | "last" | "both";
-    imageMode?: "t2i" | "edit" | "inpaint" | "outpaint" | "layout";
+    imageMode?: "t2i" | "edit" | "inpaint" | "outpaint" | "layout" | "remove";
     captionEngine?: "qwen35" | "florence" | "cloud";
     captionStatus?: "running" | "done" | "error";
     captionPrompt?: string;

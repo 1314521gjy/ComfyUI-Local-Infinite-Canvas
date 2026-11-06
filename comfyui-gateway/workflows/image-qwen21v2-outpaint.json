@@ -1,0 +1,349 @@
+{
+  "331": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "336",
+        0
+      ],
+      "filename_prefix": "ComfyUI"
+    }
+  },
+  "333": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": 123456789
+    }
+  },
+  "334": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": [
+        "333",
+        0
+      ],
+      "guider": [
+        "335",
+        0
+      ],
+      "sampler": [
+        "344",
+        0
+      ],
+      "sigmas": [
+        "345",
+        0
+      ],
+      "latent_image": [
+        "341",
+        2
+      ]
+    }
+  },
+  "335": {
+    "class_type": "BasicGuider",
+    "inputs": {
+      "model": [
+        "346",
+        0
+      ],
+      "conditioning": [
+        "341",
+        0
+      ]
+    }
+  },
+  "336": {
+    "class_type": "GH_CropRestore",
+    "inputs": {
+      "接缝": [
+        "348",
+        0
+      ],
+      "裁剪图像": [
+        "347",
+        0
+      ],
+      "遮罩扩展百分比": 3,
+      "遮罩羽化百分比": 3,
+      "颜色还原强度": 1
+    }
+  },
+  "337": {
+    "class_type": "GoohaiUniversalSlider",
+    "inputs": {
+      "值": 2048
+    },
+    "_meta": {
+      "title": "最大采样尺寸（长边）"
+    }
+  },
+  "338": {
+    "class_type": "孤海外补画板可视化",
+    "inputs": {
+      "单位": "像素",
+      "左": 0,
+      "右": 0,
+      "上": 0,
+      "下": 0,
+      "最大输出长边": 5120,
+      "整除数": 0,
+      "gh_visual_ratio": "自由比例",
+      "gh_visual_layout": "",
+      "图像": [
+        "9101",
+        0
+      ],
+      "外补颜色": "#808080"
+    }
+  },
+  "340": {
+    "class_type": "图像缩放V2_孤海",
+    "inputs": {
+      "图像": [
+        "348",
+        1
+      ],
+      "将边缩放到": [
+        "349",
+        0
+      ],
+      "宽度": 512,
+      "高度": 512,
+      "缩放方法": "按长边等比例",
+      "缩放插值": "Lanczos",
+      "缩放模式": "拉伸",
+      "固定方向": "居中",
+      "执行条件": "总是",
+      "整除数": 32,
+      "填充颜色": "#364254"
+    }
+  },
+  "341": {
+    "class_type": "TextEncodeQwenImage21GH",
+    "inputs": {
+      "clip": [
+        "342",
+        0
+      ],
+      "vae": [
+        "343",
+        0
+      ],
+      "image_01": [
+        "340",
+        0
+      ],
+      "prompt": [
+        "351",
+        0
+      ],
+      "latent_width": [
+        "340",
+        1
+      ],
+      "latent_height": [
+        "340",
+        2
+      ],
+      "negative_prompt": "",
+      "mode": "填充",
+      "ref_image_size": "自动"
+    }
+  },
+  "342": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3vl_8b_int8_convrot.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    }
+  },
+  "343": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
+    }
+  },
+  "344": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler"
+    }
+  },
+  "345": {
+    "class_type": "ManualSigmas",
+    "inputs": {
+      "sigmas": "1.0, 0.978453, 0.954180, 0.926626, 0.895080, 0.845148, 0.704534, 0.414568, 0.150000, 0"
+    }
+  },
+  "346": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "model": [
+        "354",
+        0
+      ],
+      "lora_name": "Qwen-功能2.1\\Qwen2.1_扩图_GH_3750.safetensors",
+      "strength_model": 0.7
+    }
+  },
+  "347": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "334",
+        0
+      ],
+      "vae": [
+        "343",
+        0
+      ]
+    }
+  },
+  "348": {
+    "class_type": "GH_MaskCropV2",
+    "inputs": {
+      "图像": [
+        "338",
+        0
+      ],
+      "遮罩": [
+        "338",
+        1
+      ],
+      "扩展系数上": [
+        "355",
+        1
+      ],
+      "扩展系数下": [
+        "355",
+        1
+      ],
+      "扩展系数左": [
+        "355",
+        3
+      ],
+      "扩展系数右": [
+        "355",
+        3
+      ],
+      "遮罩填充": false,
+      "输出尺寸": "原像素",
+      "自定义宽": 1024,
+      "自定义高": 1024,
+      "倍数取整": 0
+    }
+  },
+  "349": {
+    "class_type": "数学运算_孤海",
+    "inputs": {
+      "a": [
+        "337",
+        0
+      ],
+      "b": [
+        "350",
+        0
+      ],
+      "值1": "min(max(1024,b),a)",
+      "值2": ""
+    }
+  },
+  "350": {
+    "class_type": "长边短边",
+    "inputs": {
+      "图像": [
+        "348",
+        1
+      ]
+    }
+  },
+  "351": {
+    "class_type": "StringConcatenate",
+    "inputs": {
+      "string_a": [
+        "353",
+        0
+      ],
+      "string_b": [
+        "352",
+        0
+      ],
+      "delimiter": ""
+    },
+    "_meta": {
+      "title": "文本联结"
+    }
+  },
+  "352": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": "一个年轻女性半身肖像，穿着黑色连衣裙，双手拿着一束玫瑰在胸前"
+    },
+    "_meta": {
+      "title": "补充提示词（可不填，为默认扩展）"
+    }
+  },
+  "353": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": "移除图像中的灰色区域，无缝自然延展为完整图像。"
+    },
+    "_meta": {
+      "title": "固定提示词"
+    }
+  },
+  "354": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "Qwen\\qwen_image_2.1_turbo_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "355": {
+    "class_type": "数学运算_孤海",
+    "inputs": {
+      "a": [
+        "356",
+        1
+      ],
+      "b": [
+        "356",
+        2
+      ],
+      "c": [
+        "356",
+        3
+      ],
+      "d": [
+        "356",
+        4
+      ],
+      "值1": "1.0 if b==d else (2/3*(b-d))/min(c,d)+1.0",
+      "值2": "1.0 if a==c else (2/3*(a-c))/min(c,d)+1.0"
+    }
+  },
+  "356": {
+    "class_type": "孤海遮罩分析",
+    "inputs": {
+      "遮罩": [
+        "338",
+        1
+      ],
+      "上扩百分比": 0,
+      "下扩百分比": 0,
+      "左扩百分比": 0,
+      "右扩百分比": 0
+    }
+  },
+  "9101": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": ""
+    },
+    "_meta": {
+      "title": "Gateway Source"
+    }
+  }
+}

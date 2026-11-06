@@ -911,7 +911,7 @@ test("krea2 and four-view packs keep the base workflow and standalone resource e
     ]);
     assert.equal(index.resources.some((item) => item.id === "krea2_darkbrush_lora"), false);
     assert.equal(index.resources.some((item) => item.id === "krea2_retroanime_lora"), false);
-    assert.equal(index.resources.length, 83);
+    assert.equal(index.resources.length, 87);
 });
 
 test("moss pack no longer ships Balanced workflows or the local bake resource", () => {
@@ -1335,19 +1335,24 @@ test("qwen21 all-in-one pack declares both workflows and their full dependencies
         "qwen_image_2.1_turbo_int8_convrot",
         "qwen3vl_8b_int8_convrot",
         "qwen_image_2.1_vae_bf16",
-        "qwen21_outpaint_lora",
+        "qwen21_consistency_lora",
+        "qwen21_remove_lora",
+        "qwen21_outpaint_gh_lora",
+        "goohai_tools",
     ]);
     assert.deepEqual(pack.workflowDependencies["image-qwen21-angle"], [
         "qwen_image_2.1_turbo_int8_convrot",
         "qwen3vl_8b_int8_convrot",
         "qwen_image_2.1_vae_bf16",
+        "qwen21_consistency_lora",
     ]);
     const byId = new Map(index.resources.map((item) => [item.id, item]));
-    const lora = byId.get("qwen21_outpaint_lora");
-    assert.equal(lora.size, 159436576);
-    assert.equal(lora.sha256, "3611a5ccae5f790405eeacf1dfb2c89285c1e4f2987b9abc88cd0161a60eca28");
-    assert.equal(lora.sources.length, 3);
-    assert.ok(lora.sources[1].includes("aifasthub.com"));
+    const lora = byId.get("qwen21_outpaint_gh_lora");
+    assert.equal(lora.size, 159436392);
+    assert.equal(lora.sha256, "7eeef3266793bc0265311cec472b86483879fef83f3a8b481c4525d539bfd0c6");
+    assert.equal(lora.sources.length, 1);
+    assert.ok(lora.sources[0].includes("modelscope.cn"));
+    assert.equal(byId.get("goohai_tools").provides.includes("GH_MaskCropV2"), true);
     assert.ok(byId.get("inpaint_cropandstitch").provides.includes("InpaintCropImproved"));
     assert.ok(byId.get("kjnodes").provides.includes("DrawMaskOnImage"));
 });
@@ -1535,7 +1540,7 @@ test("trt compile failure hint is copy-ready for the user's agent", () => {
     assert.ok(spaced.includes('"D:/My ComfyUI/custom_nodes/ComfyUI-H3VAE_TRT/compile.py"'));
 });
 
-test("packs declare weights and only sha-pinned third-party nodes", () => {
+test("packs declare weights and only bundled or sha-pinned third-party nodes", () => {
     const index = JSON.parse(fs.readFileSync(new URL("../resources/index.json", import.meta.url), "utf8"));
     const byId = new Map(index.resources.map((item) => [item.id, item]));
     for (const pack of index.packs) {
@@ -1557,9 +1562,15 @@ test("packs declare weights and only sha-pinned third-party nodes", () => {
             for (const id of ids) {
                 const resource = byId.get(id);
                 if (resource?.type === "node") {
-                    assert.match(String(resource.sha256 || ""), /^[0-9a-f]{64}$/, `${workflowId} node ${id} must pin sha256`);
                     assert.ok(Array.isArray(resource.sources) && resource.sources.length, `${workflowId} node ${id} needs sources`);
-                    assert.equal(resource.autoInstall === true, false, `${id} must be user-installed`);
+                    if (resource.autoInstall === true) {
+                        // 随包节点由启动器从 bundleDir 复制，不走远端下载，因此不钉 sha256。
+                        assert.match(String(resource.bundleDir || ""), /^resources\/nodes\//, `${id} bundled node needs bundleDir`);
+                        assert.match(String(resource.target || ""), /^custom_nodes\//, `${id} bundled node needs custom_nodes target`);
+                        assert.ok(resource.sources.every((source) => source?.kind === "bundled"), `${id} bundled node must not list remote sources`);
+                    } else {
+                        assert.match(String(resource.sha256 || ""), /^[0-9a-f]{64}$/, `${workflowId} node ${id} must pin sha256`);
+                    }
                     continue;
                 }
                 assert.notEqual(resource?.type, "node", `${workflowId} depends on node ${id}`);

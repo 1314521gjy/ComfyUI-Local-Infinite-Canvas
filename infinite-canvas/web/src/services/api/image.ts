@@ -930,6 +930,7 @@ export type ImageAngleParams = {
     pitchAngle: number;
     cameraDistance: number;
     wideAngle: boolean;
+    angleScope?: "scene" | "character";
 };
 
 export async function requestImageAngle(
@@ -944,6 +945,7 @@ export async function requestImageAngle(
     const formData = new FormData();
     formData.set("model", "image-qwen21-angle");
     formData.set("prompt", prompt);
+    formData.set("mode", params.angleScope === "character" ? "character" : "scene");
     formData.set("n", "1");
     formData.set("response_format", "b64_json");
     formData.set("output_format", IMAGE_OUTPUT_FORMAT);

@@ -1,0 +1,187 @@
+{
+  "20": {
+    "class_type": "QwenMultiangleCameraNode",
+    "inputs": {
+      "horizontal_angle": 0,
+      "vertical_angle": 0,
+      "zoom": 5,
+      "default_prompts": true,
+      "camera_view": false
+    }
+  },
+  "21": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": "保持主体、颜色、材质和画面风格一致，只改变相机视角与构图。"
+    }
+  },
+  "22": {
+    "class_type": "StringConcatenate",
+    "inputs": {
+      "string_a": [
+        "21",
+        0
+      ],
+      "string_b": [
+        "20",
+        0
+      ],
+      "delimiter": "\n"
+    }
+  },
+  "422": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "429",
+        0
+      ],
+      "filename_prefix": "QW21-%date:yyyyMMddhhmmss%"
+    }
+  },
+  "429": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "444",
+        0
+      ],
+      "vae": [
+        "453",
+        0
+      ]
+    }
+  },
+  "430": {
+    "class_type": "TextEncodeQwenImage21",
+    "inputs": {
+      "clip": [
+        "452",
+        0
+      ],
+      "vae": [
+        "453",
+        0
+      ],
+      "negative_prompt": "",
+      "resolution": 0,
+      "prompt": [
+        "22",
+        0
+      ]
+    }
+  },
+  "443": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "_meta": {
+      "title": "KSampler Select (euler)"
+    }
+  },
+  "444": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": [
+        "456",
+        0
+      ],
+      "guider": [
+        "450",
+        0
+      ],
+      "sampler": [
+        "443",
+        0
+      ],
+      "sigmas": [
+        "467",
+        0
+      ],
+      "latent_image": [
+        "430",
+        2
+      ]
+    },
+    "_meta": {
+      "title": "Sampler Custom Advanced"
+    }
+  },
+  "446": {
+    "class_type": "QwenImage21Cache",
+    "inputs": {
+      "model": [
+        "459",
+        0
+      ],
+      "device": "auto",
+      "dtype": "default"
+    }
+  },
+  "450": {
+    "class_type": "CFGGuider",
+    "inputs": {
+      "model": [
+        "446",
+        0
+      ],
+      "positive": [
+        "430",
+        0
+      ],
+      "negative": [
+        "430",
+        1
+      ],
+      "cfg": 1
+    }
+  },
+  "452": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3vl_8b_int8_convrot.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    }
+  },
+  "453": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
+    }
+  },
+  "456": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": 123456789
+    },
+    "_meta": {
+      "title": "Random Noise"
+    }
+  },
+  "459": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "model": [
+        "460",
+        0
+      ],
+      "lora_name": "Qwen-功能2.1\\Qwen2.1 一致性无偏移_GH_V1.0.safetensors",
+      "strength_model": 0.48
+    }
+  },
+  "460": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "Qwen\\qwen_image_2.1_turbo_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "467": {
+    "class_type": "ManualSigmas",
+    "inputs": {
+      "sigmas": "1.0, 0.978453, 0.954180, 0.926626, 0.895080, 0.845148, 0.704534, 0.414568, 0.150000, 0"
+    }
+  }
+}

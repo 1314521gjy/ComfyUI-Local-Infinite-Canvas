@@ -623,6 +623,7 @@ export async function createGatewayApp(overrides = {}) {
       const installed = await installBundledNodes({
         root: packageRoot,
         comfyRoot: comfyDir,
+        comfyUrl: config.comfyUrl,
         customNodesDirs: manualCustomNodeRoots(setup?.getDirectorySettings?.() || null),
         log: (message, level) => (level === "WARN" ? logger.warn(message) : logger.info(message)),
       });
@@ -1862,8 +1863,11 @@ export async function createGatewayApp(overrides = {}) {
       if (mode === "inpaint" && files.length !== 2) {
         throw new HttpError("Qwen 局部重绘需要 2 张图：原图 + 二值蒙版", { status: 400, code: "invalid_inpaint_media" });
       }
-      if (mode === "edit" && files.length > 4) {
-        throw new HttpError("Qwen 多图编辑最多 4 张参考图", { status: 400, code: "too_many_reference_images" });
+      if (mode === "remove" && files.length !== 2) {
+        throw new HttpError("Qwen 元素移除需要 2 张图：原图 + 二值蒙版", { status: 400, code: "invalid_inpaint_media" });
+      }
+      if (mode === "edit" && files.length > 3) {
+        throw new HttpError("Qwen 多图编辑最多 3 张参考图", { status: 400, code: "too_many_reference_images" });
       }
       if (mode === "outpaint" && files.length !== 1) {
         throw new HttpError("Qwen 扩图需要且只接收 1 张原图", { status: 400, code: "invalid_outpaint_media" });
@@ -1884,7 +1888,7 @@ export async function createGatewayApp(overrides = {}) {
     // 同一张卡上重绘/扩图并发出多张只会互抢显存，统一收敛为单张；
     // 扩图采样像素按配置封顶，避免 16MP 在 16GB 卡上必 OOM。
     const editParams = parseParams(body.params);
-    const singleShot = mode === "inpaint" || mode === "outpaint";
+    const singleShot = mode === "inpaint" || mode === "outpaint" || mode === "remove";
     if (mode === "outpaint" && Number.isFinite(Number(editParams.megapixels))) {
       editParams.megapixels = Math.max(0.1, Math.min(Number(editParams.megapixels), config.outpaintMaxMegapixels));
     }
