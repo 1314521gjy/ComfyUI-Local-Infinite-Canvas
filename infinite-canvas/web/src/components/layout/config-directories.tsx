@@ -10,6 +10,7 @@ const gatewayRoot = LOCAL_GATEWAY_BASE_URL.replace(/\/v1\/?$/, "");
 type DirectorySettings = {
     mode: "auto" | "manual";
     comfyDir: string;
+    workflowDirs: string[];
     modelDirs: string[];
     loraDirs: string[];
     customNodesDirs: string[];
@@ -18,21 +19,22 @@ type DirectorySettings = {
 
 type DirectoryScan = {
     comfy: { dir: string; root: string; mainPy: string; workflowsDir: string; modelsDir: string; customNodesDir: string } | null;
+    workflowDirs: Array<{ dir: string; count: number; samples: string[]; truncated: boolean }>;
     modelDirs: Array<{ dir: string; count: number; byKind: Record<string, number>; totalBytes: number; samples: string[]; truncated: boolean }>;
     loraDirs: Array<{ dir: string; count: number; totalBytes: number; samples: string[]; truncated: boolean }>;
     customNodesDirs: Array<{ dir: string; count: number; samples: string[] }>;
-    totals: { models: number; loras: number; plugins: number };
+    totals: { workflows: number; models: number; loras: number; plugins: number };
 };
 
 type DirectoryInfo = {
     settings: DirectorySettings;
     comfyRoot: string;
-    auto: { comfyDir: string; root: string; workflowsDir: string; modelDirs: string[]; loraDirs: string[]; customNodesDirs: string[] };
+    auto: { comfyDir: string; root: string; workflowsDir: string; workflowDirs: string[]; modelDirs: string[]; loraDirs: string[]; customNodesDirs: string[] };
     setup?: { phase: string; counts?: { available: number; total: number; unavailable: number }; comfyReachable?: boolean };
     loadReport?: { restartRequired: boolean; missing: Array<{ kind: string; dir: string }> };
 };
 
-const emptySettings: DirectorySettings = { mode: "auto", comfyDir: "", modelDirs: [], loraDirs: [], customNodesDirs: [] };
+const emptySettings: DirectorySettings = { mode: "auto", comfyDir: "", workflowDirs: [], modelDirs: [], loraDirs: [], customNodesDirs: [] };
 
 const copyByLocale = {
     zh: {
@@ -51,8 +53,10 @@ const copyByLocale = {
         autoMissing: "尚未识别到 ComfyUI；切换手动指定并填写目录。",
         comfyDir: "ComfyUI 目录",
         comfyDirHint: "例如 D:\\ComfyUI_windows_portable\\ComfyUI",
+        workflowDirs: "工作流目录",
+        workflowDirsHint: "每行一个；可添加多个工作流总目录，会递归扫描其中的 .json 文件（含子目录），自动导入 API 工作流",
         modelDirs: "模型目录",
-        modelDirsHint: "每行一个；下面的子目录（checkpoints / vae / text_encoders / diffusion_models / upscale_models 等）会被多层扫描",
+        modelDirsHint: "每行一个；可添加多个模型总目录，下面的子目录（checkpoints / vae / text_encoders / diffusion_models / upscale_models 等）会被多层扫描",
         loraDirs: "LoRA 目录",
         loraDirsHint: "每行一个；会映射到 ComfyUI 的 loras 路径",
         customNodesDirs: "插件目录",
@@ -64,6 +68,7 @@ const copyByLocale = {
         scanning: "正在扫描…",
         saving: "正在保存…",
         summary: "扫描结果",
+        workflows: "工作流",
         models: "模型",
         loras: "LoRA",
         plugins: "插件",
@@ -100,8 +105,10 @@ const copyByLocale = {
         autoMissing: "ComfyUI not detected yet. Switch to Manual and fill in the folders.",
         comfyDir: "ComfyUI folder",
         comfyDirHint: "e.g. D:\\ComfyUI_windows_portable\\ComfyUI",
+        workflowDirs: "Workflow folders",
+        workflowDirsHint: "One per line; add multiple workflow roots — .json files inside (including subfolders) are scanned recursively and API workflows are imported automatically",
         modelDirs: "Model folders",
-        modelDirsHint: "One per line; subfolders such as checkpoints / vae / text_encoders / diffusion_models / upscale_models are scanned recursively",
+        modelDirsHint: "One per line; add multiple model roots — subfolders such as checkpoints / vae / text_encoders / diffusion_models / upscale_models are scanned recursively",
         loraDirs: "LoRA folders",
         loraDirsHint: "One per line; mapped to ComfyUI's loras path",
         customNodesDirs: "Custom node folders",
@@ -113,6 +120,7 @@ const copyByLocale = {
         scanning: "Scanning…",
         saving: "Saving…",
         summary: "Scan result",
+        workflows: "workflows",
         models: "models",
         loras: "LoRAs",
         plugins: "plugins",
@@ -142,6 +150,7 @@ export function ConfigDirectories() {
     const [info, setInfo] = useState<DirectoryInfo | null>(null);
     const [mode, setMode] = useState<"auto" | "manual">("auto");
     const [comfyDir, setComfyDir] = useState("");
+    const [workflowDirs, setWorkflowDirs] = useState("");
     const [modelDirs, setModelDirs] = useState("");
     const [loraDirs, setLoraDirs] = useState("");
     const [customNodesDirs, setCustomNodesDirs] = useState("");
@@ -150,7 +159,7 @@ export function ConfigDirectories() {
     const [saving, setSaving] = useState(false);
     const [restarting, setRestarting] = useState(false);
     const [restartRequired, setRestartRequired] = useState(false);
-    const [picking, setPicking] = useState<"" | "comfy" | "model" | "lora" | "nodes">("");
+    const [picking, setPicking] = useState<"" | "comfy" | "workflow" | "model" | "lora" | "nodes">("");
     const [open, setOpen] = useState(false);
     const [note, setNote] = useState("");
     const [error, setError] = useState("");
@@ -158,6 +167,7 @@ export function ConfigDirectories() {
     const applySettings = (settings: DirectorySettings) => {
         setMode(settings.mode);
         setComfyDir(settings.comfyDir || "");
+        setWorkflowDirs((settings.workflowDirs || []).join("\n"));
         setModelDirs((settings.modelDirs || []).join("\n"));
         setLoraDirs((settings.loraDirs || []).join("\n"));
         setCustomNodesDirs((settings.customNodesDirs || []).join("\n"));
@@ -199,8 +209,8 @@ export function ConfigDirectories() {
 
     const requestBody = () =>
         mode === "manual"
-            ? { mode, comfyDir, modelDirs, loraDirs, customNodesDirs }
-            : { mode: "auto", comfyDir: "", modelDirs: "", loraDirs: "", customNodesDirs: "" };
+            ? { mode, comfyDir, workflowDirs, modelDirs, loraDirs, customNodesDirs }
+            : { mode: "auto", comfyDir: "", workflowDirs: "", modelDirs: "", loraDirs: "", customNodesDirs: "" };
 
     const readError = async (response: Response) => {
         const data = (await response.json().catch(() => ({}))) as { error?: { message?: string } | string };
@@ -307,7 +317,7 @@ export function ConfigDirectories() {
         });
     };
 
-    const pick = async (field: "comfy" | "model" | "lora" | "nodes", initial: string, append: boolean) => {
+    const pick = async (field: "comfy" | "workflow" | "model" | "lora" | "nodes", initial: string, append: boolean) => {
         if (picking) return;
         setPicking(field);
         setError("");
@@ -325,7 +335,7 @@ export function ConfigDirectories() {
                 setComfyDir(selected);
                 return;
             }
-            const setter = field === "model" ? setModelDirs : field === "lora" ? setLoraDirs : setCustomNodesDirs;
+            const setter = field === "workflow" ? setWorkflowDirs : field === "model" ? setModelDirs : field === "lora" ? setLoraDirs : setCustomNodesDirs;
             setter((current) => {
                 const lines = current.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
                 if (!lines.includes(selected)) lines.push(selected);
@@ -338,7 +348,7 @@ export function ConfigDirectories() {
         }
     };
 
-    const browseButton = (field: "comfy" | "model" | "lora" | "nodes", initial: string, append: boolean) => (
+    const browseButton = (field: "comfy" | "workflow" | "model" | "lora" | "nodes", initial: string, append: boolean) => (
         <Button size="small" type="text" className="!h-6 !px-1" icon={<FolderOpen className="size-3.5" />} loading={picking === field} disabled={Boolean(picking) && picking !== field} onClick={() => void pick(field, initial, append)}>
             {copy.browse}
         </Button>
@@ -359,6 +369,7 @@ export function ConfigDirectories() {
         }
         if (!info) return;
         if (!comfyDir) setComfyDir(info.auto.comfyDir || info.auto.root || "");
+        if (!workflowDirs) setWorkflowDirs((info.auto.workflowDirs || []).join("\n"));
         if (!modelDirs) setModelDirs((info.auto.modelDirs || []).join("\n"));
         if (!loraDirs) setLoraDirs((info.auto.loraDirs || []).join("\n"));
         if (!customNodesDirs) setCustomNodesDirs((info.auto.customNodesDirs || []).join("\n"));
@@ -380,7 +391,7 @@ export function ConfigDirectories() {
             : [
                   copy.manual,
                   comfyDir || copy.notSet,
-                  scan ? `${scan.totals.models} ${copy.models} / ${scan.totals.loras} ${copy.loras} / ${scan.totals.plugins} ${copy.plugins}` : "",
+                  scan ? `${scan.totals.workflows} ${copy.workflows} / ${scan.totals.models} ${copy.models} / ${scan.totals.loras} ${copy.loras} / ${scan.totals.plugins} ${copy.plugins}` : "",
               ]
                   .filter(Boolean)
                   .join(" · ");
@@ -445,6 +456,14 @@ export function ConfigDirectories() {
                     </div>
                     <div>
                         <div className="mb-1 flex items-center justify-between gap-2">
+                            <span className="text-xs font-medium">{copy.workflowDirs}</span>
+                            {browseButton("workflow", workflowDirs.split(/\r?\n/)[0]?.trim() || "", true)}
+                        </div>
+                        <Input.TextArea value={workflowDirs} onChange={(event) => setWorkflowDirs(event.target.value)} rows={2} placeholder="D:\\workflows" />
+                        <div className="mt-1 text-[11px] text-stone-500">{copy.workflowDirsHint}</div>
+                    </div>
+                    <div>
+                        <div className="mb-1 flex items-center justify-between gap-2">
                             <span className="text-xs font-medium">{copy.modelDirs}</span>
                             {browseButton("model", modelDirs.split(/\r?\n/)[0]?.trim() || "", true)}
                         </div>
@@ -496,6 +515,9 @@ export function ConfigDirectories() {
                     <div className="mb-1 font-medium">{copy.summary}</div>
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-stone-600 dark:text-stone-300">
                         <span>
+                            {copy.workflows}: <strong>{scan.totals.workflows}</strong>
+                        </span>
+                        <span>
                             {copy.models}: <strong>{scan.totals.models}</strong>
                         </span>
                         <span>
@@ -510,6 +532,13 @@ export function ConfigDirectories() {
                             ComfyUI: <code>{scan.comfy.root}</code> · {copy.autoWorkflows}: <code>{scan.comfy.workflowsDir || "—"}</code>
                         </div>
                     ) : null}
+                    {(scan.workflowDirs || []).map((item) => (
+                        <div key={`workflow-${item.dir}`} className="mt-1 text-stone-500">
+                            <code>{item.dir}</code>：{item.count ? `${item.count} ${copy.workflows}` : copy.nothing}
+                            {item.samples.length ? <div className="truncate opacity-70">{item.samples.slice(0, 6).join("、")}</div> : null}
+                            {item.truncated ? <div className="text-amber-600 dark:text-amber-400">{copy.truncated}</div> : null}
+                        </div>
+                    ))}
                     {scan.modelDirs.map((item) => (
                         <div key={`model-${item.dir}`} className="mt-1 text-stone-500">
                             <code>{item.dir}</code>：{item.count ? `${item.count} 个（${Object.entries(item.byKind).map(([kind, count]) => `${kind} ${count}`).join("，")}）` : copy.nothing}

@@ -4,7 +4,7 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import { detectComfyLayout, loadDirectorySettings, normalizeDirectorySettings, writeManagedExtraPaths } from "./directories.js";
+import { detectComfyLayout, loadDirectorySettings, normalizeDirectorySettings, walkFiles, writeManagedExtraPaths } from "./directories.js";
 import { isApiWorkflow, isUiWorkflow } from "./registry.js";
 import { findSimilarModel } from "./model-match.js";
 import { MODEL_LOADER_SPECS as LOADER_SPECS, discoverModelLoaderSpecs } from "./model-loaders.js";
@@ -106,7 +106,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         committed: false,
     };
     let scanPromise = null;
-    let watcher = null;
+    let watchers = [];
     let poller = null;
     let debounceTimer = null;
     let connectivityTimer = null;
@@ -155,9 +155,47 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         if (typeof debounceTimer.unref === "function") debounceTimer.unref();
     }
 
+    // 所有工作流来源目录：ComfyUI 用户目录 + 手动添加的多个工作流总目录（去重、按解析后路径）。
+    function workflowSourceDirs() {
+        const roots = [];
+        const add = (value) => {
+            if (!value) return;
+            let resolved;
+            try {
+                resolved = path.resolve(value);
+            } catch {
+                return;
+            }
+            if (!fs.existsSync(resolved)) return;
+            if (roots.some((existing) => existing.toLowerCase() === resolved.toLowerCase())) return;
+            roots.push(resolved);
+        };
+        add(config.comfyWorkflowsDir);
+        for (const dir of directorySettings.workflowDirs || []) add(dir);
+        return roots;
+    }
+
+    // 递归收集工作流目录（含子目录）里的 .json 文件；深度/数量设上限防止扫爆。
+    function collectWorkflowFiles(roots) {
+        const files = [];
+        const seen = new Set();
+        for (const root of roots) {
+            const walk = walkFiles(root, { maxDepth: 6, limit: 20000 });
+            for (const file of walk.files) {
+                if (!/\.json$/i.test(file.name)) continue;
+                const key = file.path.toLowerCase();
+                if (seen.has(key)) continue;
+                seen.add(key);
+                files.push(file);
+            }
+        }
+        return files;
+    }
+
     async function importComfyWorkflows() {
-        if (!config.comfyWorkflowsDir || !fs.existsSync(config.comfyWorkflowsDir)) return { imported: 0, ui: 0, samples: [] };
-        const comfyRoot = path.resolve(config.comfyWorkflowsDir);
+        const roots = workflowSourceDirs();
+        if (!roots.length) return { imported: 0, ui: 0, samples: [] };
+        const comfyRoot = roots[0];
         const importedComfyNames = new Set();
         const seenContent = new Map();
         // 有 source.path 的是自动导入/复制进 registry 的条目；官方条目 source 为空。
@@ -186,16 +224,17 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
             await registry.remove(id);
             removed += 1;
         }
-        const entries = await fsp.readdir(config.comfyWorkflowsDir);
+        // 递归扫描所有工作流目录（含子目录），逐个导入 API 工作流。
+        const files = collectWorkflowFiles(roots);
         let imported = 0;
         let ui = 0;
         const samples = [];
-        for (const name of entries) {
-            if (!name.toLowerCase().endsWith(".json")) continue;
+        for (const item of files) {
+            const name = item.name;
+            const file = item.path;
             // 草稿/测试/副本工作流不该出现在画布的模型列表里。
             if (isSkippedComfyWorkflow(name)) continue;
             if (importedComfyNames.has(path.basename(name))) continue;
-            const file = path.join(config.comfyWorkflowsDir, name);
             const stat = safeStat(file);
             if (!stat?.isFile()) continue;
             const signature = `${stat.mtimeMs}:${stat.size}`;
@@ -214,7 +253,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 if (isUiWorkflow(workflow)) {
                     comfyFileCache.set(file, { signature, kind: "ui" });
                     ui += 1;
-                    if (samples.length < 5) samples.push(name);
+                    if (samples.length < 5) samples.push(item.rel);
                     continue;
                 }
                 if (!isApiWorkflow(workflow)) {
@@ -246,13 +285,13 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
             }
         }
         // 之前版本已经把草稿导进 registry 的，这里顺手清掉（只移除登记，不动用户文件）。
-        const comfyRootPrefix = path.resolve(config.comfyWorkflowsDir) + path.sep;
+        const rootPrefixes = roots.map((root) => root + path.sep);
         for (const entry of registry.list()) {
             const internal = registry.resolve(entry.id);
             const sourcePath = internal?.source?.path || entry.source?.path;
             if (!sourcePath) continue;
-            const absolute = path.isAbsolute(sourcePath) ? path.resolve(sourcePath) : path.resolve(config.comfyWorkflowsDir, sourcePath);
-            if (!absolute.startsWith(comfyRootPrefix)) continue;
+            const absolute = path.isAbsolute(sourcePath) ? path.resolve(sourcePath) : path.resolve(roots[0], sourcePath);
+            if (!rootPrefixes.some((prefix) => absolute.startsWith(prefix))) continue;
             if (!isSkippedComfyWorkflow(path.basename(absolute))) continue;
             if (await registry.remove(entry.id)) removed += 1;
         }
@@ -876,12 +915,27 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                     schedule();
                 });
                 instance.on("error", (error) => logger?.warn?.(`watch ${label} failed: ${error.message}`));
-                watcher = instance;
+                watchers.push(instance);
                 logger?.info?.(`watching ${label}: ${dir}`);
             } catch (error) {
                 logger?.warn?.(`cannot watch ${label}: ${error.message}`);
             }
         };
+        // 额外工作流总目录：fs.watch 不递归，根目录 + 一层子目录都挂上，
+        // 这样往已有子目录里丢新工作流也能触发重扫。
+        const extraRoots = workflowSourceDirs().filter((dir) => dir.toLowerCase() !== path.resolve(config.comfyWorkflowsDir || "").toLowerCase());
+        for (const root of extraRoots) {
+            watchDir(root, "workflow-extra");
+            let entries = [];
+            try {
+                entries = fs.readdirSync(root, { withFileTypes: true });
+            } catch {
+                entries = [];
+            }
+            for (const entry of entries) {
+                if (entry.isDirectory()) watchDir(path.join(root, entry.name), "workflow-extra");
+            }
+        }
         watchDir(config.workflowDir, "gateway");
         watchDir(config.comfyWorkflowsDir, "comfyui");
         poller = setInterval(() => {
@@ -962,8 +1016,8 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
     }
 
     function stop() {
-        watcher?.close();
-        watcher = null;
+        for (const instance of watchers) instance?.close();
+        watchers = [];
         if (poller) clearInterval(poller);
         poller = null;
         if (debounceTimer) clearTimeout(debounceTimer);
