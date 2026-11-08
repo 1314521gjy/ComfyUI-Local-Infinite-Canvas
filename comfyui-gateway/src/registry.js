@@ -475,7 +475,8 @@ export function createRegistry({ dir, maxWorkflowBytes = 5 * 1024 * 1024, logger
       source = { kind: "json" };
     } else if (sourcePath) {
       const absolute = path.isAbsolute(sourcePath) ? sourcePath : path.resolve(dir, sourcePath);
-      const text = await fsp.readFile(absolute, "utf8");
+      // Windows 记事本/PowerShell 保存的 JSON 常带 BOM，去掉再解析。
+      const text = (await fsp.readFile(absolute, "utf8")).replace(/^\uFEFF/, "");
       if (Buffer.byteLength(text) > maxWorkflowBytes) throw new RegistryError("工作流文件过大", { status: 413, code: "workflow_too_large" });
       try {
         workflow = JSON.parse(text);
