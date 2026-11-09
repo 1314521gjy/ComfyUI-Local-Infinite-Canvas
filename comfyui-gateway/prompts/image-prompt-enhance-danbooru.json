@@ -1,0 +1,39 @@
+{
+  "2": {
+    "class_type": "llama_cpp_model_loader",
+    "inputs": {
+      "model": "Qwen3.5-9B-Q4_K_M.gguf",
+      "mmproj": "mmproj-BF16.gguf",
+      "chat_handler": "Qwen3.5",
+      "n_ctx": 8192,
+      "vram_limit": -1,
+      "image_min_tokens": 0,
+      "image_max_tokens": 0,
+      "load_mtp": false
+    },
+    "_meta": { "title": "Local LLM (Qwen3.5 9B)" }
+  },
+  "3": {
+    "class_type": "llama_cpp_instruct_adv",
+    "inputs": {
+      "llama_model": ["2", 0],
+      "preset_prompt": "Empty - Nothing",
+      "custom_prompt": "",
+      "system_prompt": "",
+      "inference_mode": "one by one",
+      "max_frames": 24,
+      "max_size": 512,
+      "seed": 0,
+      "force_offload": true,
+      "save_states": false
+    },
+    "_meta": { "title": "Danbooru Tag Optimizer" }
+  },
+  "4": {
+    "class_type": "TE_text_display",
+    "inputs": {
+      "text": ["3", 0]
+    },
+    "_meta": { "title": "Optimized Tags" }
+  }
+}

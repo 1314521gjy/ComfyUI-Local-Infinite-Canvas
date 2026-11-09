@@ -336,6 +336,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                 images,
                 imageCount: selectedRefs.length,
                 engine: optimizeEngine,
+                model: rawWorkflowId || config.model || "",
                 cloud: useCloud
                     ? {
                           baseUrl: (config.promptCloudBaseUrl || "").trim(),
@@ -344,6 +345,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                       }
                     : undefined,
             }, { signal: controller.signal });
+            if (result.note) message.info(result.note);
             // 生图优化没有“追加”语义：直接回填到输入框，原手打提示词继续保留。
             applyPromptResult(result.prompt);
             onConfigChange(node.id, { promptOptimizeStatus: undefined, promptOptimizeKind: undefined, promptOptimizePrompt: undefined, promptOptimizeError: undefined, promptOptimizeSource: originalPrompt || text });

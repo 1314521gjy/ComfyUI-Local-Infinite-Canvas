@@ -353,6 +353,7 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
                 images: useCloud ? [] : references,
                 imageCount: references.length,
                 engine: optimizeEngine,
+                model: config.model || info?.id || "",
                 cloud: useCloud
                     ? {
                           baseUrl: (config.promptCloudBaseUrl || "").trim(),
@@ -361,6 +362,7 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
                       }
                     : undefined,
             });
+            if (result.note) message.info(result.note);
             setPrompt(result.prompt);
             onChange({ prompt: result.prompt, composerContent: result.prompt });
         } catch (error) {

@@ -1157,11 +1157,11 @@ export async function requestPromptOptimize(
     }
 }
 
-export type ImagePromptOptimizeResult = { prompt: string; mode: string };
+export type ImagePromptOptimizeResult = { prompt: string; mode: string; provider?: string; style?: string; note?: string };
 
 export async function requestImagePromptOptimize(
     config: AiConfig,
-    params: { prompt: string; mode?: "text" | "image"; language?: "zh" | "en"; images?: ReferenceImage[]; imageCount?: number; engine?: "local" | "cloud"; cloud?: { baseUrl?: string; apiKey?: string; model?: string } },
+    params: { prompt: string; mode?: "text" | "image"; language?: "zh" | "en"; images?: ReferenceImage[]; imageCount?: number; engine?: "local" | "cloud"; model?: string; cloud?: { baseUrl?: string; apiKey?: string; model?: string } },
     options?: RequestOptions,
 ): Promise<ImagePromptOptimizeResult> {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.imageModel);
@@ -1170,6 +1170,7 @@ export async function requestImagePromptOptimize(
     const formData = new FormData();
     formData.set("prompt", params.prompt);
     if (params.mode) formData.set("mode", params.mode);
+    if (params.model) formData.set("model", params.model);
     if (params.language) formData.set("language", params.language);
     if (params.engine) formData.set("engine", params.engine);
     if (params.cloud?.baseUrl) formData.set("cloudBaseUrl", params.cloud.baseUrl);

@@ -1996,6 +1996,7 @@ export async function createGatewayApp(overrides = {}) {
         uploadedImages,
         imageCount: Number(body.imageCount) || 0,
         engine: body.engine,
+        model: body.model,
         cloud: {
           baseUrl: body.cloudBaseUrl,
           apiKey: body.cloudApiKey,

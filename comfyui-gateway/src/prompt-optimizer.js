@@ -194,6 +194,23 @@ const CLOUD_IMAGE_SYSTEM_PROMPT = `你是 AI 生图提示词专家。请把用�
 
 要求：主体明确，构图、镜头、光线、材质与风格具体；保留用户的主体和意图，不要编造品牌或画面文字；图生图时说明需要保留与需要改变的部分；输出语言与“输出语言”字段一致。`;
 
+const DANBOORU_MODEL_RE = /(image-sdxl-character|img-anime-)/i;
+
+// danbooru 标签体系底模（Illustrious / NoobAI / SDXL 动漫系）专用优化提示词。
+// 这类底模吃英文标签流，被改写成中文自然语言段落会掉角色识别与画质。
+const CLOUD_IMAGE_SYSTEM_PROMPT_DANBOORU = `你是 AI 生图提示词专家，服务对象是 danbooru 标签体系底模（Illustrious / NoobAI / SDXL 动漫系）。请把用户输入改写为一条可直接使用的英文标签流提示词，只输出最终提示词本身，不要输出任何思考过程、分析、解释、Markdown 代码块、标题或前后缀。
+
+规则：
+1. 用英文逗号分隔的 danbooru 标签，禁止写成中文长句、禁止改写成自然语言段落。
+2. 结构顺序：1girl/1boy/solo 等数量标签 → 角色标签 → 发型/眼睛/表情/服装逐项标签 → 姿势动作 → 场景光照 → 构图（portrait / upper body / cowboy shot / full body 择一）→ 质量标签 masterpiece, best quality。
+3. 已知角色用 danbooru 原名写法，括号转义：xxx \\(作品名\\)；不确定的角色保留用户给出的名字，不要臆造作品名。
+4. 用户已写的权重语法 (tag:1.2) 与转义括号原样保留，不要拆散或改写数值。
+5. 用户已给出的标签全部保留，只做去重与补全缺失项，不删减主体与意图。
+6. 不要添加 LoRA 触发词；不要添加 artist 画师标签（除非用户自己写了）。
+7. 只输出正面提示词，不要输出负面提示词。
+8. 用户已在提示词里写出作品名时原样保留；不确定角色所属作品时，只写角色名本身，禁止臆造 \\(作品名\\) 括号内容，尤其不要把同名角色张冠李戴到别的作品。
+9. 用户输入为中文自然语言时，提取其中的角色、外观、动作、场景要素转成英文标签，不要把中文句子原样留在输出里；中文角色名要转成对应的英文／罗马字 danbooru 标签（如「仪玄」写 yixuan），不能把中文汉字留在输出里。`;
+
 function cloudContent(data) {
   const content = data?.choices?.[0]?.message?.content;
   if (typeof content === "string") return content;
@@ -344,17 +361,18 @@ async function cloudOptimize({ prompt, mode, duration, referenceNote, language, 
   };
 }
 
-async function cloudOptimizeImage({ prompt, mode, language, imageCount = 0, cloud = {}, signal }) {
+async function cloudOptimizeImage({ prompt, mode, language, imageCount = 0, cloud = {}, signal, style = "general" }) {
   const userText = [
     `任务模式：${mode}`,
     `输出语言：${String(language || "zh").toLowerCase() === "en" ? "英文" : "中文"}`,
     imageCount ? `参考图片：${imageCount} 张（云端模式仅使用文字说明）` : "",
     `用户原始提示词：\n${prompt}`,
   ].filter(Boolean).join("\n");
-  const { content, model, elapsedMs } = await cloudChat({ system: CLOUD_IMAGE_SYSTEM_PROMPT, userText, cloud, signal });
+  const system = style === "danbooru" ? CLOUD_IMAGE_SYSTEM_PROMPT_DANBOORU : CLOUD_IMAGE_SYSTEM_PROMPT;
+  const { content, model, elapsedMs } = await cloudChat({ system, userText, cloud, signal });
   const result = sanitizeImagePrompt(content);
   if (!result) throw new PromptOptimizeError("云端 API 没有返回提示词", { status: 502, code: "no_prompt_output" });
-  return { prompt: result, mode, provider: "cloud", model, elapsedMs };
+  return { prompt: result, mode, provider: "cloud", style, model, elapsedMs };
 }
 
 export function createPromptOptimizer({ config, comfy, logger, modelAliasFor = null, loaderSpecs = undefined }) {
@@ -368,10 +386,12 @@ export function createPromptOptimizer({ config, comfy, logger, modelAliasFor = n
   }
   const workflowPath = path.join(config.rootDir, "prompts", "h3-prompt-enhance.json");
   const imageWorkflowPath = path.join(config.rootDir, "prompts", "image-prompt-enhance.json");
+  const danbooruWorkflowPath = path.join(config.rootDir, "prompts", "image-prompt-enhance-danbooru.json");
   const captionWorkflowPath = path.join(config.rootDir, "prompts", "image-caption.json");
   const captionFlorenceWorkflowPath = path.join(config.rootDir, "prompts", "image-caption-florence.json");
   let template = null;
   let imageTemplate = null;
+  let danbooruTemplate = null;
   let captionTemplate = null;
   let captionFlorenceTemplate = null;
 
@@ -383,6 +403,57 @@ export function createPromptOptimizer({ config, comfy, logger, modelAliasFor = n
   function imageWorkflowTemplate() {
     if (!imageTemplate) imageTemplate = JSON.parse(fs.readFileSync(imageWorkflowPath, "utf8"));
     return deepClone(imageTemplate);
+  }
+
+
+  function danbooruWorkflowTemplate() {
+    if (!danbooruTemplate) danbooruTemplate = JSON.parse(fs.readFileSync(danbooruWorkflowPath, "utf8"));
+    return deepClone(danbooruTemplate);
+  }
+
+  // 提交「文本输出」类 ComfyUI 工作流并轮询取回文本，供本地 danbooru LLM 优化复用。
+  async function runTextWorkflow(workflow, { signal, timeoutMs = 180000, label = "text workflow" } = {}) {
+    const started = Date.now();
+    const submitted = await comfy.submit(withAliases(workflow), { signal });
+    const promptId = submitted.promptId;
+    let running = true;
+    let cancelPromise = null;
+    const cancel = () => {
+      if (!running) return Promise.resolve();
+      if (!cancelPromise) cancelPromise = typeof comfy.cancel === "function" ? comfy.cancel(promptId) : comfy.interrupt(promptId);
+      return cancelPromise;
+    };
+    if (signal) signal.addEventListener("abort", () => void cancel(), { once: true });
+    try {
+      let history = null;
+      while (Date.now() - started < timeoutMs) {
+        if (signal?.aborted) {
+          await cancel();
+          throw new PromptOptimizeError(`${label}已取消`, { status: 400, code: "cancelled" });
+        }
+        history = await comfy.history(promptId);
+        const failure = historyError(history);
+        if (failure) {
+          running = false;
+          throw new PromptOptimizeError(`${label}失败：${truncate(failure, 1200)}`, {
+            status: 502, code: "comfy_execution_failed", details: failure,
+          });
+        }
+        if (historyCompleted(history)) break;
+        await sleep(1000);
+      }
+      running = false;
+      if (!historyCompleted(history)) {
+        throw new PromptOptimizeError(`${label}超时`, { status: 504, code: "prompt_optimize_timeout" });
+      }
+      const raw = outputText(history).trim();
+      if (!raw) {
+        throw new PromptOptimizeError(`${label}没有返回文本`, { status: 502, code: "no_prompt_output", details: history.outputs });
+      }
+      return { raw, promptId, elapsedMs: Date.now() - started };
+    } finally {
+      running = false;
+    }
   }
 
   function captionWorkflowTemplate(engine) {
@@ -500,7 +571,7 @@ export function createPromptOptimizer({ config, comfy, logger, modelAliasFor = n
     }
   }
 
-  async function optimizeImage({ prompt, mode, language, uploadedImages = [], imageCount = 0, signal, engine = "local", cloud = {} }) {
+  async function optimizeImage({ prompt, mode, language, uploadedImages = [], imageCount = 0, signal, engine = "local", cloud = {}, model = "" }) {
     const text = String(prompt || "").trim();
     if (!text) throw new PromptOptimizeError("缺少提示词", { status: 400, code: "missing_prompt" });
     if (text.length > 8000) throw new PromptOptimizeError("提示词过长", { status: 400, code: "prompt_too_long" });
@@ -508,11 +579,40 @@ export function createPromptOptimizer({ config, comfy, logger, modelAliasFor = n
     const useCloud = String(engine || "local").toLowerCase() === "cloud";
     const referenceCount = images.length || Math.max(0, Number(imageCount) || 0);
     const taskMode = String(mode || "").toLowerCase() === "image" ? "图生图" : referenceCount ? "图生图" : "文生图";
+    const tagStyle = DANBOORU_MODEL_RE.test(String(model || ""));
     if (!useCloud && taskMode === "图生图" && !images.length) {
       throw new PromptOptimizeError("图生图提示词优化需要至少 1 张参考图", { status: 400, code: "missing_reference_image" });
     }
     if (useCloud) {
-      return cloudOptimizeImage({ prompt: text, mode: taskMode, language, imageCount: referenceCount, cloud, signal });
+      return cloudOptimizeImage({ prompt: text, mode: taskMode, language, imageCount: referenceCount, cloud, signal, style: tagStyle ? "danbooru" : "general" });
+    }
+    // danbooru 标签体系底模：本地走专用 llama.cpp 工作流（Qwen3.5-9B GGUF + 可自定义
+    // system_prompt），不用会把标签改写成中文长句的 Qwen 官方 PE。
+    if (tagStyle) {
+      const workflow = danbooruWorkflowTemplate();
+      workflow["3"].inputs["custom_prompt"] = text;
+      workflow["3"].inputs["system_prompt"] = CLOUD_IMAGE_SYSTEM_PROMPT_DANBOORU;
+      if (taskMode === "图生图" && images.length) {
+        images.forEach((uploaded, index) => {
+          const nodeId = String(9101 + index);
+          workflow[nodeId] = { class_type: "LoadImage", inputs: { image: imageValue(uploaded) } };
+        });
+        workflow["3"].inputs["images"] = images.map((_, index) => [String(9101 + index), 0]);
+        workflow["3"].inputs["inference_mode"] = "images";
+      }
+      const { raw, promptId, elapsedMs } = await runTextWorkflow(workflow, { signal, timeoutMs: 180000, label: "本地标签优化" });
+      const result = sanitizeImagePrompt(raw);
+      if (!result) throw new PromptOptimizeError("本地标签优化没有返回文本", { status: 502, code: "no_prompt_output" });
+      logger?.info?.(`image prompt optimize local-llm danbooru ${promptId} ${elapsedMs}ms`);
+      return {
+        prompt: result,
+        mode: taskMode,
+        promptId,
+        elapsedMs,
+        provider: "local-llm",
+        style: "danbooru",
+        note: "已用本地 Qwen3.5-9B 生成 danbooru 英文标签流（首次加载约 30 秒，用完自动卸载显存）。本地模型对冷门角色的作品归属可能不准，关键角色请核对生成结果。",
+      };
     }
 
     const workflow = imageWorkflowTemplate();
