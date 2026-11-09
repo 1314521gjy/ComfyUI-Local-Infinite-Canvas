@@ -2,6 +2,153 @@
   "version": 1,
   "workflows": [
     {
+      "id": "image-sdxl-character",
+      "name": "image-sdxl-character",
+      "type": "image",
+      "file": "image-sdxl-character.json",
+      "label": "动漫角色（danbooru 系底模）",
+      "description": "danbooru 标签体系底模（Illustrious / Pony / NoobAI 系）直出文生图：提示词里写角色标签如 \"yixuan \\(zenless zone zero\\)\" 即可，无需下载角色 LoRA。Pony 系建议前缀 score_9, score_8_up, score_7_up, source_anime。",
+      "lora": {
+        "filter": "Illustrious|Pony|NoobAI|ILXL|anime"
+      },
+      "bindings": {
+        "prompt": {
+          "node": "2",
+          "input": "text"
+        },
+        "negative": {
+          "node": "3",
+          "input": "text",
+          "default": "lowres, bad anatomy, bad hands, extra digits, fewer digits, watermark, signature, text, jpeg artifacts, blurry, worst quality"
+        },
+        "width": {
+          "node": "4",
+          "input": "width",
+          "from": "size.width",
+          "transform": "snap16",
+          "default": 832
+        },
+        "height": {
+          "node": "4",
+          "input": "height",
+          "from": "size.height",
+          "transform": "snap16",
+          "default": 1216
+        },
+        "batch": {
+          "node": "4",
+          "input": "batch_size",
+          "from": "count",
+          "default": 1
+        },
+        "seed": {
+          "node": "5",
+          "input": "seed",
+          "from": "params.seed",
+          "transform": "int",
+          "random": true
+        },
+        "steps": {
+          "node": "5",
+          "input": "steps",
+          "from": "quality.steps",
+          "default": 28
+        },
+        "cfg": {
+          "node": "5",
+          "input": "cfg",
+          "from": "quality.cfg",
+          "default": 6
+        },
+        "sampler": {
+          "node": "5",
+          "input": "sampler_name",
+          "from": "params.sampler",
+          "default": "euler_ancestral"
+        },
+        "scheduler": {
+          "node": "5",
+          "input": "scheduler",
+          "from": "params.scheduler",
+          "default": "normal"
+        },
+        "ckpt": {
+          "node": "1",
+          "input": "ckpt_name",
+          "from": "params.ckpt",
+          "default": "raehoshiIllustXL_v120.safetensors"
+        }
+      },
+      "parameters": [
+        {
+          "key": "seed",
+          "label": "种子",
+          "type": "number",
+          "min": 1,
+          "max": 2147483647,
+          "step": 1,
+          "description": "留空则每次随机"
+        },
+        {
+          "key": "sampler",
+          "label": "采样器",
+          "type": "select",
+          "default": "euler_ancestral",
+          "options": [
+            "euler_ancestral",
+            "euler",
+            "dpmpp_2m",
+            "dpmpp_2m_sde",
+            "dpmpp_3m_sde",
+            "res_multistep"
+          ]
+        },
+        {
+          "key": "scheduler",
+          "label": "调度器",
+          "type": "select",
+          "default": "normal",
+          "options": [
+            "normal",
+            "karras",
+            "exponential",
+            "simple",
+            "beta"
+          ]
+        }
+      ],
+      "presets": {
+        "quality": {
+          "low": {
+            "steps": 20
+          },
+          "medium": {
+            "steps": 28
+          },
+          "high": {
+            "steps": 34
+          },
+          "xhigh": {
+            "steps": 40
+          },
+          "max": {
+            "steps": 50
+          }
+        }
+      },
+      "baseModels": {
+        "param": "ckpt",
+        "classType": "CheckpointLoaderSimple",
+        "input": "ckpt_name",
+        "label": "底模",
+        "filter": "illustrious|pony|noobai|anikawaxl|anime|novaAnime|raehoshi",
+        "prefix": "anime"
+      },
+      "source": {
+        "kind": "local"
+      }
+    },
+    {
       "id": "image-z-image-turbo",
       "name": "image-z-image-turbo",
       "type": "image",
