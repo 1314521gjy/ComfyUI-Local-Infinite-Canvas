@@ -194,6 +194,22 @@ const CLOUD_IMAGE_SYSTEM_PROMPT = `你是 AI 生图提示词专家。请把用�
 
 要求：主体明确，构图、镜头、光线、材质与风格具体；保留用户的主体和意图，不要编造品牌或画面文字；图生图时说明需要保留与需要改变的部分；输出语言与“输出语言”字段一致。`;
 
+// [h3-local-fix] 本地 9B 专用精简 H3 规则：完整 skill 约 20K 字会让 9B 本地推理
+// 跑 127~309s 并触发 KV 碎片整理，超过前端 240s 超时。这里只保留三段式骨架与
+// 本地兼容规则，实测 42~60s。云端分支仍用完整 skill（buildCloudH3System），互不影响。
+const LOCAL_H3_SYSTEM_PROMPT = `你是 MiniMax H3 视频提示词改写器。把用户需求改写成可直接用于视频生成的提示词，只输出提示词正文，禁止输出思考过程、分析、解释、Markdown 代码块或前后缀。
+
+输出结构（严格按以下顺序，英文官方字段名，字段正文用中文，台词/旁白/歌词与画面文字保留原语言）：
+integrated_multimodal_description: 用 [Shot 1]...[Shot N] 分镜描述画面主体、服装、环境、光线、镜头运动、动作声音，每段 2-4 句。
+overall_soundscape: 1-4 句描述环境音、动作音、非语言人声。
+non_diegetic_music: 1-3 句描述背景音乐（乐器、速度、节奏、情绪）。
+
+本地兼容规则（VDN / cfg=1）：
+1. 描述性文字用正向事实表述，不要 no/not/without/avoid；否定词在 cfg=1 下会作为普通 token 反向生效（如 no blood 改为干净完好的皮肤）。不要改台词、旁白、歌词和画面文字。
+2. 有参考图时用 <Picture 1>、<Picture 2> 标注身份/服装/场景来源，标签须与实际输入一致；纯文本 T2VA 不得伪造 Picture 标签。
+3. 用户要单段或不切镜时写 one continuous locked-off shot from a tripod；要切镜就按意图分镜。
+4. 少堆 cinematic/photorealistic/8k/masterpiece 泛化词，优先具体光位、色温、镜头、材质、运动。`;
+
 function cloudContent(data) {
   const content = data?.choices?.[0]?.message?.content;
   if (typeof content === "string") return content;
@@ -366,6 +382,88 @@ export function createPromptOptimizer({ config, comfy, logger, modelAliasFor = n
     if (aliased !== workflow) logger?.info?.("提示词优化/反推模板已应用模型别名");
     return aliased;
   }
+  // [h3-local-fix] 提交一个「文本输出」类 ComfyUI 工作流并轮询取回文本。
+  async function runTextWorkflow(workflow, { signal, timeoutMs = 180000, label = "text workflow" } = {}) {
+    const started = Date.now();
+    const submitted = await comfy.submit(withAliases(workflow), { signal });
+    const promptId = submitted.promptId;
+    let running = true;
+    let cancelPromise = null;
+    const cancel = () => {
+      if (!running) return Promise.resolve();
+      if (!cancelPromise) cancelPromise = typeof comfy.cancel === "function" ? comfy.cancel(promptId) : comfy.interrupt(promptId);
+      return cancelPromise;
+    };
+    if (signal) signal.addEventListener("abort", () => void cancel(), { once: true });
+    try {
+      let history = null;
+      while (Date.now() - started < timeoutMs) {
+        if (signal?.aborted) {
+          await cancel();
+          throw new PromptOptimizeError(`${label}已取消`, { status: 400, code: "cancelled" });
+        }
+        history = await comfy.history(promptId);
+        const failure = historyError(history);
+        if (failure) {
+          running = false;
+          throw new PromptOptimizeError(`${label}失败：${truncate(failure, 1200)}`, {
+            status: 502, code: "comfy_execution_failed", details: failure,
+          });
+        }
+        if (historyCompleted(history)) break;
+        await sleep(1000);
+      }
+      running = false;
+      if (!historyCompleted(history)) {
+        throw new PromptOptimizeError(`${label}超时`, { status: 504, code: "prompt_optimize_timeout" });
+      }
+      const raw = outputText(history).trim();
+      if (!raw) {
+        throw new PromptOptimizeError(`${label}没有返回文本`, { status: 502, code: "no_prompt_output", details: history.outputs });
+      }
+      return { raw, promptId, elapsedMs: Date.now() - started };
+    } finally {
+      running = false;
+    }
+  }
+
+  // [h3-local-fix] 把 N 张上传图接成 instruct 节点 images 输入要的单条 [node_id, slot] link。
+  // llama_cpp_instruct_adv.images 是单个 IMAGE 输入（不是列表）：多图先经 ImageBatch 链
+  // 合成一个 IMAGE 再接，写成列表的列表会被 ComfyUI 校验拒绝（Bad linked input）。
+  // [h3-local-fix] 节点包的 images 模式只在多图时才做 max_size 缩放，单图原图直塞
+  // mmproj 会编码出海量 vision tokens 直接超时；所有图先经 ImageResizeKJv2 保比例
+  // 压到 768 长边再进 LLM（同一张 3MB 大图实测：不缩放 235~309s，缩放后 ~52s）。
+  function linkImageInputs(workflow, uploads) {
+    const ids = [];
+    uploads.forEach((uploaded, index) => {
+      const nid = String(9101 + index);
+      workflow[nid] = { class_type: "LoadImage", inputs: { image: imageValue(uploaded) } };
+      const rid = String(9300 + index);
+      workflow[rid] = {
+        class_type: "ImageResizeKJv2",
+        inputs: {
+          image: [nid, 0],
+          width: 768,
+          height: 768,
+          upscale_method: "lanczos",
+          keep_proportion: "resize",
+          pad_color: "0, 0, 0",
+          crop_position: "center",
+          divisible_by: 16,
+          device: "cpu",
+        },
+      };
+      ids.push(rid);
+    });
+    let link = [ids[0], 0];
+    for (let j = 1; j < ids.length; j += 1) {
+      const batchId = String(9200 + j);
+      workflow[batchId] = { class_type: "ImageBatch", inputs: { image1: link, image2: [ids[j], 0] } };
+      link = [batchId, 0];
+    }
+    return link;
+  }
+
   const workflowPath = path.join(config.rootDir, "prompts", "h3-prompt-enhance.json");
   const imageWorkflowPath = path.join(config.rootDir, "prompts", "image-prompt-enhance.json");
   const captionWorkflowPath = path.join(config.rootDir, "prompts", "image-caption.json");
@@ -410,96 +508,50 @@ export function createPromptOptimizer({ config, comfy, logger, modelAliasFor = n
       return { ...cloudResult, prompt: ensureFrameAlignmentPrompt(cloudResult.prompt, taskType, optimizeSeconds) };
     }
 
+    // [h3-local-fix] 本地 H3 优化改走资源中心分发的 llama.cpp 节点族
+    // （llama_cpp_model_loader → llama_cpp_instruct_adv → TE_text_display），
+    // 不再依赖未随包分发的私有 QwenTE 节点（任何非作者安装都会报 node not found）。
+    // system 用精简版规则（完整 skill 对 9B 太重会超时），云端分支不受影响。
     const workflow = workflowTemplate();
-    workflow["2"].inputs["输入提示词"] = text;
-    workflow["2"].inputs["任务类型"] = taskType;
-    workflow["2"].inputs["视频时长"] = optimizeSeconds;
-    workflow["2"].inputs["参考素材说明"] = String(referenceNote || "").slice(0, 4000);
+    const userText = [
+      `任务类型：${taskType}`,
+      `视频时长：${optimizeSeconds} 秒`,
+      `输出语言：${outputLanguage === "en" ? "英文（正文英文，台词保留原文语言）" : "中文"}`,
+      referenceNote ? `参考素材说明：${String(referenceNote).slice(0, 4000)}` : "",
+      images.length ? `参考图片：${images.length} 张（已随消息附上，以图片为准；不要编造图中不存在的场景、陈设或光线）` : "",
+      `用户原始提示词：\n${text}`,
+    ].filter(Boolean).join("\n");
+    workflow["3"].inputs["custom_prompt"] = userText;
+    workflow["3"].inputs["system_prompt"] = `${LOCAL_H3_SYSTEM_PROMPT}\n\n## 本次任务\n模式：${taskType}\n时长：${optimizeSeconds} 秒\n输出语言：${h3LanguageDirective(outputLanguage)}\n只输出最终提示词正文；禁止输出思考过程、分析、推理、解释、Markdown 代码块、前后缀或自我说明。`;
     if (images.length) {
-      workflow["3"].inputs["输入模式"] = "图片";
-      images.forEach((uploaded, index) => {
-        const nodeId = String(9101 + index);
-        workflow[nodeId] = {
-          class_type: "LoadImage",
-          inputs: { image: imageValue(uploaded) },
-          _meta: { title: `H3 Ref ${index + 1}` },
-        };
-        workflow["3"].inputs[index === 0 ? "图片" : `图片${index + 1}`] = [nodeId, 0];
-      });
-    } else {
-      workflow["3"].inputs["输入模式"] = "文本";
+      workflow["3"].inputs["images"] = linkImageInputs(workflow, images);
+      workflow["3"].inputs["inference_mode"] = "images";
     }
-    const baseSystemPrompt = String(workflow["3"].inputs["系统提示词"] || "").trim();
-    workflow["3"].inputs["系统提示词"] = `${baseSystemPrompt}${baseSystemPrompt ? "\n" : ""}${h3LanguageDirective(outputLanguage)}\n只输出最终提示词正文；禁止输出思考过程、分析、推理、解释、Markdown 代码块、前后缀或自我说明。`;
-
-    const started = Date.now();
-    const submitted = await comfy.submit(withAliases(workflow), { signal });
-    const promptId = submitted.promptId;
-    let running = true;
-    let cancelPromise = null;
-    const cancel = () => {
-      if (!running) return Promise.resolve();
-      if (!cancelPromise) cancelPromise = typeof comfy.cancel === "function" ? comfy.cancel(promptId) : comfy.interrupt(promptId);
-      return cancelPromise;
-    };
-    const onAbort = () => {
-      void cancel();
-    };
-    if (signal) signal.addEventListener("abort", onAbort, { once: true });
+    let wfResult;
     try {
-      const deadline = Date.now() + 180000;
-      let history = null;
-      while (Date.now() < deadline) {
-        if (signal?.aborted) {
-          await cancel();
-          throw new PromptOptimizeError("提示词优化已取消", { status: 400, code: "cancelled" });
-        }
-        history = await comfy.history(promptId);
-        const failure = historyError(history);
-        if (failure) {
-          running = false;
-          throw new PromptOptimizeError(`提示词优化失败：${truncate(failure, 1200)}`, {
-            status: 502,
-            code: "comfy_execution_failed",
-            details: failure,
-          });
-        }
-        if (historyCompleted(history)) break;
-        await sleep(1000);
-      }
-      running = false;
-      if (!historyCompleted(history)) {
-        throw new PromptOptimizeError("提示词优化超时", { status: 504, code: "prompt_optimize_timeout" });
-      }
-      const raw = outputText(history).trim();
-      const result = sanitizeH3Prompt(raw);
-      if (raw !== result) logger?.info?.(`prompt optimize sanitized ${raw.length}->${result.length}`);
-      if (!result) {
-        throw new PromptOptimizeError("提示词工作流没有返回文本", {
-          status: 502,
-          code: "no_prompt_output",
-          details: history.outputs,
-        });
-      }
-      logger?.info?.(`prompt optimize ${taskType} images=${images.length} ${promptId} ${Date.now() - started}ms`);
-      const speaker = ensureSpeakerTags(result);
-      if (speaker.fixed) logger?.info?.(`prompt optimize fixed ${speaker.fixed} speaker tag(s)`);
-      if (speaker.issues.length) logger?.info?.(`prompt optimize speaker issues ${speaker.issues.length}`);
-      return {
-        prompt: ensureFrameAlignmentPrompt(speaker.prompt, taskType, optimizeSeconds),
-        mode: taskType,
-        duration: optimizeSeconds,
-        promptId,
-        elapsedMs: Date.now() - started,
-        provider: "local",
-        speakerTags: { fixed: speaker.fixed, issues: speaker.issues },
-      };
+      wfResult = await runTextWorkflow(workflow, { signal, timeoutMs: 210000, label: "本地 H3 提示词优化" });
     } finally {
-      running = false;
-      signal?.removeEventListener("abort", onAbort);
+      // force_offload 的卸载实测不彻底（9B 仍常驻数 GB），收尾显式 /free 保底。
+      if (typeof comfy?.freeMemory === "function") {
+        try { await comfy.freeMemory(); } catch (e) { logger?.info?.(`h3 local freeMemory skipped: ${e?.message || e}`); }
+      }
     }
+    const { raw, promptId, elapsedMs } = wfResult;
+    const sanitized = sanitizeH3Prompt(raw);
+    if (!sanitized) throw new PromptOptimizeError("本地 H3 提示词优化没有返回文本", { status: 502, code: "no_prompt_output" });
+    logger?.info?.(`h3 prompt optimize local-llm ${taskType} images=${images.length} ${promptId} ${elapsedMs}ms`);
+    const speaker = ensureSpeakerTags(sanitized);
+    return {
+      prompt: ensureFrameAlignmentPrompt(speaker.prompt, taskType, optimizeSeconds),
+      mode: taskType,
+      duration: optimizeSeconds,
+      promptId,
+      elapsedMs,
+      provider: "local-llm",
+      speakerTags: { fixed: speaker.fixed, issues: speaker.issues },
+      note: "已用本地 Qwen3.5-9B 按 H3 规则优化（首次加载约 30 秒，用完自动卸载显存）。本地 9B 对复杂分镜/字段格式的遵循弱于云端，字段可能偏简，关键分镜请核对；追求完整度可用云端优化。",
+    };
   }
-
   async function optimizeImage({ prompt, mode, language, uploadedImages = [], imageCount = 0, signal, engine = "local", cloud = {} }) {
     const text = String(prompt || "").trim();
     if (!text) throw new PromptOptimizeError("缺少提示词", { status: 400, code: "missing_prompt" });

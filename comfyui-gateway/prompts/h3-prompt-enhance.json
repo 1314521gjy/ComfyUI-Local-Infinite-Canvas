@@ -1,74 +1,51 @@
 {
-  "1": {
-    "class_type": "QwenTE_ModelLoader",
-    "inputs": {
-      "模型系列": "Qwen3.5-VL",
-      "主模型": "Qwen3.5-9B-Q4_K_M.gguf",
-      "视觉投影mmproj": "mmproj-BF16.gguf",
-      "启用思考": false,
-      "保留历史think": false,
-      "上下文长度": 32768,
-      "GPU层数": -1,
-      "KV缓存K类型": "默认(F16)",
-      "KV缓存V类型": "默认(F16)",
-      "MoE专家上CPU": false,
-      "前N层专家上CPU": 0,
-      "Qwen3.8推理强度": "xhigh",
-      "MTP推测解码": "关闭",
-      "MTP草稿token数": 2,
-      "Flash Attention": "不开启",
-      "MTP草稿模型": "无"
-    },
-    "_meta": { "title": "Qwen3.5-9B (H3 prompt)" }
-  },
   "2": {
-    "class_type": "TE_H3_Prompt_Enhancer",
+    "class_type": "llama_cpp_model_loader",
     "inputs": {
-      "输入提示词": "",
-      "任务类型": "文生视频(T2VA)",
-      "视频时长": 5,
-      "参考素材说明": "",
-      "增强方式": "本地模板",
-      "api_key": "",
-      "api_base_url": "https://teynex.com",
-      "model": "gpt-5.6-sol",
-      "max_output_tokens": 4096,
-      "temperature": 0.6,
-      "timeout_s": 300,
-      "绕过代理": false
+      "model": "Qwen3.5-9B-Q4_K_M.gguf",
+      "mmproj": "mmproj-BF16.gguf",
+      "chat_handler": "Qwen3.5",
+      "n_ctx": 8192,
+      "vram_limit": -1,
+      "image_min_tokens": 0,
+      "image_max_tokens": 0,
+      "load_mtp": false
     },
-    "_meta": { "title": "H3 Prompt Enhancer" }
+    "_meta": {
+      "title": "Local LLM (Qwen3.5 9B) - H3"
+    }
   },
   "3": {
-    "class_type": "QwenTE_ImageInfer",
+    "class_type": "llama_cpp_instruct_adv",
     "inputs": {
-      "qwen模型": ["1", 0],
-      "输入模式": "文本",
-      "提示词": ["2", 1],
-      "系统提示词": "你是 MiniMax H3 视频提示词专家。严格按用户提供的提示词模板输出，不要解释。\n本地兼容规则（VDN / cfg=1）：\n1. 描述性文本全部用正向事实表述；no/not/without/avoid 等否定词在 cfg=1 下会作为普通 token 参与正向条件，可能反向生效，改写为正向事实（如 no blood → clean, intact, unretouched skin）。不要改台词、旁白、歌词和画面文字，不做全局替换。\n2. 有图片输入时用 <Picture 1>、<Picture 2> 标注身份/服装/场景来源，标签必须和实际输入一致；只有完全没有图片输入的纯文本 T2VA 不得伪造 Picture 标签，I2VA/FL2VA/L2VA/Ref2VA 的关键帧或参考图必须按实际输入使用对应标签。\n3. 用户要求单段/不切镜时写明 one continuous locked-off shot from a tripod（或等价正向表述）；用户要求切镜时按用户意图，不强制锁机位。\n4. 少堆 cinematic/photorealistic/8k/masterpiece 等泛化质量词，优先具体的光位、色温、镜头、材质、运动；不要一刀切禁用 cinematic。",
-      "最多帧数": 24,
-      "最大边长": 768,
-      "最大生成token": 4096,
-      "温度": 0.6,
-      "top_p": 0.9,
-      "top_k": 20,
-      "重复惩罚": 1,
-      "频率惩罚": 0,
-      "存在惩罚": 0,
+      "llama_model": [
+        "2",
+        0
+      ],
+      "preset_prompt": "Empty - Nothing",
+      "custom_prompt": "",
+      "system_prompt": "",
+      "inference_mode": "one by one",
+      "max_frames": 24,
+      "max_size": 512,
       "seed": 0,
-      "输出think块": false,
-      "生成后自动卸载模型": true
+      "force_offload": true,
+      "save_states": false
     },
-    "_meta": { "title": "QwenTE expand" }
+    "_meta": {
+      "title": "H3 Prompt Optimizer"
+    }
   },
   "4": {
     "class_type": "TE_text_display",
     "inputs": {
-      "text": "",
-      "input_text": ["3", 0],
-      "use_edited_text": false,
-      "edited_from_text": ""
+      "text": [
+        "3",
+        0
+      ]
     },
-    "_meta": { "title": "H3 prompt output" }
+    "_meta": {
+      "title": "H3 prompt output"
+    }
   }
 }
