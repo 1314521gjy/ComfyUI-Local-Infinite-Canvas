@@ -13,11 +13,11 @@
       "图生图PE模型": "qwen3.5_9b_int8_convrot.safetensors",
       "主模型": "Qwen3.5-9B-Q4_K_M.gguf",
       "mmproj": "mmproj-BF16.gguf",
-      "最大生成token": 4096,
-      "上下文长度": 8192,
+      "最大生成token": 32768,
+      "上下文长度": 32768,
       "seed": 0,
       "生成后自动卸载模型": true,
-      "启用思考": false
+      "启用思考": true
     },
     "_meta": { "title": "Qwen Image 2.1 Prompt Enhancer" }
   },

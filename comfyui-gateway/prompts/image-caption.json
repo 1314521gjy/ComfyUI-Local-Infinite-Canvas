@@ -13,8 +13,8 @@
     "inputs": {
       "model": "Qwen3.5-9B-Q4_K_M.gguf",
       "mmproj": "mmproj-BF16.gguf",
-      "chat_handler": "Qwen3.5",
-      "n_ctx": 8192,
+      "chat_handler": "Qwen3.5-Thinking",
+      "n_ctx": 32768,
       "vram_limit": -1,
       "image_min_tokens": 0,
       "image_max_tokens": 0,

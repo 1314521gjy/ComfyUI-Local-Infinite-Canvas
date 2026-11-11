@@ -63,6 +63,10 @@ const META_LINE_RE = /^(?:[-*#>\s]*)?(?:\*\*)?(?:思考过程|思考|分析|推�
 
 function stripReasoning(text) {
   let out = String(text || "");
+  // Thinking-mode handlers may emit a closing </think> without an opening <think> tag; the paired regex below
+  // cannot strip such blocks, so cut everything up to the last </think> first.
+  const close = out.lastIndexOf("</think>");
+  if (close >= 0) out = out.slice(close + "</think>".length);
   out = out.replace(THINK_BLOCK_RE, "");
   out = out.replace(/<\|[^|]{1,60}\|>/g, "");
   out = out.replace(/^\s*```[a-zA-Z0-9_-]*\s*\n?/, "").replace(/\n?```\s*$/, "");
@@ -124,6 +128,15 @@ function sanitizeImagePrompt(text) {
   out = out.replace(/^```[a-zA-Z]*\s*/, "").replace(/```$/, "").trim();
   out = out.replace(/^["“「']+|["”」']+$/g, "").trim();
   return out;
+}
+
+// seed=0 is a fixed seed in llama.cpp, so a degenerate sample reproduces byte-for-byte for the same
+// prompt (observed as endless repetition). Randomize the seed on every submission.
+function randomizeWorkflowSeed(workflow) {
+  for (const nid of Object.keys(workflow)) {
+    const ins = workflow[nid] && workflow[nid].inputs;
+    if (ins && "seed" in ins && typeof ins.seed === "number") ins.seed = Math.floor(Math.random() * 2147483647);
+  }
 }
 
 function sanitizeCaption(text) {
@@ -231,7 +244,7 @@ function assertCloudBaseUrl(raw) {
   return url.toString();
 }
 
-async function cloudChat({ system, userText, images = [], cloud = {}, signal, temperature = 0.6, maxTokens = 4096 }) {
+async function cloudChat({ system, userText, images = [], cloud = {}, signal, temperature = 0.6, maxTokens = 32768 }) {
   const baseUrl = String(cloud.baseUrl || "").trim();
   const apiKey = String(cloud.apiKey || "").trim();
   const model = String(cloud.model || "").trim();
@@ -432,6 +445,7 @@ export function createPromptOptimizer({ config, comfy, logger, modelAliasFor = n
     const baseSystemPrompt = String(workflow["3"].inputs["系统提示词"] || "").trim();
     workflow["3"].inputs["系统提示词"] = `${baseSystemPrompt}${baseSystemPrompt ? "\n" : ""}${h3LanguageDirective(outputLanguage)}\n只输出最终提示词正文；禁止输出思考过程、分析、推理、解释、Markdown 代码块、前后缀或自我说明。`;
 
+    randomizeWorkflowSeed(workflow);
     const started = Date.now();
     const submitted = await comfy.submit(withAliases(workflow), { signal });
     const promptId = submitted.promptId;
@@ -531,6 +545,7 @@ export function createPromptOptimizer({ config, comfy, logger, modelAliasFor = n
       workflow["1"].inputs[index === 0 ? "图片" : `图片${index + 1}`] = [nodeId, 0];
     });
 
+    randomizeWorkflowSeed(workflow);
     const started = Date.now();
     const submitted = await comfy.submit(withAliases(workflow), { signal });
     const promptId = submitted.promptId;
@@ -612,6 +627,7 @@ export function createPromptOptimizer({ config, comfy, logger, modelAliasFor = n
       workflow["3"].inputs["custom_prompt"] = english ? CAPTION_USER_EN : CAPTION_USER_ZH;
     }
 
+    randomizeWorkflowSeed(workflow);
     const started = Date.now();
     const submitted = await comfy.submit(withAliases(workflow), { signal });
     const promptId = submitted.promptId;
