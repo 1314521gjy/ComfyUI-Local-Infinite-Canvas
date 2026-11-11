@@ -135,6 +135,20 @@ function sanitizeCaption(text) {
   return paragraphs.join("\n\n").trim();
 }
 
+function describeEmptyCloudOutput(label, info = {}) {
+  const finish = String(info.finishReason || "").toLowerCase();
+  const used = info.completionTokens != null ? `输出预算已用 ${info.completionTokens} token` : "";
+  const think = info.reasoningTokens != null
+    ? `，其中思考 ${info.reasoningTokens} token`
+    : info.reasoningChars
+      ? `，思考正文 ${info.reasoningChars} 字`
+      : "";
+  if (finish === "length") {
+    return [`云端模型把输出预算全花在思考上，正文被截断（finish_reason=length${used ? "，" + used : ""}${think}）。请换不做长思考的模型，或由维护者提高输出预算。`, { code: "cloud_reasoning_truncated", info }];
+  }
+  return [`云端 API 返回了空${label}（finish_reason=${info.finishReason || "未知"}${used ? "，" + used : ""}${think}）。`, { code: "no_prompt_output", info }];
+}
+
 function cloudChatUrl(baseUrl) {
   const url = String(baseUrl || "").trim().replace(/\/+$/, "");
   if (!url) throw new PromptOptimizeError("云端 API 未配置 Base URL", { status: 400, code: "cloud_not_configured" });
@@ -251,7 +265,8 @@ async function cloudChat({ system, userText, images = [], cloud = {}, signal, te
     else signal.addEventListener("abort", onAbort, { once: true });
   }
   const started = Date.now();
-  const post = async (requestTemperature) => {
+  let attemptMaxTokens = maxTokens;
+  const post = async (requestTemperature, requestMaxTokens = attemptMaxTokens) => {
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
@@ -262,7 +277,7 @@ async function cloudChat({ system, userText, images = [], cloud = {}, signal, te
           { role: "user", content: userContent },
         ],
         temperature: requestTemperature,
-        max_tokens: maxTokens,
+        max_tokens: requestMaxTokens,
       }),
       signal: controller.signal,
     });
@@ -284,6 +299,11 @@ async function cloudChat({ system, userText, images = [], cloud = {}, signal, te
         ({ response, text, data } = await post(1));
       }
     }
+    // 部分 OpenAI 兼容网关对单次输出上限有更小的硬限制（如 8192/16384）：带限自动降档重试，最多两档。
+    while (!response.ok && attemptMaxTokens > 8192 && /max.?_?tokens|token limit|输出 token|输出长度/i.test(String(data?.error?.message || data?.message || text || ""))) {
+      attemptMaxTokens = Math.floor(attemptMaxTokens / 2);
+      ({ response, text, data } = await post(temperature));
+    }
     if (!response.ok) {
       const message = data?.error?.message || data?.message || text || `HTTP ${response.status}`;
       const imageHint = images.length && [400, 415, 422].includes(response.status)
@@ -291,7 +311,26 @@ async function cloudChat({ system, userText, images = [], cloud = {}, signal, te
         : "";
       throw new PromptOptimizeError(`云端 API 失败：${truncate(String(message), 800)}${imageHint}`, { status: 502, code: "cloud_api_failed", details: data });
     }
-    return { content: cloudContent(data), model, elapsedMs: Date.now() - started };
+    const envelope = data && data.base_resp;
+    if (envelope && Number(envelope.status_code) !== 0) {
+      throw new PromptOptimizeError(
+        `云端 API 失败：${truncate(String(envelope.status_msg || "base_resp status " + envelope.status_code), 800)}（base_resp.status_code=${envelope.status_code}）`,
+        { status: 502, code: "cloud_api_failed", details: data },
+      );
+    }
+    if (data && data.error && !data.choices) {
+      const message = data.error.message || data.error;
+      throw new PromptOptimizeError(`云端 API 失败：${truncate(String(message), 800)}`, { status: 502, code: "cloud_api_failed", details: data });
+    }
+    return {
+      content: cloudContent(data),
+      model,
+      elapsedMs: Date.now() - started,
+      finishReason: data?.choices?.[0]?.finish_reason || "",
+      reasoningChars: String(data?.choices?.[0]?.message?.reasoning_content || "").length,
+      completionTokens: data?.usage?.completion_tokens ?? null,
+      reasoningTokens: data?.usage?.completion_tokens_details?.reasoning_tokens ?? null,
+    };
   } catch (error) {
     if (error instanceof PromptOptimizeError) throw error;
     if (error?.name === "AbortError") {
@@ -329,9 +368,19 @@ async function cloudOptimize({ prompt, mode, duration, referenceNote, language, 
     `用户原始提示词：\n${prompt}`,
   ].filter(Boolean).join("\n");
   const system = buildCloudH3System(mode, duration, outputLanguage);
-  const { content, model, elapsedMs } = await cloudChat({ system, userText, images: cloudImages, cloud, signal });
+  const { content, model, elapsedMs, finishReason, reasoningChars, completionTokens, reasoningTokens } = await cloudChat({
+    system,
+    userText,
+    images: cloudImages,
+    cloud,
+    signal,
+    maxTokens: 32768,
+  });
   const sanitized = sanitizeH3Prompt(content);
-  if (!sanitized) throw new PromptOptimizeError("云端 API 没有返回提示词", { status: 502, code: "no_prompt_output" });
+  if (!sanitized) {
+    const [message, info] = describeEmptyCloudOutput("提示词", { finishReason, reasoningChars, completionTokens, reasoningTokens });
+    throw new PromptOptimizeError(message, { status: 502, code: info.code, details: info });
+  }
   const speaker = ensureSpeakerTags(sanitized);
   return {
     prompt: speaker.prompt,
@@ -351,9 +400,12 @@ async function cloudOptimizeImage({ prompt, mode, language, imageCount = 0, clou
     imageCount ? `参考图片：${imageCount} 张（云端模式仅使用文字说明）` : "",
     `用户原始提示词：\n${prompt}`,
   ].filter(Boolean).join("\n");
-  const { content, model, elapsedMs } = await cloudChat({ system: CLOUD_IMAGE_SYSTEM_PROMPT, userText, cloud, signal });
+  const { content, model, elapsedMs, finishReason, reasoningChars, completionTokens, reasoningTokens } = await cloudChat({ system: CLOUD_IMAGE_SYSTEM_PROMPT, userText, cloud, signal });
   const result = sanitizeImagePrompt(content);
-  if (!result) throw new PromptOptimizeError("云端 API 没有返回提示词", { status: 502, code: "no_prompt_output" });
+  if (!result) {
+    const [message, info] = describeEmptyCloudOutput("提示词", { finishReason, reasoningChars, completionTokens, reasoningTokens });
+    throw new PromptOptimizeError(message, { status: 502, code: info.code, details: info });
+  }
   return { prompt: result, mode, provider: "cloud", model, elapsedMs };
 }
 
