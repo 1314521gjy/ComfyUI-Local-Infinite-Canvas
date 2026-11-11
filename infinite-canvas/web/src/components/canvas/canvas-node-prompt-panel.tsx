@@ -96,7 +96,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     const isImage = mode === "image";
     const imageInputLimit = modelImageInputs(config, config.model || config.imageModel);
     const imageModeValue = String(config.imageMode || "").trim();
-    const textOnlyImageMode = isImage && (imageModeValue === "t2i" || (!imageModeValue && workflowId === "image-qwen21"));
+    const textOnlyImageMode = isImage && (imageModeValue === "t2i" || (!imageModeValue && (workflowId === "image-qwen21" || workflowId === "image-minimax-h3-image")));
     const usesImageReferences = textOnlyImageMode ? false : imageInputLimit === undefined ? !isH3T2V : imageInputLimit > 0;
     const optimizeStatus = node.metadata?.promptOptimizeStatus;
     const optimizeRunning = optimizeStatus === "running";
@@ -336,6 +336,8 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                 images,
                 imageCount: selectedRefs.length,
                 engine: optimizeEngine,
+                model: rawWorkflowId || config.model || "",
+                imageMode: imageModeValue || "t2i",
                 cloud: useCloud
                     ? {
                           baseUrl: (config.promptCloudBaseUrl || "").trim(),
@@ -344,6 +346,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                       }
                     : undefined,
             }, { signal: controller.signal });
+            if (result.note) message.info(result.note);
             // 生图优化没有“追加”语义：直接回填到输入框，原手打提示词继续保留。
             applyPromptResult(result.prompt);
             onConfigChange(node.id, { promptOptimizeStatus: undefined, promptOptimizeKind: undefined, promptOptimizePrompt: undefined, promptOptimizeError: undefined, promptOptimizeSource: originalPrompt || text });

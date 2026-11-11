@@ -2,6 +2,118 @@
   "version": 1,
   "workflows": [
     {
+      "id": "image-minimax-h3-image",
+      "name": "image-minimax-h3-image",
+      "type": "image",
+      "file": "image-minimax-h3-image-t2i.json",
+      "label": "MiniMax H3 Image",
+      "description": "MiniMax H3 Image 33B：文生图 6 步直出（默认 4MP，可调分辨率），图像编辑 / 多参考图变体支持 1–5 张参考图（第一张为待编辑图，提示词用 <Picture 1>、<Picture 2> 引用，输出尺寸自动匹配第一张参考图）。无负面词（CFG=1），所有内容写进正向提示词。",
+      "bindings": {
+        "prompt": {
+          "node": "4",
+          "input": "prompt"
+        },
+        "width": {
+          "node": "4",
+          "input": "width",
+          "from": "size.width",
+          "transform": "snap32",
+          "default": 2048
+        },
+        "height": {
+          "node": "4",
+          "input": "height",
+          "from": "size.height",
+          "transform": "snap32",
+          "default": 2048
+        },
+        "seed": {
+          "node": "6",
+          "input": "seed",
+          "from": "params.seed",
+          "transform": "int",
+          "random": true
+        }
+      },
+      "parameters": [
+        {
+          "key": "seed",
+          "label": "种子",
+          "type": "number",
+          "min": 1,
+          "max": 2147483647,
+          "step": 1,
+          "description": "留空则每次随机"
+        }
+      ],
+      "variantLabels": {
+        "t2i": "文生图",
+        "edit": "图像编辑 / 多参考图"
+      },
+      "variants": {
+        "t2i": {
+          "file": "image-minimax-h3-image-t2i.json",
+          "label": "文生图",
+          "description": "纯文生图：详细英文描述，默认 2048×2048（4MP），6 步直出，分辨率均为 32 的倍数。",
+          "bindings": {
+            "prompt": {
+              "node": "4",
+              "input": "prompt"
+            },
+            "width": {
+              "node": "4",
+              "input": "width",
+              "from": "size.width",
+              "transform": "snap32",
+              "default": 2048
+            },
+            "height": {
+              "node": "4",
+              "input": "height",
+              "from": "size.height",
+              "transform": "snap32",
+              "default": 2048
+            },
+            "seed": {
+              "node": "6",
+              "input": "seed",
+              "from": "params.seed",
+              "transform": "int",
+              "random": true
+            }
+          }
+        },
+        "edit": {
+          "file": "image-minimax-h3-image-edit.json",
+          "label": "图像编辑 / 多参考图",
+          "description": "1–5 张参考图：第一张是待编辑图像，其余提供身份 / 道具 / 材质 / 构图。指令写成\"将 <Picture 1> 中的 X 换成 <Picture 2> 中的 X\"。输出尺寸自动跟随第一张参考图。",
+          "bindings": {
+            "prompt": {
+              "node": "4",
+              "input": "prompt"
+            },
+            "seed": {
+              "node": "6",
+              "input": "seed",
+              "from": "params.seed",
+              "transform": "int",
+              "random": true
+            },
+            "refs": {
+              "node": "4",
+              "input": "images",
+              "from": "image",
+              "array": true,
+              "inputPrefix": "images.image_",
+              "indexBase": 1,
+              "min": 1,
+              "max": 5
+            }
+          }
+        }
+      }
+    },
+    {
       "id": "image-z-image-turbo",
       "name": "image-z-image-turbo",
       "type": "image",

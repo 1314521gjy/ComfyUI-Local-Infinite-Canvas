@@ -51,9 +51,11 @@ function mossModelInfo(config: AiConfig) {
 
 function qwenModelInfo(config: AiConfig) {
     const model = channelModelOf(config, config.model)?.model;
-    if (model?.workflowId !== "image-qwen21") return null;
+    const isQwen = model?.workflowId === "image-qwen21";
+    const isH3Image = model?.workflowId === "image-minimax-h3-image";
+    if (!isQwen && !isH3Image) return null;
     const modes = model.variantModes?.length ? model.variantModes : ["t2i", "edit", "inpaint", "outpaint"];
-    return { modes, labels: { ...qwenModeLabels, ...(model.variantLabels || {}) } };
+    return { modes, labels: { ...qwenModeLabels, ...(model.variantLabels || {}) }, isQwen, title: model.label || "Qwen Image 2.1" };
 }
 
 export function CanvasImageSettingsPopover({ config, onConfigChange, onParamsChange, onOpenChange, onOpenMaskEditor, onOpenOutpaintEditor, onOpenMossLayoutEditor, buttonClassName, placement = "topLeft" }: CanvasImageSettingsPopoverProps) {
@@ -173,7 +175,7 @@ function ImageSettingsPortal({
         >
             {qwen ? (
                 <div className="space-y-4">
-                    <div className="text-lg font-semibold">Qwen Image 2.1</div>
+                    <div className="text-lg font-semibold">{qwen.title}</div>
                     <div className="space-y-2.5">
                         <SettingTitle color={theme.node.muted}>功能</SettingTitle>
                         <div className="grid grid-cols-2 gap-2.5">
@@ -200,6 +202,8 @@ function ImageSettingsPortal({
                             <ImageSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" maxCount={10} />
                         ) : qwenMode === "edit" ? (
                             <div className="space-y-3">
+                                {qwen.isQwen ? (
+                                <>
                                 <div className="space-y-2 rounded-xl border p-3" style={{ borderColor: theme.node.stroke }}>
                                     <SettingTitle color={theme.node.muted}>画布比例</SettingTitle>
                                     <div className="grid grid-cols-3 gap-2">
@@ -239,6 +243,11 @@ function ImageSettingsPortal({
                                         多图尺寸不同时各自按比例缩放；输出尺寸默认跟随第一张参考图，原始表示不缩放。
                                     </div>
                                 </div>
+                                </>) : (
+                                    <div className="text-xs leading-4" style={{ color: theme.node.muted }}>
+                                        输出尺寸自动跟随第一张参考图，无需手动选择比例。
+                                    </div>
+                                )}
                                 <ImageSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} className="space-y-4" maxCount={10} showSize={false} />
                             </div>
                         ) : (
