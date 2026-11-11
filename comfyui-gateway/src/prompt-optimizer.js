@@ -231,7 +231,7 @@ function assertCloudBaseUrl(raw) {
   return url.toString();
 }
 
-async function cloudChat({ system, userText, images = [], cloud = {}, signal, temperature = 0.6, maxTokens = 4096 }) {
+async function cloudChat({ system, userText, images = [], cloud = {}, signal, temperature = 0.6, maxTokens = 4096, timeoutMs = 120000 }) {
   const baseUrl = String(cloud.baseUrl || "").trim();
   const apiKey = String(cloud.apiKey || "").trim();
   const model = String(cloud.model || "").trim();
@@ -244,7 +244,7 @@ async function cloudChat({ system, userText, images = [], cloud = {}, signal, te
     ? [{ type: "text", text: userText }, ...images.map((url) => ({ type: "image_url", image_url: { url } }))]
     : userText;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(new Error("云端 API 超时")), 120000);
+  const timer = setTimeout(() => controller.abort(new Error("云端 API 超时")), timeoutMs);
   const onAbort = () => controller.abort(signal?.reason);
   if (signal) {
     if (signal.aborted) controller.abort(signal.reason);
@@ -357,6 +357,75 @@ async function cloudOptimizeImage({ prompt, mode, language, imageCount = 0, clou
   return { prompt: result, mode, provider: "cloud", model, elapsedMs };
 }
 
+// [h3img-pe] MiniMax-H3-Image 模型 id 匹配（registry 中 image-minimax-h3-image 及其变体）。
+const H3_IMAGE_MODEL_RE = /image-minimax-h3-image/i;
+
+// [h3img-pe] 官方 PE 输出 JSON 契约解析：优先取 expanded_caption 字段。
+// 注意 Thinking handler 可能只输出闭合 </think>（无开头标签），需先切断再清洗。
+function extractExpandedCaption(raw) {
+  let text = String(raw || "");
+  const close = text.lastIndexOf("</think>");
+  if (close >= 0) text = text.slice(close + "</think>".length);
+  text = stripReasoning(text).trim();
+  if (!text) return "";
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence && fence[1].includes("expanded_caption")) text = fence[1].trim();
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    try {
+      const obj = JSON.parse(text.slice(start, end + 1));
+      if (obj && typeof obj.expanded_caption === "string" && obj.expanded_caption.trim()) {
+        return obj.expanded_caption.trim();
+      }
+    } catch {
+      // 不是合法 JSON，继续走正则兜底
+    }
+  }
+  // 思考正文里可能出现同名草稿字段，取最后一个匹配而不是第一个
+  const capMatches = [...text.matchAll(/"expanded_caption"\s*:\s*"((?:[^"\\]|\\.)*)"/g)];
+  const m = capMatches.length ? capMatches[capMatches.length - 1] : null;
+  if (m) {
+    try {
+      return JSON.parse(`"${m[1]}"`).trim();
+    } catch {
+      return m[1].trim();
+    }
+  }
+  // 模型没按 JSON 输出时退回整段清洗文本
+  return sanitizeImagePrompt(text);
+}
+
+// [h3img-pe] 云端：与官方 TextGenerateV2 链同构的提示词扩展请求。
+// 官方 edit 模板 38K 字符（~10K token）+ 思考模型长推理 + 长 caption，超时放宽到 225s。
+async function cloudOptimizeH3Image({ prompt, mode, images = [], pe, cloud = {}, signal }) {
+  const isEdit = mode === "edit";
+  const template = isEdit ? pe.edit : pe.t2i;
+  // User Aspect Ratio Selection 属于"最终输入部分"（官方模板语义），须拼在 output_text: 之前
+  const inputText = isEdit ? `${prompt}\n\nUser Aspect Ratio Selection: adaptive` : prompt;
+  const userText = template.split("{input text}").join(inputText) + "\noutput_text:";
+  const { content, model, elapsedMs } = await cloudChat({
+    system: pe.contract,
+    userText,
+    images: isEdit ? images : [],
+    cloud,
+    signal,
+    maxTokens: 32768,
+    timeoutMs: 225000,
+  });
+  const caption = extractExpandedCaption(content);
+  if (!caption) throw new PromptOptimizeError("云端 API 没有返回提示词", { status: 502, code: "no_prompt_output" });
+  return {
+    prompt: caption,
+    mode,
+    provider: "cloud",
+    style: "h3-image",
+    model,
+    elapsedMs,
+    note: "已按 MiniMax-H3-Image 官方提示词扩展器（PE）模板改写：输出为模型可直接消化的英文详述提示词。",
+  };
+}
+
 export function createPromptOptimizer({ config, comfy, logger, modelAliasFor = null, loaderSpecs = undefined }) {
   // 反推/优化提交的是打包模板，模型名写死在模板里；必须和出图路径一样套别名。
   // loaderSpecs 允许传 getter：网关启动扫描可能还没完成，不能拿旧快照。
@@ -383,6 +452,115 @@ export function createPromptOptimizer({ config, comfy, logger, modelAliasFor = n
   function imageWorkflowTemplate() {
     if (!imageTemplate) imageTemplate = JSON.parse(fs.readFileSync(imageWorkflowPath, "utf8"));
     return deepClone(imageTemplate);
+  }
+
+  // [h3img-pe] MiniMax-H3-Image 官方 PE 文本与本地执行工作流
+  const h3imgPEPaths = {
+    contract: path.join(config.rootDir, "prompts", "h3img-pe-contract.txt"),
+    t2i: path.join(config.rootDir, "prompts", "h3img-pe-t2i.txt"),
+    edit: path.join(config.rootDir, "prompts", "h3img-pe-edit.txt"),
+  };
+  let h3imgPECache = null;
+  function h3ImagePE() {
+    if (!h3imgPECache) {
+      h3imgPECache = {
+        contract: fs.readFileSync(h3imgPEPaths.contract, "utf8"),
+        t2i: fs.readFileSync(h3imgPEPaths.t2i, "utf8"),
+        edit: fs.readFileSync(h3imgPEPaths.edit, "utf8"),
+      };
+    }
+    return h3imgPECache;
+  }
+  const h3imgWorkflowPath = path.join(config.rootDir, "prompts", "h3img-prompt-enhance.json");
+  let h3imgTemplate = null;
+  function h3imgWorkflowTemplate() {
+    if (!h3imgTemplate) h3imgTemplate = JSON.parse(fs.readFileSync(h3imgWorkflowPath, "utf8"));
+    return deepClone(h3imgTemplate);
+  }
+
+  // [h3img-pe] 把 N 张上传图接成 instruct 节点 images 输入要的单条 [node_id, slot] link。
+  // llama_cpp_instruct_adv.images 是单个 IMAGE 输入；多图先经 ImageBatch 链合成一个 IMAGE 再接。
+  // 所有图先过 ImageResizeKJv2 保比例压到 768 长边再进 LLM：节点包的 images 模式只在多帧时缩放，
+  // 大图单张直塞 mmproj 会被编出海量 vision tokens 导致 prefill 超时。
+  function linkH3ImageInputs(workflow, uploads) {
+    const ids = [];
+    uploads.forEach((uploaded, index) => {
+      const nid = String(9101 + index);
+      workflow[nid] = { class_type: "LoadImage", inputs: { image: imageValue(uploaded) } };
+      const rid = String(9300 + index);
+      workflow[rid] = {
+        class_type: "ImageResizeKJv2",
+        inputs: {
+          image: [nid, 0],
+          width: 768,
+          height: 768,
+          upscale_method: "lanczos",
+          keep_proportion: "resize",
+          pad_color: "0, 0, 0",
+          crop_position: "center",
+          divisible_by: 16,
+          device: "cpu",
+        },
+      };
+      ids.push(rid);
+    });
+    let link = [ids[0], 0];
+    for (let j = 1; j < ids.length; j += 1) {
+      const batchId = String(9200 + j);
+      workflow[batchId] = { class_type: "ImageBatch", inputs: { image1: link, image2: [ids[j], 0] } };
+      link = [batchId, 0];
+    }
+    return link;
+  }
+
+  // [h3img-pe] 提交文本输出类工作流并轮询取回文本（自包含实现）。
+  // seed=0 在 llama.cpp 是固定 seed，退化采样会随同一提示词逐字节复读，提交前随机化。
+  // 超时/取消路径必须撤掉 ComfyUI 任务，否则僵尸 llama.cpp 任务会堵死队列和事件循环。
+  async function runH3ImageTextWorkflow(workflow, { signal, timeoutMs = 225000, label = "text workflow" } = {}) {
+    const started = Date.now();
+    const seedInputs = workflow["3"] && workflow["3"].inputs;
+    if (seedInputs && "seed" in seedInputs) seedInputs.seed = Math.floor(Math.random() * 2147483647);
+    const submitted = await comfy.submit(withAliases(workflow), { signal });
+    const promptId = submitted.promptId;
+    let running = true;
+    let cancelPromise = null;
+    const cancel = () => {
+      if (!running) return Promise.resolve();
+      if (!cancelPromise) cancelPromise = typeof comfy.cancel === "function" ? comfy.cancel(promptId) : comfy.interrupt(promptId);
+      return cancelPromise;
+    };
+    if (signal) signal.addEventListener("abort", () => void cancel(), { once: true });
+    try {
+      let history = null;
+      while (Date.now() - started < timeoutMs) {
+        if (signal?.aborted) {
+          await cancel();
+          throw new PromptOptimizeError(`${label}已取消`, { status: 400, code: "cancelled" });
+        }
+        history = await comfy.history(promptId);
+        const failure = historyError(history);
+        if (failure) {
+          running = false;
+          throw new PromptOptimizeError(`${label}失败：${truncate(failure, 1200)}`, {
+            status: 502, code: "comfy_execution_failed", details: failure,
+          });
+        }
+        if (historyCompleted(history)) break;
+        await sleep(1000);
+      }
+      running = false;
+      if (!historyCompleted(history)) {
+        await cancel();
+        throw new PromptOptimizeError(`${label}超时`, { status: 504, code: "prompt_optimize_timeout" });
+      }
+      const raw = outputText(history).trim();
+      if (!raw) {
+        throw new PromptOptimizeError(`${label}没有返回文本`, { status: 502, code: "no_prompt_output", details: history.outputs });
+      }
+      return { raw, promptId, elapsedMs: Date.now() - started };
+    } finally {
+      running = false;
+    }
   }
 
   function captionWorkflowTemplate(engine) {
@@ -500,7 +678,7 @@ export function createPromptOptimizer({ config, comfy, logger, modelAliasFor = n
     }
   }
 
-  async function optimizeImage({ prompt, mode, language, uploadedImages = [], imageCount = 0, signal, engine = "local", cloud = {} }) {
+  async function optimizeImage({ prompt, mode, language, uploadedImages = [], imageCount = 0, signal, engine = "local", cloud = {}, model = "", imageMode = "", cloudImages = [] }) {
     const text = String(prompt || "").trim();
     if (!text) throw new PromptOptimizeError("缺少提示词", { status: 400, code: "missing_prompt" });
     if (text.length > 8000) throw new PromptOptimizeError("提示词过长", { status: 400, code: "prompt_too_long" });
@@ -508,11 +686,58 @@ export function createPromptOptimizer({ config, comfy, logger, modelAliasFor = n
     const useCloud = String(engine || "local").toLowerCase() === "cloud";
     const referenceCount = images.length || Math.max(0, Number(imageCount) || 0);
     const taskMode = String(mode || "").toLowerCase() === "image" ? "图生图" : referenceCount ? "图生图" : "文生图";
+    const isH3Image = H3_IMAGE_MODEL_RE.test(String(model || ""));
+    const h3ImageMode = String(imageMode || "").toLowerCase() === "edit" ? "edit" : "t2i";
+    if (isH3Image && h3ImageMode === "edit" && !useCloud && !images.length) {
+      throw new PromptOptimizeError("H3-Image 编辑模式提示词优化需要至少 1 张参考图", { status: 400, code: "missing_reference_image" });
+    }
     if (!useCloud && taskMode === "图生图" && !images.length) {
       throw new PromptOptimizeError("图生图提示词优化需要至少 1 张参考图", { status: 400, code: "missing_reference_image" });
     }
     if (useCloud) {
+      if (isH3Image) {
+        return cloudOptimizeH3Image({ prompt: text, mode: h3ImageMode, images: (cloudImages || []).slice(0, 8), pe: h3ImagePE(), cloud, signal });
+      }
       return cloudOptimizeImage({ prompt: text, mode: taskMode, language, imageCount: referenceCount, cloud, signal });
+    }
+
+    // [h3img-pe] MiniMax-H3-Image：官方 PE 模板（t2i 15.8K / edit 38.4K 字符）+
+    // 本地 Qwen3.5-9B（llama.cpp，同官方 PE 的模型家族）执行。edit 模式带参考图
+    // （linkH3ImageInputs 自动 768 缩放）；JSON 契约进 system_prompt，大模板进 custom_prompt。
+    if (isH3Image) {
+      const pe = h3ImagePE();
+      const workflow = h3imgWorkflowTemplate();
+      const isEdit = h3ImageMode === "edit";
+      const inputText = isEdit ? `${text}\n\nUser Aspect Ratio Selection: adaptive` : text;
+      const userPayload = (isEdit ? pe.edit : pe.t2i).split("{input text}").join(inputText) + "\noutput_text:";
+      workflow["3"].inputs["system_prompt"] = pe.contract;
+      workflow["3"].inputs["custom_prompt"] = userPayload;
+      if (isEdit && images.length) {
+        workflow["3"].inputs["images"] = linkH3ImageInputs(workflow, images);
+        workflow["3"].inputs["inference_mode"] = "images";
+      }
+      try {
+        const { raw, promptId, elapsedMs } = await runH3ImageTextWorkflow(workflow, { signal, timeoutMs: 225000, label: "本地 H3-Image 提示词扩展" });
+        const caption = extractExpandedCaption(raw);
+        if (!caption) {
+          throw new PromptOptimizeError("本地 H3-Image 提示词扩展没有返回有效内容", { status: 502, code: "no_prompt_output", details: { rawLength: raw.length } });
+        }
+        logger?.info?.(`image prompt optimize local-llm h3image ${h3ImageMode} images=${images.length} ${promptId} ${elapsedMs}ms`);
+        return {
+          prompt: caption,
+          mode: h3ImageMode,
+          promptId,
+          elapsedMs,
+          provider: "local-llm",
+          style: "h3-image",
+          note: "已按 MiniMax-H3-Image 官方提示词扩展器（PE）模板、用本地 Qwen3.5-9B 改写为英文详述提示词（首次加载较慢，用完自动卸载显存）。",
+        };
+      } finally {
+        // 成功/失败/超时都要释放：9B 残留会拖垮后续出图。
+        if (typeof comfy.freeMemory === "function") {
+          try { await comfy.freeMemory(); } catch { /* 尽力释放，失败不阻断 */ }
+        }
+      }
     }
 
     const workflow = imageWorkflowTemplate();

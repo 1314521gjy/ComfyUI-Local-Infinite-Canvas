@@ -794,7 +794,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
     }
     const requestSize = resolveRequestSize(config.size);
     const background = normalizeBackground(config.background);
-    const imageMode = config.imageMode || (channelModelOf(config, requestConfig.model)?.model?.workflowId === "image-qwen21" ? "t2i" : "");
+    const imageMode = config.imageMode || (["image-qwen21", "image-minimax-h3-image"].includes(channelModelOf(config, requestConfig.model)?.model?.workflowId || "") ? "t2i" : "");
     const requestParams = { ...(options?.params ?? requestConfig.params ?? {}) };
     if (imageMode === "layout" && config.layout) {
         requestParams.layout = config.layout;
@@ -1157,11 +1157,11 @@ export async function requestPromptOptimize(
     }
 }
 
-export type ImagePromptOptimizeResult = { prompt: string; mode: string };
+export type ImagePromptOptimizeResult = { prompt: string; mode: string; provider?: string; style?: string; note?: string };
 
 export async function requestImagePromptOptimize(
     config: AiConfig,
-    params: { prompt: string; mode?: "text" | "image"; language?: "zh" | "en"; images?: ReferenceImage[]; imageCount?: number; engine?: "local" | "cloud"; cloud?: { baseUrl?: string; apiKey?: string; model?: string } },
+    params: { prompt: string; mode?: "text" | "image"; language?: "zh" | "en"; images?: ReferenceImage[]; imageCount?: number; engine?: "local" | "cloud"; model?: string; imageMode?: string; cloud?: { baseUrl?: string; apiKey?: string; model?: string } },
     options?: RequestOptions,
 ): Promise<ImagePromptOptimizeResult> {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.imageModel);
@@ -1170,6 +1170,8 @@ export async function requestImagePromptOptimize(
     const formData = new FormData();
     formData.set("prompt", params.prompt);
     if (params.mode) formData.set("mode", params.mode);
+    if (params.model) formData.set("model", params.model);
+    if (params.imageMode) formData.set("imageMode", params.imageMode);
     if (params.language) formData.set("language", params.language);
     if (params.engine) formData.set("engine", params.engine);
     if (params.cloud?.baseUrl) formData.set("cloudBaseUrl", params.cloud.baseUrl);
@@ -1177,10 +1179,9 @@ export async function requestImagePromptOptimize(
     if (params.cloud?.model) formData.set("cloudModel", params.cloud.model);
     const images = params.images || [];
     formData.set("imageCount", String(params.imageCount ?? images.length));
-    if (params.engine !== "cloud") {
-        const files = await Promise.all(images.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
-        files.forEach((file, index) => formData.append(index === 0 ? "image" : `image${index + 1}`, file));
-    }
+    // 两种引擎都附文件：本地走 ComfyUI 上传，云端（H3-Image PE 等）由网关转 data URL。
+    const files = await Promise.all(images.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
+    files.forEach((file, index) => formData.append(index === 0 ? "image" : `image${index + 1}`, file));
     try {
         const response = await axios.post<ImagePromptOptimizeResult>(`${root}/v1/prompts/optimize-image`, formData, {
             headers: aiHeaders(requestConfig),
