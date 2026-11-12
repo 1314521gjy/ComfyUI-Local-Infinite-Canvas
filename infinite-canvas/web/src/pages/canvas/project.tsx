@@ -53,7 +53,7 @@ import { CanvasSidePanel } from "@/components/canvas/canvas-side-panel";
 import { CanvasSaveStyleModal, type StyleRecipeDraft } from "@/components/canvas/canvas-save-style-modal";
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
 import { useAgentStore } from "@/stores/use-agent-store";
-import { buildStyleRecipeConfig, resolveStyleRecipeModel, styleRecipeModelLabel } from "@/lib/canvas/style-recipe";
+import { buildStyleRecipeConfig, resolveStyleRecipeModel, styleRecipeKind, styleRecipeModelLabel } from "@/lib/canvas/style-recipe";
 import { normalizeStyleRecipeLoras, useStyleRecipeStore, type StyleRecipe } from "@/stores/use-style-recipe-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
@@ -2364,7 +2364,35 @@ function InfiniteCanvasPage() {
 
     const stageNodeStyle = useCallback(
         async (node: CanvasNodeData) => {
-            if (node.type !== CanvasNodeType.Image) return;
+            if (node.type !== CanvasNodeType.Image && node.type !== CanvasNodeType.Video) return;
+            if (node.type === CanvasNodeType.Video) {
+                if (!node.metadata?.content) {
+                    message.error(t("canvas.projectPage.noVideoToSave"));
+                    return;
+                }
+                const thumbAssetId = addAsset({
+                    kind: "video",
+                    title: node.metadata?.prompt?.slice(0, 24) || t("canvas.projectPage.canvasVideo"),
+                    coverUrl: "",
+                    tags: [],
+                    source: "Canvas",
+                    data: { url: node.metadata.content, storageKey: node.metadata.storageKey, width: node.width, height: node.height, bytes: node.metadata.bytes || 0, mimeType: node.metadata.mimeType || "video/mp4" },
+                    metadata: { source: "canvas", nodeId: node.id, prompt: node.metadata?.prompt },
+                });
+                const videoPrompt = node.metadata?.prompt?.trim() || "";
+                const videoContext = buildNodeGenerationContext(node.id, nodesRef.current, connectionsRef.current, videoPrompt);
+                const videoParams = (node.metadata?.params || {}) as Record<string, unknown>;
+                const videoStoredLoras = normalizeStyleRecipeLoras(videoParams.loras);
+                const videoLoras = videoStoredLoras.length ? videoStoredLoras : normalizeStyleRecipeLoras(videoContext.loras);
+                setStyleRecipeDraft({
+                    thumbAssetId,
+                    loras: videoLoras,
+                    config: buildStyleRecipeConfig(effectiveConfig, node),
+                    defaultName: t("canvas.styleRecipes.defaultName"),
+                    kind: "video",
+                });
+                return;
+            }
             const primaryImage = node.metadata?.images?.find((image) => image.id === node.metadata?.primaryImageId) || node.metadata?.images?.[0];
             const imageContent = primaryImage?.content || node.metadata?.content || "";
             if (!imageContent) {
@@ -2399,6 +2427,7 @@ function InfiniteCanvasPage() {
                 loras,
                 config: buildStyleRecipeConfig(effectiveConfig, node),
                 defaultName: t("canvas.styleRecipes.defaultName"),
+                kind: "image",
             });
         },
         [addAsset, effectiveConfig, message, t],
@@ -2407,7 +2436,8 @@ function InfiniteCanvasPage() {
     const createStyleRecipeCard = useCallback(
         (recipe: StyleRecipe) => {
             const loras = normalizeStyleRecipeLoras(recipe.loras);
-            let imageNode = createCanvasNode(CanvasNodeType.Image, getCanvasCenter(), {
+            const recipeKind = styleRecipeKind(recipe);
+            let imageNode = createCanvasNode(recipeKind === "video" ? CanvasNodeType.Video : CanvasNodeType.Image, getCanvasCenter(), {
                 model: recipe.config.model,
             }, { remember: false, inherit: false });
             let loraNode: CanvasNodeData | null = null;
@@ -2447,7 +2477,7 @@ function InfiniteCanvasPage() {
     const applyStyleRecipe = useCallback(
         (recipe: StyleRecipe) => {
             const loras = normalizeStyleRecipeLoras(recipe.loras);
-            const resolved = resolveStyleRecipeModel(effectiveConfig, recipe.config.model);
+            const resolved = resolveStyleRecipeModel(effectiveConfig, recipe.config.model, styleRecipeKind(recipe));
             const modelMissing = resolved.missing;
             const finish = (missingLoras: string[]) => {
                 if (modelMissing || missingLoras.length) {

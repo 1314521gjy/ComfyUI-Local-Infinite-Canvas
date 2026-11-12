@@ -1,5 +1,5 @@
 import { channelModelOf, type AiConfig } from "@/stores/use-config-store";
-import type { CanvasNodeData } from "@/types/canvas";
+import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 import { buildGenerationConfig } from "./canvas-generation-helpers";
 
 export type StyleRecipeLora = { name: string; strength: number };
@@ -16,6 +16,8 @@ export type StyleRecipe = {
     createdAt: string;
     loras: StyleRecipeLora[];
     config: StyleRecipeConfig;
+    /** image (default for legacy recipes) or video. */
+    kind?: "image" | "video";
 };
 
 export function normalizeStyleRecipeLoras(value: unknown): StyleRecipeLora[] {
@@ -45,7 +47,7 @@ export function normalizeStyleRecipeConfig(value: unknown): StyleRecipeConfig {
 /** 兼容早期没有 config / loras 字段的配方；只在读取时补全，不写回用户数据。 */
 export function normalizeStyleRecipe(value: unknown): StyleRecipe | null {
     if (!value || typeof value !== "object") return null;
-    const item = value as { id?: unknown; name?: unknown; thumbAssetId?: unknown; createdAt?: unknown; loras?: unknown; config?: unknown; model?: unknown; modelLabel?: unknown };
+    const item = value as { id?: unknown; name?: unknown; thumbAssetId?: unknown; createdAt?: unknown; loras?: unknown; config?: unknown; model?: unknown; modelLabel?: unknown; kind?: unknown };
     const id = typeof item.id === "string" ? item.id : "";
     const name = typeof item.name === "string" ? item.name : "";
     if (!id || !name) return null;
@@ -62,6 +64,7 @@ export function normalizeStyleRecipe(value: unknown): StyleRecipe | null {
             ...(config.model || legacyModel ? { model: config.model || legacyModel } : {}),
             ...(config.modelLabel || legacyLabel ? { modelLabel: config.modelLabel || legacyLabel } : {}),
         },
+        ...(item.kind === "video" || item.kind === "image" ? { kind: item.kind as "image" | "video" } : {}),
     };
 }
 
@@ -77,17 +80,31 @@ export function styleRecipeModelLabel(config: AiConfig, model?: string, fallback
 
 /** 保存配方时，model 与 modelLabel 必须来自同一个卡片模型。 */
 export function buildStyleRecipeConfig(config: AiConfig, node: CanvasNodeData): StyleRecipeConfig {
-    const model = (node.metadata?.model || buildGenerationConfig(config, node, "image").model || "").trim();
+    const mode = node.type === CanvasNodeType.Video ? "video" : "image";
+    const model = (node.metadata?.model || buildGenerationConfig(config, node, mode).model || "").trim();
     return model ? { model, modelLabel: styleRecipeModelLabel(config, model) } : {};
 }
 
 /** 套用配方时按 id 精确解析；缺失或能力不符只报缺模型，不回退到默认模型。 */
-export function resolveStyleRecipeModel(config: AiConfig, model?: string) {
+export function resolveStyleRecipeModel(config: AiConfig, model?: string, kind: "image" | "video" = "image") {
     const value = (model || "").trim();
     const found = value ? channelModelOf(config, value) : null;
     return {
         model: value,
         label: found ? found.model.label || found.model.name : value,
-        missing: !found || found.model.capability !== "image",
+        missing: !found || found.model.capability !== kind,
     };
+}
+
+export function styleRecipeKind(recipe: Pick<StyleRecipe, "kind">) {
+    return recipe.kind === "video" ? ("video" as const) : ("image" as const);
+}
+
+/** 二级分组键：底模显示名；无法解析时回退配方自带的 modelLabel。 */
+export function styleRecipeBaseModelGroup(config: AiConfig, model?: string, fallbackLabel?: string) {
+    const found = (model || "").trim() ? channelModelOf(config, model) : null;
+    const entry = found?.model;
+    if (!entry) return (fallbackLabel || "").trim() || "-";
+    const base = (entry.baseModelLabel || entry.baseModel || "").trim();
+    return base || entry.label || entry.name || "-";
 }

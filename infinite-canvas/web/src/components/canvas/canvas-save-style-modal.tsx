@@ -13,6 +13,7 @@ export type StyleRecipeDraft = {
     loras: StyleRecipeLora[];
     config: StyleRecipeConfig;
     defaultName: string;
+    kind?: "image" | "video";
 };
 
 export function CanvasSaveStyleModal({ open, draft, onClose }: { open: boolean; draft: StyleRecipeDraft | null; onClose: () => void }) {
@@ -39,6 +40,7 @@ export function CanvasSaveStyleModal({ open, draft, onClose }: { open: boolean; 
             thumbAssetId: draft.thumbAssetId,
             loras: draft.loras,
             config: draft.config,
+            ...(draft.kind ? { kind: draft.kind } : {}),
         });
         message.success(t("canvas.styleRecipes.saved", { name: name.trim() }));
         onClose();
@@ -49,7 +51,7 @@ export function CanvasSaveStyleModal({ open, draft, onClose }: { open: boolean; 
             {draft ? (
                 <div className="flex gap-4 pt-1">
                     <div className="size-32 shrink-0 overflow-hidden rounded-xl bg-stone-100 dark:bg-stone-800">
-                        {cover ? <img src={cover} alt="" className="size-full object-cover" /> : <div className="flex size-full items-center justify-center px-2 text-center text-xs opacity-50">{t("canvas.styleRecipes.thumbMissing")}</div>}
+                        {asset?.kind === "video" && asset.data.url ? <video src={`${asset.data.url}#t=0.1`} muted playsInline preload="metadata" className="size-full object-cover" /> : cover ? <img src={cover} alt="" className="size-full object-cover" /> : <div className="flex size-full items-center justify-center px-2 text-center text-xs opacity-50">{t("canvas.styleRecipes.thumbMissing")}</div>}
                     </div>
                     <div className="min-w-0 flex-1 space-y-3">
                         <div>
@@ -57,7 +59,7 @@ export function CanvasSaveStyleModal({ open, draft, onClose }: { open: boolean; 
                             <Input value={name} maxLength={40} placeholder={t("canvas.styleRecipes.namePlaceholder")} onChange={(event) => setName(event.target.value)} />
                         </div>
                         <div className="text-xs opacity-55">
-                            {t("canvas.styleRecipes.summary", { model: styleRecipeModelLabel(config, draft.config.model, draft.config.modelLabel) })}
+                            {draft.kind === "video" ? t("canvas.styleRecipes.kindVideo") : t("canvas.styleRecipes.kindImage")} · {t("canvas.styleRecipes.summary", { model: styleRecipeModelLabel(config, draft.config.model, draft.config.modelLabel) })}
                             {draft.loras.length ? ` · ${t("canvas.styleRecipes.loraSummary", { count: draft.loras.length })}` : ""}
                         </div>
                     </div>
