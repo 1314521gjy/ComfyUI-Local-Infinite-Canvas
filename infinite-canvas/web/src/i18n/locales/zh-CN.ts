@@ -9,6 +9,7 @@ export default {
     },
     common: {
         cancel: "取消",
+        close: "关闭",
         save: "保存",
         yes: "是",
         no: "否",
@@ -350,12 +351,12 @@ export default {
         batchDownloaded: "已下载 {{count}} 个文件",
         batchDownloadPartial: "已下载 {{count}} 个，{{failed}} 个失败",
         styleRecipes: {
-            tab: "风格配方", saveShort: "存为风格", saveTitle: "保存为风格配方", dialogTitle: "存为风格",
+            tab: "风格配方", saveShort: "存为风格", saveTitle: "保存为风格配方", dialogTitle: "存为风格", groupImage: "生图", groupVideo: "生视频", kindImage: "生图配方", kindVideo: "视频配方",
             name: "配方名称", namePlaceholder: "给这个风格起个名字",
             detailModel: "底模",
             detailLoras: "LoRA", detailNoLoras: "无 LoRA", viewRecipe: "查看配方",
             summary: "{{model}}", loraSummary: "LoRA {{count}} 个",
-            save: "保存配方", saved: "已存为风格「{{name}}」", empty: "还没有风格配方", emptyHint: "生成图片后，在图片上方菜单点「存为风格」",
+            save: "保存配方", saved: "已存为风格「{{name}}」", empty: "还没有风格配方", emptyHint: "生成图片或视频后，在卡片上方菜单点「存为风格」",
             apply: "应用", applied: "已按「{{name}}」新建生成卡",
             missingTitle: "配方不可用", missingDescription: "「{{name}}」依赖的模型或 LoRA 已不在当前支持列表中，无法套用。是否删除该配方？", missingModel: "缺失的底模", missingLoras: "缺失的 LoRA", missingDelete: "删除配方", loraListUnavailable: "无法读取本机 LoRA 列表，请检查网关连接后重试",
             rename: "重命名", renameTitle: "重命名风格配方", renamePlaceholder: "配方名称",

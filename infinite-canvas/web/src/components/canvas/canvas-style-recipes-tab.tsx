@@ -5,14 +5,15 @@ import { useTranslation } from "react-i18next";
 
 import { collectNodeLoras } from "@/components/canvas/canvas-node-generation";
 import type { CanvasTheme } from "@/lib/canvas-theme";
-import { styleRecipeModelLabel } from "@/lib/canvas/style-recipe";
+import { styleRecipeBaseModelGroup, styleRecipeKind, styleRecipeModelLabel } from "@/lib/canvas/style-recipe";
 import { getImagePreviewRevision, subscribeImagePreviews } from "@/services/image-storage";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { assetCoverUrl, useAssetStore } from "@/stores/use-asset-store";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import { normalizeStyleRecipeLoras, useStyleRecipeStore, type StyleRecipe, type StyleRecipeLora } from "@/stores/use-style-recipe-store";
 
-const ACTION_BUTTON = "flex size-8 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-colors hover:bg-black/80";
+const ACTION_BUTTON = "grid size-8 place-items-center rounded-full bg-white/90 text-stone-700 shadow-sm backdrop-blur transition hover:bg-white hover:text-stone-900 dark:bg-black/60 dark:text-stone-100 dark:hover:bg-black/80";
+const ACTION_BUTTON_DANGER = "grid size-8 place-items-center rounded-full bg-white/90 text-stone-700 shadow-sm backdrop-blur transition hover:bg-white hover:text-red-500 dark:bg-black/60 dark:text-stone-100 dark:hover:bg-black/80 dark:hover:text-red-400";
 
 export function CanvasStyleRecipesTab({ theme, onApply }: { theme: CanvasTheme; onApply: (recipe: StyleRecipe) => void }) {
     const { message } = App.useApp();
@@ -29,6 +30,32 @@ export function CanvasStyleRecipesTab({ theme, onApply }: { theme: CanvasTheme; 
     const viewing = viewingId ? recipes.find((recipe) => recipe.id === viewingId) || null : null;
     const viewingAsset = viewing ? assetById.get(viewing.thumbAssetId) : undefined;
     const viewingCover = viewingAsset ? assetCoverUrl(viewingAsset) : "";
+    const grouped = useMemo(() => {
+        const groups: Array<{ kind: "image" | "video"; label: string; models: Array<{ label: string; recipes: StyleRecipe[] }> }> = [];
+        for (const kind of ["image", "video"] as const) {
+            const kindRecipes = recipes.filter((recipe) => styleRecipeKind(recipe) === kind);
+            if (!kindRecipes.length) continue;
+            const order: string[] = [];
+            const byModel = new Map<string, StyleRecipe[]>();
+            for (const recipe of kindRecipes) {
+                const label = styleRecipeBaseModelGroup(config, recipe.config.model, recipe.config.modelLabel);
+                if (!byModel.has(label)) {
+                    byModel.set(label, []);
+                    order.push(label);
+                }
+                byModel.get(label)!.push(recipe);
+            }
+            groups.push({ kind, label: t(kind === "video" ? "canvas.styleRecipes.groupVideo" : "canvas.styleRecipes.groupImage"), models: order.map((label) => ({ label, recipes: byModel.get(label)! })) });
+        }
+        return groups;
+    }, [recipes, config, t]);
+
+    const renderRecipeCover = (recipe: StyleRecipe, className: string) => {
+        const asset = assetById.get(recipe.thumbAssetId);
+        if (asset?.kind === "video" && asset.data.url) return <video src={`${asset.data.url}#t=0.1`} muted playsInline preload="metadata" className={className} />;
+        const cover = asset ? assetCoverUrl(asset) : "";
+        return cover ? <img src={cover} alt="" className={className} /> : <span className="flex size-full items-center justify-center px-2 text-center text-xs opacity-40">{t("canvas.styleRecipes.thumbMissing")}</span>;
+    };
 
     const lorasByRecipeId = useMemo(() => {
         const sourceNodeIds = new Set<string>();
@@ -90,17 +117,24 @@ export function CanvasStyleRecipesTab({ theme, onApply }: { theme: CanvasTheme; 
             </div>
             <div className="min-h-0 flex-1 overflow-auto px-3 pb-4">
                 {recipes.length ? (
-                    <div className="grid grid-cols-2 gap-2">
-                        {recipes.map((recipe) => {
-                            const asset = assetById.get(recipe.thumbAssetId);
-                            const cover = asset ? assetCoverUrl(asset) : "";
+                    <div className="space-y-4">
+                        {grouped.map((group) => {
+                            return (
+                                <div key={group.kind}>
+                                    <div className="px-1 pb-1.5 text-[11px] font-medium opacity-60">{group.label} · {group.models.reduce((count, model) => count + model.recipes.length, 0)}</div>
+                                    {group.models.map((modelGroup) => {
+                                        return (
+                                            <div key={`${group.kind}:${modelGroup.label}`} className="mb-3">
+                                                <div className="px-1 pb-1 text-[10px] opacity-45">{modelGroup.label}</div>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    {modelGroup.recipes.map((recipe) => {
                             const loras = lorasByRecipeId.get(recipe.id) || [];
                             const meta = [styleRecipeModelLabel(config, recipe.config.model, recipe.config.modelLabel), loras.length ? t("canvas.styleRecipes.loraSummary", { count: loras.length }) : ""].filter(Boolean).join(" · ");
                             return (
                                 <div key={recipe.id} className="group relative overflow-hidden rounded-xl border" style={{ borderColor: theme.toolbar.border }}>
                                     <button type="button" className="block w-full text-left" onClick={() => setViewingId(recipe.id)} aria-label={t("canvas.styleRecipes.viewRecipe")}>
                                         <div className="aspect-square w-full" style={{ background: theme.node.fill }}>
-                                            {cover ? <img src={cover} alt="" className="size-full object-cover" /> : <span className="flex size-full items-center justify-center px-2 text-center text-xs opacity-40">{t("canvas.styleRecipes.thumbMissing")}</span>}
+                                            {renderRecipeCover(recipe, "size-full object-cover")}
                                         </div>
                                         <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-2 pb-1.5 pt-8">
                                             <div className="truncate text-xs font-medium text-white">{recipe.name}</div>
@@ -121,11 +155,18 @@ export function CanvasStyleRecipesTab({ theme, onApply }: { theme: CanvasTheme; 
                                             cancelText={t("common.cancel")}
                                             onConfirm={() => removeRecipe(recipe)}
                                         >
-                                            <button type="button" className={ACTION_BUTTON} title={t("common.delete")} aria-label={t("common.delete")}>
+                                            <button type="button" className={ACTION_BUTTON_DANGER} title={t("common.delete")} aria-label={t("common.delete")}>
                                                 <Trash2 className="size-4" />
                                             </button>
                                         </Popconfirm>
                                     </div>
+                                </div>
+                            );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             );
                         })}
@@ -156,7 +197,7 @@ export function CanvasStyleRecipesTab({ theme, onApply }: { theme: CanvasTheme; 
                 {viewing ? (
                     <div className="space-y-3 pt-1">
                         <div className="flex min-h-48 max-h-[56vh] items-center justify-center overflow-hidden rounded-xl" style={{ background: theme.node.fill }}>
-                            {viewingCover ? <img src={viewingCover} alt="" className="max-h-[56vh] w-full object-contain" /> : <span className="text-xs opacity-40">{t("canvas.styleRecipes.thumbMissing")}</span>}
+                            {viewingAsset?.kind === "video" && viewingAsset.data.url ? <video src={`${viewingAsset.data.url}#t=0.1`} controls playsInline preload="metadata" className="max-h-[56vh] w-full" /> : viewingCover ? <img src={viewingCover} alt="" className="max-h-[56vh] w-full object-contain" /> : <span className="text-xs opacity-40">{t("canvas.styleRecipes.thumbMissing")}</span>}
                         </div>
                         <div className="text-sm">
                             <div className="text-xs opacity-45">{t("canvas.styleRecipes.detailModel")}</div>

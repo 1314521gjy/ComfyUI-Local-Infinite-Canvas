@@ -9,6 +9,7 @@ export default {
     },
     common: {
         cancel: "Cancel",
+        close: "Close",
         save: "Save",
         yes: "Yes",
         no: "No",
@@ -350,12 +351,12 @@ export default {
         batchDownloaded: "Downloaded {{count}} files",
         batchDownloadPartial: "Downloaded {{count}}, {{failed}} failed",
         styleRecipes: {
-            tab: "Style recipes", saveShort: "Save style", saveTitle: "Save as style recipe", dialogTitle: "Save style",
+            tab: "Style recipes", saveShort: "Save style", saveTitle: "Save as style recipe", dialogTitle: "Save style", groupImage: "Image", groupVideo: "Video", kindImage: "Image recipe", kindVideo: "Video recipe",
             name: "Recipe name", namePlaceholder: "Name this style",
             detailModel: "Base model",
             detailLoras: "LoRAs", detailNoLoras: "No LoRAs", viewRecipe: "View recipe",
             summary: "{{model}}", loraSummary: "{{count}} LoRAs",
-            save: "Save recipe", saved: "Saved style \"{{name}}\"", empty: "No style recipes yet", emptyHint: "Generate an image, then click \"Save style\" in its top menu",
+            save: "Save recipe", saved: "Saved style \"{{name}}\"", empty: "No style recipes yet", emptyHint: "Generate an image or video, then click \"Save style\" in its top menu",
             apply: "Apply", applied: "Created a generation card from \"{{name}}\"",
             missingTitle: "Recipe unavailable", missingDescription: "\"{{name}}\" depends on a model or LoRA that is no longer available, so it cannot be applied. Delete this recipe?", missingModel: "Missing base model", missingLoras: "Missing LoRAs", missingDelete: "Delete recipe", loraListUnavailable: "Could not read the local LoRA list. Check the gateway connection and retry.",
             rename: "Rename", renameTitle: "Rename style recipe", renamePlaceholder: "Recipe name",
