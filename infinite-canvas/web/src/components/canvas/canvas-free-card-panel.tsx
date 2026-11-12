@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import { CanvasNodeReferenceBar } from "@/components/canvas/canvas-node-reference-bar";
 import { PromptOptimizeOptions } from "@/components/canvas/prompt-optimize-options";
+import { OriginalPromptDisclosure } from "@/components/canvas/canvas-node-prompt-panel";
 import { ImageSettingsPanel, ImageSettingsTheme, OptionPill } from "@/components/image-settings-panel";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 
@@ -344,6 +345,7 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
         setOptimizeOptionsOpen(false);
         const useCloud = optimizeEngine === "cloud";
         const references = info && info.imageInputs > 0 ? imageReferences.slice(0, info.imageInputs) : [];
+        onChange({ promptOptimizeSource: text });
         setOptimizing(true);
         try {
             const result = await requestImagePromptOptimize(config, {
@@ -372,6 +374,13 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
 
     const commitPrompt = () => {
         if (prompt !== (node.metadata?.prompt || "")) onChange({ prompt, composerContent: prompt });
+    };
+
+    const replaceWithOriginalPrompt = () => {
+        const original = node.metadata?.promptOptimizeSource?.trim() || "";
+        if (!original) return;
+        setPrompt(original);
+        onChange({ prompt: original, composerContent: original });
     };
 
     const commitTextValue = (key: string, value: string) => {
@@ -523,6 +532,16 @@ export function CanvasFreeCardPanel({ node, nodes, connectedNodes, isRunning, on
                                     onChange={(event) => setPrompt(event.target.value)}
                                     onBlur={commitPrompt}
                                 />
+                                {node.metadata?.promptOptimizeSource?.trim() ? (
+                                    <OriginalPromptDisclosure
+                                        text={node.metadata.promptOptimizeSource.trim()}
+                                        label={t("canvas.promptPanel.originalPrompt")}
+                                        hint={t("canvas.promptPanel.originalPromptHint")}
+                                        replaceLabel={t("canvas.promptPanel.originalPromptReplace")}
+                                        onReplace={replaceWithOriginalPrompt}
+                                        theme={theme}
+                                    />
+                                ) : null}
                                 {extraTexts.map((item) => {
                                     const key = textKey(item);
                                     const value = textValues[key] ?? item.default;

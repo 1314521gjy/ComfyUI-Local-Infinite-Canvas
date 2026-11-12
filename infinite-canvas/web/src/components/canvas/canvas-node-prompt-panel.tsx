@@ -295,7 +295,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
         setOptimizeOptionsOpen(false);
         const controller = new AbortController();
         registerPromptOptimizeJob(node.id, controller);
-        onConfigChange(node.id, { promptOptimizeStatus: "running", promptOptimizeKind: "h3", promptOptimizeSource: originalPrompt || text, promptOptimizePrompt: undefined, promptOptimizeError: undefined });
+        onConfigChange(node.id, { promptOptimizeStatus: "running", promptOptimizeKind: "h3", promptOptimizeSource: text, promptOptimizePrompt: undefined, promptOptimizeError: undefined });
         try {
             const images = defaults.selectedRefs.length ? await resolveCanvasReferenceImages(defaults.selectedRefs, nodes) : [];
             const result = await requestPromptOptimize(config, {
@@ -326,7 +326,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
         const useCloud = optimizeEngine === "cloud";
         const controller = new AbortController();
         registerPromptOptimizeJob(node.id, controller);
-        onConfigChange(node.id, { promptOptimizeStatus: "running", promptOptimizeKind: "image", promptOptimizeSource: originalPrompt || text, promptOptimizePrompt: undefined, promptOptimizeError: undefined });
+        onConfigChange(node.id, { promptOptimizeStatus: "running", promptOptimizeKind: "image", promptOptimizeSource: text, promptOptimizePrompt: undefined, promptOptimizeError: undefined });
         try {
             const images = !useCloud && selectedRefs.length ? await resolveCanvasReferenceImages(selectedRefs, nodes) : [];
             const result = await requestImagePromptOptimize(config, {
@@ -346,7 +346,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
             }, { signal: controller.signal });
             // 生图优化没有“追加”语义：直接回填到输入框，原手打提示词继续保留。
             applyPromptResult(result.prompt);
-            onConfigChange(node.id, { promptOptimizeStatus: undefined, promptOptimizeKind: undefined, promptOptimizePrompt: undefined, promptOptimizeError: undefined, promptOptimizeSource: originalPrompt || text });
+            onConfigChange(node.id, { promptOptimizeStatus: undefined, promptOptimizeKind: undefined, promptOptimizePrompt: undefined, promptOptimizeError: undefined, promptOptimizeSource: text });
         } catch (error) {
             if (controller.signal.aborted) clearOptimizePreview();
             else onConfigChange(node.id, { promptOptimizeStatus: "error", promptOptimizeError: error instanceof Error ? error.message : t("canvas.promptPanel.optimizeFailed") });
@@ -654,7 +654,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                         </div>
                     ) : null}
                     {previewError ? <div className="text-xs text-[#ef4444]">{previewError}</div> : null}
-                    {mode !== "text" && originalPrompt ? <OriginalPromptDisclosure text={originalPrompt} label={t("canvas.promptPanel.originalPrompt")} hint={t("canvas.promptPanel.originalPromptHint")} theme={theme} /> : null}
+                    {mode !== "text" && originalPrompt ? <OriginalPromptDisclosure text={originalPrompt} label={t("canvas.promptPanel.originalPrompt")} hint={t("canvas.promptPanel.originalPromptHint")} replaceLabel={t("canvas.promptPanel.originalPromptReplace")} onReplace={() => applyPromptResult(originalPrompt)} theme={theme} /> : null}
                     {previewPrompt ? (
                         <>
                             <textarea
@@ -697,7 +697,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
                 );
             })()}
             {mode !== "text" && originalPrompt ? (
-                <OriginalPromptDisclosure key={`${node.id}:${originalPrompt}`} text={originalPrompt} label={t("canvas.promptPanel.originalPrompt")} hint={t("canvas.promptPanel.originalPromptHint")} theme={theme} />
+                <OriginalPromptDisclosure key={`${node.id}:${originalPrompt}`} text={originalPrompt} label={t("canvas.promptPanel.originalPrompt")} hint={t("canvas.promptPanel.originalPromptHint")} replaceLabel={t("canvas.promptPanel.originalPromptReplace")} onReplace={() => applyPromptResult(originalPrompt)} theme={theme} />
             ) : null}
             <Modal title={t("canvas.promptPanel.editorTitle")} open={expanded} centered width={760} footer={null} onCancel={() => { commitPrompt(); setExpanded(false); }} destroyOnHidden>
                 <div data-canvas-no-zoom className="pt-2" onWheelCapture={(event) => event.stopPropagation()}>
@@ -730,7 +730,7 @@ export function CanvasNodePromptPanel({ node, nodes, isRunning, onPromptChange, 
     );
 }
 
-function OriginalPromptDisclosure({ text, label, hint, theme }: { text: string; label: string; hint: string; theme: ReturnType<typeof useCanvasTheme> }) {
+export function OriginalPromptDisclosure({ text, label, hint, replaceLabel, onReplace, theme }: { text: string; label: string; hint: string; replaceLabel?: string; onReplace?: () => void; theme: ReturnType<typeof useCanvasTheme> }) {
     const [open, setOpen] = useState(false);
     return (
         <div className="mt-2 rounded-lg border" style={{ borderColor: theme.toolbar.border }}>
@@ -740,13 +740,22 @@ function OriginalPromptDisclosure({ text, label, hint, theme }: { text: string; 
                 <span className="ml-auto text-[10px] font-normal opacity-60">{hint}</span>
             </button>
             {open ? (
-                <textarea
-                    readOnly
-                    value={text}
-                    className="thin-scrollbar h-28 w-full resize-none border-t bg-transparent p-2 text-xs leading-5 outline-none"
-                    style={{ borderColor: theme.toolbar.border, color: theme.node.text }}
-                    onWheel={(event) => event.stopPropagation()}
-                />
+                <>
+                    <textarea
+                        readOnly
+                        value={text}
+                        className="thin-scrollbar h-28 w-full resize-none border-t bg-transparent p-2 text-xs leading-5 outline-none"
+                        style={{ borderColor: theme.toolbar.border, color: theme.node.text }}
+                        onWheel={(event) => event.stopPropagation()}
+                    />
+                    {onReplace ? (
+                        <div className="flex justify-end border-t px-2 py-1.5">
+                            <Button size="small" onClick={onReplace}>
+                                {replaceLabel || "Replace"}
+                            </Button>
+                        </div>
+                    ) : null}
+                </>
             ) : null}
         </div>
     );
