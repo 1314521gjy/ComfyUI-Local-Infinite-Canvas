@@ -3795,7 +3795,7 @@ function InfiniteCanvasPage() {
                     pendingChildIds = [videoId];
                     setNodes((prev) =>
                         reuseVideoNode
-                            ? prev.map((node) => (node.id === nodeId ? { ...node, ...videoNode } : node))
+                            ? prev.map((node) => (node.id === nodeId ? { ...node, ...videoNode, metadata: { ...node.metadata, ...videoNode.metadata } } : node))
                             : [...prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_SUCCESS } } : node)), videoNode],
                     );
                     if (!reuseVideoNode) {
