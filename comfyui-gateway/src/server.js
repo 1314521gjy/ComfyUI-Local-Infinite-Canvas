@@ -43,7 +43,7 @@ import { createTaskStore } from "./tasks.js";
 import { createSwapChain } from "./swap-chain.js";
 import { applyUpdate, checkForUpdate, detectInterruptedUpdate, getUpdateProgress, recoverWorkflowBackups, restoreInterruptedUpdate } from "./update.js";
 import { uploadImages } from "./uploads.js";
-import { runYue2ComfySong, synthesizeSpeech, synthesizeSpeechH3 } from "./audio-local.js";
+import { resolveYue2Precision, runYue2ComfySong, synthesizeSpeech, synthesizeSpeechH3 } from "./audio-local.js";
 import { autoSongDuration, buildSongStyle, lyricsDurationIssue } from "./audio-engine.js";
 import { createWorkflowVisibilityStore } from "./workflow-visibility.js";
 import { buildScene3dPrompt, evaluateScene3dMetrics, placeSource, prepareSeamAssets, resolveScene3dPython, scene3dScriptPath, SCENE3D_PANO_ID, SCENE3D_SEAM_ID, stitchPanorama } from "./scene3d.js";
@@ -1706,6 +1706,29 @@ export async function createGatewayApp(overrides = {}) {
     if (reference) {
       throw new HttpError("YuE2 写歌不支持参考音色；参考音色仅用于换声", { status: 400, code: "unsupported_reference_audio" });
     }
+    const rawPrecision = String(body.precision ?? "").trim().toLowerCase();
+    let bf16Installed = null;
+    if (rawPrecision === "quality") {
+      try {
+        const bf16 = resources.status()?.resources?.find((item) => item.id === "yue2_3b_bf16");
+        if (bf16) bf16Installed = Boolean(bf16.present);
+      } catch {
+        bf16Installed = null;
+      }
+    }
+    let yue2Precision;
+    try {
+      yue2Precision = resolveYue2Precision(body.precision, { envCheckpoint: process.env.YUE2_COMFY_CHECKPOINT, bf16Installed });
+    } catch (error) {
+      throw new HttpError(error.message, { status: error.status || 400, code: error.code || "invalid_precision", details: error.details });
+    }
+    const { precision, checkpoint } = yue2Precision;
+    const audioModelMissing = () => new HttpError(
+      precision === "quality"
+        ? "YuE2 质量档模型未就绪：请到资源中心安装 YuE2-3B BF16（yue2_3b_bf16.safetensors）后重试。"
+        : "YuE2 模型/节点未就绪：请确认 ComfyUI 0.44+ 已安装原生 YuE2 节点，并把 yue2_3b_int8_convrot.safetensors 放到 models/checkpoints（CC BY-NC 4.0，资源中心/官方下载）。",
+      { status: 503, code: "audio_model_missing", details: { engine: "comfyui", ...(precision === "quality" ? { resourceId: "yue2_3b_bf16" } : {}) } },
+    );
     const lyrics = String(body.lyrics || body.input || body.prompt || "").trim();
     const instrumentalFlag = body.instrumental;
     const flagOff = instrumentalFlag === false || /^(false|0)$/i.test(String(instrumentalFlag ?? ""));
@@ -1765,7 +1788,7 @@ export async function createGatewayApp(overrides = {}) {
           duration: resolvedDuration,
           signal: abort.signal,
           requestId: req.id,
-          checkpoint: process.env.YUE2_COMFY_CHECKPOINT,
+          checkpoint,
           instrumental,
         });
       } catch (error) {
@@ -1778,12 +1801,12 @@ export async function createGatewayApp(overrides = {}) {
             throw new HttpError("纯音乐转换节点未加载：请重启 ComfyUI 让 YuE2 Instrumental Convert 节点生效（随应用安装）。", { status: 503, code: "audio_instrumental_node_missing", details: { engine: "comfyui" } });
           }
           if (modelHint) {
-            throw new HttpError("YuE2 模型/节点未就绪：请确认 ComfyUI 0.44+ 已安装原生 YuE2 节点，并把 yue2_3b_int8_convrot.safetensors 放到 models/checkpoints（CC BY-NC 4.0，资源中心/官方下载）。", { status: 503, code: "audio_model_missing", details: { engine: "comfyui" } });
+            throw audioModelMissing();
           }
           throw error;
         }
         if (modelHint) {
-          throw new HttpError("YuE2 模型/节点未就绪：请确认 ComfyUI 0.44+ 已安装原生 YuE2 节点，并把 yue2_3b_int8_convrot.safetensors 放到 models/checkpoints（CC BY-NC 4.0，资源中心/官方下载）。", { status: 503, code: "audio_model_missing", details: { engine: "comfyui" } });
+          throw audioModelMissing();
         }
         throw error;
       }

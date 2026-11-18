@@ -1,16 +1,16 @@
 {
-  "version": "v0.25.2",
+  "version": "v0.25.3",
   "publishedAt": "2026-11-18",
-  "notes": "v0.25.2：角色替换/视频编辑链移除显存硬门槛，不再拦截；显存/内存不足时由 ComfyUI 自动 offload/虚拟内存承担，速度变慢或 OOM 由用户自行负责。",
+  "notes": "v0.25.3：写歌新增快速（INT8）与质量（BF16）两档，默认快速并可按卡记忆；新增 oldx Qwen 2.1 人物替换 LoRA 资源卡（魔搭自托管）。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.25.2.zip",
-    "sha256": "6b601453c2cdfd18c7b47943fccafb6577ee8a22b4623df624c2fbf3a9057c30",
-    "size": 206808538
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.25.3.zip",
+    "sha256": "5a96de27497f9a5213f0bd80461b9337e1e41fec50045e157ba4a479feab4b07",
+    "size": 210547524
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

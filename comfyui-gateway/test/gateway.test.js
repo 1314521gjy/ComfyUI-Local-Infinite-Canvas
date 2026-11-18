@@ -235,6 +235,16 @@ test("request cancel endpoint is idempotent for unknown ids", async () => {
   assert.equal(data.cancelled, false);
 });
 
+test("audio song rejects an invalid precision with 400", async () => {
+  const { response, data } = await jsonFetch(`${baseUrl}/v1/audio/song`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ lyrics: "[Verse]\nhello\n[Chorus]\nhello again", precision: "high" }),
+  });
+  assert.equal(response.status, 400);
+  assert.equal(data.error.code, "invalid_precision");
+});
+
 test("CORS preflight allows the canvas origin", async () => {
   const response = await fetch(`${baseUrl}/v1/models`, {
     method: "OPTIONS",

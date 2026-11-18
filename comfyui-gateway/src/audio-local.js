@@ -222,6 +222,32 @@ export async function synthesizeSpeechH3({ comfy, config, logger, text, voiceDes
 // 歌曲：ACE-Step 1.5（用户 UI 工作流 → API）。UI 的主提示词同时作为 tags 与 lyrics；
 // API 仍可单独传 lyrics。参考音色走 ACE 原生 ReferenceTimbreAudio（先把参考音频 VAE 编码成 timbre latent）。
 const YUE2_COMFY_DEFAULT_CHECKPOINT = "yue2_3b_int8_convrot.safetensors";
+export const YUE2_PRECISION_CHECKPOINTS = Object.freeze({
+  fast: YUE2_COMFY_DEFAULT_CHECKPOINT,
+  quality: "yue2_3b_bf16.safetensors",
+});
+
+export function resolveYue2Precision(rawPrecision, { envCheckpoint = "", bf16Installed = null } = {}) {
+  const raw = rawPrecision === undefined || rawPrecision === null ? "" : String(rawPrecision).trim().toLowerCase();
+  const precision = raw || "fast";
+  if (precision !== "fast" && precision !== "quality") {
+    const error = new Error('precision 只支持 "fast" 或 "quality"');
+    error.status = 400;
+    error.code = "invalid_precision";
+    throw error;
+  }
+  if (precision === "quality") {
+    if (bf16Installed === false) {
+      const error = new Error("YuE2 质量档需要 yue2_3b_bf16.safetensors；请到资源中心安装 YuE2-3B BF16 后重试");
+      error.status = 503;
+      error.code = "audio_model_missing";
+      error.details = { engine: "comfyui", resourceId: "yue2_3b_bf16" };
+      throw error;
+    }
+    return { precision, checkpoint: YUE2_PRECISION_CHECKPOINTS.quality };
+  }
+  return { precision, checkpoint: String(envCheckpoint || "").trim() || YUE2_PRECISION_CHECKPOINTS.fast };
+}
 
 // ComfyUI 官方 YuE2 Text-to-Music 口径：ABC 规划 → GenerateMusic(max_duration 上限) → 由计划推导时长 → KSampler(cfg=1,32) → VAE。
 export function buildYue2ComfyWorkflow({ style, lyrics, seed, mode = "full", seconds = 120, checkpoint = YUE2_COMFY_DEFAULT_CHECKPOINT, instrumental = false }) {
