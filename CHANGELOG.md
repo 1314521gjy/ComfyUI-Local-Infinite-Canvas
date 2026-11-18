@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.25.1 - 2026-11-18
+
++ [修复] 移除 Krea2 Turbo 重复条目及其索引外节点依赖（Krea2PromptStyler），主 Krea2 Turbo 卡不受影响。
+
 ## v0.25.0 - 2026-11-17
 
 + [新增] 视频模型新增「H3（HyperFlow 6+2）」：文生/首尾帧/多参三模式共用一条 INT8 工作流，8 步 schedule（6 步低清 + 2 步高清），Sage/SolAttn/TRT VAE/T8 可用；画布入口与 H3 卡并列。

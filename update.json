@@ -1,16 +1,16 @@
 {
-  "version": "v0.25.0",
+  "version": "v0.25.1",
   "publishedAt": "2026-11-18",
-  "notes": "v0.25.0：H3（HyperFlow 6+2）三模式；3D 场景全景；音频卡写歌/台词配音（男/女声、自动时长）；视频编辑弹卡生成视频/长视频分段/提示词优化；资产提示词保留与搜索；跳过本次更新；RelayVSR 2×；自由卡/自选工作流放开；资源卡国内主源；内置 Agent canvas/deploy-repair 技能；Z-Image 两档加速；修复生图预览间歇缺失、Viggle 帧数对齐/采样预览、Qwen 参考上限与提示词误带等。",
+  "notes": "v0.25.1：移除 Krea2 Turbo 重复条目及其索引外节点依赖（Krea2PromptStyler），主 Krea2 Turbo 卡不受影响。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.25.0.zip",
-    "sha256": "c9c2aaee38c83b5c31d4ba1ba70e00730fae9120db18310ce5e8358cedcbe027",
-    "size": 203073778
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.25.1.zip",
+    "sha256": "37047aea482062bd562f46216c9eee3690d10f9de54ea4f784fd965e4787ebe6",
+    "size": 204940352
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",

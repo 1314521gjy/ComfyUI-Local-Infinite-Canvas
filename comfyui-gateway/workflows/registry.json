@@ -3748,67 +3748,6 @@
       }
     },
     {
-      "id": "image-krea2-turbo-2",
-      "name": "image-krea2-turbo-2",
-      "type": "image",
-      "description": "",
-      "file": "image-krea2-turbo-2.json",
-      "bindings": {
-        "negative": {
-          "node": "5",
-          "input": "text",
-          "default": ""
-        },
-        "width": {
-          "node": "6",
-          "input": "width",
-          "from": "size.width",
-          "default": 1024
-        },
-        "height": {
-          "node": "6",
-          "input": "height",
-          "from": "size.height",
-          "default": 1024
-        },
-        "batch": {
-          "node": "6",
-          "input": "batch_size",
-          "from": "count",
-          "default": 1
-        },
-        "seed": {
-          "node": "7",
-          "input": "seed",
-          "random": true
-        },
-        "steps": {
-          "node": "7",
-          "input": "steps",
-          "from": "quality.steps",
-          "default": 8
-        },
-        "cfg": {
-          "node": "7",
-          "input": "cfg",
-          "from": "quality.cfg",
-          "default": 1
-        },
-        "prompt": {
-          "node": "5",
-          "input": "text"
-        }
-      },
-      "defaults": {},
-      "presets": {},
-      "parameters": [],
-      "lora": null,
-      "importedAt": "2026-11-11T09:47:08.171Z",
-      "source": {
-        "kind": "json"
-      }
-    },
-    {
       "id": "video-hyperflow-ref2va-6p2",
       "name": "video-hyperflow-ref2va-6p2",
       "type": "video",

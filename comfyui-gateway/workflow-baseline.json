@@ -17,9 +17,6 @@
     "comfyui-gateway/workflows/image-krea2-aesthetics.json": [
       "1110539cdd373ed8a6c98d7697025099b67b1ba4c0f3a2b3ba5192c427bc2ee0"
     ],
-    "comfyui-gateway/workflows/image-krea2-turbo.json": [
-      "0094d578bb7af178317a4cadb396cae016ab5463d6d4cf6921985151f71de40b"
-    ],
     "comfyui-gateway/workflows/image-moss-sft-50step.json": [
       "4511143095ab171a0e2fc24f293440526d83b6b51589013d0a697c27cc5fb8ce"
     ],
@@ -70,7 +67,6 @@
     "comfyui-gateway/workflows/image-esrgan-upscale.json": "6086d9c86b94708267419540b1fca3f036a2e6545d52df6540119842353a96eb",
     "comfyui-gateway/workflows/image-krea2-aesthetics.json": "1110539cdd373ed8a6c98d7697025099b67b1ba4c0f3a2b3ba5192c427bc2ee0",
     "comfyui-gateway/workflows/image-krea2-four-view.json": "e69e1a5e0e7a63cb92e852157fe85fae2c776126f9ec3de465a713e333478718",
-    "comfyui-gateway/workflows/image-krea2-turbo.json": "0094d578bb7af178317a4cadb396cae016ab5463d6d4cf6921985151f71de40b",
     "comfyui-gateway/workflows/image-moss-sft-50step.json": "4511143095ab171a0e2fc24f293440526d83b6b51589013d0a697c27cc5fb8ce",
     "comfyui-gateway/workflows/image-moss-sft-8step.json": "9e7996ce86e6c9b0befa1db1f4b05dc5f13d4ed5e94c0d89ce2eb21fd02e1152",
     "comfyui-gateway/workflows/image-moss-sft-int8-50step.json": "f8f5e669b71db14ff9a8d76bb5cac875129e650d648f8e4731d7057dfae3425f",
