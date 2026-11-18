@@ -1,6 +1,8 @@
+import fs from "node:fs";
+
 export const SKILL_NAME = "canvas-repair";
 
-export const SKILL_VERSION = "0.3.1";
+export const SKILL_VERSION = "0.3.2";
 
 export const REPO_LINKS = {
     modelscope: "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
@@ -10,7 +12,7 @@ export const REPO_LINKS = {
     githubRaw: "https://raw.githubusercontent.com/1314521gjy/ComfyUI-Local-Infinite-Canvas/main",
 };
 
-export const SKILL_MARKDOWN = `# 画布修复全能助手（canvas-repair v0.3.1）
+const CANVAS_REPAIR_SKILL = `# 画布修复全能助手（canvas-repair v0.3.2）
 
 ## 你是谁
 
@@ -162,6 +164,19 @@ v0.22.8 已加 SSE /api/models/events、扫描完成广播、本地渠道同步�
 - 不泄露密钥、token、Cookie、账号；不把用户数据发到外部。
 - 不在未获用户确认时声称已修改任何文件。
 `;
+
+const packagedSkill = (name) => fs.readFileSync(new URL(`./skills/${name}.md`, import.meta.url), "utf8").trim();
+export const SKILL_MARKDOWN = [
+    CANVAS_REPAIR_SKILL.trim(),
+    "",
+    "## 随包技能：canvas",
+    "",
+    packagedSkill("canvas"),
+    "",
+    "## 随包技能：deploy-repair",
+    "",
+    packagedSkill("deploy-repair"),
+].join(String.fromCharCode(10));
 
 export function buildSystemPrompt({ context, gatewayUrl, workspaceRoot } = {}) {
     const lines = [
