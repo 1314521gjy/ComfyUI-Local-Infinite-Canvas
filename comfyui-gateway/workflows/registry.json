@@ -1224,6 +1224,197 @@
       }
     },
     {
+      "id": "image-qwen21-uncensored",
+      "name": "image-qwen21-uncensored",
+      "label": "Qwen image 2.1 无审查版本",
+      "type": "image",
+      "description": "Qwen-Image 2.1 GGUF（Q4_K_M）无审查版：文生图与参考图编辑/重绘合一；原生 RGBA 提示，支持自定义尺寸。",
+      "file": "qwen21-t2i-gguf.json",
+      "variantLabels": {
+        "t2i": "文生图",
+        "i2i": "图像编辑/重绘"
+      },
+      "lora": {
+        "filter": "Qwen21|qwen_image_2.1|Qwen-Image-2.1"
+      },
+      "bindings": {
+        "prompt": {
+          "node": "924",
+          "input": "prompt"
+        },
+        "negative": {
+          "node": "924",
+          "input": "negative_prompt",
+          "default": "artifacts, low quality, blurry, deformed, watermark"
+        },
+        "seed": {
+          "node": "930",
+          "input": "seed",
+          "from": "params.seed",
+          "transform": "int",
+          "random": true
+        },
+        "cfg": {
+          "node": "930",
+          "input": "cfg",
+          "from": "params.cfg",
+          "default": 1
+        },
+        "steps": {
+          "node": "930",
+          "input": "steps",
+          "from": "params.steps",
+          "default": 26
+        },
+        "sampler": {
+          "node": "930",
+          "input": "sampler_name",
+          "from": "params.sampler",
+          "default": "euler"
+        },
+        "width": {
+          "node": "928",
+          "input": "width",
+          "from": "size.width",
+          "transform": "snap16",
+          "default": 1024
+        },
+        "height": {
+          "node": "928",
+          "input": "height",
+          "from": "size.height",
+          "transform": "snap16",
+          "default": 1024
+        }
+      },
+      "parameters": [
+        {
+          "key": "seed",
+          "label": "种子",
+          "type": "number",
+          "min": 1,
+          "max": 2147483647,
+          "step": 1,
+          "description": "留空则每次随机"
+        },
+        {
+          "key": "steps",
+          "label": "步数",
+          "type": "number",
+          "min": 1,
+          "max": 60,
+          "step": 1,
+          "default": 26
+        },
+        {
+          "key": "cfg",
+          "label": "CFG",
+          "type": "number",
+          "min": 1,
+          "max": 20,
+          "step": 0.5,
+          "default": 1
+        },
+        {
+          "key": "sampler",
+          "label": "采样器",
+          "type": "select",
+          "default": "euler",
+          "options": [
+            "euler",
+            "dpmpp_2m",
+            "dpmpp_2m_sde",
+            "res_multistep"
+          ]
+        }
+      ],
+      "outputSize": {
+        "node": "928",
+        "latentNode": "930",
+        "latentInput": "latent_image",
+        "latentSource": "928",
+        "fromSize": true,
+        "skipNativeSquare": true
+      },
+      "backgroundPrompt": "qwen-rgba",
+      "variants": {
+        "i2i": {
+          "file": "qwen21-i2i-gguf.json",
+          "label": "图像编辑/重绘",
+          "description": "参考图驱动的图像编辑/重绘（默认 2 张：目标 + 角色参考）；KSampler 25 步 / cfg1 / euler。",
+          "bindings": {
+            "prompt": {
+              "node": "953",
+              "input": "prompt"
+            },
+            "negative": {
+              "node": "953",
+              "input": "negative_prompt",
+              "default": "artifacts, low quality, blurry, deformed, watermark"
+            },
+            "seed": {
+              "node": "937",
+              "input": "seed",
+              "from": "params.seed",
+              "transform": "int",
+              "random": true
+            },
+            "cfg": {
+              "node": "937",
+              "input": "cfg",
+              "from": "params.cfg",
+              "default": 1
+            },
+            "steps": {
+              "node": "937",
+              "input": "steps",
+              "from": "params.steps",
+              "default": 25
+            },
+            "sampler": {
+              "node": "937",
+              "input": "sampler_name",
+              "from": "params.sampler",
+              "default": "euler"
+            },
+            "width": {
+              "node": "935",
+              "input": "width",
+              "from": "size.width",
+              "transform": "snap16",
+              "default": 1024
+            },
+            "height": {
+              "node": "935",
+              "input": "height",
+              "from": "size.height",
+              "transform": "snap16",
+              "default": 1024
+            },
+            "refs": {
+              "node": "953",
+              "input": "images",
+              "from": "image",
+              "array": true,
+              "inputPrefix": "images.image_",
+              "indexBase": 1,
+              "min": 1,
+              "max": 4
+            }
+          },
+          "outputSize": {
+            "node": "935",
+            "latentNode": "937",
+            "latentInput": "latent_image",
+            "latentSource": "935",
+            "fromSize": true,
+            "skipNativeSquare": true
+          },
+          "backgroundPrompt": "qwen-rgba"
+        }
+      }
+    },
+    {
       "id": "image-moss-image",
       "name": "image-moss-image",
       "label": "MOSS-Image",

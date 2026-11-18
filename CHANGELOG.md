@@ -116,6 +116,11 @@
 + [修复] pip/运行库安装显示实际 Python 环境；自动重启成功后不再误报「需重启」，重启失败或没有启动器时保留明确提示。
 + [修复] VDN/SeedVR2/LLM/vae_approx 纳入手动模型目录映射；随包 llama 节点保留 extra_model_paths 已注册的 LLM 路径，不再覆盖手动目录。
 + [修复] 自由卡片导入支持 ComfyUI 前端虚拟节点 SetNode/GetNode：能解析时按名称解析，无法解析、重名或 object_info 缺类时保留最佳努力 API 图并给出 warning，不阻断导入；未知节点保留 class_type 和可映射连线/控件，生成时由 ComfyUI 返回权威错误。
+## v0.24.7 - 2026-11-02
+
++ [修复] 随包安装的 SeedVR2 节点缺 `src/data`（`DivisiblePad` / `NaResize` 等 4 个模块），导入时报 `No module named ...SeedVR2_VideoUpscaler.src.data`；补回后节点在 ComfyUI 里正常注册。根因是 `comfyui-gateway/.gitignore` 的 `data/` 规则把包内节点的 `src/data` 一起忽略了，改为只忽略网关根目录的 `/data/`。
++ [修复] 启动 ComfyUI 时强制 UTF-8 标准流（`PYTHONUTF8`/`PYTHONIOENCODING`），`run_*.bat` 自带 `chcp 65001`：中文 Windows 控制台按 GBK 编码时，插件打印 `⚠`/`ℹ️` 会 `UnicodeEncodeError`，导致 TE_MAN、SeedVR2 等节点整体导入失败。
++ [修复] 补齐节点运行库：SeedVR2 的 `peft`/`omegaconf`/`rotary_embedding_torch`/`diffusers`，Florence2 的 `matplotlib`，VideoHelperSuite 的 `imageio-ffmpeg`（含 ffmpeg 二进制），`opencv-python`，KJNodes/SolAttn 的 `triton-windows`，llama-cpp 节点的 `llama-cpp-python`（cu131 预编译轮子）；启动日志恢复为无节点导入失败。
 
 ## v0.24.6 - 2026-11-02
 

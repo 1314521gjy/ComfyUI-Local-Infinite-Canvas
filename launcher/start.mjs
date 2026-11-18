@@ -586,7 +586,14 @@ async function listenCanvasServer(cfg, preferredPort) {
 }
 
 function spawnComfy(plan, port = COMFY_PORT_FIRST) {
-  const options = { cwd: plan.cwd, detached: true, stdio: "ignore", windowsHide: plan.kind !== "script" };
+  const options = {
+    cwd: plan.cwd,
+    detached: true,
+    stdio: "ignore",
+    windowsHide: plan.kind !== "script",
+    // 中文 Windows 控制台默认 GBK，custom_nodes 里 print("⚠") 之类会 UnicodeEncodeError 导致节点加载失败。
+    env: { ...process.env, PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8" },
+  };
   let child;
   if (plan.kind === "python") {
     child = spawn(plan.file, [plan.mainPy, "--port", String(port), "--listen", "127.0.0.1"], options);

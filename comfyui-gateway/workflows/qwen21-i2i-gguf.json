@@ -1,0 +1,167 @@
+{
+  "13": {
+    "class_type": "ResolutionSelector",
+    "inputs": {
+      "aspect_ratio": "1:1 (Square)",
+      "megapixels": 1,
+      "multiple": 32
+    }
+  },
+  "461": {
+    "class_type": "SaveImageAdvanced",
+    "inputs": {
+      "images": [
+        "936",
+        0
+      ],
+      "filename_prefix": "Qwen_image_2.1",
+      "format": "png",
+      "format.bit_depth": "8-bit",
+      "format.input_color_space": "sRGB"
+    }
+  },
+  "470": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "Qwen_image_2.1_00002.png [output]"
+    }
+  },
+  "475": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "Qwen_image_2.1_00001.png [output]"
+    }
+  },
+  "477": {
+    "class_type": "PrimitiveInt",
+    "inputs": {
+      "value": -532532755215756
+    }
+  },
+  "930": {
+    "class_type": "UnetLoaderGGUF",
+    "inputs": {
+      "unet_name": "qwen-image-2.1-UC-Q4_K_M.gguf"
+    }
+  },
+  "932": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3vl_8b_int8_convrot.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    }
+  },
+  "933": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
+    }
+  },
+  "935": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "width": [
+        "13",
+        0
+      ],
+      "height": [
+        "13",
+        1
+      ],
+      "batch_size": 1
+    }
+  },
+  "936": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "937",
+        0
+      ],
+      "vae": [
+        "933",
+        0
+      ]
+    }
+  },
+  "937": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "948",
+        0
+      ],
+      "positive": [
+        "953",
+        0
+      ],
+      "negative": [
+        "953",
+        1
+      ],
+      "latent_image": [
+        "947",
+        0
+      ],
+      "seed": [
+        "477",
+        0
+      ],
+      "steps": 25,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1
+    }
+  },
+  "947": {
+    "class_type": "ComfySwitchNode",
+    "inputs": {
+      "on_false": [
+        "953",
+        2
+      ],
+      "on_true": [
+        "935",
+        0
+      ],
+      "switch": false
+    }
+  },
+  "948": {
+    "class_type": "QwenImage21Cache",
+    "inputs": {
+      "model": [
+        "930",
+        0
+      ],
+      "device": "auto",
+      "dtype": "default"
+    }
+  },
+  "953": {
+    "class_type": "TextEncodeQwenImage21",
+    "inputs": {
+      "clip": [
+        "932",
+        0
+      ],
+      "images.image_1": [
+        "470",
+        0
+      ],
+      "vae": [
+        "933",
+        0
+      ],
+      "images.image_2": [
+        "475",
+        0
+      ],
+      "prompt": "<image2>のキャラクターを、<image1>と同じポーズと構図で描く。\n\n<image1>から参照するのはポーズ、身体の向き、手足の配置、カメラアングル、構図のみ。\n人物は床にうつ伏せで寝転び、上半身を左方向へ向ける。両膝を曲げ、両脚を背中側へ大きく持ち上げる。左右の手で、それぞれ持ち上げた脚の足首付近をつかむ。\n足裏がカメラの近くに見える、強い遠近感とフォアショートニングを再現する。\n\n人物の顔、髪型、髪色、瞳、衣装、アクセサリー、配色は<image2>を忠実に再現する。\n<image1>の人物の髪型、服装、縞模様の靴下は引き継がない。\n\n全身が画面内に収まり、手足のつながりと関節が自然に見えるようにする。\n人物は一人だけ。シンプルな明るい背景。\n高品質な日本のアニメ・ビジュアルノベル風イラスト、繊細な線画、きれいなセル塗り。",
+      "negative_prompt": "",
+      "resolution": 1024
+    }
+  }
+}

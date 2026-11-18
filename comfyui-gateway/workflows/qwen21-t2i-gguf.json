@@ -1,0 +1,118 @@
+{
+  "13": {
+    "class_type": "ResolutionSelector",
+    "inputs": {
+      "aspect_ratio": "1:1 (Square)",
+      "megapixels": 1,
+      "multiple": 8
+    }
+  },
+  "461": {
+    "class_type": "SaveImageAdvanced",
+    "inputs": {
+      "images": [
+        "929",
+        0
+      ],
+      "filename_prefix": "Qwen_image_2.1",
+      "format": "png",
+      "format.bit_depth": "8-bit",
+      "format.input_color_space": "sRGB"
+    }
+  },
+  "470": {
+    "class_type": "PrimitiveInt",
+    "inputs": {
+      "value": 537924661728048
+    }
+  },
+  "923": {
+    "class_type": "UnetLoaderGGUF",
+    "inputs": {
+      "unet_name": "qwen-image-2.1-UC-Q4_K_M.gguf"
+    }
+  },
+  "924": {
+    "class_type": "TextEncodeQwenImage21",
+    "inputs": {
+      "clip": [
+        "925",
+        0
+      ],
+      "prompt": "で年賀状イラストを生成するプロンプトを作ってみました。\nプロンプト：\n参照画像のキャラクターを使用し、日本の年賀状用イラストを制作する。\n\n・構図：縦向き、年賀状レイアウト\n・キャラクター：元の髪型・服装・配色を忠実に維持\n・表情：明るく優しい笑顔、年始の挨拶にふさわしい雰囲気\n・ポーズ：軽く手を振る、または新年らしい控えめなポーズ\n\n・背景：和風デザイン（梅・松・市松模様・金箔風の装飾など）\n・色調：華やかだが落ち着いた新年カラー\n・スタイル：アニメ調イラスト、清潔感のある塗り\n・線画：整ったクリーンな線\n\n・テキスト：\n以下の文字列を、誤字脱字・変更なしで正確に表示する。\n\n「謹賀新年」\n「本年もよろしくお願いいたします」\n「令和八年 元旦」\n\n・上記の文字は装飾ではなく、\n年賀状に印刷された文字として正確に再現する。\n・年号・漢数字・表記を変更してはならない。",
+      "negative_prompt": "",
+      "resolution": 1024
+    }
+  },
+  "925": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3vl_8b_int8_convrot.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    }
+  },
+  "926": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
+    }
+  },
+  "928": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "width": [
+        "13",
+        0
+      ],
+      "height": [
+        "13",
+        1
+      ],
+      "batch_size": 1
+    }
+  },
+  "929": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "930",
+        0
+      ],
+      "vae": [
+        "926",
+        0
+      ]
+    }
+  },
+  "930": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "923",
+        0
+      ],
+      "positive": [
+        "924",
+        0
+      ],
+      "negative": [
+        "924",
+        1
+      ],
+      "latent_image": [
+        "928",
+        0
+      ],
+      "seed": [
+        "470",
+        0
+      ],
+      "steps": 26,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1
+    }
+  }
+}
