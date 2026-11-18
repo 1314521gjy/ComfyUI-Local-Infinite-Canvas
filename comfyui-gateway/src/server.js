@@ -3307,11 +3307,9 @@ export async function createGatewayApp(overrides = {}) {
             const free = Number(device?.vram_free ?? device?.vramFree ?? 0);
             if (free > 0) freeMb = Math.round(free / (1024 * 1024));
           } catch (error) {
-            logger.warn(`读取 ComfyUI 显存失败，跳过自产目标帧预检：${error.message}`);
+            logger.warn(`读取 ComfyUI 显存失败，跳过自产目标帧遥测：${error.message}`);
           }
-          if (freeMb !== null && freeMb < VIGGLE_PREPARE_MIN_FREE_MB) {
-            throw new HttpError(`显存不足：当前空闲 ${freeMb}MB，自产目标帧至少需要 ${VIGGLE_PREPARE_MIN_FREE_MB}MB；请先释放显存`, { status: 409, code: "insufficient_vram" });
-          }
+          logger.info(`自产目标帧显存遥测 ${freeMb === null ? "不可读（跳过）" : `${freeMb}MB`}，阈值 ${VIGGLE_PREPARE_MIN_FREE_MB}MB（仅遥测，不拦截）`);
           const patchedSource = await ensureSourceAudio(source, ffmpegConfig);
           const refs = await flattenViggleReferences(refFiles, patchedSource, ffmpegConfig);
           const uploadedImages = await uploadImages(comfy, refs);
@@ -3484,7 +3482,7 @@ export async function createGatewayApp(overrides = {}) {
         job.step = "edit";
         job.progress = 0.35;
         job.updatedAt = nowIso();
-        // 显存预检：Qwen 编辑前确认空闲显存；读不到统计时跳过，不让预检成为新故障点。
+        // 显存遥测：Qwen 编辑前记录空闲显存；读不到统计时跳过，不拦截。
         let freeMb = null;
         try {
           const stats = await comfy.systemStats();
@@ -3492,12 +3490,9 @@ export async function createGatewayApp(overrides = {}) {
           const free = Number(device?.vram_free ?? device?.vramFree ?? 0);
           if (free > 0) freeMb = Math.round(free / (1024 * 1024));
         } catch (error) {
-          logger.warn(`读取 ComfyUI 显存失败，跳过参考帧制备预检：${error.message}`);
+          logger.warn(`读取 ComfyUI 显存失败，跳过参考帧制备遥测：${error.message}`);
         }
-        if (freeMb !== null && freeMb < VIGGLE_PREPARE_MIN_FREE_MB) {
-          throw new HttpError(`显存不足：当前空闲 ${freeMb}MB，制备参考帧至少需要 ${VIGGLE_PREPARE_MIN_FREE_MB}MB；请先释放显存，或手动抽帧、编辑后上传`, { status: 409, code: "insufficient_vram" });
-        }
-        logger.info(`参考帧制备显存预检 ${freeMb === null ? "不可读（跳过）" : `${freeMb}MB`}，阈值 ${VIGGLE_PREPARE_MIN_FREE_MB}MB`);
+        logger.info(`参考帧制备显存遥测 ${freeMb === null ? "不可读（跳过）" : `${freeMb}MB`}，阈值 ${VIGGLE_PREPARE_MIN_FREE_MB}MB（仅遥测，不拦截）`);
 
         const entry = requireModel(registry, setup, "image-qwen21", "image", { mode: "edit" });
         const uploaded = await uploadImages(comfy, [{ buffer: extracted.buffer, originalname: extracted.filename, mimetype: "image/png" }]);

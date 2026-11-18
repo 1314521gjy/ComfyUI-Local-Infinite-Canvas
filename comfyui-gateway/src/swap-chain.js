@@ -665,20 +665,13 @@ export function createSwapChain({ comfy, config, logger, dataDir }) {
     }
   }
 
-  async function prepareStage(job, stage, minFreeMb) {
+  async function prepareStage(job, stage) {
     await comfy.freeMemory().catch((error) => logger?.warn?.(`swap-chain /free 失败：${error.message}`));
-    let freeMb = 0;
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      const stats = await comfy.systemStats().catch(() => null);
-      const device = stats?.devices?.[0];
-      freeMb = device?.vram_free ? Math.round(Number(device.vram_free) / (1024 * 1024)) : 0;
-      job.vram = { ...(job.vram || {}), [stage]: freeMb };
-      update(job, {});
-      if (!freeMb || freeMb >= minFreeMb) break;
-      if (attempt > 0 && attempt % 4 === 0) await comfy.freeMemory().catch((error) => logger?.warn?.(`swap-chain /free 重试失败：${error.message}`));
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-    }
-    if (freeMb && freeMb < minFreeMb) throw new SwapChainError(`显存不足：${stage} 需要约 ${minFreeMb}MB，当前空闲 ${freeMb}MB；请关闭其他生成任务后重试`, { status: 503, code: "vram_low", details: { stage, freeMb, minFreeMb } });
+    const stats = await comfy.systemStats().catch(() => null);
+    const device = stats?.devices?.[0];
+    const freeMb = device?.vram_free ? Math.round(Number(device.vram_free) / (1024 * 1024)) : 0;
+    job.vram = { ...(job.vram || {}), [stage]: freeMb };
+    update(job, {});
   }
 
   async function run(job) {
@@ -721,7 +714,7 @@ export function createSwapChain({ comfy, config, logger, dataDir }) {
       for (let i = 0; i < job.paths.refs.length; i += 1) {
         refImages.push(await upload(await fsp.readFile(job.paths.refs[i]), `swap-ref-${i}.png`, "image/png"));
       }
-      await prepareStage(job, "s3_image", 15000);
+      await prepareStage(job, "s3_image");
       update(job, { stage: "s3_image", progress: 20 });
       let painted = null;
       let imageGate = null;
@@ -745,7 +738,7 @@ export function createSwapChain({ comfy, config, logger, dataDir }) {
         if (imageGate.pass) break;
       }
       if (!imageGate?.pass) throw new SwapChainError("图像门未通过：目标未命中/身份或背景保持不足", { status: 422, code: "image_gate_failed", details: imageGate });
-      await prepareStage(job, "s5_video", 20000);
+      await prepareStage(job, "s5_video");
       update(job, { stage: "s5_video", progress: 45 });
       const paintedImage = await upload(painted, "swap-painted.png", "image/png");
       let videoSourcePath = job.paths.source;

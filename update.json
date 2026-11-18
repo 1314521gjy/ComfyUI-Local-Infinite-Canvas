@@ -1,16 +1,16 @@
 {
-  "version": "v0.25.1",
+  "version": "v0.25.2",
   "publishedAt": "2026-11-18",
-  "notes": "v0.25.1：移除 Krea2 Turbo 重复条目及其索引外节点依赖（Krea2PromptStyler），主 Krea2 Turbo 卡不受影响。",
+  "notes": "v0.25.2：角色替换/视频编辑链移除显存硬门槛，不再拦截；显存/内存不足时由 ComfyUI 自动 offload/虚拟内存承担，速度变慢或 OOM 由用户自行负责。",
   "repository": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas",
   "downloadUrl": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
   "mirrors": {
     "modelscope": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas"
   },
   "patch": {
-    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.25.1.zip",
-    "sha256": "37047aea482062bd562f46216c9eee3690d10f9de54ea4f784fd965e4787ebe6",
-    "size": 204940352
+    "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/v0.25.2.zip",
+    "sha256": "6b601453c2cdfd18c7b47943fccafb6577ee8a22b4623df624c2fbf3a9057c30",
+    "size": 206808538
   },
   "bridge": {
     "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas/resolve/master/patches/update-bridge.zip",
