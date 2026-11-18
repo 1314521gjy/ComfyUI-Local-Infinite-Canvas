@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Model weights and conversion outputs (weights are distributed on Hugging Face, not here)
+*.safetensors
+*.gguf
+*.partial
+*.bin
+*.pt
+*.pth
+
+# Local runs
+*.log
+output/
+release/
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

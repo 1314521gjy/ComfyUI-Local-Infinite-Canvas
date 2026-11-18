@@ -8,8 +8,8 @@ import type { CanvasTheme } from "@/lib/canvas-theme";
 import { styleRecipeModelLabel } from "@/lib/canvas/style-recipe";
 import { getImagePreviewRevision, subscribeImagePreviews } from "@/services/image-storage";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
-import { assetCoverUrl, useAssetStore } from "@/stores/use-asset-store";
 import { useEffectiveConfig } from "@/stores/use-config-store";
+import { assetCoverUrl, useAssetStore } from "@/stores/use-asset-store";
 import { normalizeStyleRecipeLoras, useStyleRecipeStore, type StyleRecipe, type StyleRecipeLora } from "@/stores/use-style-recipe-store";
 
 const ACTION_BUTTON = "flex size-8 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-colors hover:bg-black/80";

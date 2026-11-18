@@ -1,0 +1,21 @@
+[project]
+name = "comfyui-idol"
+description = "Idol by speridlabs natively in ComfyUI: one image to a 3D Gaussian splat on ComfyUI's own TripoSplat nodes, KSampler and memory management. Adds Idol's framing for photos, its predicted input camera and a precision node up to full fp32."
+version = "1.0.0"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+classifiers = ["Operating System :: OS Independent"]
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/PedroMarinhoDev/ComfyUI-Idol"
+Documentation = "https://github.com/PedroMarinhoDev/ComfyUI-Idol#readme"
+"Bug Tracker" = "https://github.com/PedroMarinhoDev/ComfyUI-Idol/issues"
+"Model files" = "https://huggingface.co/PedroMarinhoDev/Idol-ComfyUI"
+
+[tool.comfy]
+PublisherId = "pedromarinhodev"
+DisplayName = "Idol (image to 3D splat)"
+Icon = "https://raw.githubusercontent.com/PedroMarinhoDev/ComfyUI-Idol/main/assets/registry-icon.png"
+Banner = "https://raw.githubusercontent.com/PedroMarinhoDev/ComfyUI-Idol/main/assets/registry-banner.png"
+requires-comfyui = ">=0.43.0"

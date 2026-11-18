@@ -37,7 +37,7 @@
       "lora_name": "minimax_h3_fl2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors",
       "strength_model": 1,
       "model": [
-        "110",
+        "4",
         0
       ]
     },
@@ -274,8 +274,8 @@
       "frame_rate": 24,
       "loop_count": 0,
       "filename_prefix": "MiniMaxH3/learned_latent_twopass_i2va_upstream_parity_v2_exp",
-      "format": "video/h265-mp4",
-      "pix_fmt": "yuv420p10le",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
       "crf": 22,
       "save_metadata": true,
       "pingpong": false,

@@ -2,14 +2,19 @@ import type { NavigateFunction } from "react-router-dom";
 
 import i18n from "@/i18n";
 import { fetchPrompts } from "@/services/api/prompts";
+import { fetchFreeWorkflow, fetchFreeWorkflowGraph, fetchFreeWorkflowHealth, fetchFreeWorkflowSources, fetchFreeWorkflows, importFreeWorkflow, renameFreeWorkflow, saveFreeWorkflowParams, syncFreeWorkflow, validateFreeWorkflowRequest, type FreeWorkflowParam, type FreeWorkflowSummary } from "@/services/api/free-workflow";
 import { uploadImage } from "@/services/image-storage";
 import { imageAspectOptions, imageQualityOptions, imageScaleOptions } from "@/components/image-settings-panel";
 import { videoResolutionOptions, videoSecondsRange, videoSizeOptions } from "@/components/video-settings-panel";
-import type { CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
+import type { CanvasAgentOp, CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
+import { ensureFreeCardWorkflowEntry, freeCardMetadataPatch } from "@/lib/canvas/free-card-workflow";
 import { clampVideoSeconds } from "@/lib/media-size";
+import { CanvasNodeType } from "@/types/canvas";
+import { useAgentStore } from "@/stores/use-agent-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { modelOptionLabel, modelOptionName, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore } from "@/stores/use-config-store";
+import { customWorkflowView, useCustomWorkflowStore, type CustomWorkflowMode } from "@/stores/use-custom-workflow-store";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
 
 // Execute site-level Agent tools in the browser, including canvas lists, workbench generation, prompt search, and asset operations.
@@ -25,6 +30,16 @@ export const SITE_TOOL_NAMES = [
     "prompts_search",
     "assets_list",
     "assets_add",
+    "free_workflow_list_sources",
+    "free_workflow_import",
+    "free_workflow_graph",
+    "free_workflow_health",
+    "free_workflow_set_params",
+    "free_workflow_configure",
+    "free_workflow_sync",
+    "free_workflow_rename",
+    "free_workflow_build_request",
+    "free_workflow_create_card",
 ] as const;
 
 export type SiteToolName = (typeof SITE_TOOL_NAMES)[number];
@@ -47,6 +62,16 @@ export const SITE_TOOL_LABELS: Record<SiteToolName, string> = {
     get prompts_search() { return siteText("promptSearch"); },
     get assets_list() { return siteText("assetList"); },
     get assets_add() { return siteText("assetAdd"); },
+    get free_workflow_list_sources() { return "列出工作流源"; },
+    get free_workflow_import() { return "导入工作流"; },
+    get free_workflow_graph() { return "读取工作流图"; },
+    get free_workflow_health() { return "工作流体检"; },
+    get free_workflow_set_params() { return "写入披露参数"; },
+    get free_workflow_configure() { return "配置页名/文本/模式"; },
+    get free_workflow_sync() { return "同步工作流"; },
+    get free_workflow_rename() { return "重命名工作流"; },
+    get free_workflow_build_request() { return "干跑校验请求"; },
+    get free_workflow_create_card() { return "创建自由卡片"; },
 };
 
 type SiteToolInput = Record<string, unknown>;
@@ -74,6 +99,26 @@ export async function runSiteTool(name: SiteToolName, input: SiteToolInput, navi
             return listAssets(input);
         case "assets_add":
             return addAsset(input);
+        case "free_workflow_list_sources":
+            return listFreeWorkflowSources(input);
+        case "free_workflow_import":
+            return importFreeWorkflowTool(input);
+        case "free_workflow_graph":
+            return graphFreeWorkflow(input);
+        case "free_workflow_health":
+            return healthFreeWorkflow(input);
+        case "free_workflow_set_params":
+            return setFreeWorkflowParams(input);
+        case "free_workflow_configure":
+            return configureFreeWorkflow(input);
+        case "free_workflow_sync":
+            return syncFreeWorkflowTool(input);
+        case "free_workflow_rename":
+            return renameFreeWorkflowTool(input);
+        case "free_workflow_build_request":
+            return buildFreeWorkflowRequest(input);
+        case "free_workflow_create_card":
+            return createFreeWorkflowCard(input);
         default:
             throw new Error(siteText("unknownTool", { name }));
     }
@@ -320,6 +365,202 @@ async function addAsset(input: SiteToolInput) {
         return { ok: true, id, kind: "image" };
     }
     throw new Error(siteText("assetKindUnsupported"));
+}
+
+function freeWorkflowConfig() {
+    return useConfigStore.getState().config;
+}
+
+function compactFreeWorkflow(summary: FreeWorkflowSummary) {
+    return {
+        id: summary.id,
+        name: summary.name,
+        sourceRel: summary.sourceRel,
+        sourceFormat: summary.sourceFormat,
+        outputType: summary.outputType,
+        pageCount: summary.pageCount ?? 1,
+        size: summary.size,
+        aspectRatio: summary.aspectRatio,
+        count: summary.count,
+        hasSeed: summary.hasSeed,
+        seed: summary.seed,
+        textInputs: summary.textInputs || [],
+        primaryText: summary.primaryText || null,
+        flows: (summary.flows || []).map((flow) => ({ id: flow.id, label: flow.label, main: flow.main, outputs: flow.outputs, textInputs: flow.textInputs || [], primaryText: flow.primaryText || null })),
+        params: summary.params || [],
+        warnings: summary.warnings || [],
+    };
+}
+
+function compactStoreEntry(entry: { id: string; freeId: string; name: string; outputType: string; kind: string; mode: string; flowId?: string; flowNames?: Record<string, string>; textSelection?: string[]; textNames?: Record<string, string>; blocks?: string[]; layout?: string[] }) {
+    const view = customWorkflowView(entry as never);
+    return { id: view.id, freeId: view.freeId, name: view.name, outputType: view.outputType, kind: view.kind, mode: view.mode, flowId: view.flowId || "", flowNames: view.flowNames || {}, textSelection: view.textSelection || [], textNames: view.textNames || {}, blocks: view.blocks || [], layout: view.layout || [] };
+}
+
+async function listFreeWorkflowSources(input: SiteToolInput) {
+    const sources = await fetchFreeWorkflowSources(freeWorkflowConfig());
+    const query = String(input.query || "").trim().toLowerCase();
+    const kind = String(input.kind || "").trim();
+    const filtered = sources.filter((source) => !query || `${source.name} ${source.relative}`.toLowerCase().includes(query));
+    return { kind, total: filtered.length, sources: filtered.map((source) => ({ rel: source.relative, name: source.name, folder: source.folder, format: source.format, signature: source.updatedAt || "", updatedAt: source.updatedAt || "" })) };
+}
+
+async function importFreeWorkflowTool(input: SiteToolInput) {
+    const config = freeWorkflowConfig();
+    const sourceRel = String(input.sourceRel || "").trim();
+    if (!sourceRel) throw new Error("sourceRel 不能为空");
+    const name = String(input.name || "").trim();
+    const existing = (await fetchFreeWorkflows(config)).find((workflow) => workflow.sourceRel === sourceRel && !workflow.snapshot);
+    let summary: FreeWorkflowSummary;
+    let mode = "imported";
+    if (existing) {
+        try {
+            const result = await syncFreeWorkflow(config, existing.id, true);
+            summary = result.workflow;
+            mode = result.changed ? "synced" : "reused";
+        } catch {
+            summary = existing;
+            mode = "reused";
+        }
+    } else {
+        summary = await importFreeWorkflow(config, sourceRel);
+    }
+    if (name && summary.name !== name) summary = await renameFreeWorkflow(config, summary.id, name);
+    const storeEntry = await ensureFreeCardWorkflowEntry(summary, { params: summary.params || [] });
+    return { mode, existing: Boolean(existing), requestedKind: String(input.kind || ""), entry: { ...compactFreeWorkflow(summary), storeId: storeEntry.id } };
+}
+
+async function graphFreeWorkflow(input: SiteToolInput) {
+    const id = String(input.id || "").trim();
+    if (!id) throw new Error("id 不能为空");
+    return fetchFreeWorkflowGraph(freeWorkflowConfig(), id, String(input.flowId || ""));
+}
+
+async function healthFreeWorkflow(input: SiteToolInput) {
+    const id = String(input.id || "").trim();
+    if (!id) throw new Error("id 不能为空");
+    return fetchFreeWorkflowHealth(freeWorkflowConfig(), id, String(input.flowId || ""));
+}
+
+async function setFreeWorkflowParams(input: SiteToolInput) {
+    const id = String(input.id || "").trim();
+    const params = Array.isArray(input.params) ? input.params : [];
+    if (!id) throw new Error("id 不能为空");
+    if (!params.length) throw new Error("params 不能为空");
+    const summary = await saveFreeWorkflowParams(freeWorkflowConfig(), id, params as FreeWorkflowParam[]);
+    const entry = useCustomWorkflowStore.getState().workflows.find((workflow) => workflow.freeId === id || workflow.id === id);
+    if (entry) {
+        const view = customWorkflowView(entry);
+        useCustomWorkflowStore.getState().setParams(entry.id, params as FreeWorkflowParam[], (params as FreeWorkflowParam[]).map((param) => param.key), view.spans || {}, view.blocks || []);
+    }
+    return { entry: compactFreeWorkflow(summary) };
+}
+
+function configureFreeWorkflow(input: SiteToolInput) {
+    const id = String(input.id || "").trim();
+    if (!id) throw new Error("id 不能为空");
+    const store = useCustomWorkflowStore.getState();
+    const entry = store.workflows.find((workflow) => workflow.freeId === id || workflow.id === id);
+    if (!entry) throw new Error("工作流条目不存在");
+    const view = customWorkflowView(entry);
+    const flowId = String(input.flowId || view.flowId || "");
+    if (input.flowNames && typeof input.flowNames === "object") {
+        for (const [target, value] of Object.entries(input.flowNames as Record<string, unknown>)) store.setFlowName(entry.id, target, String(value || ""));
+    }
+    const primary = input.primaryText && typeof input.primaryText === "object" ? (input.primaryText as { node?: unknown; input?: unknown }) : null;
+    const textInputs = view.textInputs || [];
+    const normalizeTextKey = (value: string) => {
+        if (value.includes("\u0000")) return value;
+        const match = textInputs.find((item) => `${item.node}:${item.input}` === value);
+        return match ? `${match.node}\u0000${match.input}` : value;
+    };
+    let selection = Array.isArray(input.textSelection) ? input.textSelection.map((key) => normalizeTextKey(String(key))).filter(Boolean).slice(0, 4) : null;
+    if (primary?.node && primary.input) {
+        const key = `${String(primary.node)}\u0000${String(primary.input)}`;
+        selection = [...new Set([key, ...(selection || view.textSelection || []).map((item) => normalizeTextKey(String(item)))])].slice(0, 4);
+    } else if (selection) {
+        selection = [...new Set(selection)].slice(0, 4);
+    }
+    if (selection) store.setTextSelection(entry.id, flowId, selection);
+    if (input.textNames && typeof input.textNames === "object") {
+        for (const [key, value] of Object.entries(input.textNames as Record<string, unknown>)) store.setTextName(entry.id, flowId, normalizeTextKey(String(key)), String(value || ""));
+    }
+    if (input.mode) store.setPageMode(entry.id, flowId, String(input.mode) as CustomWorkflowMode);
+    if (Array.isArray(input.blocks) || Array.isArray(input.layout)) {
+        const current = customWorkflowView(entry);
+        store.setParams(entry.id, current.params, Array.isArray(input.layout) ? input.layout.map(String) : current.layout || [], current.spans || {}, Array.isArray(input.blocks) ? input.blocks.map(String) : current.blocks || []);
+    }
+    const updated = useCustomWorkflowStore.getState().workflows.find((workflow) => workflow.id === entry.id) || entry;
+    return { entry: compactStoreEntry(updated) };
+}
+
+async function syncFreeWorkflowTool(input: SiteToolInput) {
+    const id = String(input.id || "").trim();
+    if (!id) throw new Error("id 不能为空");
+    const result = await syncFreeWorkflow(freeWorkflowConfig(), id, Boolean(input.force));
+    const entry = useCustomWorkflowStore.getState().workflows.find((workflow) => workflow.freeId === id || workflow.id === id);
+    if (entry) useCustomWorkflowStore.getState().applySourceUpdate(entry.id, result.workflow);
+    return { changed: result.changed, entry: compactFreeWorkflow(result.workflow) };
+}
+
+async function renameFreeWorkflowTool(input: SiteToolInput) {
+    const id = String(input.id || "").trim();
+    const name = String(input.name || "").trim();
+    if (!id || !name) throw new Error("id 和 name 不能为空");
+    const summary = await renameFreeWorkflow(freeWorkflowConfig(), id, name);
+    const entry = useCustomWorkflowStore.getState().workflows.find((workflow) => workflow.freeId === id || workflow.id === id);
+    if (entry) useCustomWorkflowStore.getState().renameWorkflow(entry.id, name);
+    return { entry: compactFreeWorkflow(summary) };
+}
+
+async function buildFreeWorkflowRequest(input: SiteToolInput) {
+    const id = String(input.id || "").trim();
+    if (!id) throw new Error("id 不能为空");
+    return validateFreeWorkflowRequest(freeWorkflowConfig(), id, {
+        flowId: input.flowId,
+        prompt: input.prompt,
+        texts: input.texts,
+        primaryText: input.primaryText,
+        size: input.size,
+        seed: input.seed,
+        count: input.count,
+        seedFixed: input.seedFixed,
+        ratio: input.ratio,
+        images: input.images,
+        enableGroups: input.enableGroups,
+    });
+}
+
+async function createFreeWorkflowCard(input: SiteToolInput) {
+    const id = String(input.id || "").trim();
+    if (!id) throw new Error("id 不能为空");
+    const config = freeWorkflowConfig();
+    const summary = await fetchFreeWorkflow(config, id);
+    if (summary.outputType !== "image" && summary.outputType !== "video") throw new Error("自由卡片目前只接图片/视频工作流；其他请用标准卡");
+    const entry = await ensureFreeCardWorkflowEntry(summary, { params: summary.params || [] });
+    const context = useAgentStore.getState().canvasContext;
+    if (!context) throw new Error("当前不在画布页面，无法建卡");
+    const patch = freeCardMetadataPatch(summary, entry.id, true);
+    const refs = Array.isArray(input.refs) ? input.refs.filter((item): item is string => typeof item === "string") : [];
+    const requested = String(input.nodeId || "").trim();
+    const target = requested ? context.snapshot.nodes.find((node) => node.id === requested && node.type === CanvasNodeType.FreeCard) : undefined;
+    const nodeId = target?.id || `free-card-${Date.now()}`;
+    const ops: CanvasAgentOp[] = target
+        ? [{ type: "update_node", id: nodeId, metadata: patch }]
+        : [{ type: "add_node", id: nodeId, nodeType: CanvasNodeType.FreeCard, metadata: patch }];
+    refs.forEach((fromNodeId) => ops.push({ type: "connect_nodes", fromNodeId, toNodeId: nodeId }));
+    ops.push({ type: "select_nodes", ids: [nodeId] });
+    context.applyOps(ops);
+    const stored = useCustomWorkflowStore.getState().workflows.find((workflow) => workflow.id === entry.id);
+    return {
+        ok: true,
+        nodeId,
+        reusedCard: Boolean(target),
+        entryId: entry.id,
+        workflow: compactFreeWorkflow(summary),
+        entry: stored ? compactStoreEntry(stored) : null,
+        next: "卡片已建好；真实生成需用户确认后再触发。",
+    };
 }
 
 function paginate(input: SiteToolInput, total: number, defaultSize: number) {

@@ -1,6 +1,7 @@
 import { registerNodeDefinitions, unregisterPluginNodes } from "@/lib/canvas/node-registry";
 import { getPluginRuntime } from "@/lib/canvas/plugin-runtime";
 import { usePluginStore, type InstalledPlugin } from "@/stores/canvas/use-plugin-store";
+import { DSH_EMBEDDED } from "@/constant/runtime-config";
 import type { CanvasPlugin } from "@/types/canvas-plugin";
 import i18n from "@/i18n";
 
@@ -97,7 +98,9 @@ export async function ensurePluginsLoaded() {
     loaded = true;
     await usePluginStore.persist.rehydrate();
     await loadLocalPlugins(); // Discover disabled local plugins first, then activate all enabled records.
-    const records = usePluginStore.getState().plugins.filter((record) => record.enabled);
+    const records = usePluginStore
+        .getState()
+        .plugins.filter((record) => record.enabled && !(DSH_EMBEDDED && record.id === "canvas-assistant"));
     await Promise.all(
         records.map(async (record) => {
             try {
@@ -124,9 +127,12 @@ async function loadLocalPlugins() {
         return; // Skip when no local manifest exists, such as production builds without plugins.
     }
     if (!Array.isArray(urls) || !urls.length) return;
+    // The DSH build is hosted inside DSH, which is already the Agent; skip the canvas's own AI assistant plugin.
+    const entries = DSH_EMBEDDED ? urls.filter((url) => !String(url).includes("canvas-assistant")) : urls;
+    if (!entries.length) return;
     const store = usePluginStore.getState();
     await Promise.all(
-        urls.map(async (url: string) => {
+        entries.map(async (url: string) => {
             try {
                 const source = await fetchPluginSource(withCacheBust(url));
                 const plugin = await evaluatePluginSource(source);

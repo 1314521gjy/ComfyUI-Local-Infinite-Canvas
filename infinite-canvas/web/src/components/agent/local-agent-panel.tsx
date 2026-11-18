@@ -202,7 +202,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             }
         });
         return () => { disposed = true; };
-    }, []);
+    }, []);
     const loadThreadSnapshot = useCallback(async (threadId: string, sequence: number, response?: AgentThreadResponse, expectedTurnId = "") => {
         let thread = response;
         let lastError: unknown;
@@ -741,6 +741,33 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
         }
     };
 
+    const sendPromptRef = useRef(sendPrompt);
+    sendPromptRef.current = sendPrompt;
+    useEffect(() => {
+        let timer: number | null = null;
+        const handler = () => {
+            if (timer !== null) window.clearTimeout(timer);
+            let tries = 0;
+            const attempt = () => {
+                const state = useAgentStore.getState();
+                const ready = state.connected && !state.sending && !state.waiting && !state.loadingThreads && ["ready", "warning"].includes(state.conversation.status) && state.prompt.trim();
+                if (ready) {
+                    void sendPromptRef.current();
+                    return;
+                }
+                tries += 1;
+                if (tries > 120) return;
+                timer = window.setTimeout(attempt, 500);
+            };
+            attempt();
+        };
+        window.addEventListener("qoder:agent-send", handler);
+        return () => {
+            window.removeEventListener("qoder:agent-send", handler);
+            if (timer !== null) window.clearTimeout(timer);
+        };
+    }, []);
+
     const stopTurn = async () => {
         if (!connected || (!sending && !waiting)) return;
         setAgentState({ activity: rt("stopping") });
@@ -924,7 +951,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             return;
         }
         if (!nextToken) {
-            const text = rt("tokenRequired");
+            const text = rt("agentNotFound");
             if (!silent) {
                 setAgentState({ connectError: text });
                 if (!headless) message.warning(text);
@@ -947,11 +974,11 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
     };
 
     useLayoutEffect(() => {
-        const bootstrap = readAgentUrlBootstrap(hash, window.location.search);
+        const bootstrap = readAgentUrlBootstrap(hash);
         if (!bootstrap) return;
-        navigate(`${window.location.pathname}${bootstrap.remainingSearch}${bootstrap.remainingHash}`, { replace: true });
+        navigate(`${window.location.pathname}${window.location.search}${bootstrap.remainingHash}`, { replace: true });
         if (!bootstrap.url || !bootstrap.token) {
-            setAgentState({ fragmentBootstrap: false, activeTab: "setup", connectError: rt(!bootstrap.url ? "addressRequired" : "tokenRequired") });
+            setAgentState({ fragmentBootstrap: false, activeTab: "setup", connectError: rt(!bootstrap.url ? "addressRequired" : "agentNotFound") });
             useAgentStore.getState().openPanel();
             return;
         }
@@ -964,10 +991,7 @@ export function LocalAgentPanel({ embedded, headless, autoConnect }: { embedded?
             return;
         }
         errorLoggedRef.current = false;
-        const nextUrl = bootstrap.url.replace(/\/$/, "");
-        localStorage.setItem("canvas-agent-url", nextUrl);
-        localStorage.setItem("canvas-agent-token", bootstrap.token);
-        setAgentState({ url: nextUrl, token: bootstrap.token, enabled: true, connected: false, silentConnect: true, fragmentBootstrap: true, confirmTools: false, activity: rt("connecting"), connectError: "", activeTab: "setup" });
+        setAgentState({ url: bootstrap.url.replace(/\/$/, ""), token: bootstrap.token, enabled: true, connected: false, silentConnect: true, fragmentBootstrap: true, confirmTools: false, activity: rt("connecting"), connectError: "", activeTab: "setup" });
     }, [hash, navigate, setAgentState]);
 
     useEffect(() => {

@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useCanvasTheme } from "@/lib/canvas/use-canvas-theme";
 import { isBuiltinNodeType, listNodeDefinitions, useNodeRegistryVersion } from "@/lib/canvas/node-registry";
+import { HIDDEN_NODE_TYPES, HIDE_UNRELEASED_FEATURES } from "@/lib/release-flags";
 import { getNodeSpec } from "@/constant/canvas";
 import { CanvasNodeType, type ConnectionHandle, type Position } from "@/types/canvas";
 
@@ -29,7 +30,7 @@ export function ConnectionCreateMenu({
     useNodeRegistryVersion();
     // Plugin nodes are injected into the connection menu; insertBefore nodes are created upstream and connected into the current node.
     const pluginDefinitions = listNodeDefinitions()
-        .filter((def) => def.showInCreateMenu !== false && !isBuiltinNodeType(def.type))
+        .filter((def) => def.showInCreateMenu !== false && !isBuiltinNodeType(def.type) && !(HIDE_UNRELEASED_FEATURES && HIDDEN_NODE_TYPES.has(def.type)))
         .sort((a, b) => Number(Boolean(b.insertBefore)) - Number(Boolean(a.insertBefore)));
     return (
         <div
@@ -98,7 +99,7 @@ export function NodeCreateMenu({ position, scale = 1, onCreate, onClose }: { pos
     const { t } = useTranslation();
     useNodeRegistryVersion();
     const menuRef = useRef<HTMLDivElement>(null);
-    const definitions = listNodeDefinitions().filter((def) => def.showInCreateMenu !== false);
+    const definitions = listNodeDefinitions().filter((def) => def.showInCreateMenu !== false && !(HIDE_UNRELEASED_FEATURES && HIDDEN_NODE_TYPES.has(def.type)));
     // Close automatically when clicking outside the menu.
     useEffect(() => {
         const handlePointerDown = (event: PointerEvent) => {

@@ -1,5 +1,5 @@
 import { App, Button, Checkbox, Progress, Select, Tag, Tooltip } from "antd";
-import { AlertTriangle, Bot, ChevronDown, Download, HardDriveDownload, RefreshCw, Server, X, XCircle } from "lucide-react";
+import { AlertTriangle, ChevronDown, Download, HardDriveDownload, RefreshCw, Server, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -14,19 +14,14 @@ import {
     setResourceReplacement,
     setPackMainModel,
     setWorkflowVisibility,
-    fetchAssistantRuntimeStatus,
-    ensureAssistantRuntime,
-    type AgentRuntimeResource,
-    type AssistantRuntimeStatus,
     type ResourceItem,
     type ResourceJob,
     type ResourcePack,
     type ResourceStatus,
 } from "@/services/api/resources";
 import { isGatewayDown } from "@/services/api/gateway-status";
-import { LOCAL_ONLY } from "@/constant/app-mode";
-import { useAgentStore } from "@/stores/use-agent-store";
 import { useConfigStore } from "@/stores/use-config-store";
+import { CustomWorkflowImportDialog } from "@/components/layout/custom-workflow-import-dialog";
 
 const copyByLocale = {
     zh: {
@@ -42,7 +37,6 @@ const copyByLocale = {
         runtimeNoMatchTitle: "没有匹配的预编译运行库",
         runtimeNoMatchBody: "当前 ComfyUI 环境不在预编译包覆盖范围内，画布不会自动安装，也不会猜版本。请按下面命令手动安装；其他资源继续下载。",
         runtimeBroken: "检测到已安装但无法导入；画布不会自动覆盖，请手动修复或交给 AI Agent。",
-        runtimeChecking: "运行库状态检测中或检测超时；可稍后点“重新扫描”，暂时不会因此判定工作流不可用。",
         runtimeRestartWarning: "自动安装完成后会重启 ComfyUI；正在运行的任务会中断，网关自己的下载不受影响。",
         runtimeAutoInstall: "画布自动安装",
         runtimeManualInstall: "自己手动安装",
@@ -52,13 +46,11 @@ const copyByLocale = {
         runtimeRuntime: "本机环境",
         pipOutdated: "已安装版本较旧（{version}），可能无法运行；请手动升级，画布不会自动覆盖。",
         cancel: "终止安装",
-        dismiss: "收起进度",
         skip: "跳过",
         none: "未找到资源索引",
         comfyRoot: "ComfyUI",
         indexVersion: "资源索引",
         present: "已具备",
-        checking: "检测中",
         missing: "缺少",
         recommended: "推荐",
         optional: "可选",
@@ -77,8 +69,6 @@ const copyByLocale = {
         otherWorkflows: "其他工作流模型",
         otherWorkflowsHint: "ComfyUI 自动导入、且不在资源包里的工作流；一般不用管",
         modelAliasPickInstalled: "选择已安装模型",
-        similarMatch: "相似匹配",
-        similarTo: "匹配到",
         replaceModel: "自选替换",
         pickHint: "请在弹出的文件选择框中选择模型文件（默认已打开 ComfyUI 对应模型目录）",
         picking: "已打开文件选择窗口",
@@ -88,14 +78,7 @@ const copyByLocale = {
         replacedBy: "已替换为",
         workflowReady: "可用",
         workflowRestart: "待重启",
-        workflowNode: "缺节点",
         workflowMismatch: "模型名未匹配",
-        workflowRuntime: "缺运行库",
-        workflowOffline: "未连接",
-        workflowUnscanned: "未扫描",
-        workflowMutedHint: "该工作流已从模型选择中屏蔽；勾选「启用」后才会参与模型选择。",
-        workflowUnscannedHint: "该工作流尚未参与扫描；点「重新扫描」后查看结果。",
-        sizeMismatchTag: "大小不一致",
         workflowEnabled: "启用",
         workflowDisabled: "已屏蔽",
         canvasEntry: "画布入口",
@@ -117,44 +100,17 @@ const copyByLocale = {
         autoMatch: "按本机 Python 自动匹配",
         pipManual: "当前 {version} 没有匹配的预编译运行库，请手动安装：{command}",
         localBake: "本地烘焙",
-        runtimeInstalled: "已安装",
-        runtimeRepair: "重新解压",
-        runtimeInstalling: "正在下载/解压…",
-        runtimeVersionMismatch: "版本不一致",
-        runtimeReinstall: "重装为随包版本",
-        runtimeInstall: "安装运行时",
-        runtimeCurrent: "当前",
-        runtimeTarget: "目标",
-        runtimeFullPackage: "获取完整包",
-        runtimeStatusFailed: "读取运行时状态失败",
-        runtimeNoPackage: "未安装运行时",
         noResources: "此包没有需要下载的资源。",
         downloadProgress: "安装进度",
         copying: "安装中",
         installing: "安装运行库",
         extracting: "解压中",
         done: "安装完成",
-        savedTo: "已保存到：",
-        installedTo: "已安装到：",
-        restartToApply: "需重启 ComfyUI 后才会被扫描识别",
-        restartRuntimeToApply: "需重启 ComfyUI 后运行库才会生效",
         failed: "部分资源安装失败",
         compileFailed: "本机编译失败",
         copyHint: "复制给 AI Agent",
         hintCopied: "已复制，直接发给你的 AI Agent",
-        guideTitle: "添加工作流引导",
-        guideBody: "先看扫描结果，缺什么勾选后安装。下载/安装成功不需要 Agent；只有下载失败、VDN 缺 Stage-B 或 TRT 编译失败时，才看页面底部的「下载/编译失败？」。",
-        guideAgent: "交给本机 Agent",
-        guideAgentCopy: "复制给本机 Agent",
-        guideCopyFallback: "复制失败，请手动全选复制下面指令发给本机 Agent。",
-        helpTitle: "扫描不到 / 识别不了 / 缺资源？",
-        helpScan: "扫描不到 ComfyUI：展开上方「ComfyUI 目录与资源扫描」→「手动指定」→ 选择包含 main.py 的 ComfyUI 根目录（里面应有 models、custom_nodes）；保存并扫描。ComfyUI 需要先启动。",
-        helpModel: "模型识别不了：在对应资源卡右侧点「自选替换」，选择本机实际模型文件。同名但大小不一致不是同一版本，建议重新下载或用「自选替换」。",
-        helpMissing: "缺少资源：看「缺少 N / 下载体积」，勾选缺失包后点「安装选中」；可选内容在包内展开勾选。安装后出现「待重启」就重启 ComfyUI。",
-        sizeMismatchHint: "处理：点右侧「自选替换」选本机文件，或重新下载资源包版本。",
-        guideFailureTitle: "下载 / 编译失败？",
-        guideFailureBody: "先完成上面的下载/安装。只有下载失败、VDN 缺 Stage-B 或 TRT 编译失败时，才复制修复指令给本机 Agent；成功下载不需要。",
-        notReachable: "ComfyUI 未连接：模型文件仍按已识别的目录扫描；工作流可用性和自定义节点需 ComfyUI 在线后才能确认。",
+        notReachable: "ComfyUI 当前未连接，资源状态可能不准确。",
         indexError: "资源索引读取失败：",
         indexWarning: "资源索引提示：",
         autoMatchRuntime: "按本机环境自动匹配",
@@ -190,7 +146,6 @@ const copyByLocale = {
         runtimeNoMatchTitle: "No matching prebuilt runtime",
         runtimeNoMatchBody: "This ComfyUI environment is outside the prebuilt wheel matrix. The app will not install automatically or guess a version. Install manually with the command below; other downloads continue.",
         runtimeBroken: "Installed but not importable. The app will not overwrite it automatically. Repair it manually or hand it to your AI agent.",
-        runtimeChecking: "Runtime check is in progress or timed out. Rescan later; workflows are not marked unavailable because of this.",
         runtimeRestartWarning: "Automatic installation restarts ComfyUI afterwards; running tasks are interrupted. Gateway downloads are not affected.",
         runtimeAutoInstall: "Install automatically",
         runtimeManualInstall: "I'll install manually",
@@ -200,13 +155,11 @@ const copyByLocale = {
         runtimeRuntime: "Detected",
         pipOutdated: "Installed version {version} is old and may not work. Upgrade manually; the app will not overwrite it.",
         cancel: "Stop install",
-        dismiss: "Dismiss",
         skip: "Skip",
         none: "No resource index found",
         comfyRoot: "ComfyUI",
         indexVersion: "Index",
         present: "Ready",
-        checking: "Checking",
         missing: "Missing",
         recommended: "Recommended",
         optional: "Optional",
@@ -225,8 +178,6 @@ const copyByLocale = {
         otherWorkflows: "Other workflow models",
         otherWorkflowsHint: "Workflows auto-imported from ComfyUI that are not part of a resource pack; usually safe to ignore",
         modelAliasPickInstalled: "Choose installed model",
-        similarMatch: "Similar match",
-        similarTo: "Matched",
         replaceModel: "Choose replacement",
         pickHint: "Pick a model file in the dialog (it opens at the matching ComfyUI model folder)",
         picking: "File dialog opened",
@@ -236,14 +187,7 @@ const copyByLocale = {
         replacedBy: "Replaced with",
         workflowReady: "Ready",
         workflowRestart: "Restart needed",
-        workflowNode: "Missing nodes",
         workflowMismatch: "Model name not matched",
-        workflowRuntime: "Missing runtime",
-        workflowOffline: "Offline",
-        workflowUnscanned: "Not scanned",
-        workflowMutedHint: "This workflow is hidden from the model picker; enable it to participate.",
-        workflowUnscannedHint: "This workflow was not included in the scan; click Rescan to check it.",
-        sizeMismatchTag: "Size mismatch",
         workflowEnabled: "Enabled",
         workflowDisabled: "Hidden",
         canvasEntry: "Canvas entry",
@@ -265,44 +209,17 @@ const copyByLocale = {
         autoMatch: "Auto-matched to local Python",
         pipManual: "No prebuilt runtime matches {version}. Install manually: {command}",
         localBake: "Local bake",
-        runtimeInstalled: "Installed",
-        runtimeRepair: "Re-extract",
-        runtimeInstalling: "Downloading / extracting…",
-        runtimeVersionMismatch: "Version mismatch",
-        runtimeReinstall: "Reinstall bundled version",
-        runtimeInstall: "Install runtime",
-        runtimeCurrent: "Current",
-        runtimeTarget: "Target",
-        runtimeFullPackage: "Get full package",
-        runtimeStatusFailed: "Failed to read runtime status",
-        runtimeNoPackage: "Runtime not installed",
         noResources: "This pack has no downloadable resources.",
         downloadProgress: "Install progress",
         copying: "Installing",
         installing: "Installing runtime",
         extracting: "Extracting",
         done: "Install complete",
-        savedTo: "Saved to: ",
-        installedTo: "Installed to: ",
-        restartToApply: "Restart ComfyUI before it is scanned",
-        restartRuntimeToApply: "Restart ComfyUI for the runtime to take effect",
         failed: "Some resources failed",
         compileFailed: "Local compile failed",
         copyHint: "Copy for your AI agent",
         hintCopied: "Copied — paste it to your AI agent",
-        guideTitle: "Adding workflows",
-        guideBody: "Check the scan results, select what is missing and install. A successful download does not need the agent. Only if download, VDN Stage-B or TensorRT compile fails, look at Download / compile failed? at the bottom.",
-        guideAgent: "Hand to local agent",
-        guideAgentCopy: "Copy for local agent",
-        guideCopyFallback: "Copy failed. Select and copy the instructions below for your local agent.",
-        helpTitle: "ComfyUI not found / model not recognized / missing resources?",
-        helpScan: "ComfyUI not found: open the folder scan above, choose Manual, select the ComfyUI root containing main.py (it should contain models and custom_nodes), then save and scan. ComfyUI must be running.",
-        helpModel: "Model not recognized: click Choose replacement on the resource card and pick the local model file. Same name with a different size is not the same build; re-download it or use Choose replacement.",
-        helpMissing: "Missing resources: check Missing / download size, select the missing pack and click Install selected; optional items are inside the pack. Restart ComfyUI if Restart needed appears.",
-        sizeMismatchHint: "Fix: use Choose replacement on the right, or re-download the resource-pack version.",
-        guideFailureTitle: "Download / compile failed?",
-        guideFailureBody: "Complete the download/install above first. Only if download, VDN Stage-B or TensorRT compile fails, copy the repair instructions to your local agent; a successful download does not need this.",
-        notReachable: "ComfyUI is offline: model files are still scanned from detected folders; workflow availability and custom nodes need ComfyUI online.",
+        notReachable: "ComfyUI is not reachable; resource status may be stale.",
         indexError: "Failed to load the resource index: ",
         indexWarning: "Resource index notice: ",
         autoMatchRuntime: "Auto-matched to this machine",
@@ -358,7 +275,6 @@ function PipMissingHint({ item, copy }: { item: ResourceItem; copy: Copy }) {
 
 function statusTag(item: ResourceItem, copy: Copy) {
     if (item.overridden) return <Tag color="blue">{copy.mainModelSelected}</Tag>;
-    if (item.type === "pip" && item.pipChecking) return <Tag color="default">{copy.checking}</Tag>;
     if (item.status === "present") return <Tag color="green">{copy.present}</Tag>;
     if (item.status === "blocked") return <Tag color="gold">{copy.blocked}</Tag>;
     return <Tag color="orange">{copy.missing}</Tag>;
@@ -366,9 +282,8 @@ function statusTag(item: ResourceItem, copy: Copy) {
 
 function packState(pack: ResourcePack, copy: Copy) {
     if (pack.planned) return <Tag>{copy.planned}</Tag>;
-    const missing = pack.standalone ? pack.optionalMissing : pack.missing;
-    if (!missing) return <Tag color="green">{copy.ready}</Tag>;
-    return <Tag color="orange">{copy.missing} {missing}</Tag>;
+    if (!pack.missing) return <Tag color="green">{copy.ready}</Tag>;
+    return <Tag color="orange">{copy.missing} {pack.missing}</Tag>;
 }
 
 function formatSpeed(bytesPerSecond: number) {
@@ -376,7 +291,7 @@ function formatSpeed(bytesPerSecond: number) {
     return value > 0 ? `${formatBytes(value)}/s` : "";
 }
 
-const REPLACEABLE_MODEL_DIRS = new Set(["diffusion_models", "text_encoders", "vae", "loras", "checkpoints", "upscale_models", "vdn", "LLM"]);
+const REPLACEABLE_MODEL_DIRS = new Set(["diffusion_models", "text_encoders", "vae", "loras", "checkpoints", "upscale_models", "vdn"]);
 
 function isReplaceableResource(item: ResourceItem) {
     if (item.type !== "model" && item.type !== "bake") return false;
@@ -422,7 +337,6 @@ function ResourceCard({
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <span className="text-[11px] font-medium text-stone-700 dark:text-stone-200">{item.label}</span>
                         {item.type === "bake" ? <Tag className="m-0">{copy.localBake}</Tag> : null}
-                        {item.matchedBy === "similar" ? <Tag color="gold" className="m-0">{copy.similarMatch}</Tag> : null}
                         {statusTag(item, copy)}
                     </div>
                     <div className="mt-0.5 truncate text-[10px] text-stone-400 dark:text-stone-500">{item.target}</div>
@@ -432,29 +346,17 @@ function ResourceCard({
                         {!compact && item.license ? <span>{copy.license}: {item.license}</span> : null}
                     </div>
                     {item.matchedBy === "size" && item.matchedFile ? <div className="mt-0.5 text-[10px] leading-4 text-stone-400 dark:text-stone-500">{copy.matchedBySize}: {item.matchedFile}</div> : null}
-                    {item.matchedBy === "similar" && item.matchedFile ? (
-                        <div className="mt-0.5 text-[10px] leading-4 text-amber-600 dark:text-amber-400">
-                            {copy.similarTo}: {item.matchedFile}
-                            {item.similarScore ? ` · ${Math.round(item.similarScore * 100)}%` : ""}
-                        </div>
-                    ) : null}
-                    {item.sizeMismatch ? (
-                        <div className="mt-0.5 text-[10px] leading-4 text-amber-600 dark:text-amber-400">
-                            {item.sizeMismatch}
-                            <div className="mt-0.5 text-stone-500 dark:text-stone-400">{copy.sizeMismatchHint}</div>
-                        </div>
-                    ) : null}
+                    {item.sizeMismatch ? <div className="mt-0.5 text-[10px] leading-4 text-amber-600 dark:text-amber-400">{item.sizeMismatch}</div> : null}
                     {item.overridden && item.overriddenBy ? <div className="mt-0.5 text-[10px] leading-4 text-blue-600 dark:text-blue-300">{copy.replacedBy}: {item.overriddenBy}</div> : null}
                     <PipMissingHint item={item} copy={copy} />
                     {item.type === "pip" && item.restartAfterInstall && item.status === "present" ? <div className="mt-0.5 text-[10px] leading-4 text-stone-500 dark:text-stone-400">{copy.pipRestart}</div> : null}
                     {item.type === "pip" && item.pipOutdated && item.status === "present" ? <div className="mt-0.5 text-[10px] leading-4 text-amber-600 dark:text-amber-400">{copy.pipOutdated.replace("{version}", item.pipVersion || "?")}</div> : null}
                     {item.type === "pip" && item.pipBroken ? <div className="mt-0.5 text-[10px] leading-4 text-amber-600 dark:text-amber-400">{copy.runtimeBroken}</div> : null}
-                    {item.type === "pip" && item.pipChecking ? <div className="mt-0.5 text-[10px] leading-4 text-stone-500 dark:text-stone-400">{copy.runtimeChecking}</div> : null}
                     {!compact && item.note ? <div className="mt-0.5 text-[10px] leading-4 text-stone-400 dark:text-stone-500">{copy.note}: {item.note}</div> : null}
                     {canReplace ? (
                         <div className="mt-1 flex flex-wrap items-center justify-end gap-1">
                             {item.overridden ? <Button size="small" type="text" disabled={replacing} onClick={() => onRestore?.(item)}>{copy.restoreDefault}</Button> : null}
-                            <Button size="small" type="text" loading={replacing} title={copy.modelAliasHint} onClick={() => onReplace?.(item)}>
+                            <Button size="small" type="text" loading={replacing} onClick={() => onReplace?.(item)}>
                                 {item.overridden ? copy.replaceAgain : copy.replaceModel}
                             </Button>
                         </div>
@@ -497,18 +399,12 @@ function WorkflowResourceRow({
                     <span>{formatBytes(item.size)}</span>
                 </div>
                 {item.matchedBy === "size" && item.matchedFile ? <div className="mt-0.5 text-[10px] text-stone-400 dark:text-stone-500">{copy.matchedBySize}: {item.matchedFile}</div> : null}
-                {item.sizeMismatch ? (
-                    <div className="mt-0.5 text-[10px] text-amber-600 dark:text-amber-400">
-                        {item.sizeMismatch}
-                        <div className="mt-0.5 text-stone-500 dark:text-stone-400">{copy.sizeMismatchHint}</div>
-                    </div>
-                ) : null}
+                {item.sizeMismatch ? <div className="mt-0.5 text-[10px] text-amber-600 dark:text-amber-400">{item.sizeMismatch}</div> : null}
                 {item.overridden && item.overriddenBy ? <div className="mt-0.5 text-[10px] text-blue-600 dark:text-blue-300">{copy.replacedBy}: {item.overriddenBy}</div> : null}
                 <PipMissingHint item={item} copy={copy} />
                 {item.type === "pip" && item.restartAfterInstall && item.status === "present" ? <div className="mt-0.5 text-[10px] leading-4 text-stone-500 dark:text-stone-400">{copy.pipRestart}</div> : null}
                 {item.type === "pip" && item.pipOutdated && item.status === "present" ? <div className="mt-0.5 text-[10px] leading-4 text-amber-600 dark:text-amber-400">{copy.pipOutdated.replace("{version}", item.pipVersion || "?")}</div> : null}
                 {item.type === "pip" && item.pipBroken ? <div className="mt-0.5 text-[10px] leading-4 text-amber-600 dark:text-amber-400">{copy.runtimeBroken}</div> : null}
-                {item.type === "pip" && item.pipChecking ? <div className="mt-0.5 text-[10px] leading-4 text-stone-500 dark:text-stone-400">{copy.runtimeChecking}</div> : null}
                 {item.type === "bake" && requires.length ? (
                     <div className="mt-0.5 text-[10px] text-amber-600 dark:text-amber-400">{copy.bakeRequires}: {requires.map((entry) => entry.label).join(" + ")}</div>
                 ) : null}
@@ -516,88 +412,11 @@ function WorkflowResourceRow({
             {canReplace ? (
                 <div className="ml-auto flex shrink-0 flex-col items-end gap-1">
                     {item.overridden ? <Button size="small" type="text" disabled={replacing} onClick={() => onRestore?.(item)}>{copy.restoreDefault}</Button> : null}
-                    <Button size="small" type="text" loading={replacing} title={copy.modelAliasHint} onClick={() => onReplace?.(item)}>
+                    <Button size="small" type="text" loading={replacing} onClick={() => onReplace?.(item)}>
                         {item.overridden ? copy.replaceAgain : copy.replaceModel}
                     </Button>
                 </div>
             ) : null}
-        </div>
-    );
-}
-
-function AgentRuntimePackCard({ pack, copy }: { pack: ResourcePack; copy: (typeof copyByLocale)["zh"] }) {
-    const runtime = pack.runtime as AgentRuntimeResource | undefined;
-    const [status, setStatus] = useState<AssistantRuntimeStatus | null>(null);
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState("");
-    const refresh = useCallback(async (clearError = false) => {
-        try {
-            setStatus(await fetchAssistantRuntimeStatus());
-            if (clearError) setError("");
-        } catch (reason) {
-            setError(reason instanceof Error ? reason.message : copy.runtimeStatusFailed);
-        }
-    }, [copy.runtimeStatusFailed]);
-    useEffect(() => {
-        void refresh();
-        const timer = window.setInterval(() => void refresh(), 3000);
-        return () => window.clearInterval(timer);
-    }, [refresh]);
-    if (!runtime) return null;
-    const installed = Boolean(status?.available);
-    const versionMismatch = Boolean(status?.runtimeVersionMismatch);
-    const canRun = Boolean(status?.canDownload || status?.canRepair);
-    const source = runtime.sources?.[0];
-    const install = async (download: boolean) => {
-        setBusy(true);
-        setError("");
-        try {
-            await ensureAssistantRuntime(download);
-            await refresh(true);
-        } catch (reason) {
-            setError(reason instanceof Error ? reason.message : copy.runtimeStatusFailed);
-            await refresh().catch(() => undefined);
-        } finally {
-            setBusy(false);
-        }
-    };
-    return (
-        <div className="overflow-hidden rounded-xl border border-stone-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.06),0_12px_28px_-20px_rgba(15,23,42,0.45)] dark:border-stone-700/80 dark:bg-stone-900/70">
-            <div className="flex flex-wrap items-center gap-2 p-3">
-                <Bot className="size-4 shrink-0" />
-                <span className="text-sm font-medium">{pack.label}</span>
-                {pack.optional ? <Tag>{copy.optional}</Tag> : null}
-                {installed ? <Tag color="green">{copy.runtimeInstalled}{status?.runtimeVersion ? ` ${status.runtimeVersion}` : ""}</Tag> : <Tag color="orange">{copy.runtimeNoPackage}</Tag>}
-                {versionMismatch ? <Tag>{copy.runtimeVersionMismatch}</Tag> : null}
-                <span className="text-[11px] text-stone-500 dark:text-stone-400">{copy.size} {formatBytes(runtime.size)}</span>
-            </div>
-            <div className="border-t px-3 py-2.5 text-xs leading-5 text-stone-600 dark:border-stone-700/70 dark:text-stone-300">
-                <div>{runtime.note || pack.description}</div>
-                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-stone-500 dark:text-stone-400">
-                    <span>{copy.runtimeCurrent}: {status?.runtimeVersion || "—"}</span>
-                    <span>{copy.runtimeTarget}: {status?.runtimeTargetVersion || runtime.sha256.slice(0, 12)}</span>
-                    <span>{runtime.license}</span>
-                    {source ? <span>{copy.sources}: {source.label || "ModelScope"}</span> : null}
-                </div>
-                {busy ? <Progress className="mt-2" percent={0} showInfo={false} status="active" /> : null}
-                {error || (versionMismatch && (status?.runtimeUpdateError || status?.lastError)) ? (
-                    <div className="mt-2 rounded-md border border-red-300 px-2.5 py-2 text-xs text-red-600 dark:border-red-800 dark:text-red-400">{error || status?.runtimeUpdateError || status?.lastError}</div>
-                ) : null}
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                    {installed && !versionMismatch ? null : busy ? (
-                        <Button size="small" disabled>{copy.runtimeInstalling}</Button>
-                    ) : canRun ? (
-                        <Button size="small" type="primary" icon={<Download className="size-3.5" />} onClick={() => void install(true)}>
-                            {installed ? copy.runtimeReinstall : copy.runtimeInstall}
-                        </Button>
-                    ) : runtime.fullPackageUrl ? (
-                        <Button size="small" href={runtime.fullPackageUrl} target="_blank" rel="noreferrer">{copy.runtimeFullPackage}</Button>
-                    ) : (
-                        <Button size="small" disabled>{copy.runtimeNoPackage}</Button>
-                    )}
-                    {!busy && status && !canRun && !installed ? <span className="text-[11px] text-stone-500">{status.reason || status.lastError || ""}</span> : null}
-                </div>
-            </div>
         </div>
     );
 }
@@ -611,7 +430,8 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
     };
     const { i18n } = useTranslation();
     const copy = i18n.language.startsWith("zh") ? copyByLocale.zh : copyByLocale.en;
-    const setConfigDialogOpen = useConfigStore((state) => state.setConfigDialogOpen);
+    const config = useConfigStore((state) => state.config);
+    const [customWorkflowOpen, setCustomWorkflowOpen] = useState(false);
     const [status, setStatus] = useState<ResourceStatus | null>(null);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -635,12 +455,6 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
             window.clearInterval(pollRef.current);
             pollRef.current = null;
         }
-    }, []);
-
-    const dismissJob = useCallback(() => {
-        setJob(null);
-        setSpeeds({});
-        speedSamples.current.clear();
     }, []);
 
     const applyStatus = useCallback((next: ResourceStatus) => {
@@ -671,14 +485,6 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
         void load();
         return () => stopPolling();
     }, [load, stopPolling]);
-
-    useEffect(() => {
-        const refresh = () => {
-            void fetchResourceStatus().then(applyStatus).catch(() => undefined);
-        };
-        window.addEventListener("local-gateway-refresh-resources", refresh);
-        return () => window.removeEventListener("local-gateway-refresh-resources", refresh);
-    }, [applyStatus]);
 
     useEffect(() => {
         if (!status) return;
@@ -721,10 +527,8 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                     stopPolling();
                     speedSamples.current.clear();
                     setSpeeds({});
-                    // 取消后不再保留常驻进度条；完成/失败保留面板，用户可手动收起。
-                    if (next.status === "canceled") setJob(null);
-                    else if (next.status === "done") message.success(copy.done);
-                    else message.error(next.message || copy.failed);
+                    if (next.status === "done") message.success(copy.done);
+                    else if (next.status === "error") message.error(next.message || copy.failed);
                     await load(true);
                     window.dispatchEvent(new Event("local-gateway-refresh-models"));
                 }
@@ -776,43 +580,6 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
             item.pipBroken ? `当前已安装但无法导入，版本：${item.pipVersion || "?"}` : "没有匹配的预编译包。",
             "安装后验证 import sageattention 和 get_cuda_arch_versions，再重启 ComfyUI；失败请把完整报错贴给我。",
         ].join("\n");
-
-    const agentPromptForResource = (detail = "") =>
-        [
-            "请在这台 Windows 机器上帮我处理无界工作台的 ComfyUI 资源安装 / 编译问题。",
-            `ComfyUI 目录：${status?.comfyRoot || "未知"}；资源索引：${status?.indexVersion || "未知"}`,
-            "如果是 H3 VDN：检查 models/vdn/stage-dmd-step-250 下的 linear_branch/model.safetensors、adapters/default/adapter_model.safetensors、adapters/default/adapter_config.json、adapters/turbo、model_spec.json、metadata.json 是否齐全；缺什么补什么，保留内部目录结构，完成后重启 ComfyUI。",
-            "如果是 H3 TensorRT VAE engine：确认本机 tensorrt 与 CUDA/驱动匹配，再运行 comfyui-gateway/scripts/build-h3-trt-vae.py（使用资源提示里的完整命令）；失败请把完整报错贴给我。",
-            "不要升级或替换 torch、CUDA、ComfyUI 本体；不要动其他模型；完成后列出改动文件、命令和验证结果。",
-            detail ? `当前错误/提示：\n${detail}` : "",
-        ].filter(Boolean).join("\n");
-
-    const handoffToAgent = async (detail = "") => {
-        const prompt = agentPromptForResource(detail);
-        if (LOCAL_ONLY) {
-            try {
-                await navigator.clipboard.writeText(prompt);
-                message.success(copy.hintCopied);
-            } catch {
-                modal.info({
-                    title: copy.guideAgentCopy,
-                    width: 640,
-                    content: (
-                        <div className="space-y-2 text-sm">
-                            <div className="text-xs leading-5 text-stone-500 dark:text-stone-400">{copy.guideCopyFallback}</div>
-                            <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md bg-stone-100 p-2 text-[11px] leading-4 text-stone-700 dark:bg-stone-900 dark:text-stone-200">{prompt}</pre>
-                        </div>
-                    ),
-                    okText: copy.runtimeManualClose,
-                });
-            }
-            return;
-        }
-        setConfigDialogOpen(false);
-        window.dispatchEvent(new Event("canvas-onboarding-close"));
-        useAgentStore.getState().setAgentState({ prompt, activeTab: "chat" });
-        useAgentStore.getState().openPanel();
-    };
 
     const startInstall = async (input: { ids?: string[]; packs?: string[] }) => {
         if (!input.ids?.length && !input.packs?.length) {
@@ -891,8 +658,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
         setStopping(true);
         try {
             const next = await cancelResourceJob(job.id);
-            if (next.status === "canceled") setJob(null);
-            else setJob(next);
+            setJob(next);
         } catch (stopError) {
             showError(stopError);
         } finally {
@@ -1030,21 +796,6 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
 
     return (
         <div className="space-y-3">
-            <div data-onboarding="resource-center" className="rounded-xl border border-sky-200 bg-sky-50/70 p-3 dark:border-sky-900/60 dark:bg-sky-950/20">
-                <div className="flex min-w-0 items-center gap-2 text-sm font-semibold">
-                    <Bot className="size-4 text-sky-600 dark:text-sky-300" />
-                    {copy.guideTitle}
-                </div>
-                <div className="mt-1 text-xs leading-5 text-stone-600 dark:text-stone-300">{copy.guideBody}</div>
-            </div>
-            <details data-onboarding="resource-help" className="rounded-xl border border-stone-200 bg-white/60 p-3 text-xs dark:border-stone-800 dark:bg-white/[.02]">
-                <summary className="cursor-pointer font-medium text-stone-700 dark:text-stone-200">{copy.helpTitle}</summary>
-                <div className="mt-2 space-y-1.5 leading-5 text-stone-600 dark:text-stone-300">
-                    <p>{copy.helpScan}</p>
-                    <p>{copy.helpModel}</p>
-                    <p>{copy.helpMissing}</p>
-                </div>
-            </details>
             <div className="rounded-xl border border-stone-200 bg-stone-50/70 p-3 dark:border-stone-800 dark:bg-white/[.03]">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0 space-y-1">
@@ -1063,15 +814,18 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                         </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
-                        <Button size="small" data-onboarding="resource-refresh" icon={<RefreshCw className={`size-3.5 ${refreshing ? "animate-spin" : ""}`} />} loading={refreshing} onClick={() => void load(true)}>
+                        <Button size="small" onClick={() => setCustomWorkflowOpen(true)}>
+                            自选工作流
+                        </Button>
+                        <Button size="small" icon={<RefreshCw className={`size-3.5 ${refreshing ? "animate-spin" : ""}`} />} loading={refreshing} onClick={() => void load(true)}>
                             {copy.refresh}
                         </Button>
-                        <Button size="small" type="primary" data-onboarding="resource-install" icon={<Download className="size-3.5" />} disabled={!installIds.length || Boolean(job && ["running"].includes(job.status))} onClick={() => void startInstall({ ids: installIds })}>
+                        <Button size="small" type="primary" icon={<Download className="size-3.5" />} disabled={!installIds.length || Boolean(job && ["running"].includes(job.status))} onClick={() => void startInstall({ ids: installIds })}>
                             {copy.installSelected}
                         </Button>
                     </div>
                 </div>
-                {status && !status.comfyReachable ? <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400"><AlertTriangle className="size-3.5" />{copy.notReachable}</div> : null}
+                {status?.comfyRoot && !status.comfyReachable ? <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400"><AlertTriangle className="size-3.5" />{copy.notReachable}</div> : null}
                 {status?.indexError ? <div className="mt-2 break-all text-[11px] text-amber-600 dark:text-amber-400"><span className="inline-flex items-center gap-1.5"><AlertTriangle className="size-3.5 shrink-0" />{copy.indexError}</span>{status.indexError}</div> : null}
                 {!status?.indexError && status?.indexWarning ? <div className="mt-2 break-all text-[11px] text-stone-500 dark:text-stone-400"><span className="inline-flex items-center gap-1.5"><AlertTriangle className="size-3.5 shrink-0" />{copy.indexWarning}</span>{status.indexWarning}</div> : null}
                 {hardwareName && !recommendationAvailable ? <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400"><AlertTriangle className="size-3.5" />{copy.noCompatible}</div> : null}
@@ -1090,11 +844,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                             <span className="min-w-0 truncate text-stone-500 dark:text-stone-400">{job.message || job.status}</span>
                             {job.status === "running" ? (
                                 <Button size="small" danger loading={stopping} onClick={() => void stopInstall()}>{copy.cancel}</Button>
-                            ) : (
-                                <Button size="small" type="text" aria-label={copy.dismiss} title={copy.dismiss} onClick={dismissJob}>
-                                    <X className="size-3.5" />
-                                </Button>
-                            )}
+                            ) : null}
                         </div>
                     </div>
                     <Progress percent={job.progress} size="small" status={job.status === "error" ? "exception" : job.status === "done" ? "success" : "active"} />
@@ -1112,14 +862,6 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                 {item.status === "error" && item.error ? (
                                     <div className="line-clamp-2 break-words pl-1 text-[10px] text-red-500" title={item.error}>{item.error}</div>
                                 ) : null}
-                                {item.path && (item.status === "done" || item.status === "skipped") ? (
-                                    <div className="break-all pl-1 text-[10px] text-stone-400 dark:text-stone-500" title={item.path}>
-                                        {item.type === "pip" ? copy.installedTo : copy.savedTo}{item.path}
-                                    </div>
-                                ) : null}
-                                {item.restartRequired ? (
-                                    <div className="pl-1 text-[10px] text-amber-600 dark:text-amber-400">{item.type === "pip" ? copy.restartRuntimeToApply : copy.restartToApply}</div>
-                                ) : null}
                             </div>
                         ))}
                     </div>
@@ -1135,10 +877,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                             <AlertTriangle className="size-3.5 shrink-0" />
                                             <span className="truncate">{copy.compileFailed} · {item.label}</span>
                                         </span>
-                                        <div className="flex shrink-0 gap-1">
-                                            <Button size="small" onClick={() => void handoffToAgent(item.hint || "")}>{LOCAL_ONLY ? copy.guideAgentCopy : copy.guideAgent}</Button>
-                                            <Button size="small" onClick={() => void copyHintText(item.hint || "")}>{copy.copyHint}</Button>
-                                        </div>
+                                        <Button size="small" onClick={() => void copyHintText(item.hint || "")}>{copy.copyHint}</Button>
                                     </div>
                                     <div className="whitespace-pre-wrap break-all text-[10px] leading-4">{item.hint}</div>
                                 </div>
@@ -1150,7 +889,6 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
 
             <div className="space-y-4 rounded-2xl bg-stone-100/60 p-2.5 dark:bg-white/[0.03]">
                 {visiblePacks.map((pack) => {
-                    if (pack.kind === "runtime") return <AgentRuntimePackCard key={pack.id} pack={pack} copy={copy} />;
                     const expanded = expandedPacks.has(pack.id);
                     const workflowDependencies = pack.workflowDependencies || [];
                     const workflowResourceIds = new Set<string>();
@@ -1168,9 +906,6 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                         ...pack.requiredItems.filter((item) => item.status !== "present").map((item) => item.id),
                         ...selectedOptionalInPack.map((item) => item.id),
                     ];
-                    const standaloneInstallIds = pack.standalone
-                        ? [...new Set(workflowDependencies.flatMap((workflow) => workflow.installIds))]
-                        : [];
                     const expandable = pack.total > 0 || pack.optionalTotal > 0 || workflowDependencies.length > 0;
                     const optionalLabel = pack.optionalLabel?.trim() || copy.optionalSection;
                     const mainModel = pack.mainModel;
@@ -1226,11 +961,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                 {packState(pack, copy)}
                                 {workflowDependencies.length ? <Tag>{copy.workflowSection} {workflowDependencies.length}</Tag> : null}
                                 {extraOptionalItems.length ? <Tag>{optionalLabel} {extraOptionalItems.length}</Tag> : null}
-                                {pack.standalone ? (
-                                    pack.optionalSize ? <span className="text-[11px] text-stone-500 dark:text-stone-400">{copy.size} {formatBytes(pack.optionalSize)}</span> : null
-                                ) : pack.missingSize ? (
-                                    <span className="text-[11px] text-stone-500 dark:text-stone-400">{copy.size} {formatBytes(pack.missingSize)}</span>
-                                ) : null}
+                                {pack.missingSize ? <span className="text-[11px] text-stone-500 dark:text-stone-400">{copy.size} {formatBytes(pack.missingSize)}</span> : null}
                             </div>
                         </>
                     );
@@ -1255,8 +986,8 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                 ) : (
                                     <div className="min-w-0 flex-1">{headerBody}</div>
                                 )}
-                                {standaloneInstallIds.length ? (
-                                    <Button size="small" type="primary" icon={<Download className="size-3.5" />} onClick={() => void startInstall({ ids: standaloneInstallIds })} disabled={Boolean(job && job.status === "running")}>
+                                {!pack.planned && packInstallIds.length ? (
+                                    <Button size="small" icon={<Download className="size-3.5" />} disabled={Boolean(job && job.status === "running")} onClick={(event) => { event.stopPropagation(); void startInstall({ ids: packInstallIds }); }}>
                                         {copy.installPack}
                                     </Button>
                                 ) : null}
@@ -1278,29 +1009,15 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                                 {workflowDependencies.map((workflow, index) => {
                                                     const workflowExpanded = expandedWorkflows.has(workflow.id);
                                                     const problemTypes = new Set((workflow.problems || []).map((problem) => problem.type));
-                                                    const problemText = workflow.problems.map((problem) => problem.message).filter(Boolean).join("；");
-                                                    const nodeMissing = problemTypes.has("node");
-                                                    const restartOnly = problemTypes.size > 0 && [...problemTypes].every((type) => type === "restart");
-                                                    const runtimeMissing = problemTypes.has("runtime");
-                                                    const offline = problemTypes.has("offline");
-                                                    const workflowMuted = workflow.enabled === false;
+                                                    const restartOnly = problemTypes.size > 0 && [...problemTypes].every((type) => type === "node");
                                                     const workflowTag = workflow.missing
                                                         ? <Tag color="orange">{copy.missing} {workflow.missing}</Tag>
                                                         : workflow.available
                                                             ? <Tag color="green">{copy.workflowReady}</Tag>
-                                                            : offline
-                                                                ? <Tag color="red">{copy.workflowOffline}</Tag>
-                                                                : workflowMuted
-                                                                    ? <Tag title={copy.workflowMutedHint}>{copy.workflowDisabled}</Tag>
-                                                                    : nodeMissing
-                                                                        ? <Tag color="red" title={problemText}>{copy.workflowNode}</Tag>
-                                                                        : restartOnly
-                                                                            ? <Tag color="gold" title={problemText}>{copy.workflowRestart}</Tag>
-                                                                            : runtimeMissing
-                                                                                ? <Tag color="red" title={problemText}>{copy.workflowRuntime}</Tag>
-                                                                                : workflow.problems?.length
-                                                                                    ? <Tag color="gold" title={problemText}>{copy.workflowMismatch}</Tag>
-                                                                                    : <Tag title={copy.workflowUnscannedHint}>{copy.workflowUnscanned}</Tag>;
+                                                            : restartOnly
+                                                                ? <Tag color="gold">{copy.workflowRestart}</Tag>
+                                                                : <Tag color="gold">{copy.workflowMismatch}</Tag>;
+                                                    const problemText = workflow.problems.map((problem) => problem.message).filter(Boolean).join("；");
                                                     return (
                                                         <div
                                                             key={workflow.id}
@@ -1320,9 +1037,6 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                                                         {workflowTag}
                                                                     </div>
                                                                     <div className={`truncate text-[10px] ${workflow.enabled === false ? "text-stone-400 dark:text-stone-500" : "text-emerald-700/70 dark:text-emerald-300/60"}`}>{workflow.id}</div>
-                                                                    {!workflow.available && problemText ? (
-                                                                        <div className="mt-0.5 truncate text-[10px] leading-4 text-amber-600 dark:text-amber-400" title={problemText}>{problemText}</div>
-                                                                    ) : null}
                                                                     {Object.values(workflow.variantLabels || {}).length ? (
                                                                         <div className="mt-0.5 truncate text-[10px] text-stone-400 dark:text-stone-500">{Object.values(workflow.variantLabels || {}).join(" · ")}</div>
                                                                     ) : null}
@@ -1460,13 +1174,6 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                                             ) : (
                                                 <div className="text-[11px] text-stone-400 dark:text-stone-500">{copy.optionalEmpty}</div>
                                             )}
-                                            {!pack.planned && packInstallIds.length ? (
-                                                <div className="mt-2 flex justify-end">
-                                                    <Button size="small" icon={<Download className="size-3.5" />} onClick={() => void startInstall({ ids: packInstallIds })} disabled={Boolean(job && job.status === "running")}>
-                                                        {copy.installPack}
-                                                    </Button>
-                                                </div>
-                                            ) : null}
                                         </>
                                     )}
                                 </div>
@@ -1476,19 +1183,7 @@ export function ResourceCenterPanel({ compact = false, footer }: { compact?: boo
                 })}
             </div>
 
-            <div data-onboarding="resource-problem" className="rounded-xl border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-amber-800 dark:text-amber-200">
-                        <AlertTriangle className="size-4 shrink-0" />
-                        {copy.guideFailureTitle}
-                    </div>
-                    <Button size="small" data-onboarding="resource-agent-help" icon={<Bot className="size-3.5" />} onClick={() => void handoffToAgent()}>
-                        {LOCAL_ONLY ? copy.guideAgentCopy : copy.guideAgent}
-                    </Button>
-                </div>
-                <div className="mt-1 text-xs leading-5 text-stone-600 dark:text-stone-300">{copy.guideFailureBody}</div>
-            </div>
-
+            <CustomWorkflowImportDialog open={customWorkflowOpen} config={config} onClose={() => setCustomWorkflowOpen(false)} />
             {footer}
         </div>
     );

@@ -39,7 +39,7 @@ export function estimateStepPlan(workflow) {
       value = Math.max(0, end - start);
     } else if (node?.class_type === "SamplerCustomAdvanced") {
       value = sigmaSteps(workflow, linkedNode(workflow, inputs.sigmas));
-    } else if (node?.class_type === "SelfLiftH3Sampler") {
+    } else if (node?.class_type === "SelfLiftH3Sampler" || node?.class_type === "SelfLiftImageSampler") {
       value = sigmaSteps(workflow, linkedNode(workflow, inputs.sigmas));
       // SelfLift reports the low-res stage against its own shorter total, then the
       // high-res stage continues from transition_step. Its value is a global step index.

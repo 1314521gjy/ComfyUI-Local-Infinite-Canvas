@@ -19,7 +19,7 @@ type ResizeHandle = "n" | "e" | "s" | "w" | "ne" | "nw" | "se" | "sw";
 const handles: ResizeHandle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 const minSize = 0.06;
 const defaultCrop = { x: 0.12, y: 0.12, width: 0.76, height: 0.76 };
-export function CanvasNodeCropDialog({ dataUrl, open, onClose, onConfirm }: { dataUrl: string; open: boolean; onClose: () => void; onConfirm: (crop: CanvasImageCropRect) => void }) {
+export function CanvasNodeCropDialog({ dataUrl, open, onClose, onConfirm, title, confirmText }: { dataUrl: string; open: boolean; onClose: () => void; onConfirm: (crop: CanvasImageCropRect) => void; title?: string; confirmText?: string }) {
     const { t } = useTranslation();
     const [crop, setCrop] = useState<CanvasImageCropRect>(defaultCrop);
     const [ratioPreset, setRatioPreset] = useState("free");
@@ -69,7 +69,7 @@ export function CanvasNodeCropDialog({ dataUrl, open, onClose, onConfirm }: { da
     };
 
     return (
-        <Modal title={t("canvas.editors.cropTitle")} open={open && Boolean(dataUrl)} onCancel={onClose} footer={null} width={780} centered destroyOnHidden transitionName="" maskTransitionName="">
+        <Modal title={title || t("canvas.editors.cropTitle")} open={open && Boolean(dataUrl)} onCancel={onClose} footer={null} width={780} centered destroyOnHidden transitionName="" maskTransitionName="">
             <div className="space-y-4">
                 <div
                     ref={viewport.viewportRef}
@@ -150,7 +150,7 @@ export function CanvasNodeCropDialog({ dataUrl, open, onClose, onConfirm }: { da
                         {t("canvas.editors.cancel")}
                     </Button>
                     <Button type="primary" icon={<Check className="size-4" />} onClick={() => onConfirm(crop)}>
-                        {t("canvas.editors.confirmCrop")}
+                        {confirmText || t("canvas.editors.confirmCrop")}
                     </Button>
                 </div>
             </div>

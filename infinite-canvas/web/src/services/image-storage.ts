@@ -240,14 +240,8 @@ export async function deleteStoredImages(keys: Iterable<string>) {
     );
 }
 
-type CleanupUsedData = unknown | (() => unknown);
-
-function currentCleanupData(usedData: CleanupUsedData) {
-    return typeof usedData === "function" ? (usedData as () => unknown)() : usedData;
-}
-
-async function collectUsedImageKeys(usedData: CleanupUsedData) {
-    const usedKeys = collectImageStorageKeys(currentCleanupData(usedData));
+export async function cleanupUnusedImages(usedData: unknown) {
+    const usedKeys = collectImageStorageKeys(usedData);
     await Promise.all([
         imageLogStore.iterate((value) => {
             collectImageStorageKeys(value, usedKeys);
@@ -256,11 +250,6 @@ async function collectUsedImageKeys(usedData: CleanupUsedData) {
             collectImageStorageKeys(value, usedKeys);
         }),
     ]);
-    return usedKeys;
-}
-
-export async function cleanupUnusedImages(usedData: CleanupUsedData) {
-    const usedKeys = await collectUsedImageKeys(usedData);
     const unused: string[] = [];
     await store.iterate((_value, key) => {
         if (!usedKeys.has(key)) unused.push(key);
@@ -269,9 +258,7 @@ export async function cleanupUnusedImages(usedData: CleanupUsedData) {
     await previewStore.iterate((_value, key) => {
         if (!usedKeys.has(key)) orphanPreviews.push(key);
     });
-    // Assets and generation logs may change while IndexedDB iteration is in flight.
-    const latestUsedKeys = await collectUsedImageKeys(usedData);
-    await Promise.all([deleteStoredImages(unused.filter((key) => !latestUsedKeys.has(key))), ...orphanPreviews.filter((key) => !latestUsedKeys.has(key)).map(deleteImagePreview)]);
+    await Promise.all([deleteStoredImages(unused), ...orphanPreviews.map(deleteImagePreview)]);
 }
 
 export function collectImageStorageKeys(value: unknown, keys = new Set<string>()) {

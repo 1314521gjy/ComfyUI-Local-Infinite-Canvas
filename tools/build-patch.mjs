@@ -95,6 +95,7 @@ const EXCLUDE = [
     /^comfyui-gateway\/resources\/nodes\/unpacked\/TE_MAN\/config[^/]*\.ini$/i,
     /\.db(?:-wal|-shm|-journal)?$/i,
     /resources\/bundled(\/|$)/i,
+    /resources\/nodes\/unpacked\/[^/]+\/docs(\/|$)/i,
     /__pycache__(\/|$)/i,
     /\.pyc$/i,
 ];

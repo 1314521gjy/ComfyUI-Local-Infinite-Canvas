@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { useEffect, useRef, useState } from "react";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { LOCAL_ONLY } from "@/constant/app-mode";
+import { DSH_EMBEDDED } from "@/constant/runtime-config";
 
 export function AppTopNav() {
     const { t } = useTranslation();
@@ -30,7 +31,7 @@ export function AppTopNav() {
     const activeToolSlug = visibleTools.some((tool) => tool.slug === slug) ? (slug as NavigationToolSlug) : undefined;
 
     useEffect(() => {
-        if (autoConnectRef.current || agentEnabled || agentConnected || !agentToken.trim()) return;
+        if (DSH_EMBEDDED || autoConnectRef.current || agentEnabled || agentConnected || !agentToken.trim()) return;
         autoConnectRef.current = true;
         connectAgent({ silent: true });
     }, [agentConnected, agentEnabled, agentToken, connectAgent]);
@@ -86,7 +87,7 @@ export function AppTopNav() {
                         </div>
 
                         <div className="my-auto flex h-9 min-w-0 items-center justify-end gap-2 justify-self-end whitespace-nowrap">
-                            {!LOCAL_ONLY ? (
+                            {!DSH_EMBEDDED && !LOCAL_ONLY ? (
                                 <Tooltip title={t(panelOpen ? "topNav.closeAgent" : "topNav.openAgent")}>
                                     <Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8" icon={<Bot className="size-4" />} onClick={togglePanel} aria-label={t(panelOpen ? "topNav.closeAgent" : "topNav.openAgent")} />
                                 </Tooltip>

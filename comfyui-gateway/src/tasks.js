@@ -15,6 +15,7 @@ function publicTask(task) {
     object: "video",
     status: task.status,
     progress: task.progress,
+    phase: task.phase || null,
     model: task.model,
     request: task.request,
     createdAt: task.createdAt,
@@ -159,6 +160,7 @@ export function createTaskStore({ dataDir, logger, retentionDays = 0, maxTasks =
       object: "video",
       status: "queued",
       progress: 0,
+      phase: null,
       model,
       request,
       createdAt: nowIso(),
@@ -200,6 +202,7 @@ export function createTaskStore({ dataDir, logger, retentionDays = 0, maxTasks =
         (event) => {
           const progress = typeof event === "number" ? event : event?.progress;
           if (Number.isFinite(progress)) task.progress = Math.max(task.progress || 0, progress);
+          if (event?.phase) task.phase = String(event.phase);
           if (event?.promptId) task.promptId = event.promptId;
           task.updatedAt = nowIso();
           schedulePersist();

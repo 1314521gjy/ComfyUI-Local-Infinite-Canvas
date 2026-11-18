@@ -9,7 +9,7 @@ import { getProgressRingSkin, type ProgressRingPalette } from "@/lib/canvas/prog
 const ringPad = 2;
 const ringRadius = 26;
 
-export function CanvasNodeProgressRing({ width, height, step, total, complete = false }: { width: number; height: number; step: number; total: number; complete?: boolean }) {
+export function CanvasNodeProgressRing({ width, height, step, total, complete = false, indeterminate = false }: { width: number; height: number; step: number; total: number; complete?: boolean; indeterminate?: boolean }) {
     const themeName = useThemeStore((state) => state.theme);
     const skinId = useConfigStore((state) => state.config.progressRingSkin);
     const theme = useCanvasTheme();
@@ -17,6 +17,7 @@ export function CanvasNodeProgressRing({ width, height, step, total, complete = 
     const skin = getProgressRingSkin(skinId);
     const palette = dark ? skin.dark : skin.light;
     const look = skin.style;
+    if (indeterminate || (!complete && total > 0 && step <= 0)) return <IndeterminateRing width={width} height={height} palette={palette} track={theme.node.stroke} strokeWidth={look.coreWidth} />;
     const ratio = complete ? 1 : total > 0 ? Math.min(1, Math.max(0, step / total)) : 0;
     if ((skin.mode || "ring") === "tide") {
         return <TideOverlay width={width} height={height} ratio={ratio} complete={complete} palette={palette} />;
@@ -34,7 +35,7 @@ export function CanvasNodeProgressRing({ width, height, step, total, complete = 
     const tailLength = Math.min(look.tailLength, fillLength);
 
     return (
-        <div className="pointer-events-none absolute z-[58]" style={{ left: -ringPad, top: -ringPad, width: boxWidth, height: boxHeight }}>
+        <div className="pointer-events-none absolute z-[58]" style={{ left: -ringPad, top: -ringPad, width: boxWidth, height: boxHeight }} data-testid="canvas-node-progress-ring">
             <style>{`
                 @keyframes canvas-ring-breathe { 0%, 100% { opacity: .45 } 50% { opacity: 1 } }
                 @keyframes canvas-ring-head { 0%, 100% { opacity: .62 } 50% { opacity: 1 } }
@@ -175,6 +176,33 @@ export function CanvasNodeProgressRing({ width, height, step, total, complete = 
     );
 }
 
+function IndeterminateRing({ width, height, palette, track, strokeWidth }: { width: number; height: number; palette: ProgressRingPalette; track: string; strokeWidth: number }) {
+    const boxWidth = width + ringPad * 2;
+    const boxHeight = height + ringPad * 2;
+    const radius = Math.min(ringRadius, boxWidth / 2, boxHeight / 2);
+    const path = roundedRectPath(boxWidth, boxHeight, radius, strokeWidth);
+    return (
+        <div className="pointer-events-none absolute z-[58]" style={{ left: -ringPad, top: -ringPad, width: boxWidth, height: boxHeight }} data-testid="canvas-node-progress-ring" data-indeterminate="true">
+            <style>{`
+                @keyframes canvas-ring-indeterminate { from { stroke-dashoffset: 0 } to { stroke-dashoffset: -100 } }
+            `}</style>
+            <svg width={boxWidth} height={boxHeight} viewBox={`0 0 ${boxWidth} ${boxHeight}`} className="overflow-visible" aria-hidden="true">
+                <path d={path} fill="none" stroke={track} strokeWidth={1.2} opacity={0.24} />
+                <path
+                    d={path}
+                    fill="none"
+                    stroke={palette.core}
+                    strokeWidth={strokeWidth + 0.6}
+                    strokeLinecap="round"
+                    pathLength={100}
+                    strokeDasharray="14 86"
+                    style={{ filter: `drop-shadow(0 0 4px ${palette.glow})`, animation: "canvas-ring-indeterminate 1.6s linear infinite" }}
+                />
+            </svg>
+        </div>
+    );
+}
+
 function TideOverlay({ width, height, ratio, complete, palette }: { width: number; height: number; ratio: number; complete: boolean; palette: ProgressRingPalette }) {
     const { t } = useTranslation();
     const uid = useId().replace(/:/g, "");
@@ -184,7 +212,7 @@ function TideOverlay({ width, height, ratio, complete, palette }: { width: numbe
     const crestPath = "M -50 3 Q -37.5 -2 -25 3 T 0 3 T 25 3 T 50 3 T 75 3 T 100 3 T 125 3 T 150 3";
 
     return (
-        <div className="pointer-events-none absolute inset-0 z-[58] overflow-hidden" style={{ width, height, borderRadius: 24 }}>
+        <div className="pointer-events-none absolute inset-0 z-[58] overflow-hidden" style={{ width, height, borderRadius: 24 }} data-testid="canvas-node-progress-ring">
             <style>{`
                 @keyframes tide-wave-a { to { transform: translateX(-50px); } }
                 @keyframes tide-wave-b { to { transform: translateX(-50px); } }

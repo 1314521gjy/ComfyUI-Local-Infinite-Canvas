@@ -67,6 +67,16 @@ export function buildCanvasToolRequest(name: ToolName, input: Record<string, unk
         const data = input as { nodeId: string; mode?: string; prompt?: string };
         return applyOps([runGenerationOp(data.nodeId, generationMode(data.mode), data.prompt)]);
     }
+    if (name === "person_swap_chain") {
+        const data = input as { mode?: string; intent: string; sourceNodeId?: string; referenceNodeIds?: string[]; targetSelection?: Record<string, number> };
+        return applyOps([{
+            type: "add_node",
+            nodeType: "config",
+            title: "一键换人/编辑",
+            position: { x: nextCanvasX(state), y: 0 },
+            metadata: { swapChain: { mode: data.mode, intent: data.intent, sourceNodeId: data.sourceNodeId, referenceNodeIds: data.referenceNodeIds, targetSelection: data.targetSelection } },
+        }]);
+    }
     throw new Error(`未知工具：${name}`);
 }
 
@@ -112,6 +122,13 @@ function configNodeOp(id: string, input: Record<string, unknown>, x: number, y: 
             generateAudio: input.generateAudio,
             watermark: input.watermark,
             videoMode: input.videoMode,
+            videoViggleMode: input.videoViggleMode,
+            videoPins: input.videoPins,
+            videoSage: input.videoSage,
+            videoSegmentSeconds: input.videoSegmentSeconds,
+            seed: input.seed,
+            seedFixed: input.seedFixed,
+            frameMode: input.frameMode,
             audioVoice: input.audioVoice,
             audioFormat: input.audioFormat,
             audioSpeed: input.audioSpeed,

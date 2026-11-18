@@ -1,0 +1,7 @@
+# Left out of the package published to the Comfy Registry: README images, docs, development scripts and tests.
+# The nodes, example_workflows/, example_inputs/ and tools/ are published.
+assets/
+docs/
+dev/
+tests/
+.github/

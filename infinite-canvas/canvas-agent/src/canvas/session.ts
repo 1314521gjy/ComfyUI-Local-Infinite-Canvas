@@ -36,6 +36,15 @@ const SITE_TOOLS = new Set<ToolName>([
     "assets_list",
     "assets_add",
     "generation_get_status",
+    "free_workflow_list_sources",
+    "free_workflow_import",
+    "free_workflow_graph",
+    "free_workflow_health",
+    "free_workflow_set_params",
+    "free_workflow_configure",
+    "free_workflow_sync",
+    "free_workflow_rename",
+    "free_workflow_build_request",
 ]);
 
 /** 管理网页画布连接、状态、附件和工具请求。 */

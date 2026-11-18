@@ -19,7 +19,7 @@ const MODEL_DIRS = new Set(["diffusion_models", "text_encoders", "vae", "vae_app
 const VDN_STAGE_RESOURCE_PREFIX = "h3_vdn_stage_";
 const RETIRED_RESOURCE_IDS = new Set(["h3_character_swap_lora", "h3_vdn_node", "qwen21_outpaint_lora"]);
 const H3_PACK_ID = "h3";
-const H3_PUBLIC_WORKFLOW_IDS = ["video-h3-ref2va-novdn", "video-h3-t2v-novdn", "video-h3-frames-novdn"];
+const H3_PUBLIC_WORKFLOW_IDS = ["video-h3-ref2va-novdn"];
 const FOUR_VIEW_PACK_ID = "krea2-four-view";
 const FOUR_VIEW_WORKFLOW_ID = "image-krea2-four-view";
 const FOUR_VIEW_RESOURCE_IDS = ["krea2_turbo_fp8_scaled", "qwen3vl_4b_fp8_scaled", "qwen_image_vae", "krea2_four_view_lora"];
@@ -1430,7 +1430,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         });
         const byId = new Map(resources.map((resource) => [resource.id, resource]));
         const rawPackById = new Map((index?.packs || []).map((item) => [item.id, item]));
-        const packs = (index?.packs || []).map((pack) => {
+        const packs = (index?.packs || []).filter((pack) => pack && typeof pack === "object" && pack.hidden !== true).map((pack) => {
             const resourceIds = (pack.resources || []).filter((id) => !isRetiredResourceId(id));
             const optionalResourceIds = (pack.optionalResources || []).filter((id) => !isRetiredResourceId(id));
             const items = resourceIds.map((id) => byId.get(id)).filter(Boolean);
@@ -2842,7 +2842,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         inventoryCache.clear();
         clearExtraModelPathsCache();
         if (!hardwareOverride) hardware = await probeHardware();
-        await loadIndex({ forceRemote: true });
+        // 重新扫描只重算本机安装状态；远端索引可能落后于随包 authored 索引，不能用它覆盖本地新增卡。
+        await loadIndex();
         try {
             runtimeStatusCache.clear();
             await setup?.scan?.("resources-refresh");

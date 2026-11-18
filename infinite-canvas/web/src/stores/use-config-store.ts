@@ -5,7 +5,7 @@ import { nanoid } from "nanoid";
 
 import i18n from "@/i18n";
 import { isLocalGatewayUrl, LOCAL_GATEWAY_BASE_URL, LOCAL_GATEWAY_CHANNEL_ID, LOCAL_GATEWAY_MODELS, LOCAL_GATEWAY_MODEL_VALUES, LOCAL_ONLY } from "@/constant/app-mode";
-import { clearAgentProvider, syncAgentProvider } from "@/services/api/agent-provider";
+import { HIDE_CHARACTER_SWAP, HIDE_VIGGLE_SWAP } from "@/lib/release-flags";
 import { normalizeProgressRingSkin, type ProgressRingSkinId } from "@/lib/canvas/progress-ring-skins";
 
 export type ApiCallFormat = "openai" | "gemini";
@@ -22,7 +22,26 @@ export type ChannelModel = {
     baseModelLabel?: string;
     variantModes?: string[];
     variantLabels?: Record<string, string>;
+    variantDescriptions?: Record<string, string>;
+    defaultMode?: string;
+    resolutionTiers?: Array<{ label?: string; pixels?: number; anchor?: string; seconds?: string }>;
+    defaultTier?: string;
     imageInputs?: number;
+    moss?: MossModelMeta;
+};
+
+export type MossTierStatus = {
+    id?: string;
+    label?: string;
+    steps?: number;
+    available?: boolean;
+    reason?: string | null;
+    precision?: Record<string, boolean>;
+};
+
+export type MossModelMeta = {
+    tiers?: Record<string, MossTierStatus>;
+    precision?: { bf16?: boolean; int8?: boolean };
 };
 
 export type ModelChannel = {
@@ -57,6 +76,29 @@ export type AiConfig = {
     audioFormat: string;
     audioSpeed: string;
     audioInstructions: string;
+    audioMode?: "dialogue" | "song" | "voice";
+    audioReferenceMode?: "reference" | "none";
+    audioDuration?: string;
+    audioBpm?: string;
+    audioLanguage?: string;
+    audioKeyscale?: string;
+    audioVoiceDescription?: string;
+    audioStyle?: string;
+    audioGenre?: string;
+    audioEmotion?: string;
+    audioGender?: string;
+    audioSeed?: string;
+    audioSourceKey?: string;
+    audioSourceName?: string;
+    audioReferenceKey?: string;
+    audioSongReferenceKey?: string;
+    audioReferenceName?: string;
+    audioSongReferenceName?: string;
+    audioDialogueVoiceKey?: string;
+    audioDialogueVoiceName?: string;
+    audioDialogueSpeed?: string;
+    audioDialogueTone?: string;
+    audioStrength?: string;
     videoSeconds: string;
     vquality: string;
     videoGenerateAudio: string;
@@ -64,6 +106,13 @@ export type AiConfig = {
     videoMode: string;
     videoInterpolation?: string;
     videoSelfLiftMode?: string;
+    videoPins?: string;
+    videoSegmentSeconds?: string;
+    videoLongVideo?: boolean;
+    videoSage?: string;
+    videoViggleMode?: string;
+    videoSwapTarget?: string;
+    videoSwapTargetBox?: string;
     promptApiEngine?: string;
     promptOptimizeLanguage?: "zh" | "en";
     promptCloudBaseUrl?: string;
@@ -89,27 +138,11 @@ export type AiConfig = {
     autoFocusOnSelect: boolean;
     referenceAcceleration?: boolean;
     progressRingSkin: ProgressRingSkinId;
+    imagePreviewEnabled?: boolean;
+    videoPreviewEnabled?: boolean;
     seed?: string;
     seedFixed?: string;
     params?: Record<string, unknown>;
-};
-
-export type LocalGatewaySyncPhase = "idle" | "syncing" | "ready" | "scanning" | "degraded" | "offline";
-
-/** 本地网关同步状态：只在内存里供界面读取，不写进持久化 config / secrets。 */
-export type LocalGatewaySyncStatus = {
-    phase: LocalGatewaySyncPhase;
-    scanning: boolean;
-    stale: boolean;
-    revision?: number;
-    instanceId?: string;
-    scanId?: string;
-    updatedAt?: string;
-    reason?: string;
-    comfyReachable?: boolean;
-    count?: number;
-    error?: string;
-    legacy?: boolean;
 };
 
 export type WebdavSyncConfig = {
@@ -162,6 +195,29 @@ const cloudDefaultConfig: AiConfig = {
     audioFormat: "mp3",
     audioSpeed: "1",
     audioInstructions: "",
+    audioMode: "dialogue",
+    audioReferenceMode: "reference",
+    audioDuration: "120",
+    audioBpm: "120",
+    audioLanguage: "zh",
+    audioKeyscale: "E minor",
+    audioVoiceDescription: "自然的成年女声，语气亲切，吐字清晰，像面对面聊天。",
+    audioStyle: "Mandarin, warm piano pop, intimate female vocal, acoustic piano, soft strings, rounded bass, light drums, lyrical memorable melody, 82 BPM",
+    audioGenre: "pop",
+    audioEmotion: "warm",
+    audioGender: "auto",
+    audioSeed: "20261112",
+    audioSourceKey: "",
+    audioSourceName: "",
+    audioReferenceKey: "",
+    audioSongReferenceKey: "",
+    audioReferenceName: "",
+    audioSongReferenceName: "",
+    audioDialogueVoiceKey: "",
+    audioDialogueVoiceName: "",
+    audioDialogueSpeed: "中速",
+    audioDialogueTone: "自然",
+    audioStrength: "1",
     videoSeconds: "6",
     vquality: "720",
     videoGenerateAudio: "true",
@@ -169,6 +225,13 @@ const cloudDefaultConfig: AiConfig = {
     videoMode: "frames",
     videoInterpolation: "off",
     videoSelfLiftMode: "fast",
+    videoPins: "",
+    videoSegmentSeconds: "12",
+    videoLongVideo: true,
+    videoSage: "on",
+    videoViggleMode: "swap",
+    videoSwapTarget: "auto",
+    videoSwapTargetBox: "",
     promptApiEngine: "local",
     promptOptimizeLanguage: "zh",
     promptCloudBaseUrl: "",
@@ -190,6 +253,8 @@ const cloudDefaultConfig: AiConfig = {
     autoFocusOnSelect: false,
     referenceAcceleration: false,
     progressRingSkin: "cyan",
+    imagePreviewEnabled: true,
+    videoPreviewEnabled: true,
 };
 
 const localDefaultChannel: ModelChannel = {
@@ -202,7 +267,8 @@ const localDefaultChannel: ModelChannel = {
 };
 
 const localImageModel = `${LOCAL_GATEWAY_CHANNEL_ID}::image-z-image-turbo`;
-const localVideoModel = `${LOCAL_GATEWAY_CHANNEL_ID}::video-h3-t2v`;
+const localVideoModel = `${LOCAL_GATEWAY_CHANNEL_ID}::video-h3-ref2va`;
+const localAudioModel = `${LOCAL_GATEWAY_CHANNEL_ID}::audio-local`;
 
 export const defaultConfig: AiConfig = LOCAL_ONLY
     ? {
@@ -215,7 +281,30 @@ export const defaultConfig: AiConfig = LOCAL_ONLY
           videoModel: localVideoModel,
           videoMode: "text",
           textModel: "",
-          audioModel: "",
+          audioModel: localAudioModel,
+          audioMode: "dialogue",
+          audioReferenceMode: "reference",
+          audioDuration: "120",
+          audioBpm: "120",
+          audioLanguage: "zh",
+          audioKeyscale: "E minor",
+          audioVoiceDescription: "自然的成年女声，语气亲切，吐字清晰，像面对面聊天。",
+    audioStyle: "Mandarin, warm piano pop, intimate female vocal, acoustic piano, soft strings, rounded bass, light drums, lyrical memorable melody, 82 BPM",
+    audioGenre: "pop",
+    audioEmotion: "warm",
+    audioGender: "auto",
+    audioSeed: "20261112",
+    audioSourceKey: "",
+    audioSourceName: "",
+          audioReferenceKey: "",
+          audioSongReferenceKey: "",
+          audioReferenceName: "",
+          audioSongReferenceName: "",
+          audioDialogueVoiceKey: "",
+          audioDialogueVoiceName: "",
+          audioDialogueSpeed: "中速",
+          audioDialogueTone: "自然",
+          audioStrength: "1",
           models: LOCAL_GATEWAY_MODEL_VALUES,
           proxyEnabled: false,
       }
@@ -229,17 +318,13 @@ export const defaultWebdavSyncConfig: WebdavSyncConfig = {
     lastSyncedAt: "",
 };
 
-export const defaultLocalGatewaySyncStatus: LocalGatewaySyncStatus = { phase: "idle", scanning: false, stale: false };
-
 type ConfigStore = {
     config: AiConfig;
     webdav: WebdavSyncConfig;
-    localGatewaySync: LocalGatewaySyncStatus;
     isConfigOpen: boolean;
     configTab: ConfigTabKey;
     shouldPromptContinue: boolean;
     updateConfig: <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
-    setLocalGatewaySync: (patch: Partial<LocalGatewaySyncStatus>) => void;
     addPromptCloudApi: (input: Omit<PromptCloudApi, "id">) => string;
     updatePromptCloudApi: (id: string, patch: Partial<Omit<PromptCloudApi, "id">>) => void;
     removePromptCloudApi: (id: string) => void;
@@ -299,9 +384,15 @@ export function resolveModelForCapability(config: AiConfig, currentModel: string
     return fallbackModel;
 }
 
+const CHARACTER_SWAP_MODEL = "video-h3-character-swap";
+const VIGGLE_SWAP_MODEL = "video-h3-viggle-swap";
+function isHiddenWorkflowModel(name: string) {
+    return (HIDE_CHARACTER_SWAP && name === CHARACTER_SWAP_MODEL) || (HIDE_VIGGLE_SWAP && name === VIGGLE_SWAP_MODEL);
+}
+
 export function selectableModelsByCapability(config: AiConfig, capability?: ModelCapability) {
-    if (!capability) return config.models;
-    return config.channels.flatMap((channel) => channel.models.filter((model) => model.capability === capability).map((model) => encodeChannelModel(channel.id, model.name)));
+    if (!capability) return config.models.filter((model) => !isHiddenWorkflowModel(String(model)));
+    return config.channels.flatMap((channel) => channel.models.filter((model) => model.capability === capability && !isHiddenWorkflowModel(model.name)).map((model) => encodeChannelModel(channel.id, model.name)));
 }
 
 function channelModelEntries(config: AiConfig) {
@@ -324,7 +415,7 @@ export function workflowModelOptions(config: AiConfig, capability?: ModelCapabil
     const entries = channelModelEntries(config);
     if (!entries.some((entry) => entry.model.workflowId)) return selectableModelsByCapability(config, capability);
     return entries
-        .filter((entry) => entry.model.workflowId && !entry.model.baseModel && (!capability || entry.model.capability === capability))
+        .filter((entry) => entry.model.workflowId && !entry.model.baseModel && (!capability || entry.model.capability === capability) && !isHiddenWorkflowModel(entry.model.name) && entry.model.workflowId !== CHARACTER_SWAP_MODEL)
         .map((entry) => entry.value);
 }
 
@@ -341,27 +432,28 @@ export function baseModelOptions(config: AiConfig, value: string) {
     const found = channelModelOf(config, value);
     const workflowId = found?.model.workflowId;
     if (!found || !workflowId) return [];
-    const seen = new Set<string>();
     return found.channel.models
         .filter((model) => model.workflowId === workflowId)
-        .filter((model) => !/(^|[\\/])loras?([\\/]|$)/i.test(String(model.baseModel || "")))
         .map((model) => ({
             value: encodeChannelModel(found.channel.id, model.name),
             label: model.baseModelLabel || model.label || model.name,
             isDefault: !model.baseModel,
             name: model.name,
-        }))
-        .filter((option) => {
-            const key = option.label.toLowerCase();
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        });
+        }));
 }
+
+// 千问 2.1 的五个页共用同一份模型元数据，参考位必须按当前页收紧。
+const QWEN_MODE_IMAGE_INPUTS: Record<string, number> = { t2i: 0, edit: 10, inpaint: 2, remove: 2, outpaint: 1 };
 
 export function modelImageInputs(config: AiConfig, value: string) {
     const found = channelModelOf(config, value);
-    return typeof found?.model.imageInputs === "number" ? found.model.imageInputs : undefined;
+    const limit = typeof found?.model.imageInputs === "number" ? found.model.imageInputs : undefined;
+    if (found?.model.workflowId === "image-qwen21") {
+        const mode = String(config.imageMode || found.model.defaultMode || "t2i");
+        const perMode = QWEN_MODE_IMAGE_INPUTS[mode];
+        if (perMode !== undefined) return limit === undefined ? perMode : Math.min(limit, perMode);
+    }
+    return limit;
 }
 
 /** The user script (if any) attached to a model; empty string means use the system default call. */
@@ -443,7 +535,6 @@ export const useConfigStore = create<ConfigStore>()(
         (set, get) => ({
             config: defaultConfig,
             webdav: defaultWebdavSyncConfig,
-            localGatewaySync: defaultLocalGatewaySyncStatus,
             isConfigOpen: false,
             configTab: "channels",
             shouldPromptContinue: false,
@@ -453,10 +544,6 @@ export const useConfigStore = create<ConfigStore>()(
                         ...state.config,
                         [key]: value,
                     },
-                })),
-            setLocalGatewaySync: (patch) =>
-                set((state) => ({
-                    localGatewaySync: { ...state.localGatewaySync, ...patch },
                 })),
             addPromptCloudApi: (input) => {
                 const api: PromptCloudApi = {
@@ -563,6 +650,7 @@ export const useConfigStore = create<ConfigStore>()(
                 const models = modelOptionsFromChannels(channels);
                 const imageOptions = channels.flatMap((channel) => channel.models.filter((model) => model.capability === "image").map((model) => encodeChannelModel(channel.id, model.name)));
                 const videoOptions = channels.flatMap((channel) => channel.models.filter((model) => model.capability === "video").map((model) => encodeChannelModel(channel.id, model.name)));
+                const audioOptions = channels.flatMap((channel) => channel.models.filter((model) => model.capability === "audio").map((model) => encodeChannelModel(channel.id, model.name)));
                 const pickModel = (current: string, options: string[]) => (options.includes(current) ? current : options[0] || "");
                 const imageModel = LOCAL_ONLY ? pickModel(config.imageModel || config.model, imageOptions) : normalizeModelOptionValue(config.imageModel || config.model, channels);
                 const videoModel = LOCAL_ONLY ? pickModel(config.videoModel, videoOptions) : normalizeModelOptionValue(config.videoModel, channels);
@@ -580,11 +668,34 @@ export const useConfigStore = create<ConfigStore>()(
                         imageModel,
                         videoModel,
                         textModel: LOCAL_ONLY ? "" : normalizeModelOptionValue(config.textModel || config.model, channels),
-                        audioModel: LOCAL_ONLY ? "" : normalizeModelOptionValue(config.audioModel || defaultConfig.audioModel, channels),
+                        audioModel: LOCAL_ONLY ? pickModel(config.audioModel, audioOptions) : normalizeModelOptionValue(config.audioModel || defaultConfig.audioModel, channels),
                         audioVoice: config.audioVoice || defaultConfig.audioVoice,
                         audioFormat: config.audioFormat || defaultConfig.audioFormat,
                         audioSpeed: config.audioSpeed || defaultConfig.audioSpeed,
                         audioInstructions: config.audioInstructions || "",
+                        audioMode: config.audioMode === "song" ? "song" : config.audioMode === "voice" ? "voice" : "dialogue",
+                        audioReferenceMode: config.audioReferenceMode === "none" ? "none" : "reference",
+                        audioDuration: config.audioDuration || defaultConfig.audioDuration,
+                        audioBpm: config.audioBpm || defaultConfig.audioBpm,
+                        audioLanguage: config.audioLanguage || defaultConfig.audioLanguage,
+                        audioKeyscale: config.audioKeyscale || defaultConfig.audioKeyscale,
+                        audioVoiceDescription: config.audioVoiceDescription || defaultConfig.audioVoiceDescription,
+                        audioStyle: config.audioStyle || defaultConfig.audioStyle,
+                        audioGenre: config.audioGenre || defaultConfig.audioGenre,
+                        audioEmotion: config.audioEmotion || defaultConfig.audioEmotion,
+                        audioGender: config.audioGender || defaultConfig.audioGender,
+                        audioSeed: config.audioSeed || defaultConfig.audioSeed,
+                        audioSourceKey: config.audioSourceKey || "",
+                        audioSourceName: config.audioSourceName || "",
+                        audioReferenceKey: config.audioReferenceKey || "",
+                        audioSongReferenceKey: config.audioSongReferenceKey || "",
+                        audioReferenceName: config.audioReferenceName || "",
+                        audioSongReferenceName: config.audioSongReferenceName || "",
+                        audioDialogueVoiceKey: config.audioDialogueVoiceKey || "",
+                        audioDialogueVoiceName: config.audioDialogueVoiceName || "",
+                        audioDialogueSpeed: config.audioDialogueSpeed || defaultConfig.audioDialogueSpeed,
+                        audioDialogueTone: config.audioDialogueTone || defaultConfig.audioDialogueTone,
+                        audioStrength: config.audioStrength || defaultConfig.audioStrength,
                         reasoningEffort: config.reasoningEffort || "auto",
                         videoSeconds: config.videoSeconds || "6",
                         vquality: config.vquality || "720",
@@ -604,8 +715,9 @@ export const useConfigStore = create<ConfigStore>()(
                         proxyUrl: config.proxyUrl || DEFAULT_LOCAL_PROXY_URL,
                         nodeRegenerateBehavior: config.nodeRegenerateBehavior === "overwrite" ? "overwrite" : "new-node",
                         autoFocusOnSelect: Boolean(config.autoFocusOnSelect),
-                        referenceAcceleration: Boolean(config.referenceAcceleration),
                         progressRingSkin: normalizeProgressRingSkin(config.progressRingSkin),
+                        imagePreviewEnabled: config.imagePreviewEnabled !== false,
+                        videoPreviewEnabled: config.videoPreviewEnabled !== false,
                     },
                 };
             },
@@ -634,8 +746,12 @@ export function normalizeChannelModels(models: Array<string | ChannelModel> | un
         const baseModelLabel = typeof item === "string" ? undefined : item.baseModelLabel?.trim() || undefined;
         const variantModes = typeof item === "string" ? undefined : Array.isArray(item.variantModes) ? item.variantModes.map((mode) => String(mode).trim()).filter(Boolean) : undefined;
         const variantLabels = typeof item === "string" ? undefined : item.variantLabels && typeof item.variantLabels === "object" ? item.variantLabels : undefined;
+        const variantDescriptions = typeof item === "string" ? undefined : item.variantDescriptions && typeof item.variantDescriptions === "object" ? item.variantDescriptions : undefined;
+        const defaultMode = typeof item === "string" ? undefined : item.defaultMode?.trim() || undefined;
+        const resolutionTiers = typeof item === "string" ? undefined : Array.isArray(item.resolutionTiers) && item.resolutionTiers.length ? item.resolutionTiers : undefined;
+        const defaultTier = typeof item === "string" ? undefined : item.defaultTier?.trim() || undefined;
         const imageInputs = typeof item === "string" ? undefined : typeof item.imageInputs === "number" ? item.imageInputs : undefined;
-        result.push({ name, capability, script, label, workflowId, baseModel, baseModelLabel, variantModes, variantLabels, imageInputs });
+        result.push({ name, capability, script, label, workflowId, baseModel, baseModelLabel, variantModes, variantLabels, variantDescriptions, defaultMode, resolutionTiers, defaultTier, imageInputs });
     }
     return result;
 }
@@ -747,61 +863,6 @@ export function modelOptionsFromChannels(channels: ModelChannel[]) {
     return uniqueModelOptions(channels.flatMap((channel) => channel.models.map((model) => encodeChannelModel(channel.id, model.name))));
 }
 
-function channelModelSignature(models: ChannelModel[]) {
-    return JSON.stringify(
-        models.map((model) => [model.name, model.capability, model.label || "", model.workflowId || "", model.baseModel || "", model.baseModelLabel || "", model.imageInputs ?? -1, model.variantModes || [], model.variantLabels || {}]),
-    );
-}
-
-/**
- * 把网关同步结果合并进本地渠道。只有 clear=true 时才清空模型和默认选择；
- * 扫描中/降级/未知状态下的空结果由调用方决定保留，不会走到这里。
- * 保留渠道已有的 apiKey（为空时补 local）并跟到运行时 baseUrl。
- */
-export function applyLocalGatewayModels(
-    config: AiConfig,
-    input: { channelId: string; baseUrl?: string; models?: ChannelModel[]; clear?: boolean },
-): { config: AiConfig; changed: boolean } {
-    const channel = config.channels.find((item) => item.id === input.channelId);
-    if (!channel) return { config, changed: false };
-    const baseUrl = input.baseUrl || LOCAL_GATEWAY_BASE_URL;
-    const incoming = input.clear ? [] : normalizeChannelModels(input.models);
-    // 用户手动改过的能力类型优先，避免同步把视频模型标成图片模型。
-    const nextModels = incoming.map((model) => {
-        const previous = channel.models.find((item) => item.name === model.name);
-        return previous ? { ...model, capability: previous.capability } : model;
-    });
-    const nextApiKey = channel.apiKey || "local";
-    const unchanged = channel.baseUrl === baseUrl && channel.apiKey === nextApiKey && channelModelSignature(channel.models) === channelModelSignature(nextModels);
-    if (unchanged) return { config, changed: false };
-
-    const channels = config.channels.map((item) => (item.id === channel.id ? { ...item, apiKey: nextApiKey, baseUrl, models: nextModels } : item));
-    const imageOptions = channels.flatMap((item) => item.models.filter((model) => model.capability === "image").map((model) => encodeChannelModel(item.id, model.name)));
-    const videoOptions = channels.flatMap((item) => item.models.filter((model) => model.capability === "video").map((model) => encodeChannelModel(item.id, model.name)));
-    const pick = (current: string, options: string[]) => (options.includes(current) ? current : options[0] || "");
-    const pickImage = (current: string) => {
-        if (imageOptions.includes(current)) return current;
-        if (String(current).endsWith("::image-krea2-aesthetics")) {
-            const turbo = imageOptions.find((option) => option.endsWith("::image-krea2-turbo"));
-            if (turbo) return turbo;
-        }
-        return pick(current, imageOptions);
-    };
-    return {
-        changed: true,
-        config: {
-            ...config,
-            channels,
-            models: modelOptionsFromChannels(channels),
-            imageModel: input.clear ? "" : pickImage(config.imageModel),
-            videoModel: input.clear ? "" : pick(config.videoModel, videoOptions),
-            model: input.clear ? "" : pickImage(config.model),
-            baseUrl,
-            apiKey: nextApiKey,
-        },
-    };
-}
-
 export function normalizeModelOptionValue(value: string | undefined, channels: ModelChannel[]) {
     const model = (value || "").trim();
     if (!model) return "";
@@ -892,29 +953,3 @@ export function withLocalProxy(url: string) {
     if (!base || url.startsWith(`${base}/`)) return url;
     return `${base}/${url}`;
 }
-
-let lastAgentProviderSignature = "";
-useConfigStore.subscribe((state) => {
-    const api = activePromptCloudApi(state.config);
-    if (!api) {
-        if (lastAgentProviderSignature) {
-            lastAgentProviderSignature = "";
-            void clearAgentProvider().catch(() => undefined);
-        }
-        return;
-    }
-    const baseUrl = api.baseUrl.trim();
-    const apiKey = api.apiKey.trim();
-    const model = api.model.trim();
-    if (!baseUrl || !apiKey || !model) {
-        if (lastAgentProviderSignature) {
-            lastAgentProviderSignature = "";
-            void clearAgentProvider().catch(() => undefined);
-        }
-        return;
-    }
-    const signature = `${api.id}|${baseUrl}|${apiKey}|${model}`;
-    if (signature === lastAgentProviderSignature) return;
-    lastAgentProviderSignature = signature;
-    void syncAgentProvider({ baseUrl, apiKey, model, label: api.name }).catch(() => undefined);
-});

@@ -52,6 +52,7 @@ export function ConnectionPath({
                 stroke={active ? theme.node.activeStroke : theme.node.muted}
                 strokeWidth={active ? 3 : 2}
                 strokeOpacity={active ? 1 : 0.82}
+                strokeDasharray={connection.dashed ? "6,5" : undefined}
                 fill="none"
                 style={{ filter: active ? `drop-shadow(0 0 8px ${theme.node.activeStroke}66)` : undefined, pointerEvents: "none" }}
             />

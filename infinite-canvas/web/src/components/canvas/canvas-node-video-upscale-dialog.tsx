@@ -6,7 +6,14 @@ import { Maximize2 } from "lucide-react";
 import type { CanvasNodeData } from "@/types/canvas";
 import { useCanvasTheme } from "@/lib/canvas/use-canvas-theme";
 
-export type CanvasVideoUpscaleParams = { scale: 1.5 | 2; resolution: number; fps: number };
+export type CanvasVideoUpscaleEngine = "seedvr2" | "relayvsr";
+export type CanvasVideoUpscaleParams = {
+    engine: CanvasVideoUpscaleEngine;
+    model: "video-seedvr2-upscale" | "video-relayvsr-2x";
+    scale: 1.5 | 2;
+    resolution: number;
+    fps: number;
+};
 
 type Props = {
     open: boolean;
@@ -17,12 +24,14 @@ type Props = {
 
 export function CanvasNodeVideoUpscaleDialog({ open, node, onClose, onConfirm }: Props) {
     const theme = useCanvasTheme();
-    const [scale, setScale] = useState<1.5 | 2>(1.5);
+    const [engine, setEngine] = useState<CanvasVideoUpscaleEngine>("seedvr2");
+    const [scale, setScale] = useState<1.5 | 2>(2);
     const [sourceSize, setSourceSize] = useState({ width: 0, height: 0 });
 
     useEffect(() => {
         if (!open || !node) return;
-        setScale(1.5);
+        setEngine("seedvr2");
+        setScale(2);
         setSourceSize({
             width: node.metadata?.naturalWidth || node.width || 0,
             height: node.metadata?.naturalHeight || node.height || 0,
@@ -35,9 +44,11 @@ export function CanvasNodeVideoUpscaleDialog({ open, node, onClose, onConfirm }:
     const sourceHeight = sourceSize.height;
     const hasVideo = Boolean(node.metadata?.content);
     const shortest = Math.min(sourceWidth, sourceHeight);
-    const resolution = shortest ? Math.min(4096, Math.max(256, Math.round(shortest * scale))) : 1104;
-    const outputWidth = sourceWidth ? Math.round(sourceWidth * scale) : 0;
-    const outputHeight = sourceHeight ? Math.round(sourceHeight * scale) : 0;
+    const effectiveScale = engine === "relayvsr" ? 2 : scale;
+    const resolution = shortest ? Math.min(4096, Math.max(256, Math.round(shortest * effectiveScale))) : 1104;
+    const outputWidth = sourceWidth ? Math.round(sourceWidth * effectiveScale) : 0;
+    const outputHeight = sourceHeight ? Math.round(sourceHeight * effectiveScale) : 0;
+    const isRelay = engine === "relayvsr";
 
     return (
         <Modal
@@ -52,7 +63,7 @@ export function CanvasNodeVideoUpscaleDialog({ open, node, onClose, onConfirm }:
             title={
                 <span className="flex items-center gap-2">
                     <Maximize2 className="size-4" />
-                    SeedVR2 视频超分
+                    {isRelay ? "RelayVSR 视频超分 2×" : "SeedVR2 视频超分"}
                 </span>
             }
         >
@@ -84,25 +95,57 @@ export function CanvasNodeVideoUpscaleDialog({ open, node, onClose, onConfirm }:
 
                 <div className="space-y-2">
                     <div className="text-xs font-medium" style={{ color: theme.node.muted }}>
-                        放大倍数
+                        超分模型
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                        {([1.5, 2] as const).map((value) => (
+                        {([
+                            { value: "seedvr2", label: "SeedVR2" },
+                            { value: "relayvsr", label: "RelayVSR 2×" },
+                        ] as const).map((option) => (
                             <button
-                                key={value}
+                                key={option.value}
                                 type="button"
                                 className="h-10 rounded-xl border text-sm font-medium transition"
                                 style={{
-                                    borderColor: scale === value ? theme.node.text : theme.node.stroke,
-                                    background: scale === value ? `${theme.node.text}12` : "transparent",
+                                    borderColor: engine === option.value ? theme.node.text : theme.node.stroke,
+                                    background: engine === option.value ? `${theme.node.text}12` : "transparent",
                                     color: theme.node.text,
                                 }}
-                                onClick={() => setScale(value)}
+                                onClick={() => setEngine(option.value)}
                             >
-                                {value}×
+                                {option.label}
                             </button>
                         ))}
                     </div>
+                </div>
+
+                <div className="space-y-2">
+                    <div className="text-xs font-medium" style={{ color: theme.node.muted }}>
+                        放大倍数
+                    </div>
+                    {isRelay ? (
+                        <div className="flex h-10 items-center rounded-xl border px-3 text-sm" style={{ borderColor: theme.node.stroke, color: theme.node.text }}>
+                            固定 2×（RelayVSR 原生）
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-2 gap-2">
+                            {([1.5, 2] as const).map((value) => (
+                                <button
+                                    key={value}
+                                    type="button"
+                                    className="h-10 rounded-xl border text-sm font-medium transition"
+                                    style={{
+                                        borderColor: scale === value ? theme.node.text : theme.node.stroke,
+                                        background: scale === value ? `${theme.node.text}12` : "transparent",
+                                        color: theme.node.text,
+                                    }}
+                                    onClick={() => setScale(value)}
+                                >
+                                    {value}×
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 <div className="space-y-1 rounded-xl border p-3 text-xs" style={{ borderColor: theme.node.stroke, color: theme.node.muted }}>
@@ -112,16 +155,30 @@ export function CanvasNodeVideoUpscaleDialog({ open, node, onClose, onConfirm }:
                     <div>
                         预计输出 <span style={{ color: theme.node.text }}>{outputWidth || "?"} × {outputHeight || "?"}</span>
                     </div>
-                    <div>SeedVR2 3B · H.264 · 原音频直通</div>
+                    <div>{isRelay ? "RelayVSR · 固定 2× · 原音频直通" : "SeedVR2 3B · H.264 · 原音频直通"}</div>
                 </div>
 
                 <div className="text-[11px] leading-5" style={{ color: theme.node.muted }}>
-                    耗时随分辨率/时长增长；生成期间请保持画布打开。1.5× 适合 720p→1080p，2× 更慢。
+                    {isRelay
+                        ? "RelayVSR 固定 2×，耗时随源分辨率/时长增长；生成期间请保持画布打开。"
+                        : "耗时随分辨率/时长增长；生成期间请保持画布打开。1.5× 适合 720p→1080p，2× 更慢。"}
                 </div>
 
                 <div className="flex justify-end gap-2">
                     <Button onClick={onClose}>取消</Button>
-                    <Button type="primary" disabled={!hasVideo} onClick={() => onConfirm({ scale, resolution, fps: 24 })}>
+                    <Button
+                        type="primary"
+                        disabled={!hasVideo}
+                        onClick={() =>
+                            onConfirm({
+                                engine,
+                                model: isRelay ? "video-relayvsr-2x" : "video-seedvr2-upscale",
+                                scale: effectiveScale,
+                                resolution,
+                                fps: 24,
+                            })
+                        }
+                    >
                         开始超分
                     </Button>
                 </div>

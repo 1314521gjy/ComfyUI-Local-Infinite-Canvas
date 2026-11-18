@@ -1,0 +1,206 @@
+{
+  "1": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "qwen_image_2.1_turbo_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "2": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3vl_8b_int8_convrot.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
+    }
+  },
+  "4": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "scene3d_strip.png",
+      "upload": "image"
+    }
+  },
+  "5": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "scene3d_mask.png",
+      "upload": "image"
+    }
+  },
+  "6": {
+    "class_type": "ImageToMask",
+    "inputs": {
+      "image": [
+        "5",
+        0
+      ],
+      "channel": "red"
+    }
+  },
+  "7": {
+    "class_type": "GrowMaskWithBlur",
+    "inputs": {
+      "mask": [
+        "6",
+        0
+      ],
+      "expand": 56,
+      "incremental_expandrate": 0,
+      "tapered_corners": true,
+      "flip_input": false,
+      "blur_radius": 20,
+      "lerp_alpha": 1,
+      "decay_factor": 1,
+      "fill_holes": false
+    }
+  },
+  "8": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": {
+      "value": "Remove the visible seam in the middle of the image. Remove the white bar. Keep the rest of the image exactly the same."
+    }
+  },
+  "9": {
+    "class_type": "TextEncodeQwenImage21",
+    "inputs": {
+      "clip": [
+        "2",
+        0
+      ],
+      "prompt": [
+        "8",
+        0
+      ],
+      "negative_prompt": "",
+      "resolution": 0,
+      "images.image_1": [
+        "4",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    }
+  },
+  "10": {
+    "class_type": "InpaintModelConditioning",
+    "inputs": {
+      "positive": [
+        "9",
+        0
+      ],
+      "negative": [
+        "9",
+        1
+      ],
+      "vae": [
+        "3",
+        0
+      ],
+      "pixels": [
+        "4",
+        0
+      ],
+      "mask": [
+        "7",
+        0
+      ],
+      "noise_mask": true
+    }
+  },
+  "11": {
+    "class_type": "TaiYangH3ActivationChunk",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "启用": true
+    }
+  },
+  "12": {
+    "class_type": "TESpeedQwenImage21",
+    "inputs": {
+      "model": [
+        "11",
+        0
+      ],
+      "attention": "kitchen_int8",
+      "step_cache": "te_predictor",
+      "reuse_threshold": 0.06,
+      "start_percent": 0,
+      "end_percent": 0,
+      "predictor_error_limit": 0.08,
+      "verbose": true
+    }
+  },
+  "13": {
+    "class_type": "QwenImage21Cache",
+    "inputs": {
+      "model": [
+        "12",
+        0
+      ],
+      "device": "auto",
+      "dtype": "default"
+    }
+  },
+  "14": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "13",
+        0
+      ],
+      "seed": 20261117,
+      "steps": 6,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "positive": [
+        "10",
+        0
+      ],
+      "negative": [
+        "10",
+        1
+      ],
+      "latent_image": [
+        "10",
+        2
+      ],
+      "denoise": 1
+    }
+  },
+  "15": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "14",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    }
+  },
+  "16": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "15",
+        0
+      ],
+      "filename_prefix": "SCENE3D_seam"
+    }
+  }
+}

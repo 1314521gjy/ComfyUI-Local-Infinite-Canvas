@@ -2,6 +2,11 @@ import path from "node:path";
 
 import { applyBindings } from "./bindings.js";
 import { applyLoraChain } from "./lora-chain.js";
+import { applyZImageAccel } from "./zimage-accel.js";
+import { applyKrea2Mode } from "./krea2-mode.js";
+import { applyQwenHybridMode } from "./qwen-t2i-mode.js";
+import { resolveMossTier } from "./moss-tier.js";
+import { mediaPixelSize } from "./media-size.js";
 import { MODEL_LOADER_SPECS } from "./model-loaders.js";
 import { mimeFromFilename, sleep, truncate } from "./util.js";
 
@@ -18,12 +23,16 @@ export class GenerationError extends Error {
 function resolveForMode(entry, mode) {
   const variant = mode ? entry?.variants?.[mode] : null;
   if (!variant) return entry;
+  // 变体已取出底模与图；清掉 variants 防止调用方再次解析覆盖（长视频分段的 prefix 节点）。
+  const rest = { ...entry };
+  delete rest.variants;
   return {
-    ...entry,
+    ...rest,
     ...variant,
     workflow: variant.workflow || entry.workflow,
     bindings: variant.bindings || entry.bindings,
     defaults: variant.defaults || entry.defaults,
+    mainModelFile: "",
   };
 }
 
@@ -102,7 +111,7 @@ function collectOutputFiles(history, { includePreview = false } = {}) {
   const files = [];
   const seen = new Set();
   for (const [nodeId, output] of Object.entries(history?.outputs || {})) {
-    for (const key of ["images", "gifs", "videos", "3d"]) {
+    for (const key of ["images", "gifs", "videos", "3d", "audio"]) {
       for (const item of output?.[key] || []) {
         if (!item?.filename) continue;
         if (item.type && item.type !== "output" && !(includePreview && item.type === "temp")) continue;
@@ -120,20 +129,30 @@ export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 *
   if (signal?.aborted) throw new GenerationError("生成已取消", { status: 400, code: "cancelled" });
   const resolved = resolveForMode(entry, context.mode);
   const params = resolved.baseModelParams ? { ...resolved.baseModelParams, ...(context.params || {}) } : context.params;
+  // Z-Image 蒸馏底模默认 8 步；moody / beyond 两个微调底模按 10 步。
+  let quality = context.quality;
+  if (resolved.id === "image-z-image-turbo" && (quality?.steps == null || quality?.value === "auto")) {
+    const unet = String(params?.unet || "");
+    quality = { ...(quality || {}), steps: /moody|beyond|zitv7|reality/i.test(unet) ? 10 : 8 };
+  }
   const stats = {};
-  const bound = applyMainModelFile(applyBindings(resolved.workflow, resolved, { ...context, params }, { logger, stats }), resolved.mainModelFile);
+  const moss = resolveMossTier(resolved, params);
+  const selected = moss ? { ...resolved, workflow: moss.workflow, bindings: moss.bindings, defaults: moss.defaults } : resolved;
+  const bound = applyQwenHybridMode(applyKrea2Mode(applyMainModelFile(applyBindings(selected.workflow, selected, { ...context, params, quality }, { logger, stats }), selected.mainModelFile), { entry, params, logger }), { entry, params, mode: context.mode, logger });
   const loraResult = applyLoraChain(bound, params, {
     available: loraCatalog,
     filter: resolved.lora?.filter,
     sourceNode: resolved.lora?.source,
     loaderClass: resolved.lora?.loader || "LoraLoaderModelOnly",
   });
-  const workflow = applyModelAliases(loraResult.workflow, modelAliasFor, loaderSpecs);
+  const aliased = applyModelAliases(loraResult.workflow, modelAliasFor, loaderSpecs);
+  const accel = applyZImageAccel(aliased, { entry, params, logger });
+  const workflow = accel.workflow;
   if (loraResult.applied.length) {
     logger?.info?.(`LoRA ${entry.name}: ${loraResult.applied.map((item) => `${path.basename(item.name)}@${item.strength}`).join(" -> ")}`);
   }
   const attemptOnce = async () => {
-    const submitted = await comfy.submit(workflow, { signal, requestId });
+    const submitted = await comfy.submit(workflow, { signal, requestId, previewEnabled: params?.preview !== false });
     const promptId = submitted.promptId;
     let running = true;
     let cancelPromise = null;
@@ -203,6 +222,7 @@ export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 *
       for (const file of files) {
         const viewed = await comfy.view(file, { signal });
         const mimeType = /^application\/octet-stream$/i.test(viewed.contentType) ? mimeFromFilename(file.filename) : viewed.contentType;
+        const pixel = mediaPixelSize(viewed.buffer, mimeType, file.filename);
         outputs.push({
           buffer: viewed.buffer,
           mimeType,
@@ -210,6 +230,8 @@ export async function runWorkflow({ entry, context, comfy, timeoutMs = 10 * 60 *
           subfolder: file.subfolder || "",
           type: file.type || "output",
           nodeId: file.nodeId,
+          width: Number(file.width) > 0 ? Number(file.width) : pixel?.width,
+          height: Number(file.height) > 0 ? Number(file.height) : pixel?.height,
         });
       }
       onProgress?.({ phase: "downloaded", promptId, progress: 0.95 });

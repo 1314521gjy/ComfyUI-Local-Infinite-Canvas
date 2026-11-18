@@ -129,8 +129,8 @@
       "frame_rate": 24,
       "loop_count": 0,
       "filename_prefix": "MiniMaxH3/learned_latent_twopass_i2va_upstream_parity_v2_exp",
-      "format": "video/h265-mp4",
-      "pix_fmt": "yuv420p10le",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
       "crf": 22,
       "save_metadata": true,
       "pingpong": false,
@@ -183,7 +183,7 @@
     "class_type": "ApplyVDNH3Advanced",
     "inputs": {
       "model": [
-        "110",
+        "4",
         0
       ],
       "vdn_checkpoint": "stage-dmd-step-250",

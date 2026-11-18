@@ -33,6 +33,20 @@ export function parseAspectRatio(value: string) {
     return { width, height };
 }
 
+export const MEDIA_STEP_MULTIPLE = 32;
+export const MEDIA_MAX_EDGE = 3840;
+export const MEDIA_MAX_PIXELS = 8294400;
+
+/** 按像素预算 + 画布比例等比算尺寸，再向下取整到 32 的倍数，保证不越画布上限也不歪比例。 */
+export function sizeForPixelBudget(pixels: number, ratio: string, fallbackPixels = 4194304, limits?: { maxPixels?: number; maxEdge?: number }) {
+    const parts = parseAspectRatio(ratio) || parsePixelSize(ratio) || { width: 1, height: 1 };
+    const budget = Math.min(pixels || fallbackPixels, limits?.maxPixels ?? MEDIA_MAX_PIXELS);
+    let scale = Math.sqrt(budget / (parts.width * parts.height));
+    scale = Math.min(scale, (limits?.maxEdge ?? MEDIA_MAX_EDGE) / Math.max(parts.width, parts.height));
+    const floorStep = (value: number) => Math.max(MEDIA_STEP_MULTIPLE, Math.floor(value / MEDIA_STEP_MULTIPLE) * MEDIA_STEP_MULTIPLE);
+    return `${floorStep(parts.width * scale)}x${floorStep(parts.height * scale)}`;
+}
+
 export const videoRatioOptions = [
     { value: "1:1", width: 1, height: 1 },
     { value: "3:4", width: 3, height: 4 },
@@ -143,24 +157,6 @@ export function inferVideoRatio(size: string) {
         }, "16:9");
 }
 
-export function computeVideoSize(resolution: string, ratio: string) {
-    if (ratio === "auto" || !ratio) return "auto";
-    const parsed = parseAspectRatio(ratio);
-    if (!parsed) return "auto";
-    const p = Math.max(1, Math.floor(Number(parseVideoResolution(resolution)) || 720));
-    const landscape = parsed.width >= parsed.height;
-    const width = evenRound(landscape ? (p * parsed.width) / parsed.height : p);
-    const height = evenRound(landscape ? p : (p * parsed.height) / parsed.width);
-    return `${width}x${height}`;
-}
-
-export function readVideoDimensions(size: string, resolution: string, ratio: string) {
-    const pixels = parsePixelSize(size);
-    if (pixels) return pixels;
-    const computed = computeVideoSize(resolution, ratio === "auto" ? "16:9" : ratio);
-    return parsePixelSize(computed) || { width: 0, height: 0 };
-}
-
 export function draftShortSideSize(ratio: string, shortSide: number) {
     const [rawWidth, rawHeight] = ratio.split(":").map(Number);
     const width = rawWidth > 0 ? rawWidth : 9;
@@ -177,14 +173,22 @@ export function draftLongSideSize(ratio: string, longSide: number) {
     return width >= height ? `${longSide}x${snap((longSide * height) / width)}` : `${snap((longSide * width) / height)}x${longSide}`;
 }
 
-// 像素尺寸与当前分辨率档 + 最近比例推导出的预设尺寸不一致时，视为用户自定义 W/H。
-export function isCustomVideoSize(size: string, resolution: string) {
+export function computeVideoSize(resolution: string, ratio: string) {
+    if (ratio === "auto" || !ratio) return "auto";
+    const parsed = parseAspectRatio(ratio);
+    if (!parsed) return "auto";
+    const p = Math.max(1, Math.floor(Number(parseVideoResolution(resolution)) || 720));
+    const landscape = parsed.width >= parsed.height;
+    const width = evenRound(landscape ? (p * parsed.width) / parsed.height : p);
+    const height = evenRound(landscape ? p : (p * parsed.height) / parsed.width);
+    return `${width}x${height}`;
+}
+
+export function readVideoDimensions(size: string, resolution: string, ratio: string) {
     const pixels = parsePixelSize(size);
-    if (!pixels) return false;
-    const ratio = inferVideoRatio(size);
-    const expected = parsePixelSize(computeVideoSize(resolution, ratio === "auto" ? "16:9" : ratio));
-    if (!expected) return false;
-    return pixels.width !== expected.width || pixels.height !== expected.height;
+    if (pixels) return pixels;
+    const computed = computeVideoSize(resolution, ratio === "auto" ? "16:9" : ratio);
+    return parsePixelSize(computed) || { width: 0, height: 0 };
 }
 
 function evenRound(value: number) {

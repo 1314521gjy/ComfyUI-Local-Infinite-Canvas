@@ -303,7 +303,7 @@ export function createAssistantManager({
         state.startedAt = "";
     }
 
-    async function spawnService() {
+    async function startService() {
         const port = await findPort();
         const url = `http://127.0.0.1:${port}`;
         state.error = "";
@@ -333,29 +333,44 @@ export function createAssistantManager({
         child.stdout?.on("data", collect("", "info"));
         child.stderr?.on("data", collect("ERR ", "warn"));
         child.on("error", (error) => {
+            if (state.child !== child) return;
             state.error = String(error?.message || error);
             logger?.warn?.(`Agent 服务启动失败：${state.error}`);
             clearChild(child);
         });
         child.on("exit", (code, signal) => {
+            if (state.child !== child) return;
             const expected = state.stopping;
             clearChild(child);
-            if (!expected) logger?.warn?.(`Agent 服务退出（code=${code}, signal=${signal}）`);
-        });
-        try {
-            await waitReady(child, url);
-            logger?.info?.(`Agent 服务已唤起：${url}`);
-            return { ok: true, url, port, pid: child.pid || 0 };
-        } catch (error) {
-            state.error = String(error?.message || error);
-            try {
-                child.kill();
-            } catch {
-                // ignore
+            if (!expected) {
+                state.error = `Agent 服务退出（code=${code}, signal=${signal}）`;
+                logger?.warn?.(state.error);
             }
-            clearChild(child);
-            return { ok: false, url: "", error: state.error };
+        });
+        // 立即返回 starting；就绪/超时由后台监视器推进，避免按钮被 25s 启动等待卡住。
+        void waitReady(child, url)
+            .then(() => logger?.info?.(`Agent 服务已唤起：${url}`))
+            .catch((error) => {
+                if (state.child !== child) return;
+                state.error = String(error?.message || error);
+                try {
+                    child.kill();
+                } catch {
+                    // ignore
+                }
+                clearChild(child);
+            });
+        return { ok: true, url, port, pid: child.pid || 0, state: "starting", starting: true, online: false };
+    }
+
+    async function waitForOnline(timeoutMs) {
+        const deadline = Date.now() + timeoutMs;
+        let snapshot = await statusWithHealth();
+        while (!snapshot.online && Date.now() < deadline) {
+            await sleep(100);
+            snapshot = await statusWithHealth();
         }
+        return snapshot;
     }
 
     async function ensure(options = {}) {
@@ -371,6 +386,7 @@ export function createAssistantManager({
             if (!repair.ok && !info.available) {
                 return {
                     ok: false,
+                    state: "failed",
                     needFullPackage: info.needFullPackage,
                     error: repair.error || info.reason,
                     missing: info.missing || [],
@@ -396,6 +412,7 @@ export function createAssistantManager({
         if (!info.available) {
             return {
                 ok: false,
+                state: "failed",
                 needFullPackage: info.needFullPackage,
                 error: info.reason,
                 missing: info.missing || [],
@@ -406,29 +423,31 @@ export function createAssistantManager({
                 runtimeState: info.runtimeState,
             };
         }
-        if (ensurePromise) return ensurePromise;
+        const normalizeEnsure = (result) => {
+            if (!result?.ok) return { state: "failed", starting: false, online: false, ...result };
+            return { ...result, state: result.state || (result.online ? "running" : "starting"), starting: result.state !== "running" && !result.online };
+        };
+        if (ensurePromise) return ensurePromise.then(normalizeEnsure);
         ensurePromise = (async () => {
             if (state.child) {
-                const health = await probe();
-                if (health?.ok) {
-                    await wake();
-                    return { ok: true, url: state.url, port: state.port, pid: state.child.pid || 0, reused: true };
-                }
-                state.stopping = true;
-                try {
-                    state.child.kill();
-                } catch {
-                    // ignore
-                }
-                await sleep(150);
-                state.stopping = false;
-                clearChild(state.child);
+                const snapshot = await statusWithHealth();
+                if (snapshot.online) await wake();
+                return { ...snapshot, ok: true, starting: snapshot.state === "starting" };
             }
-            return spawnService();
-        })().finally(() => {
+            const started = await startService();
+            if (!started.ok) return started;
+            const snapshot = await waitForOnline(1200);
+            return { ...snapshot, ok: true, starting: snapshot.state === "starting" };
+        })().catch((error) => ({
+            ok: false,
+            state: "failed",
+            starting: false,
+            online: false,
+            error: `Agent 服务启动失败：${String(error?.message || error)}`,
+        })).finally(() => {
             ensurePromise = null;
         });
-        const result = await ensurePromise;
+        const result = normalizeEnsure(await ensurePromise);
         return updateError ? { ...result, updateError, runtimeUpdateAvailable: true } : result;
     }
 
@@ -497,6 +516,7 @@ export function createAssistantManager({
             reason: info.reason,
             missing: info.missing || [],
             running: Boolean(state.child),
+            state: state.child ? "starting" : "stopped",
             url: state.child ? state.url : "",
             port: state.child ? state.port : 0,
             pid: state.child?.pid || 0,
@@ -514,10 +534,14 @@ export function createAssistantManager({
 
     async function statusWithHealth() {
         const base = status();
-        if (!base.running) return { ...base, online: false, health: null };
+        if (!base.running) {
+            const failed = Boolean(base.lastError);
+            return { ...base, state: failed ? "failed" : "stopped", online: false, health: null, error: base.lastError || "" };
+        }
         const health = await probe();
         return {
             ...base,
+            state: health?.ok ? "running" : "starting",
             online: Boolean(health?.ok),
             idleRemainingMs: health?.idleRemainingMs ?? null,
             active: health?.active ?? null,

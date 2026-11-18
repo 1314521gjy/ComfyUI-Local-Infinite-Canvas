@@ -10,6 +10,7 @@ export function createPreviewHub({ comfyUrl, logger, ttlMs = DEFAULT_TTL_MS } = 
   const progressByPrompt = new Map();
   const promptByRequest = new Map();
   const sockets = new Map();
+  const listeners = new Set();
 
   function wsEndpoint(clientId) {
     // comfyUrl 可以是 getter：ComfyUI 端口自动发现后，预览 WebSocket 也要跟着切。
@@ -21,8 +22,21 @@ export function createPreviewHub({ comfyUrl, logger, ttlMs = DEFAULT_TTL_MS } = 
     return url.toString();
   }
 
+  function emitEvent(requestId, promptId) {
+    if (!requestId) return;
+    for (const listener of listeners) {
+      try { listener({ requestId, promptId }); } catch {}
+    }
+  }
+
+  function subscribe(listener) {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
+  }
+
   function createProgress(socket, promptId) {
     const record = {
+      previewEnabled: socket.previewEnabled !== false,
       promptId,
       requestId: socket.requestId || null,
       total: socket.plan?.total || 0,
@@ -84,6 +98,7 @@ export function createPreviewHub({ comfyUrl, logger, ttlMs = DEFAULT_TTL_MS } = 
     record.state = "running";
     record.updatedAt = Date.now();
     computeStep(record);
+    emitEvent(record.requestId, promptId);
   }
 
   function finishPrompt(socket, promptId, state) {
@@ -93,19 +108,23 @@ export function createPreviewHub({ comfyUrl, logger, ttlMs = DEFAULT_TTL_MS } = 
     record.state = state;
     record.step = record.total || record.step;
     record.updatedAt = Date.now();
+    emitEvent(record.requestId, id);
   }
 
   function handlePreview(socket, data) {
     const promptId = socket.promptId;
     if (!promptId || !data.image) return;
+    const record = progressByPrompt.get(promptId);
+    if (record && record.previewEnabled === false) return;
     previews.set(promptId, {
       data: String(data.image),
       mime: String(data.mime || "image/jpeg"),
-      step: Number.isFinite(Number(data.step)) ? Number(data.step) : null,
-      total: Number.isFinite(Number(data.total)) ? Number(data.total) : null,
+      step: Number.isFinite(Number(data.step)) ? Number(data.step) : (record?.step ?? null),
+      total: Number.isFinite(Number(data.total)) ? Number(data.total) : (record?.total ?? null),
       nodeId: data.node_id || null,
       updatedAt: Date.now(),
     });
+    emitEvent(record?.requestId || socket.requestId, promptId);
     const step = Number(data.step);
     const total = Number(data.total);
     if (Number.isFinite(step) && Number.isFinite(total) && total > 0) {
@@ -119,6 +138,48 @@ export function createPreviewHub({ comfyUrl, logger, ttlMs = DEFAULT_TTL_MS } = 
         computeStep(record);
       }
     }
+  }
+
+  function handleBinary(clientId, buffer) {
+    const socket = sockets.get(clientId);
+    if (!socket || !buffer || buffer.byteLength <= 8) return;
+    const view = new DataView(buffer);
+    const type = view.getUint32(0);
+    let offset = 8;
+    let mime = "image/jpeg";
+    let meta = null;
+    if (type === 1) {
+      const imageType = view.getUint32(4);
+      if (imageType !== 1 && imageType !== 2) return;
+      mime = imageType === 2 ? "image/png" : "image/jpeg";
+    } else if (type === 4) {
+      const metaLength = view.getUint32(4);
+      if (metaLength > buffer.byteLength - 8) return;
+      try {
+        meta = JSON.parse(new TextDecoder().decode(new Uint8Array(buffer, 8, metaLength)));
+      } catch {
+        return;
+      }
+      mime = meta?.image_type || "image/jpeg";
+      offset = 8 + metaLength;
+    } else {
+      return;
+    }
+    const promptId = meta?.prompt_id || socket.promptId;
+    if (!promptId) return;
+    const record = progressByPrompt.get(promptId);
+    if (record && record.previewEnabled === false) return;
+    const base64 = Buffer.from(new Uint8Array(buffer, offset)).toString("base64");
+    previews.set(promptId, {
+      data: base64,
+      mime,
+      step: Number.isFinite(Number(meta?.step)) ? Number(meta.step) : (record?.step ?? null),
+      total: Number.isFinite(Number(meta?.total)) ? Number(meta.total) : (record?.total ?? null),
+      nodeId: meta?.node_id || null,
+      updatedAt: Date.now(),
+    });
+    emitEvent(record?.requestId || socket.requestId, promptId);
+    socket.lastActivity = Date.now();
   }
 
   function handleMessage(clientId, raw) {
@@ -169,6 +230,7 @@ export function createPreviewHub({ comfyUrl, logger, ttlMs = DEFAULT_TTL_MS } = 
       }
       const entry = { ws, promptId: null, requestId: null, plan: null, lastActivity: Date.now() };
       sockets.set(clientId, entry);
+      try { ws.binaryType = "arraybuffer"; } catch {}
       ws.addEventListener("open", () => {
         try {
           ws.send(JSON.stringify({ type: "feature_flags", data: { supports_preview_metadata: true } }));
@@ -177,7 +239,12 @@ export function createPreviewHub({ comfyUrl, logger, ttlMs = DEFAULT_TTL_MS } = 
         }
         finish(true);
       });
-      ws.addEventListener("message", (event) => handleMessage(clientId, event.data));
+      ws.addEventListener("message", (event) => {
+        const data = event.data;
+        if (typeof data === "string") { handleMessage(clientId, data); return; }
+        if (data instanceof ArrayBuffer) { handleBinary(clientId, data); return; }
+        if (typeof data?.arrayBuffer === "function") { data.arrayBuffer().then((buffer) => handleBinary(clientId, buffer)).catch(() => {}); }
+      });
       ws.addEventListener("error", () => {
         logger?.warn?.(`预览 WebSocket 连接失败：${truncate(clientId, 80)}`);
         finish(false);
@@ -190,12 +257,13 @@ export function createPreviewHub({ comfyUrl, logger, ttlMs = DEFAULT_TTL_MS } = 
     });
   }
 
-  function bindPrompt(clientId, promptId, { requestId = null, plan = null } = {}) {
+  function bindPrompt(clientId, promptId, { requestId = null, plan = null, previewEnabled = true } = {}) {
     const socket = sockets.get(clientId);
     if (!socket || !promptId) return;
     socket.promptId = promptId;
     socket.requestId = requestId;
     socket.plan = plan;
+    socket.previewEnabled = previewEnabled !== false;
     createProgress(socket, promptId);
   }
 
@@ -249,5 +317,5 @@ export function createPreviewHub({ comfyUrl, logger, ttlMs = DEFAULT_TTL_MS } = 
   const timer = setInterval(closeIdle, 60 * 1000);
   timer.unref?.();
 
-  return { ensure, bindPrompt, get, getProgress, getByRequest, closeIdle };
+  return { ensure, bindPrompt, get, getProgress, getByRequest, subscribe, closeIdle };
 }

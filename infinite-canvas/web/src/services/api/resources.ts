@@ -100,47 +100,10 @@ export type WorkflowDependency = {
     installIds: string[];
 };
 
-export type AgentRuntimeResource = {
-    id: string;
-    type: "runtime";
-    label: string;
-    target: string;
-    size: number;
-    sha256: string;
-    runtimeVersion?: string;
-    license: string;
-    note?: string;
-    sources: ResourceSource[];
-    fullPackageUrl?: string;
-};
-
-export type AssistantRuntimeStatus = {
-    ok: boolean;
-    available: boolean;
-    canRepair: boolean;
-    canDownload: boolean;
-    runtimePackagePresent: boolean;
-    runtimeVersion?: string;
-    runtimeTargetVersion?: string;
-    runtimeUpdateAvailable?: boolean;
-    runtimeVersionMismatch?: boolean;
-    fullPackageUrl?: string;
-    runtimeState?: string;
-    reason?: string;
-    missing?: string[];
-    running?: boolean;
-    url?: string;
-    online?: boolean;
-    lastError?: string;
-    runtimeUpdateError?: string;
-};
-
 export type ResourcePack = {
     id: string;
     label: string;
     description: string;
-    kind?: "runtime" | string;
-    runtime?: AgentRuntimeResource | null;
     family?: string;
     tier?: string;
     optional?: boolean;
@@ -229,8 +192,6 @@ export type ResourceJobItem = {
     source?: string | null;
     error?: string;
     hint?: string;
-    path?: string;
-    restartRequired?: boolean;
     skipped?: boolean;
 };
 
@@ -244,7 +205,6 @@ export type ResourceJob = {
     completed: number;
     total: number;
     progress: number;
-    restartRequired?: boolean;
     error?: string;
 };
 
@@ -261,26 +221,6 @@ export async function fetchResourceStatus(): Promise<ResourceStatus> {
     const data = await readJson(response);
     if (!response.ok || data.ok === false) throw new Error(errorMessage(data, `读取资源状态失败（HTTP ${response.status}）`));
     return data as ResourceStatus;
-}
-
-export async function fetchAssistantRuntimeStatus(): Promise<AssistantRuntimeStatus> {
-    const response = await gatewayFetch(`${gatewayRoot}/api/assistant/status`, { headers: { Accept: "application/json" } });
-    const data = await readJson(response);
-    if (!response.ok || data.ok === false) throw new Error(errorMessage(data, `读取 Agent 运行时状态失败（HTTP ${response.status}）`));
-    return data as AssistantRuntimeStatus;
-}
-
-export async function ensureAssistantRuntime(download = true): Promise<AssistantRuntimeStatus> {
-    const response = await gatewayFetch(`${gatewayRoot}/api/assistant/ensure`, {
-        method: "POST",
-        headers: { Accept: "application/json", "Content-Type": "application/json" },
-        body: JSON.stringify({ download }),
-    });
-    const data = await readJson(response);
-    if (!response.ok || data.ok === false) {
-        throw new Error(errorMessage(data, data.error || data.reason || `启动 Agent 运行时失败（HTTP ${response.status}）`));
-    }
-    return data as AssistantRuntimeStatus;
 }
 
 export async function refreshResourceStatus(): Promise<ResourceStatus> {

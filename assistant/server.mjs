@@ -109,6 +109,15 @@ export function createCanvasTools(sendCanvas, threadId) {
             Type.Object({ ops: Type.Array(Type.Any()) }),
         ),
         tool("site_navigate", "打开页面", "跳转到画布、图片、视频、提示词、资产或配置页面。", Type.Object({ path: Type.String() })),
+        tool("free_workflow_list_sources", "列出工作流源", "列出 ComfyUI 工作流目录里的可导入源（rel/name/format/signature），支持 kind 与 query 过滤。G0 用。", Type.Object({ kind: Type.Optional(Type.String()), query: Type.Optional(Type.String()) })),
+        tool("free_workflow_import", "导入工作流", "按 sourceRel 幂等导入/更新自由工作流（已存在则同步复用，保留用户参数/布局/文本），可选 name 重命名。G1 用。", Type.Object({ sourceRel: Type.String(), kind: Type.Optional(Type.String()), name: Type.Optional(Type.String()) })),
+        tool("free_workflow_graph", "读取工作流图", "读取自由工作流的转换图（节点、连线、参数、文本/图片绑定），用于 G2 可达输出与披露分析。", Type.Object({ id: Type.String(), flowId: Type.Optional(Type.String()) })),
+        tool("free_workflow_health", "工作流体检", "只读体检：issues、missingNodes、missingModels、reachableOutputs；不提交 ComfyUI。G3/G4 用。", Type.Object({ id: Type.String(), flowId: Type.Optional(Type.String()) })),
+        tool("free_workflow_set_params", "写入披露参数", "写回披露参数（保留用户已有值）。params 每项含 node/input/label/type/value/options 等。", Type.Object({ id: Type.String(), params: Type.Array(Type.Any()) })),
+        tool("free_workflow_configure", "配置页名/文本/模式", "写工作流库本地配置：页名 flowNames、文本选择 textSelection（首项为主文本）、文本名 textNames、模式 mode、块 blocks/layout。", Type.Object({ id: Type.String(), flowId: Type.Optional(Type.String()), flowNames: Type.Optional(Type.Any()), textSelection: Type.Optional(Type.Array(Type.String())), primaryText: Type.Optional(Type.Any()), textNames: Type.Optional(Type.Any()), mode: Type.Optional(Type.String()), blocks: Type.Optional(Type.Array(Type.String())), layout: Type.Optional(Type.Array(Type.String())) })),
+        tool("free_workflow_sync", "同步工作流", "同步自由工作流源文件，刷新转换图/绑定/体检。", Type.Object({ id: Type.String(), force: Type.Optional(Type.Boolean()) })),
+        tool("free_workflow_rename", "重命名工作流", "重命名自由工作流条目（只改注册名）。", Type.Object({ id: Type.String(), name: Type.String() })),
+        tool("free_workflow_build_request", "干跑校验请求", "G6 干跑：按提示词/文本/尺寸/种子/参考图组装请求体并校验必填输入与可达输出，返回 {valid,errors,request}；不提交、不跑 GPU。", Type.Object({ id: Type.String(), flowId: Type.Optional(Type.String()), prompt: Type.Optional(Type.String()), texts: Type.Optional(Type.Array(Type.Any())), primaryText: Type.Optional(Type.Any()), size: Type.Optional(Type.String()), seed: Type.Optional(Type.Any()), count: Type.Optional(Type.Number()), seedFixed: Type.Optional(Type.Any()), ratio: Type.Optional(Type.String()), images: Type.Optional(Type.Array(Type.String())), enableGroups: Type.Optional(Type.Array(Type.String())) })),
     ];
 }
 

@@ -1,4 +1,4 @@
-import { Box, Download, FileText, Group, Image as ImageIcon, Layers3, Music2, Settings2, Sparkles, Video } from "lucide-react";
+import { Box, Clapperboard, Download, FileText, Group, Image as ImageIcon, Layers3, Music2, Settings2, Sparkles, Video, Workflow } from "lucide-react";
 import { message } from "antd";
 import { saveAs } from "file-saver";
 
@@ -85,6 +85,8 @@ const BUILTIN_DEFINITIONS: CanvasNodeDefinition[] = [
     { type: CanvasNodeType.Audio, title: i18n.t("assets.kinds.audio"), icon: <Music2 className={iconClass} />, minimapColor: "#a855f7", resource: builtinResource },
     { type: CanvasNodeType.Config, title: i18n.t("canvas.configNode.title"), icon: <Settings2 className={iconClass} />, minimapColor: "#60a5fa", hasSourceHandle: false },
     { type: CanvasNodeType.FreeCard, title: i18n.t("canvas.freeCard.title"), icon: <Sparkles className={iconClass} />, minimapColor: "#eab308", hasSourceHandle: false },
+    { type: CanvasNodeType.Automation, title: i18n.t("canvas.automation.title"), icon: <Workflow className={iconClass} />, minimapColor: "#22d3ee", hasSourceHandle: false },
+    { type: CanvasNodeType.Drama, title: "短剧", icon: <Clapperboard className={iconClass} />, minimapColor: "#8b5cf6", hasSourceHandle: false, hidePanel: true },
     { type: CanvasNodeType.Group, title: i18n.t("canvas.node.group"), icon: <Group className={iconClass} />, minimapColor: "#94a3b8" },
     MODEL3D_DEFINITION,
     STAGE3D_DEFINITION,

@@ -260,17 +260,17 @@
     }
   },
   "351": {
-    "class_type": "StringConcatenate",
+    "class_type": "CR Text Concatenate",
     "inputs": {
-      "string_a": [
+      "text1": [
         "353",
         0
       ],
-      "string_b": [
+      "text2": [
         "352",
         0
       ],
-      "delimiter": ""
+      "separator": ""
     },
     "_meta": {
       "title": "文本联结"

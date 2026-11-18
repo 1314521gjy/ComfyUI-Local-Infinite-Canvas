@@ -46,7 +46,6 @@ export default function AssetsPage() {
     const [isAssetOpen, setIsAssetOpen] = useState(false);
     const [previewAsset, setPreviewAsset] = useState<Asset | null>(null);
     const [deletingAsset, setDeletingAsset] = useState<Asset | null>(null);
-    const [deleteBusy, setDeleteBusy] = useState(false);
     const [formKind, setFormKind] = useState<AssetKind>("text");
     const [imageDraft, setImageDraft] = useState<ImageDraft>(null);
     const coverUrl = Form.useWatch("coverUrl", form) || "";
@@ -187,19 +186,11 @@ export default function AssetsPage() {
         }
     };
 
-    const confirmDelete = async () => {
-        if (!deletingAsset || deleteBusy) return;
-        const asset = deletingAsset;
-        setDeleteBusy(true);
-        try {
-            await removeAsset(asset.id);
-            message.success(t("assets.deleted"));
-            setDeletingAsset(null);
-        } catch (error) {
-            message.error(error instanceof Error ? error.message : t("assets.deleteFailed"));
-        } finally {
-            setDeleteBusy(false);
-        }
+    const confirmDelete = () => {
+        if (!deletingAsset) return;
+        removeAsset(deletingAsset.id);
+        message.success(t("assets.deleted"));
+        setDeletingAsset(null);
     };
 
     return (
@@ -412,19 +403,7 @@ export default function AssetsPage() {
 
             <input ref={assetInputRef} type="file" accept="application/zip,.zip" className="hidden" onChange={(event) => void importAssetZip(event.target.files?.[0])} />
 
-            <Modal
-                title={t("assets.deleteTitle")}
-                open={Boolean(deletingAsset)}
-                onCancel={() => {
-                    if (!deleteBusy) setDeletingAsset(null);
-                }}
-                onOk={() => void confirmDelete()}
-                confirmLoading={deleteBusy}
-                okText={t("common.delete")}
-                okButtonProps={{ danger: true }}
-                cancelButtonProps={{ disabled: deleteBusy }}
-                cancelText={t("common.cancel")}
-            >
+            <Modal title={t("assets.deleteTitle")} open={Boolean(deletingAsset)} onCancel={() => setDeletingAsset(null)} onOk={confirmDelete} okText={t("common.delete")} okButtonProps={{ danger: true }} cancelText={t("common.cancel")}>
                 {t("assets.deleteConfirm", { name: deletingAsset?.title })}
             </Modal>
         </div>
@@ -540,6 +519,14 @@ function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: Asset | nu
                             </Typography.Text>
                         )}
                     </div>
+                    {assetPrompt(asset) ? (
+                        <div>
+                            <Typography.Text type="secondary">{t("assets.fields.prompt")}</Typography.Text>
+                            <Typography.Paragraph className="mt-1 whitespace-pre-wrap" copyable>
+                                {assetPrompt(asset)}
+                            </Typography.Paragraph>
+                        </div>
+                    ) : null}
                     {asset.note ? (
                         <div>
                             <Typography.Text type="secondary">{t("assets.fields.note")}</Typography.Text>
@@ -581,6 +568,11 @@ function assetSummary(asset: Asset) {
     return `${asset.data.width}x${asset.data.height} · ${formatBytes(asset.data.bytes)} · ${asset.data.mimeType}`;
 }
 
+function assetPrompt(asset: Asset) {
+    const prompt = asset.metadata?.prompt;
+    return typeof prompt === "string" ? prompt.trim() : "";
+}
+
 function assetSearchText(asset: Asset) {
-    return [asset.title, asset.source || "", asset.note || "", (asset.tags || []).join(" "), asset.kind === "text" ? asset.data.content : asset.data.mimeType].join(" ").toLowerCase();
+    return [asset.title, asset.source || "", asset.note || "", assetPrompt(asset), (asset.tags || []).join(" "), asset.kind === "text" ? asset.data.content : asset.data.mimeType].join(" ").toLowerCase();
 }

@@ -1,23 +1,20 @@
 import { useEffect, useId, useMemo, useState } from "react";
-import { App } from "antd";
-import { ClipboardCopy, Cpu, HelpCircle, Layers, RefreshCw, ScanText } from "lucide-react";
+import { Cpu, Layers, ScanText } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { fetchSetupDiagnostics, modelPickerEmptyActions, pickerOpenPlan, requestGatewayRescan, resolveModelPickerEmptyKind, type ModelPickerEmptyKind } from "@/lib/local-gateway-sync";
+import { customWorkflowModelValue, useCustomWorkflowStore } from "@/stores/use-custom-workflow-store";
 import {
     baseModelOptions,
     channelModelOf,
     modelOptionLabel,
     modelOptionName,
     selectableModelsByCapability,
-    useConfigStore,
     workflowModelOptions,
     workflowModelValue,
     type AiConfig,
-    type LocalGatewaySyncStatus,
     type ModelCapability,
 } from "@/stores/use-config-store";
 
@@ -39,7 +36,6 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
     const { t } = useTranslation();
     const pickerId = useId();
     const [open, setOpen] = useState(false);
-    const localGatewaySync = useConfigStore((state) => state.localGatewaySync);
     const options = useMemo(
         () => Array.from(new Set([...(config.channelMode === "local" && !capability ? [value] : []), ...selectableModelsByCapability(config, capability), ...extraOptions.map((option) => option.value)].filter((model): model is string => Boolean(model)))),
         [capability, config, extraOptions, value],
@@ -48,9 +44,6 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
     const pickerPlaceholder = placeholder || t("settingsPanels.model.select");
     const optionLabel = (model: string) => extraOptions.find((option) => option.value === model)?.label || modelOptionLabel(config, model);
     const currentExtra = extraOptions.find((option) => option.value === current);
-    const hasLocalConfigAction = config.channelMode === "local";
-    const emptyKind = resolveModelPickerEmptyKind({ optionCount: options.length, local: hasLocalConfigAction, status: localGatewaySync });
-    const diagnosticWorkflowId = useMemo(() => channelModelOf(config, current)?.model.workflowId, [config, current]);
 
     useEffect(() => {
         const closeOtherPicker = (event: Event) => {
@@ -65,10 +58,9 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
             open={open}
             value={current}
             onOpenChange={(nextOpen) => {
-                // 空列表不再自动弹配置；只保留与其他选择器互斥的展开逻辑。
-                const plan = pickerOpenPlan(nextOpen);
-                if (plan.broadcast) window.dispatchEvent(new CustomEvent("model-picker-open", { detail: pickerId }));
-                setOpen(plan.open);
+                if (nextOpen && !options.length && config.channelMode === "local") onMissingConfig?.();
+                if (nextOpen) window.dispatchEvent(new CustomEvent("model-picker-open", { detail: pickerId }));
+                setOpen(nextOpen);
             }}
             onValueChange={onChange}
         >
@@ -112,15 +104,6 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
                             </SelectItem>
                         );
                     })
-                ) : emptyKind ? (
-                    <ModelPickerEmptyState
-                        kind={emptyKind}
-                        capability={capability}
-                        status={localGatewaySync}
-                        workflowId={diagnosticWorkflowId}
-                        onMissingConfig={onMissingConfig}
-                        onClose={() => setOpen(false)}
-                    />
                 ) : (
                     <SelectItem value="__empty__" disabled>
                         {emptyModelLabel(config, capability)}
@@ -128,161 +111,6 @@ export function ModelPicker({ config, value, onChange, capability, className, fu
                 )}
             </SelectContent>
         </Select>
-    );
-}
-
-function clipboardWrite(text: string) {
-    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-        return navigator.clipboard.writeText(text).then(
-            () => true,
-            () => fallbackClipboardWrite(text),
-        );
-    }
-    return Promise.resolve(fallbackClipboardWrite(text));
-}
-
-function fallbackClipboardWrite(text: string) {
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    textarea.style.position = "fixed";
-    textarea.style.opacity = "0";
-    document.body.appendChild(textarea);
-    textarea.select();
-    let copied = false;
-    try {
-        copied = document.execCommand("copy");
-    } catch {
-        copied = false;
-    }
-    textarea.remove();
-    return copied;
-}
-
-const stopPickerClose = (event: { preventDefault: () => void; stopPropagation: () => void }) => {
-    event.preventDefault();
-    event.stopPropagation();
-};
-
-/** 空列表的具体原因 + 显式动作；动作只做扫描/诊断，绝不触发生成或自动弹配置。 */
-function ModelPickerEmptyState({
-    kind,
-    capability,
-    status,
-    workflowId,
-    onMissingConfig,
-    onClose,
-}: {
-    kind: ModelPickerEmptyKind;
-    capability?: ModelCapability;
-    status: LocalGatewaySyncStatus;
-    workflowId?: string;
-    onMissingConfig?: () => void;
-    onClose: () => void;
-}) {
-    const { t } = useTranslation();
-    const { message, modal } = App.useApp();
-    const [busy, setBusy] = useState<"" | "rescan" | "diagnostics">("");
-    const actions = modelPickerEmptyActions({ local: true, hasMissingConfigHandler: Boolean(onMissingConfig) });
-    const label = capability ? t(`settingsPanels.model.capabilities.${capability}`) : t("settingsPanels.model.capabilities.image");
-    const text =
-        kind === "scanning"
-            ? t("settingsPanels.model.empty.scanning")
-            : kind === "offline"
-              ? t("settingsPanels.model.empty.offline")
-              : kind === "unsynced"
-                ? t("settingsPanels.model.empty.unsynced")
-                : t("settingsPanels.model.empty.noModels", { capability: label });
-
-    const rescan = async () => {
-        setBusy("rescan");
-        try {
-            await requestGatewayRescan();
-            window.dispatchEvent(new Event("local-gateway-refresh-models"));
-            message.success(t("settingsPanels.model.empty.rescanned"));
-        } catch {
-            message.error(t("settingsPanels.model.empty.rescanFailed"));
-        } finally {
-            setBusy("");
-        }
-    };
-
-    const copyDiagnostics = async () => {
-        setBusy("diagnostics");
-        try {
-            const { text: report } = await fetchSetupDiagnostics({ workflowId, sync: useConfigStore.getState().localGatewaySync });
-            let copied = false;
-            try {
-                copied = await clipboardWrite(report);
-            } catch {
-                copied = false;
-            }
-            if (copied) message.success(t("settingsPanels.model.empty.diagnosticsCopied"));
-            else {
-                modal.info({
-                    title: t("settingsPanels.model.empty.diagnosticsTitle"),
-                    width: 720,
-                    content: <pre className="max-h-[55vh] overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-xs">{report}</pre>,
-                });
-            }
-        } catch {
-            message.error(t("settingsPanels.model.empty.diagnosticsFailed"));
-        } finally {
-            setBusy("");
-        }
-    };
-
-    return (
-        <div
-            className="flex flex-col gap-1.5 px-2 py-1.5 text-xs text-muted-foreground"
-            title={status.stale ? t("settingsPanels.model.empty.stale") : undefined}
-            onPointerDown={stopPickerClose}
-            onMouseDown={stopPickerClose}
-        >
-            <span className="leading-snug">{text}</span>
-            <div className="flex flex-wrap items-center gap-1">
-                {actions.includes("rescan") ? (
-                    <button
-                        type="button"
-                        disabled={busy !== ""}
-                        className="inline-flex items-center gap-1 rounded-md border border-border/70 px-2 py-1 text-xs text-foreground transition-colors hover:bg-accent disabled:opacity-50"
-                        onPointerDown={stopPickerClose}
-                        onMouseDown={stopPickerClose}
-                        onClick={() => void rescan()}
-                    >
-                        <RefreshCw className="size-3" />
-                        {busy === "rescan" ? t("settingsPanels.model.empty.rescanning") : t("settingsPanels.model.empty.rescan")}
-                    </button>
-                ) : null}
-                {actions.includes("reason") && onMissingConfig ? (
-                    <button
-                        type="button"
-                        className="inline-flex items-center gap-1 rounded-md border border-border/70 px-2 py-1 text-xs text-foreground transition-colors hover:bg-accent"
-                        onPointerDown={stopPickerClose}
-                        onMouseDown={stopPickerClose}
-                        onClick={() => {
-                            onMissingConfig();
-                            onClose();
-                        }}
-                    >
-                        <HelpCircle className="size-3" />
-                        {t("settingsPanels.model.empty.reason")}
-                    </button>
-                ) : null}
-                {actions.includes("diagnostics") ? (
-                    <button
-                        type="button"
-                        disabled={busy !== ""}
-                        className="inline-flex items-center gap-1 rounded-md border border-border/70 px-2 py-1 text-xs text-foreground transition-colors hover:bg-accent disabled:opacity-50"
-                        onPointerDown={stopPickerClose}
-                        onMouseDown={stopPickerClose}
-                        onClick={() => void copyDiagnostics()}
-                    >
-                        <ClipboardCopy className="size-3" />
-                        {busy === "diagnostics" ? t("settingsPanels.model.empty.copying") : t("settingsPanels.model.empty.diagnostics")}
-                    </button>
-                ) : null}
-            </div>
-        </div>
     );
 }
 
@@ -317,7 +145,7 @@ function resolveModelIcon(model: string) {
     return "";
 }
 
-type LevelOption = { value: string; label: string; title?: string };
+type LevelOption = { value: string; label: string; title?: string; highlight?: "custom" };
 
 type LevelPickerProps = {
     config: AiConfig;
@@ -331,30 +159,20 @@ type LevelPickerProps = {
 
 /** 一级下拉：只选工作流；变体归到其所属工作流下。 */
 export function WorkflowModelPicker({ config, value, onChange, capability, className, fullWidth = false, placeholder, onMissingConfig }: LevelPickerProps & { capability?: ModelCapability }) {
-    const options = useMemo<LevelOption[]>(
-        () =>
-            workflowModelOptions(config, capability)
-                .filter((model) => channelModelOf(config, model)?.model.workflowId !== "video-h3-fast")
-                .map((model) => ({ value: model, label: modelOptionLabel(config, model) })),
-        [config, capability],
-    );
+    const customWorkflows = useCustomWorkflowStore((state) => state.workflows);
+    const options = useMemo<LevelOption[]>(() => {
+        const custom = customWorkflows
+            .filter((workflow) => !workflow.snapshot)
+            .filter((workflow) => workflow.outputType === (capability || "image") || customWorkflowModelValue(workflow.id) === value)
+            .filter((workflow) => workflow.enabled !== false || customWorkflowModelValue(workflow.id) === value)
+            .map((workflow) => ({ value: customWorkflowModelValue(workflow.id), label: workflow.enabled === false ? `${workflow.name}（已停用）` : workflow.name, highlight: "custom" as const }));
+        const builtIn = workflowModelOptions(config, capability)
+            .filter((model) => channelModelOf(config, model)?.model.workflowId !== "video-h3-fast")
+            .map((model) => ({ value: model, label: modelOptionLabel(config, model) }));
+        return [...custom, ...builtIn];
+    }, [config, capability, customWorkflows, value]);
     const selected = useMemo(() => workflowModelValue(config, value) || value, [config, value]);
-    const diagnosticWorkflowId = useMemo(() => channelModelOf(config, value)?.model.workflowId, [config, value]);
-    return (
-        <LevelSelect
-            value={selected}
-            options={options}
-            onChange={onChange}
-            className={className}
-            fullWidth={fullWidth}
-            placeholder={placeholder || i18n.t("settingsPanels.model.select")}
-            onMissingConfig={onMissingConfig}
-            icon="workflow"
-            width="w-72"
-            capability={capability}
-            diagnosticWorkflowId={diagnosticWorkflowId}
-        />
-    );
+    return <LevelSelect value={selected} options={options} onChange={onChange} className={className} fullWidth={fullWidth} placeholder={placeholder || i18n.t("settingsPanels.model.select")} onMissingConfig={onMissingConfig} icon="workflow" width="w-72" />;
 }
 
 /** 二级下拉：同一工作流内切换默认底模 / 底模变体。 */
@@ -383,8 +201,6 @@ function LevelSelect({
     onMissingConfig,
     icon,
     width,
-    capability,
-    diagnosticWorkflowId,
 }: {
     value: string;
     options: LevelOption[];
@@ -395,17 +211,12 @@ function LevelSelect({
     onMissingConfig?: () => void;
     icon: "workflow" | "base";
     width: string;
-    capability?: ModelCapability;
-    diagnosticWorkflowId?: string;
 }) {
     const pickerId = useId();
     const [open, setOpen] = useState(false);
-    const localGatewaySync = useConfigStore((state) => state.localGatewaySync);
-    const channelMode = useConfigStore((state) => state.config.channelMode);
     const current = options.find((option) => option.value === value);
     const label = current?.label || placeholder;
-    const local = channelMode === "local";
-    const emptyKind = resolveModelPickerEmptyKind({ optionCount: options.length, local, status: localGatewaySync });
+    const customSelected = current?.highlight === "custom";
 
     useEffect(() => {
         const closeOtherPicker = (event: Event) => {
@@ -420,10 +231,9 @@ function LevelSelect({
             open={open}
             value={value}
             onOpenChange={(nextOpen) => {
-                // 空列表不再自动弹配置；只保留与其他选择器互斥的展开逻辑。
-                const plan = pickerOpenPlan(nextOpen);
-                if (plan.broadcast) window.dispatchEvent(new CustomEvent("model-picker-open", { detail: pickerId }));
-                setOpen(plan.open);
+                if (nextOpen && !options.length && onMissingConfig) onMissingConfig();
+                if (nextOpen) window.dispatchEvent(new CustomEvent("model-picker-open", { detail: pickerId }));
+                setOpen(nextOpen);
             }}
             onValueChange={onChange}
         >
@@ -439,7 +249,7 @@ function LevelSelect({
                 title={label}
             >
                 {icon === "workflow" ? <Cpu className="size-3.5 shrink-0 opacity-70" /> : <Layers className="size-3.5 shrink-0 opacity-70" />}
-                <span className="canvas-model-picker-text min-w-0 flex-1 truncate text-left">{label}</span>
+                <span className={cn("canvas-model-picker-text min-w-0 flex-1 truncate text-left", customSelected && "font-medium text-[#2563eb] dark:text-[#8ab4f8]")}>{label}</span>
             </SelectTrigger>
             <SelectContent
                 data-canvas-no-zoom
@@ -456,19 +266,10 @@ function LevelSelect({
                         <SelectItem key={option.value} value={option.value} textValue={option.label}>
                             <span className="flex min-w-0 items-center gap-2" title={option.title}>
                                 {icon === "workflow" ? <Cpu className="size-3.5 shrink-0 opacity-70" /> : <Layers className="size-3.5 shrink-0 opacity-70" />}
-                                <span className="truncate">{option.label}</span>
+                                <span className={cn("truncate", option.highlight === "custom" && "font-medium text-[#2563eb] dark:text-[#8ab4f8]")}>{option.label}</span>
                             </span>
                         </SelectItem>
                     ))
-                ) : emptyKind ? (
-                    <ModelPickerEmptyState
-                        kind={emptyKind}
-                        capability={capability}
-                        status={localGatewaySync}
-                        workflowId={diagnosticWorkflowId}
-                        onMissingConfig={onMissingConfig}
-                        onClose={() => setOpen(false)}
-                    />
                 ) : (
                     <SelectItem value="__empty__" disabled>
                         {placeholder}

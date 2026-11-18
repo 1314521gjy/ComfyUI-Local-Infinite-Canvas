@@ -2,6 +2,7 @@ import { nanoid } from "nanoid";
 
 import i18n from "@/i18n";
 import { getNodeSpec, isRegisteredNodeType } from "@/lib/canvas/node-registry";
+import { recallNodeSettings, rememberNodeSettings } from "@/lib/canvas/node-settings-memory";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData, type CanvasNodeMetadata, type CanvasNodeTypeId, type ViewportTransform } from "@/types/canvas";
 
 export type CanvasAgentOp =
@@ -45,6 +46,7 @@ export function applyCanvasAgentOps(snapshot: CanvasAgentSnapshot, ops?: CanvasA
         if (op.type === "add_node") {
             const nodeType = op.nodeType && isRegisteredNodeType(op.nodeType) ? op.nodeType : CanvasNodeType.Text;
             const spec = getNodeSpec(nodeType);
+            const metadata = { ...spec.metadata, ...(recallNodeSettings(nodeType, op.metadata) || {}), ...op.metadata };
             const node: CanvasNodeData = {
                 id: op.id || `${nodeType}-${Date.now()}-${index}`,
                 type: nodeType,
@@ -52,8 +54,9 @@ export function applyCanvasAgentOps(snapshot: CanvasAgentSnapshot, ops?: CanvasA
                 position: op.position || { x: op.x ?? index * 36, y: op.y ?? index * 36 },
                 width: op.width || spec.width,
                 height: op.height || spec.height,
-                metadata: { ...spec.metadata, ...op.metadata },
+                metadata,
             };
+            rememberNodeSettings(nodeType, metadata);
             nodes = [...nodes, node];
             selectedNodeIds = [node.id];
         }

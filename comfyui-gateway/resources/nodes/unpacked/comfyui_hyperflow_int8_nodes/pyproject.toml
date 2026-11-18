@@ -1,0 +1,20 @@
+[project]
+name = "comfyui-hyperflow-int8-nodes"
+version = "0.1.3"
+description = "Unofficial: run HyperFlow H3 Flash's own INT8 (convrot) checkpoints, fl2va and ref2va, on ComfyUI's native INT8 kernels. Needs the official ComfyUI-HyperFlow-Flash pack."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+# Runtime needs nothing beyond ComfyUI and the official ComfyUI-HyperFlow-Flash pack (whose model_patch.py is imported).
+# gguf is that pack's own dependency, listed so its import succeeds even if its requirements were skipped.
+dependencies = ["gguf"]
+
+[project.urls]
+Repository = "https://github.com/BennyDaBall930/comfyui_hyperflow_int8_nodes"
+Weights = "https://huggingface.co/BennyDaBall/HyperFlow-H3-Flash-INT8-ComfyUI"
+"Official HyperFlow pack" = "https://github.com/Video-Rebirth/ComfyUI-HyperFlow-Flash"
+
+[tool.comfy]
+PublisherId = "bennydaball"
+DisplayName = "HyperFlow INT8 Nodes"
+Icon = ""

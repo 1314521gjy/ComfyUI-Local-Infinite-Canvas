@@ -41,6 +41,11 @@ type CanvasStore = {
 
 const initialViewport: ViewportTransform = { x: 0, y: 0, k: 1 };
 const CANVAS_STORE_KEY = "infinite-canvas:canvas_store";
+
+function migrateProjectTitle(title: string) {
+    const value = String(title || "");
+    return /^(无限|无线)画布(?=\s|$)/.test(value) ? value.replace(/^(无限|无线)画布/, "无界画布") : value;
+}
 type PersistedCanvasState = Pick<CanvasStore, "projects" | "deletedProjects">;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let queuedPersistState: PersistedCanvasState | null = null;
@@ -50,6 +55,9 @@ const canvasStorage: PersistStorage<CanvasStore> = {
         const value = await localForageStorage.getItem(name);
         if (!value) return null;
         const parsed = JSON.parse(value) as StorageValue<CanvasStore>;
+        if (Array.isArray(parsed.state?.projects)) {
+            parsed.state.projects = parsed.state.projects.map((project) => ({ ...project, title: migrateProjectTitle(project.title) }));
+        }
         queuedPersistState = parsed.state as PersistedCanvasState;
         return parsed;
     },
@@ -95,7 +103,7 @@ export const useCanvasStore = create<CanvasStore>()(
                 const now = new Date().toISOString();
                 const project: CanvasProject = {
                     id: nanoid(),
-                    title: source.title || i18n.t("canvas.project.imported"),
+                    title: migrateProjectTitle(source.title || i18n.t("canvas.project.imported")),
                     createdAt: source.createdAt || now,
                     updatedAt: now,
                     nodes: source.nodes || [],

@@ -212,7 +212,8 @@ export function createRegistry({ dir, maxWorkflowBytes = 5 * 1024 * 1024, logger
       parts.push("registry:missing");
     }
     for (const entry of entries) {
-      const files = [entry.file, ...Object.values(entry.variants || {}).map((variant) => variant?.file)].filter(Boolean);
+      const tierFiles = Object.values(entry.tiers || {}).flatMap((tier) => Object.values(tier?.files || {}));
+      const files = [entry.file, ...Object.values(entry.variants || {}).map((variant) => variant?.file), ...tierFiles].filter(Boolean);
       for (const file of files) {
         const filePath = path.isAbsolute(file) ? file : path.join(dir, file);
         try {
@@ -264,7 +265,26 @@ export function createRegistry({ dir, maxWorkflowBytes = 5 * 1024 * 1024, logger
               logger?.warn?.(`跳过无效变体 ${mode}: ${variant.file}`);
               continue;
             }
-            entry.variants[mode] = { ...variant, workflow: variantWorkflow, bindings: variant.bindings || entry.bindings, defaults: variant.defaults || entry.defaults };
+            entry.variants[mode] = { ...variant, filePath: variantPath, workflow: variantWorkflow, bindings: variant.bindings || entry.bindings, defaults: variant.defaults || entry.defaults };
+          }
+        }
+        if (raw.tiers && typeof raw.tiers === "object") {
+          entry.tiers = {};
+          for (const [tierId, tier] of Object.entries(raw.tiers)) {
+            if (!tier || typeof tier !== "object") continue;
+            const loadedTier = { ...tier, workflows: {} };
+            for (const [precision, file] of Object.entries(tier.files || {})) {
+              if (!file) continue;
+              const tierPath = path.isAbsolute(file) ? file : path.join(dir, file);
+              try {
+                const tierWorkflow = await readJsonFile(tierPath, maxWorkflowBytes);
+                if (!isApiWorkflow(tierWorkflow)) throw new Error("不是 API 格式工作流");
+                loadedTier.workflows[precision] = { file, filePath: tierPath, workflow: tierWorkflow, bindings: tier.bindings || entry.bindings, defaults: tier.defaults || entry.defaults };
+              } catch (error) {
+                logger?.warn?.(`加载 MOSS 档位失败 ${tierId}/${precision}: ${file}（${error.message}）`);
+              }
+            }
+            entry.tiers[tierId] = loadedTier;
           }
         }
         nextCache.set(id, entry);
@@ -321,10 +341,20 @@ export function createRegistry({ dir, maxWorkflowBytes = 5 * 1024 * 1024, logger
       defaults: entry.defaults || {},
       presets: entry.presets || {},
       parameters: Array.isArray(entry.parameters) ? entry.parameters : [],
+      resolutionTiers: entry.resolutionTiers || null,
+      defaultTier: entry.defaultTier || null,
       baseModels: entry.baseModels || null,
       lora: entry.lora || null,
       variantModes: entry.variants ? Object.keys(entry.variants) : [],
       variantLabels: entry.variantLabels || {},
+      tiers: entry.tiers
+        ? Object.fromEntries(
+            Object.entries(entry.tiers).map(([tierId, tier]) => [
+              tierId,
+              { label: tier.label || tierId, steps: tier.steps ?? null, files: tier.files || {}, requires: tier.requires || null, unavailableReason: tier.unavailableReason || null },
+            ]),
+          )
+        : null,
       importedAt: entry.importedAt,
       source: entry.source,
     };
@@ -584,11 +614,24 @@ export function createRegistry({ dir, maxWorkflowBytes = 5 * 1024 * 1024, logger
     );
     const files = (await fsp.readdir(dir)).filter((file) => file.toLowerCase().endsWith(".json") && file !== REGISTRY_FILE && !usedFiles.has(file));
     const summary = { added: [], skipped: [], failed: [] };
+    // 内容与已登记工作流相同的未登记文件不再导入；否则会和按内容去重的清理互相抵消，每轮扫描都改写 registry.json。
+    const knownContent = new Set([...cache.values()].map((entry) => JSON.stringify(entry.workflow)));
     for (const file of files) {
       const absolute = path.resolve(dir, file);
       if (usedSources.has(absolute)) continue;
+      let contentKey = null;
+      try {
+        contentKey = JSON.stringify(JSON.parse((await fsp.readFile(absolute, "utf8")).replace(/^\uFEFF/, "")));
+      } catch {
+        contentKey = null;
+      }
+      if (contentKey && knownContent.has(contentKey)) {
+        summary.skipped.push({ file, reason: "内容与已登记工作流相同" });
+        continue;
+      }
       try {
         const result = await importWorkflow({ path: absolute, overwrite: false });
+        if (contentKey) knownContent.add(contentKey);
         summary.added.push(result.workflow.name);
       } catch (error) {
         if (error instanceof RegistryError && error.code === "ui_workflow_not_supported") summary.skipped.push({ file, reason: error.message });

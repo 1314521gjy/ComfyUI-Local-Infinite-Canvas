@@ -58,3 +58,4 @@ comfyui-gateway/workflows/h3-fast-draft.json
 # python bytecode
 __pycache__/
 *.pyc
+infinite-canvas/web/dist/config.js

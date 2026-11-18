@@ -2,14 +2,14 @@ import axios from "axios";
 
 import i18n from "@/i18n";
 import { LOCAL_GATEWAY_BASE_URL, isLocalGatewayUrl } from "@/constant/app-mode";
-import { buildApiUrl, channelModelOf, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
+import { buildApiUrl, channelModelOf, resolveModelRequestConfig, resolveModelScript, useConfigStore, withLocalProxy, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
 import { normalizePluginImages, runModelPlugin } from "./model-plugin";
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
 import { imageToDataUrl } from "@/services/image-storage";
-import { imageSizePresets, inferMediaScale } from "@/lib/media-size";
-import { publishStepProgress } from "@/services/api/step-progress";
+import { imageSizePresets, inferMediaScale, parseAspectRatio, parsePixelSize, sizeForPixelBudget } from "@/lib/media-size";
+import { publishStepProgress, type GenerationStepProgress } from "@/services/api/step-progress";
 import { noteGatewayError } from "@/services/api/gateway-status";
 import type { ReferenceImage } from "@/types/image";
 
@@ -106,7 +106,7 @@ type GeminiPayload = {
     promptFeedback?: { blockReason?: string };
 };
 type GeminiStreamState = { buffer: string; text: string; toolCalls: ResponseToolCall[]; error?: string };
-type RequestOptions = { signal?: AbortSignal; params?: Record<string, unknown> };
+type RequestOptions = { signal?: AbortSignal; params?: Record<string, unknown>; negative?: string; onProgress?: (progress: GenerationStepProgress) => void };
 
 const IMAGE_QUALITY_VALUES = ["low", "medium", "high", "xhigh", "max"];
 const DEFAULT_IMAGE_SHORT_SIDE = 1024;
@@ -145,29 +145,66 @@ export function attachLocalCancel(config: AiConfig, requestId: string, signal?: 
     return () => signal.removeEventListener("abort", onAbort);
 }
 
-// 网关只能在本请求被 ComfyUI 接收后才知道 prompt_id，所以按 requestId 轮询步骤。
-export function attachLocalProgress(config: AiConfig, requestId: string, signal?: AbortSignal) {
+// 进度与预览改用网关 SSE 推送（每步/每帧一次），不再定时轮询。
+type LocalProgressEntry = { root: string; signal: AbortSignal; onProgress?: (progress: GenerationStepProgress) => void; previewEnabled: boolean };
+const localProgressEntries = new Map<string, LocalProgressEntry>();
+let localProgressSource: EventSource | null = null;
+let localProgressKey = "";
+let localProgressSyncTimer = 0;
+
+function dispatchLocalProgress(requestId: string, item: { step?: number; total?: number; preview_url?: string; preview_mime?: string } | undefined) {
+    const entry = localProgressEntries.get(requestId);
+    if (!entry || !item) return;
+    const total = Math.floor(Number(item.total) || 0);
+    const step = Math.floor(Number(item.step) || 0);
+    const previewPath = entry.previewEnabled ? item.preview_url : undefined;
+    const previewUrl = previewPath ? `${entry.root}${previewPath.startsWith("/") ? "" : "/"}${previewPath}` : undefined;
+    if (total > 0 || previewUrl) {
+        const progress = { step: Math.min(total, Math.max(0, step)), total, requestId, previewUrl, previewMime: item.preview_mime };
+        publishStepProgress(entry.signal, progress);
+        entry.onProgress?.(progress);
+    }
+}
+
+function syncLocalProgressSource() {
+    const ids = [...localProgressEntries.keys()].sort();
+    const root = localProgressEntries.get(ids[0])?.root || "";
+    const key = `${root}|${ids.join(",")}`;
+    if (!root || !ids.length) {
+        localProgressSource?.close();
+        localProgressSource = null;
+        localProgressKey = "";
+        return;
+    }
+    if (localProgressSource && key === localProgressKey) return;
+    localProgressSource?.close();
+    localProgressKey = key;
+    const source = new EventSource(`${root}/api/progress/stream?ids=${encodeURIComponent(ids.join(","))}`);
+    source.onmessage = (event) => {
+        try {
+            const payload = JSON.parse(event.data);
+            for (const [requestId, item] of Object.entries(payload || {})) dispatchLocalProgress(requestId, item as { step?: number; total?: number; preview_url?: string; preview_mime?: string });
+        } catch {
+            // Ignore malformed frames.
+        }
+    };
+    localProgressSource = source;
+}
+
+function scheduleLocalProgressSync() {
+    window.clearTimeout(localProgressSyncTimer);
+    localProgressSyncTimer = window.setTimeout(syncLocalProgressSource, 120);
+}
+
+export function attachLocalProgress(config: AiConfig, requestId: string, signal?: AbortSignal, onProgress?: (progress: GenerationStepProgress) => void) {
     const root = localGatewayRoot(config.baseUrl);
     if (!root || !signal) return null;
-    let stopped = false;
-    let timer = 0;
-    const tick = async () => {
-        if (stopped) return;
-        try {
-            const response = await axios.get<{ step?: number; total?: number }>(`${root}/api/progress/${encodeURIComponent(requestId)}`, { timeout: 3000 });
-            if (stopped) return;
-            const total = Math.floor(Number(response.data?.total) || 0);
-            const step = Math.floor(Number(response.data?.step) || 0);
-            if (total > 0) publishStepProgress(signal, { step: Math.min(total, Math.max(0, step)), total, requestId });
-        } catch {
-            // Progress is best-effort and must never fail the generation itself.
-        }
-        if (!stopped) timer = window.setTimeout(tick, 1000);
-    };
-    void tick();
+    const previewEnabled = useConfigStore.getState().config.imagePreviewEnabled !== false;
+    localProgressEntries.set(requestId, { root, signal, onProgress, previewEnabled });
+    scheduleLocalProgressSync();
     return () => {
-        stopped = true;
-        window.clearTimeout(timer);
+        localProgressEntries.delete(requestId);
+        scheduleLocalProgressSync();
     };
 }
 
@@ -219,13 +256,17 @@ function parseImageDimensions(value: string) {
     return { width: Number(match[1]), height: Number(match[2]) };
 }
 
-function validateImageSize(width: number, height: number) {
+function imageSizeLimits(model?: { workflowId?: string }) {
+    return model?.workflowId === "image-h3image" ? { maxPixels: 16777216, maxEdge: 8192 } : undefined;
+}
+
+function validateImageSize(width: number, height: number, limits?: { maxPixels?: number; maxEdge?: number }) {
     if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) throw new Error(apiText("positiveImageDimensions"));
     if (width % IMAGE_SIZE_STEP !== 0 || height % IMAGE_SIZE_STEP !== 0) throw new Error(apiText("imageDimensionStep"));
-    if (Math.max(width, height) > IMAGE_MAX_EDGE) throw new Error(apiText("imageEdgeLimit"));
+    if (Math.max(width, height) > (limits?.maxEdge ?? IMAGE_MAX_EDGE)) throw new Error(apiText("imageEdgeLimit"));
     if (Math.max(width, height) / Math.min(width, height) > IMAGE_MAX_RATIO) throw new Error(apiText("imageRatioLimit"));
     const pixels = width * height;
-    if (pixels < IMAGE_MIN_PIXELS || pixels > IMAGE_MAX_PIXELS) throw new Error(apiText("imagePixelLimit"));
+    if (pixels < IMAGE_MIN_PIXELS || pixels > (limits?.maxPixels ?? IMAGE_MAX_PIXELS)) throw new Error(apiText("imagePixelLimit"));
 }
 
 function alignImageDimensions(width: number, height: number) {
@@ -235,13 +276,36 @@ function alignImageDimensions(width: number, height: number) {
     };
 }
 
-function resolveRequestSize(size: string) {
+/**
+ * 声明了分辨率档位的工作流（如 MiniMax H3 图像）按档位出图：卡上存的旧尺寸可能超出画布上限
+ * 或不是 32 的倍数，这里按当前比例重算到最近的档位，避免请求直接被尺寸校验挡下。
+ */
+function tierBudgetSize(config: AiConfig, model?: { workflowId?: string; resolutionTiers?: Array<{ label?: string; pixels?: number }>; defaultTier?: string }) {
+    const tiers = model?.resolutionTiers || [];
+    if (tiers.length < 1) return "";
+    const value = String(config.size || "").trim();
+    if (!value || value.toLowerCase() === "auto") return "";
+    const pixels = parsePixelSize(value);
+    const ratio = parseAspectRatio(value);
+    const parts = pixels || ratio || { width: 1, height: 1 };
+    // H3-Image 多图编辑在 16MP 会把皮肤纹理放大成坑洞，默认回到官方 4MP 起；文生图仍用 16MP。
+    const defaultTier = model?.workflowId === "image-h3image" && config.imageMode === "edit" ? "4MP" : model?.defaultTier;
+    if (!pixels && defaultTier) {
+        const preferred = tiers.find((item) => item.label === defaultTier);
+        if (preferred) return sizeForPixelBudget(preferred.pixels || 0, `${parts.width}:${parts.height}`, 4194304, imageSizeLimits(model));
+    }
+    const area = parts.width * parts.height;
+    const tier = tiers.reduce((best, item) => (Math.abs((item.pixels || 0) - area) < Math.abs((best.pixels || 0) - area) ? item : best), tiers[0]);
+    return sizeForPixelBudget(tier.pixels || 0, `${parts.width}:${parts.height}`, 4194304, imageSizeLimits(model));
+}
+
+function resolveRequestSize(size: string, limits?: { maxPixels?: number; maxEdge?: number }) {
     const value = size.trim();
     if (!value || value.toLowerCase() === "auto") return undefined;
     const dimensions = parseImageDimensions(value);
     if (dimensions) {
         const aligned = alignImageDimensions(dimensions.width, dimensions.height);
-        validateImageSize(aligned.width, aligned.height);
+        validateImageSize(aligned.width, aligned.height, limits);
         return `${aligned.width}x${aligned.height}`;
     }
     if (value.includes(":")) return resolveSize(value);
@@ -768,7 +832,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
     const script = resolveModelScript(config, config.model || config.imageModel);
     if (script) {
         const quality = normalizeQuality(config.quality);
-        const requestSize = resolveRequestSize(config.size);
+        const requestSize = resolveRequestSize(tierBudgetSize(config, channelModelOf(config, requestConfig.model)?.model) || config.size, imageSizeLimits(channelModelOf(config, requestConfig.model)?.model));
         const background = normalizeBackground(config.background);
         try {
             const result = await runModelPlugin({
@@ -777,7 +841,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
                 config: requestConfig,
                 prompt: withSystemPrompt(requestConfig, prompt),
                 images: [],
-                params: { size: requestSize, resolution: inferMediaScale(config.size), quality, count: n, ...(background ? { background } : {}) },
+                params: { size: requestSize, resolution: inferMediaScale(config.size), quality, count: n, ...(background ? { background } : {}), ...(options?.params ?? config.params ?? {}) },
                 signal: options?.signal,
             });
             return normalizePluginImages(result).map((dataUrl) => ({ id: nanoid(), dataUrl }));
@@ -792,17 +856,22 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
             throw new Error(readAxiosError(error, apiText("requestFailed")));
         }
     }
-    const requestSize = resolveRequestSize(config.size);
+    const requestSize = resolveRequestSize(tierBudgetSize(config, channelModelOf(config, requestConfig.model)?.model) || config.size, imageSizeLimits(channelModelOf(config, requestConfig.model)?.model));
     const background = normalizeBackground(config.background);
-    const imageMode = config.imageMode || (channelModelOf(config, requestConfig.model)?.model?.workflowId === "image-qwen21" ? "t2i" : "");
+    const modelMeta = channelModelOf(config, requestConfig.model)?.model;
+    // 与设置面板的显示口径一致：卡片未写入 imageMode 时按默认变体发请求，否则网关会回落到根链路（Qwen 根链路是编辑图，要求参考图）。
+    const imageMode = config.imageMode || modelMeta?.defaultMode || (modelMeta?.variantModes?.length ? modelMeta.variantModes[0] : "");
     const requestParams = { ...(options?.params ?? requestConfig.params ?? {}) };
     if (imageMode === "layout" && config.layout) {
         requestParams.layout = config.layout;
         requestParams.layoutEnabled = true;
     }
+    const zimageTransition = Number(requestParams.zimageAccelT);
+    if (modelMeta?.workflowId === "image-z-image-turbo" && (zimageTransition === 6 || zimageTransition === 7)) requestParams.zimageAccelT = 5;
     const requestId = `img_${nanoid()}`;
     const detachCancel = attachLocalCancel(requestConfig, requestId, options?.signal);
-    const detachProgress = attachLocalProgress(requestConfig, requestId, options?.signal);
+    const detachProgress = attachLocalProgress(requestConfig, requestId, options?.signal, options?.onProgress);
+    if (useConfigStore.getState().config.imagePreviewEnabled === false) requestParams.preview = false;
     try {
         const response = await axios.post<ImageApiResponse>(
             aiApiUrl(requestConfig, "/images/generations"),
@@ -810,6 +879,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
                 model: requestConfig.model,
                 prompt: withSystemPrompt(requestConfig, prompt),
                 n,
+                ...(options?.negative ? { negative: options.negative } : {}),
                 ...(requestSize ? { size: requestSize } : {}),
                 ...(background ? { background } : {}),
                 ...(imageMode ? { mode: imageMode } : {}),
@@ -841,7 +911,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     const script = resolveModelScript(config, config.model || config.imageModel);
     if (script) {
         const quality = normalizeQuality(config.quality);
-        const requestSize = resolveRequestSize(config.size);
+        const requestSize = resolveRequestSize(tierBudgetSize(config, channelModelOf(config, requestConfig.model)?.model) || config.size, imageSizeLimits(channelModelOf(config, requestConfig.model)?.model));
         const background = normalizeBackground(config.background);
         const refs = await Promise.all(references.map((image) => imageToDataUrl(image)));
         try {
@@ -851,7 +921,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
                 config: requestConfig,
                 prompt: withSystemPrompt(requestConfig, requestPrompt),
                 images: refs,
-                params: { size: requestSize, resolution: inferMediaScale(config.size), quality, count: n, ...(background ? { background } : {}) },
+                params: { size: requestSize, resolution: inferMediaScale(config.size), quality, count: n, ...(background ? { background } : {}), ...(options?.params ?? config.params ?? {}) },
                 signal: options?.signal,
             });
             return normalizePluginImages(result).map((dataUrl) => ({ id: nanoid(), dataUrl }));
@@ -867,7 +937,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         }
     }
 
-    const requestSize = resolveRequestSize(config.size);
+    const requestSize = resolveRequestSize(tierBudgetSize(config, channelModelOf(config, requestConfig.model)?.model) || config.size, imageSizeLimits(channelModelOf(config, requestConfig.model)?.model));
     const background = normalizeBackground(config.background);
     const formData = new FormData();
     formData.set("model", requestConfig.model);
@@ -890,13 +960,15 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     if (config.imageMode === "outpaint" && config.outpaint) {
         const { left, top, right, bottom, width, height } = config.outpaint;
         // ComfyUI's ImageScaleToTotalPixels counts 1 MP as 1024², not 1e6.
-        const megapixels = Math.min(4, Math.max(0.1, (width * height) / (1024 * 1024)));
+        const megapixels = Math.min(16, Math.max(0.1, (width * height) / (1024 * 1024)));
         Object.assign(requestParams, { left, top, right, bottom, megapixels, outpaintWidth: width, outpaintHeight: height });
     }
     if (config.imageMode === "layout" && config.layout) {
         requestParams.layout = config.layout;
         requestParams.layoutEnabled = true;
     }
+    const zimageTransition = Number(requestParams.zimageAccelT);
+    if (channelModelOf(config, requestConfig.model)?.model?.workflowId === "image-z-image-turbo" && (zimageTransition === 6 || zimageTransition === 7)) requestParams.zimageAccelT = 5;
     if (Object.keys(requestParams).length) {
         formData.set("params", JSON.stringify(requestParams));
     }
@@ -923,7 +995,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     }
 }
 
-export type PromptOptimizeMode = "全参考模式(Reference to Video)" | "文生视频(T2VA)" | "首帧图生视频(I2VA)" | "首尾帧视频(FL2VA)" | "尾帧图生视频(L2VA)";
+export type PromptOptimizeMode = "全参考模式(Reference to Video)" | "文生视频(T2VA)" | "首帧图生视频(I2VA)" | "首尾帧视频(FL2VA)" | "尾帧图生视频(L2VA)" | "Viggle";
 
 export type ImageAngleParams = {
     horizontalAngle: number;
@@ -1125,7 +1197,7 @@ export type PromptOptimizeResult = { prompt: string; mode: string; duration: num
 
 export async function requestPromptOptimize(
     config: AiConfig,
-    params: { prompt: string; mode: PromptOptimizeMode; duration?: number; referenceNote?: string; language?: "zh" | "en"; images?: ReferenceImage[]; engine?: "local" | "cloud"; cloud?: { baseUrl?: string; apiKey?: string; model?: string } },
+    params: { prompt: string; mode: PromptOptimizeMode; duration?: number; referenceNote?: string; language?: "zh" | "en"; images?: ReferenceImage[]; engine?: "local" | "cloud"; cloud?: { baseUrl?: string; apiKey?: string; model?: string }; viggleMode?: "swap" | "edit" },
     options?: RequestOptions,
 ): Promise<PromptOptimizeResult> {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.videoModel);
@@ -1135,6 +1207,7 @@ export async function requestPromptOptimize(
     formData.set("prompt", params.prompt);
     formData.set("mode", params.mode);
     formData.set("duration", String(params.duration || 5));
+    if (params.viggleMode) formData.set("viggleMode", params.viggleMode);
     if (params.referenceNote) formData.set("referenceNote", params.referenceNote);
     if (params.language) formData.set("language", params.language);
     if (params.engine) formData.set("engine", params.engine);

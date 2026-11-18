@@ -24,19 +24,26 @@ export const imageScaleOptions = mediaScaleOptions.map((value) => ({ value, labe
 type ImageSettingsPanelProps = {
     config: AiConfig;
     onConfigChange: (key: "quality" | "size" | "count" | "background" | "seedFixed" | "seed", value: string) => void;
+    params?: Record<string, unknown>;
+    onParamsChange?: (params: Record<string, unknown>) => void;
     theme: CanvasTheme;
     showTitle?: boolean;
     showSize?: boolean;
+    showResolution?: boolean;
+    showRatio?: boolean;
     showTransparent?: boolean;
     showCount?: boolean;
     showSeed?: boolean;
     className?: string;
     maxCount?: number;
     quickCount?: number;
+    headerAction?: ReactNode;
 };
 
-export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = true, showSize = true, showTransparent = true, showCount = true, showSeed = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", maxCount = 15, quickCount = 10 }: ImageSettingsPanelProps) {
+export function ImageSettingsPanel({ config, onConfigChange, params, onParamsChange, theme, showTitle = true, showSize = true, showResolution, showRatio, showTransparent = true, showCount = true, showSeed = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5", maxCount = 15, quickCount = 10, headerAction }: ImageSettingsPanelProps) {
     const { t } = useTranslation();
+    const includeResolution = showResolution ?? showSize;
+    const includeRatio = showRatio ?? showSize;
     const [snapDimensionToStep, setSnapDimensionToStep] = useState(true);
     const count = Math.max(1, Math.min(maxCount, Math.floor(Math.abs(Number(config.count)) || 1)));
     const activeSize = config.size || "auto";
@@ -65,9 +72,13 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                     if (document.activeElement instanceof HTMLInputElement && event.currentTarget.contains(document.activeElement)) document.activeElement.blur();
                 }}
             >
-                {showTitle ? <div className="text-lg font-semibold">{t("settingsPanels.image.title")}</div> : null}
+                {showTitle ? (
+                    <div className="flex items-center justify-between gap-2">
+                        <div className="text-lg font-semibold">{t("settingsPanels.image.title")}</div>
+                        {headerAction}
+                    </div>
+                ) : null}
                 {showSize ? (
-                    <>
                         <div className="space-y-2.5">
                             <div className="flex items-center justify-between gap-3">
                         <SettingTitle color={theme.node.muted}>{t("settingsPanels.image.size")}</SettingTitle>
@@ -86,6 +97,8 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                         <DimensionInput prefix="H" value={dimensions.height} disabled={selectedRatio === "auto"} theme={theme} alignToStep={snapDimensionToStep} onChange={(value) => updateDimension("height", value)} />
                     </div>
                 </div>
+                ) : null}
+                {includeResolution ? (
                 <div className="space-y-2.5">
                     <SettingTitle color={theme.node.muted}>{t("settingsPanels.image.resolution")}</SettingTitle>
                     <div className="grid grid-cols-4 gap-2.5">
@@ -96,6 +109,8 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                         ))}
                     </div>
                 </div>
+                ) : null}
+                {includeRatio ? (
                 <div className="space-y-2.5">
                     <SettingTitle color={theme.node.muted}>{t("settingsPanels.image.aspectRatio")}</SettingTitle>
                     <div className="grid grid-cols-4 gap-2.5">
@@ -114,7 +129,6 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                         ))}
                     </div>
                 </div>
-                    </>
                 ) : null}
                 {showTransparent ? (
                     <div className="flex items-center justify-between gap-3">
@@ -224,11 +238,12 @@ export function imageSizeLabel(size: string) {
     return `${scale} · ${ratio}`;
 }
 
-export function OptionPill({ selected, theme, onClick, children }: { selected: boolean; theme: CanvasTheme; onClick: () => void; children: ReactNode }) {
+export function OptionPill({ selected, theme, onClick, children, disabled = false }: { selected: boolean; theme: CanvasTheme; onClick: () => void; children: ReactNode; disabled?: boolean }) {
     return (
         <button
             type="button"
-            className="h-9 cursor-pointer rounded-full border px-2 text-sm transition hover:opacity-80"
+            disabled={disabled}
+            className="h-9 cursor-pointer rounded-full border px-2 text-sm transition hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-35"
             style={{ background: "transparent", borderColor: selected ? theme.node.text : theme.node.stroke, color: theme.node.text }}
             onMouseDown={(event) => event.stopPropagation()}
             onClick={onClick}

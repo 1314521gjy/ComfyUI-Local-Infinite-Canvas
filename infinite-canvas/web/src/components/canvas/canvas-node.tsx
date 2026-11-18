@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
-import { ChevronRight, Copy, Download, Group, Image as ImageIcon, Music2, Pause, Play, Puzzle, RefreshCw, Sparkles, Star, Trash2, Video, Volume2, VolumeX } from "lucide-react";
+import { ChevronRight, Copy, Download, Group, Image as ImageIcon, Music2, Pause, Play, Puzzle, RefreshCw, Sparkles, Star, Trash2, Video, Volume2, VolumeX, Workflow } from "lucide-react";
 
 import { canvasThemes, getCardBackground } from "@/lib/canvas-theme";
 import { useCanvasTheme, useEffectiveCardSkin } from "@/lib/canvas/use-canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
+import { useConfigStore } from "@/stores/use-config-store";
 import { formatBytes } from "@/lib/image-utils";
 import { formatElapsedDuration } from "@/lib/media-size";
 import { pickImageSource } from "@/lib/image-thumbnail";
@@ -87,6 +88,7 @@ type NodeContentRendererProps = {
     onRetryBatchImage?: (imageId: string) => void;
     onDeleteBatchImage?: (imageId: string) => void;
     onViewBatchImage?: (imageId: string) => void;
+    onViewMedia?: () => void;
     groupChildCount: number;
 };
 
@@ -153,7 +155,9 @@ export const CanvasNode = React.memo(function CanvasNode({
     const hasVideoContent = data.type === CanvasNodeType.Video && Boolean(data.metadata?.content);
     const hasAudioContent = data.type === CanvasNodeType.Audio && Boolean(data.metadata?.content);
     const isGroup = data.type === CanvasNodeType.Group;
-    const isBare = Boolean(definition?.bare);
+    const isBare = Boolean(definition?.bare) || Boolean(data.metadata?.bare);
+    // 生成中已有预览图时皮肤让位：否则皮肤立绘会顶替预览成为用户看到的画面。
+    const hasLoadingPreview = data.metadata?.status === "loading" && Boolean(data.metadata?.previewUrl);
     const isGenerating = !isGroup && !referenceSelectionState && (data.metadata?.status === "loading" || Boolean(data.metadata?.stepProgress && data.metadata.stepProgress.total > 0 && !data.metadata.stepProgress.complete));
     const showFishWhip = artSkin && !isBare && isGenerating && fishWhipEnabled;
     const batchCount = data.type === CanvasNodeType.Image ? data.metadata?.images?.length || 0 : data.type === CanvasNodeType.Text ? data.metadata?.texts?.length || 0 : 0;
@@ -181,6 +185,9 @@ export const CanvasNode = React.memo(function CanvasNode({
         keepRatio: false,
         ratio: 1,
     });
+    const resizeFrameRef = useRef<number | null>(null);
+    const resizePendingRef = useRef<{ width: number; height: number; position: { x: number; y: number } } | null>(null);
+    const [resizePreview, setResizePreview] = useState<{ width: number; height: number; position: { x: number; y: number } } | null>(null);
 
     useEffect(() => {
         setTitleDraft(data.title || "");
@@ -241,22 +248,20 @@ export const CanvasNode = React.memo(function CanvasNode({
         return () => window.removeEventListener("pointerdown", handleOutsidePointerDown, true);
     }, [isEditingContent]);
 
-    const handleResizeMove = useCallback(
-        (event: MouseEvent) => {
-            if (!resizeRef.current.isResizing) return;
-
-            const dx = (event.clientX - resizeRef.current.startX) / scale;
-            const dy = (event.clientY - resizeRef.current.startY) / scale;
+    const computeResize = useCallback(
+        (clientX: number, clientY: number) => {
+            if (!resizeRef.current.isResizing) return null;
+            const dx = (clientX - resizeRef.current.startX) / scale;
+            const dy = (clientY - resizeRef.current.startY) / scale;
             const minWidth = 220;
             const minHeight = 160;
+            const maxSize = 12000;
             const startRight = resizeRef.current.startLeft + resizeRef.current.startWidth;
             const startBottom = resizeRef.current.startTop + resizeRef.current.startHeight;
             const fromLeft = resizeRef.current.corner.includes("left");
             const fromTop = resizeRef.current.corner.includes("top");
-            const rawWidth = Math.max(minWidth, resizeRef.current.startWidth + (fromLeft ? -dx : dx));
-            const rawHeight = Math.max(minHeight, resizeRef.current.startHeight + (fromTop ? -dy : dy));
-            let width = rawWidth;
-            let height = rawHeight;
+            let width = Math.max(minWidth, resizeRef.current.startWidth + (fromLeft ? -dx : dx));
+            let height = Math.max(minHeight, resizeRef.current.startHeight + (fromTop ? -dy : dy));
             if (resizeRef.current.keepRatio) {
                 const ratio = resizeRef.current.ratio;
                 if (Math.abs(dx) >= Math.abs(dy)) {
@@ -272,26 +277,90 @@ export const CanvasNode = React.memo(function CanvasNode({
                     width = minWidth;
                     height = width / ratio;
                 }
+                if (width > maxSize) {
+                    width = maxSize;
+                    height = width / ratio;
+                }
+                if (height > maxSize) {
+                    height = maxSize;
+                    width = height * ratio;
+                }
+            } else {
+                width = Math.min(maxSize, width);
+                height = Math.min(maxSize, height);
             }
-
-            onResize(data.id, width, height, {
-                x: fromLeft ? startRight - width : resizeRef.current.startLeft,
-                y: fromTop ? startBottom - height : resizeRef.current.startTop,
-            });
+            return {
+                width,
+                height,
+                position: {
+                    x: fromLeft ? startRight - width : resizeRef.current.startLeft,
+                    y: fromTop ? startBottom - height : resizeRef.current.startTop,
+                },
+            };
         },
-        [data.id, onResize, scale],
+        [scale],
     );
 
-    const handleResizeUp = useCallback(() => {
+    const handleResizeMove = useCallback(
+        (event: MouseEvent) => {
+            const next = computeResize(event.clientX, event.clientY);
+            if (!next) return;
+            resizePendingRef.current = next;
+            if (resizeFrameRef.current !== null) return;
+            // Coalesce rapid mousemove events: a fast drag should update the canvas at most once per frame.
+            resizeFrameRef.current = window.requestAnimationFrame(() => {
+                resizeFrameRef.current = null;
+                const pending = resizePendingRef.current;
+                resizePendingRef.current = null;
+                if (pending) setResizePreview(pending);
+            });
+        },
+        [computeResize, data.id, onResize],
+    );
+
+    const handleResizeUp = useCallback(
+        (event: MouseEvent) => {
+            if (resizeFrameRef.current !== null) {
+                window.cancelAnimationFrame(resizeFrameRef.current);
+                resizeFrameRef.current = null;
+            }
+            const next = computeResize(event.clientX, event.clientY);
+            setResizePreview(null);
+            resizePendingRef.current = null;
+            resizeRef.current.isResizing = false;
+            window.removeEventListener("mousemove", handleResizeMove);
+            window.removeEventListener("mouseup", handleResizeUp, true);
+            window.removeEventListener("blur", handleResizeCancel);
+            if (next) onResize(data.id, next.width, next.height, next.position);
+            onResizeEnd(data.id);
+        },
+        [computeResize, data.id, handleResizeMove, onResize, onResizeEnd],
+    );
+
+    const handleResizeCancel = useCallback(() => {
+        if (resizeFrameRef.current !== null) {
+            window.cancelAnimationFrame(resizeFrameRef.current);
+            resizeFrameRef.current = null;
+        }
+        resizePendingRef.current = null;
         resizeRef.current.isResizing = false;
+        setResizePreview(null);
         window.removeEventListener("mousemove", handleResizeMove);
-        window.removeEventListener("mouseup", handleResizeUp);
+        window.removeEventListener("mouseup", handleResizeUp, true);
+        window.removeEventListener("blur", handleResizeCancel);
         onResizeEnd(data.id);
     }, [data.id, handleResizeMove, onResizeEnd]);
 
     const handleResizeMouseDown = (event: React.MouseEvent, corner: ResizeCorner) => {
         event.stopPropagation();
         event.preventDefault();
+        if (event.button !== 0) return;
+        if (resizeFrameRef.current !== null) {
+            window.cancelAnimationFrame(resizeFrameRef.current);
+            resizeFrameRef.current = null;
+        }
+        resizePendingRef.current = null;
+        setResizePreview(null);
         onResizeStart(data.id);
         resizeRef.current = {
             isResizing: true,
@@ -306,15 +375,24 @@ export const CanvasNode = React.memo(function CanvasNode({
             ratio: (data.metadata?.naturalWidth || data.width) / (data.metadata?.naturalHeight || data.height || 1),
         };
         window.addEventListener("mousemove", handleResizeMove);
-        window.addEventListener("mouseup", handleResizeUp);
+        window.addEventListener("mouseup", handleResizeUp, true);
+        window.addEventListener("blur", handleResizeCancel);
     };
 
     useEffect(() => {
         return () => {
+            if (resizeFrameRef.current !== null) window.cancelAnimationFrame(resizeFrameRef.current);
+            resizeFrameRef.current = null;
+            resizePendingRef.current = null;
             window.removeEventListener("mousemove", handleResizeMove);
-            window.removeEventListener("mouseup", handleResizeUp);
+            window.removeEventListener("mouseup", handleResizeUp, true);
+            window.removeEventListener("blur", handleResizeCancel);
         };
-    }, [handleResizeMove, handleResizeUp]);
+    }, [handleResizeCancel, handleResizeMove, handleResizeUp]);
+
+    const renderWidth = resizePreview?.width ?? data.width;
+    const renderHeight = resizePreview?.height ?? data.height;
+    const renderPosition = resizePreview?.position ?? data.position;
 
     return (
         <div
@@ -322,9 +400,9 @@ export const CanvasNode = React.memo(function CanvasNode({
             data-card-skin={cardSkin}
             className={`node-element group/node absolute flex select-none flex-col transition-shadow duration-200 ${isGroup ? "z-[5]" : showFishWhip ? "z-[80]" : isSelected ? "z-50" : "z-10"} ${referenceSelectionState === "available" ? "cursor-pointer" : referenceSelectionState ? "cursor-not-allowed" : ""}`}
             style={{
-                transform: `translate(${data.position.x}px, ${data.position.y}px)`,
-                width: data.width,
-                height: data.height,
+                transform: `translate(${renderPosition.x}px, ${renderPosition.y}px)`,
+                width: renderWidth,
+                height: renderHeight,
                 transition: "box-shadow 200ms ease",
                 contain: "layout style",
             }}
@@ -393,7 +471,19 @@ export const CanvasNode = React.memo(function CanvasNode({
                     background: isBare ? "transparent" : isGroup ? "transparent" : hasImageContent || hasVideoContent || transparentBg ? "transparent" : artSkin ? cardBackground : theme.node.fill,
                     borderColor: isBare ? "transparent" : isGroup ? (isGroupDropTarget || isActive ? selectionBlue : theme.node.stroke) : hasImageContent ? imageBorderColor : isActive ? selectionBlue : isRelated ? theme.node.muted : transparentBg ? "transparent" : theme.node.stroke,
                     borderStyle: isGroup ? "dashed" : "solid",
-                    boxShadow: isBare ? undefined : isGroupDropTarget ? `0 0 0 2px ${selectionBlue}66, inset 0 0 0 999px ${selectionBlue}10` : isActive ? `0 0 0 1px ${selectionBlue}55` : isRelated ? `0 0 0 1px ${theme.node.muted}55, 0 18px 48px rgba(0,0,0,.14)` : undefined,
+                    boxShadow: isBare
+                        ? isActive
+                            ? `0 0 0 1px ${selectionBlue}66`
+                            : isRelated
+                              ? `0 0 0 1px ${theme.node.muted}55`
+                              : undefined
+                        : isGroupDropTarget
+                          ? `0 0 0 2px ${selectionBlue}66, inset 0 0 0 999px ${selectionBlue}10`
+                          : isActive
+                            ? `0 0 0 1px ${selectionBlue}55`
+                            : isRelated
+                              ? `0 0 0 1px ${theme.node.muted}55, 0 18px 48px rgba(0,0,0,.14)`
+                              : undefined,
                 }}
                 onMouseDown={(event) => {
                     if (!referenceSelectionState) onMouseDown(event, data.id);
@@ -421,7 +511,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                     setIsEditingContent(true);
                 }}
             >
-                {artSkin && !isGroup && !hasImageContent && !hasVideoContent && !transparentBg ? (
+                {artSkin && !isGroup && !hasImageContent && !hasVideoContent && !transparentBg && !hasLoadingPreview ? (
                     <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]" aria-hidden="true">
                         <div
                             className="absolute left-0 top-0 h-[62%] w-[58%]"
@@ -554,6 +644,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                         onRetryBatchImage={(imageId) => onRetryBatchImage?.(data, imageId)}
                         onDeleteBatchImage={(imageId) => onDeleteBatchImage?.(data.id, imageId)}
                         onViewBatchImage={(imageId) => onViewImage?.(data, imageId)}
+                        onViewMedia={() => onViewImage?.(data)}
                         groupChildCount={groupChildCount}
                     />
                 </div>
@@ -568,8 +659,12 @@ export const CanvasNode = React.memo(function CanvasNode({
                     </div>
                 ) : null}
 
-                {!isGroup && !referenceSelectionState && data.metadata?.stepProgress && data.metadata.stepProgress.total > 0 ? (
-                    <CanvasNodeProgressRing width={data.width} height={data.height} step={data.metadata.stepProgress.step} total={data.metadata.stepProgress.total} complete={data.metadata.stepProgress.complete} />
+                {!isGroup && !referenceSelectionState && isGenerating ? (
+                    data.metadata?.stepProgress && data.metadata.stepProgress.total > 0 ? (
+                        <CanvasNodeProgressRing width={data.width} height={data.height} step={data.metadata.stepProgress.step} total={data.metadata.stepProgress.total} complete={data.metadata.stepProgress.complete} />
+                    ) : (
+                        <CanvasNodeProgressRing width={data.width} height={data.height} step={0} total={0} indeterminate />
+                    )
                 ) : null}
 
                 {!referenceSelectionState ? <ResizeHandle corner="top-left" onMouseDown={handleResizeMouseDown} /> : null}
@@ -642,6 +737,8 @@ function NodeGenerationElapsed({ startedAt }: { startedAt: number }) {
 
 function NodeContent(props: NodeContentRendererProps) {
     if (props.node.type === CanvasNodeType.Config && props.renderNodeContent) return props.renderNodeContent(props.node);
+    if (props.node.type === CanvasNodeType.Drama && props.renderNodeContent) return props.renderNodeContent(props.node);
+    if (props.node.type === CanvasNodeType.Automation) return <AutomationNodeContent node={props.node} />;
     if (props.isBatchRoot && props.node.type === CanvasNodeType.Image) return <ImageNodeContent {...props} />;
     if (props.node.type === CanvasNodeType.Text && props.node.metadata?.texts?.length && (props.node.metadata.status !== "error" || props.node.metadata.texts.some((text) => text.content))) return <TextContent {...props} />;
     if (props.node.metadata?.status === "loading") return <LoadingContent theme={props.theme} node={props.node} />;
@@ -673,41 +770,111 @@ const nodeContentRenderers = {
     [CanvasNodeType.Video]: VideoNodeContent,
     [CanvasNodeType.Audio]: AudioNodeContent,
     [CanvasNodeType.FreeCard]: FreeCardNodeContent,
+    [CanvasNodeType.Automation]: () => null,
+    [CanvasNodeType.Drama]: () => null,
     [CanvasNodeType.Group]: GroupNodeContent,
 } satisfies Record<CanvasNodeType, (props: NodeContentRendererProps) => ReactNode>;
+
+function AutomationNodeContent({ node }: { node: CanvasNodeData }) {
+    const theme = useCanvasTheme();
+    const { t } = useTranslation();
+    const automation = node.metadata?.automation;
+    const pages = automation?.pages || [];
+    const imageDone = pages.filter((page) => page.imageState === "done").length;
+    const videoDone = pages.filter((page) => page.videoState === "done").length;
+    const stage = automation?.stage || "idle";
+    const imagePercent = pages.length ? (imageDone / pages.length) * 100 : 0;
+    const videoPercent = pages.length ? (videoDone / pages.length) * 100 : 0;
+    return (
+        <div className="flex h-full w-full flex-col gap-2 p-3" style={{ color: theme.node.text }}>
+            <div className="flex items-center gap-2">
+                <span className="grid size-7 shrink-0 place-items-center rounded-lg" style={{ background: theme.toolbar.activeBg }}>
+                    <Workflow className="size-4 opacity-75" />
+                </span>
+                <span className="min-w-0 flex-1 truncate text-sm font-semibold">{t("canvas.automation.title")}</span>
+                <span className="shrink-0 rounded-full px-2 py-0.5 text-[10px] opacity-70" style={{ background: theme.toolbar.activeBg }}>
+                    {t(`canvas.automation.stage.${stage}`)}
+                </span>
+            </div>
+            <div className="line-clamp-2 min-h-0 text-[11px] leading-4 opacity-55">
+                {automation?.progress || automation?.sourceText?.trim() || t("canvas.automation.sourcePlaceholder")}
+            </div>
+            {pages.length ? (
+                <div className="mt-auto grid gap-1.5 text-[10px] opacity-70">
+                    <div className="flex items-center justify-between">
+                        <span>{t("canvas.automation.imageProgress")}</span>
+                        <span className="tabular-nums">
+                            {imageDone}/{pages.length}
+                        </span>
+                    </div>
+                    <div className="h-1 overflow-hidden rounded-full" style={{ background: theme.toolbar.activeBg }}>
+                        <div className="h-full rounded-full bg-cyan-400/80 transition-all" style={{ width: `${imagePercent}%` }} />
+                    </div>
+                    <div className="flex items-center justify-between">
+                        <span>{t("canvas.automation.videoProgress")}</span>
+                        <span className="tabular-nums">
+                            {videoDone}/{pages.length}
+                        </span>
+                    </div>
+                    <div className="h-1 overflow-hidden rounded-full" style={{ background: theme.toolbar.activeBg }}>
+                        <div className="h-full rounded-full bg-emerald-400/80 transition-all" style={{ width: `${videoPercent}%` }} />
+                    </div>
+                </div>
+            ) : (
+                <div className="mt-auto text-[10px] opacity-45">{t("canvas.automation.subtitle")}</div>
+            )}
+            {node.metadata?.errorDetails ? <div className="truncate text-[10px] text-red-400">{node.metadata.errorDetails}</div> : null}
+        </div>
+    );
+}
 
 function FreeCardNodeContent({ node, theme }: NodeContentRendererProps) {
     const { t } = useTranslation();
     const info = node.metadata?.freeCard;
-    const cardSkin = useEffectiveCardSkin();
-    const fishSkin = cardSkin === "fish";
+    const fishSkin = useEffectiveCardSkin() === "fish";
+    const images = node.metadata?.images || [];
+    const primary = images.find((image) => image.id === node.metadata?.primaryImageId) || images[0];
+    const content = primary?.content || node.metadata?.content || "";
     const kind = info ? (info.outputType === "video" ? t("canvas.freeCard.videoWorkflow") : info.outputType === "image" ? t("canvas.freeCard.imageWorkflow") : t("canvas.freeCard.otherWorkflow")) : t("canvas.freeCard.emptyHint");
     if (fishSkin) {
         return (
-            <div className="flex h-full w-full flex-col items-start justify-start gap-1 px-4 pt-4 text-left">
-                <div className="flex items-center gap-1.5">
-                    <Sparkles className="size-3.5" style={{ color: theme.node.muted }} />
-                    <span className="text-[11px] font-medium" style={{ color: theme.node.muted }}>
+            <div className="relative flex h-full w-full flex-col items-start justify-start gap-1 overflow-hidden px-4 pt-4 text-left">
+                {content ? <img src={content} alt="" draggable={false} className="pointer-events-none absolute inset-0 h-full w-full select-none object-cover" /> : null}
+                {content ? <div className="pointer-events-none absolute inset-0 bg-black/25" /> : null}
+                <div className="relative z-10 flex items-center gap-1.5">
+                    <Sparkles className="size-3.5" style={{ color: content ? "#fff" : theme.node.muted }} />
+                    <span className="text-[11px] font-medium" style={{ color: content ? "#fff" : theme.node.muted, textShadow: content ? "0 1px 6px rgba(0,8,18,.75)" : undefined }}>
                         {kind}
                     </span>
                 </div>
-                <div className="max-w-[72%] truncate text-sm font-semibold drop-shadow-[0_2px_6px_rgba(0,8,18,.8)]" style={{ color: theme.node.text }}>
+                <div className="relative z-10 max-w-[72%] truncate text-sm font-semibold drop-shadow-[0_2px_6px_rgba(0,8,18,.8)]" style={{ color: content ? "#fff" : theme.node.text }}>
                     {info?.name || t("canvas.freeCard.emptyTitle")}
                 </div>
             </div>
         );
     }
+    if (content) {
+        return (
+            <div className="relative h-full w-full overflow-hidden">
+                <img src={content} alt="" draggable={false} className="pointer-events-none absolute inset-0 h-full w-full select-none object-cover" />
+                <div className="pointer-events-none absolute inset-0 bg-black/25" />
+                <div className="relative z-10 flex h-full w-full flex-col items-start justify-start gap-1.5 p-3 text-left">
+                    <div className="flex items-center gap-1.5">
+                        <Sparkles className="size-3.5 text-white" />
+                        <span className="text-[10px] font-medium text-white" style={{ textShadow: "0 1px 6px rgba(0,8,18,.75)" }}>{kind}</span>
+                    </div>
+                    <span className="max-w-[80%] truncate text-sm font-semibold text-white" style={{ textShadow: "0 1px 6px rgba(0,8,18,.75)" }}>{info?.name || t("canvas.freeCard.emptyTitle")}</span>
+                </div>
+            </div>
+        );
+    }
     return (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-3 px-6 text-center">
-            <div className="grid size-12 place-items-center rounded-2xl" style={{ background: theme.toolbar.activeBg, color: theme.node.text }}>
-                <Sparkles className="size-6" />
+        <div className="flex h-full w-full flex-col items-center justify-center gap-3" style={{ color: theme.node.placeholder }}>
+            <div className="flex size-14 items-center justify-center rounded-2xl" style={{ background: theme.toolbar.activeBg }}>
+                <ImageIcon className="size-6 opacity-30" />
             </div>
-            <div className="max-w-full truncate text-sm font-semibold" style={{ color: theme.node.text }}>
-                {info?.name || t("canvas.freeCard.emptyTitle")}
-            </div>
-            <div className="text-xs" style={{ color: theme.node.muted }}>
-                {kind}
-            </div>
+            <span className="max-w-[80%] truncate text-[10px] tracking-[0.18em] opacity-50">{info?.name || t("canvas.freeCard.emptyTitle")}</span>
+            <span className="text-[10px] opacity-40">{kind}</span>
         </div>
     );
 }
@@ -729,22 +896,65 @@ function GroupNodeContent({ node, theme, groupChildCount }: NodeContentRendererP
 
 function LoadingContent({ theme, node }: Pick<NodeContentRendererProps, "theme" | "node">) {
     const { t } = useTranslation();
-    const previewUrl = node.metadata?.previewUrl;
-    if (previewUrl) {
-        const isVideo = Boolean(node.metadata?.previewMime?.startsWith("video/"));
+    const previewEnabled = useConfigStore((state) => state.config.imagePreviewEnabled !== false);
+    const previewUrl = previewEnabled ? node.metadata?.previewUrl : undefined;
+    const previewMime = previewEnabled ? node.metadata?.previewMime : undefined;
+    // 新帧加载成功前保留旧帧：避免每帧重挂载/404 帧造成的预览闪烁与空窗。
+    const [loadedPreview, setLoadedPreview] = useState<{ url: string; video: boolean } | undefined>();
+    useEffect(() => {
+        if (!previewUrl) {
+            setLoadedPreview(undefined);
+            return;
+        }
+        let cancelled = false;
+        // 采样预览是 video/mp4（KJ 视频预览）：必须用 <video> 探测；用 Image 探测会失败，且随后按 mime 渲染 <video src=PNG> 就是黑屏。
+        if (previewMime?.startsWith("video/")) {
+            const probe = document.createElement("video");
+            probe.muted = true;
+            probe.playsInline = true;
+            probe.onloadeddata = () => { if (!cancelled) setLoadedPreview({ url: previewUrl, video: true }); };
+            probe.src = previewUrl;
+            return () => {
+                cancelled = true;
+                probe.removeAttribute("src");
+                probe.load();
+            };
+        }
+        const probe = new Image();
+        probe.onload = () => { if (!cancelled) setLoadedPreview({ url: previewUrl, video: false }); };
+        probe.src = previewUrl;
+        return () => { cancelled = true; };
+    }, [previewUrl, previewMime]);
+    if (previewUrl && loadedPreview) {
         const step = node.metadata?.previewStep;
         const total = node.metadata?.previewTotal;
         return (
             <div className="relative h-full w-full overflow-hidden rounded-[18px] bg-black">
-                {isVideo ? (
-                    <video src={previewUrl} className="pointer-events-none h-full w-full select-none object-contain" autoPlay muted loop playsInline draggable={false} onDragStart={(event) => event.preventDefault()} />
+                {loadedPreview.video ? (
+                    <video
+                        key={loadedPreview.url}
+                        ref={(element) => { if (element && element.paused) void element.play().catch(() => undefined); }}
+                        src={loadedPreview.url}
+                        className="pointer-events-none h-full w-full select-none object-contain"
+                        autoPlay
+                        muted
+                        loop
+                        playsInline
+                        draggable={false}
+                        onDragStart={(event) => event.preventDefault()}
+                    />
                 ) : (
-                    <img src={previewUrl} alt="" className="pointer-events-none h-full w-full select-none object-contain" draggable={false} onDragStart={(event) => event.preventDefault()} />
+                    <img key={loadedPreview.url} src={loadedPreview.url} alt="" className="pointer-events-none h-full w-full select-none object-contain" draggable={false} onDragStart={(event) => event.preventDefault()} />
                 )}
                 <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-2.5 py-1 text-[10px] font-medium tracking-wider text-white backdrop-blur-sm">
                     {t("canvas.node.generating")}
                     {step && total ? ` ${step}/${total}` : ""}
                 </div>
+                {node.metadata?.fallbackNotice ? (
+                    <div className="pointer-events-none absolute left-2 top-2 max-w-[85%] truncate rounded-md bg-amber-500/15 px-2 py-1 text-[10px] leading-4 text-amber-100 ring-1 ring-amber-400/40 backdrop-blur-sm" title={node.metadata.fallbackNotice}>
+                        {node.metadata.fallbackNotice}
+                    </div>
+                ) : null}
             </div>
         );
     }
@@ -752,6 +962,9 @@ function LoadingContent({ theme, node }: Pick<NodeContentRendererProps, "theme" 
         <div className="flex h-full w-full flex-col items-center justify-center gap-3" style={{ color: theme.node.activeStroke }}>
             <div className="size-10 animate-spin rounded-full border-2" style={{ borderColor: theme.node.stroke, borderTopColor: theme.node.activeStroke }} />
             <span className="text-[10px] tracking-[0.2em]">{t("canvas.node.generating")}</span>
+            {node.type === CanvasNodeType.Audio && (node.metadata?.audioMode === "song" || node.metadata?.audioMode === "voice") ? (
+                <span className="px-3 text-center text-[10px] leading-4" style={{ color: theme.node.muted }}>首次加载模型约 30–60s，请稍候</span>
+            ) : null}
         </div>
     );
 }
@@ -760,8 +973,10 @@ function NodeErrorBanner({ node, onRetry }: Pick<NodeContentRendererProps, "node
     const { t } = useTranslation();
     return (
         <div className="pointer-events-none absolute inset-x-2 top-2 z-30 flex justify-center">
-            <div className="pointer-events-auto flex max-w-[92%] items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] leading-none shadow-lg" style={{ background: "rgba(88,18,18,.92)", borderColor: "rgba(255,140,140,.45)", color: "#ffecec" }}>
-                <span className="min-w-0 truncate">{node.metadata?.errorDetails || t("canvas.node.failed")}</span>
+            <div className="pointer-events-auto flex max-w-[92%] items-start gap-2 rounded-xl border px-2.5 py-1.5 text-[11px] leading-4 shadow-lg" style={{ background: "rgba(88,18,18,.92)", borderColor: "rgba(255,140,140,.45)", color: "#ffecec" }}>
+                <span className="min-w-0 whitespace-normal break-words text-left" title={node.metadata?.errorDetails || t("canvas.node.failed")}>
+                    {node.metadata?.errorDetails || t("canvas.node.failed")}
+                </span>
                 <button
                     type="button"
                     className="inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 transition hover:opacity-80"
@@ -960,7 +1175,7 @@ function formatVideoClock(value: number) {
     return `${minutes}:${String(total % 60).padStart(2, "0")}`;
 }
 
-function VideoNodeContent({ node, theme, onVideoDimensions }: NodeContentRendererProps) {
+function VideoNodeContent({ node, theme, onVideoDimensions, onViewMedia }: NodeContentRendererProps) {
     const { t } = useTranslation();
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const [playing, setPlaying] = useState(false);
@@ -998,7 +1213,15 @@ function VideoNodeContent({ node, theme, onVideoDimensions }: NodeContentRendere
         setMuted(video.muted);
     };
     return (
-        <div className="relative h-full w-full overflow-hidden rounded-[18px] bg-black" data-canvas-no-zoom>
+        <div
+            className="relative h-full w-full overflow-hidden rounded-[18px] bg-black"
+            data-canvas-no-zoom
+            onDoubleClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onViewMedia?.();
+            }}
+        >
             <video
                 key={content}
                 ref={videoRef}
@@ -1020,6 +1243,11 @@ function VideoNodeContent({ node, theme, onVideoDimensions }: NodeContentRendere
                 className="pointer-events-none h-full w-full rounded-[18px] bg-black object-contain"
                 data-canvas-video={node.id}
             />
+            {node.metadata?.fallbackNotice ? (
+                <div className="pointer-events-none absolute left-2 top-2 max-w-[85%] truncate rounded-md bg-amber-500/15 px-2 py-1 text-[10px] leading-4 text-amber-100 ring-1 ring-amber-400/40 backdrop-blur-sm" title={node.metadata.fallbackNotice}>
+                    {node.metadata.fallbackNotice}
+                </div>
+            ) : null}
             <div
                 className="absolute inset-x-0 bottom-0 flex items-center gap-2 bg-gradient-to-t from-black/80 via-black/35 to-transparent px-2.5 pb-2 pt-7 text-white"
                 data-canvas-no-zoom
@@ -1027,8 +1255,8 @@ function VideoNodeContent({ node, theme, onVideoDimensions }: NodeContentRendere
                 onClick={(event) => event.stopPropagation()}
                 onDoubleClick={(event) => event.stopPropagation()}
             >
-                <button type="button" className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white/15 hover:bg-white/25" aria-label={playing ? t("canvas.videoControls.pause") : t("canvas.videoControls.play")} onClick={togglePlayback}>
-                    {playing ? <Pause className="size-3.5" /> : <Play className="size-3.5 fill-current" />}
+                <button type="button" className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/15 hover:bg-white/25" aria-label={playing ? t("canvas.videoControls.pause") : t("canvas.videoControls.play")} onClick={togglePlayback}>
+                    {playing ? <Pause className="size-4" /> : <Play className="size-4 fill-current" />}
                 </button>
                 <span className="shrink-0 text-[10px] tabular-nums opacity-85">
                     {formatVideoClock(currentTime)} / {formatVideoClock(duration)}
@@ -1048,8 +1276,8 @@ function VideoNodeContent({ node, theme, onVideoDimensions }: NodeContentRendere
                     }}
                     className="h-1 min-w-0 flex-1 cursor-pointer accent-white"
                 />
-                <button type="button" className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white/15 hover:bg-white/25" aria-label={muted ? t("canvas.videoControls.unmute") : t("canvas.videoControls.mute")} onClick={toggleMuted}>
-                    {muted ? <VolumeX className="size-3.5" /> : <Volume2 className="size-3.5" />}
+                <button type="button" className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/15 hover:bg-white/25" aria-label={muted ? t("canvas.videoControls.unmute") : t("canvas.videoControls.mute")} onClick={toggleMuted}>
+                    {muted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
                 </button>
             </div>
         </div>
@@ -1257,9 +1485,37 @@ function BatchImageFailureActions({ placement, onRetry, onDelete }: { placement:
     );
 }
 
+function StablePreviewImage({ src, className }: { src: string; className: string }) {
+    const [shown, setShown] = useState<string>();
+    useEffect(() => {
+        let cancelled = false;
+        const probe = new Image();
+        probe.onload = () => { if (!cancelled) setShown(src); };
+        probe.src = src;
+        return () => { cancelled = true; };
+    }, [src]);
+    if (!shown) return null;
+    return <img key={shown} src={shown} alt="" className={className} draggable={false} onDragStart={(event) => event.preventDefault()} />;
+}
+
 function ImageSlotStatus({ image }: { image?: CanvasNodeImage }) {
     const theme = useCanvasTheme();
     const { t } = useTranslation();
+    const previewEnabled = useConfigStore((state) => state.config.imagePreviewEnabled !== false);
+    if (image?.previewUrl && previewEnabled) {
+        return (
+            <div className="relative h-full w-full overflow-hidden rounded-[inherit] bg-black">
+                <div className="pointer-events-none absolute inset-0 grid place-items-center">
+                    <div className="size-10 animate-spin rounded-full border-2" style={{ borderColor: theme.node.stroke, borderTopColor: theme.node.activeStroke }} />
+                </div>
+                <StablePreviewImage src={image.previewUrl} className="pointer-events-none h-full w-full select-none object-contain" />
+                <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-2.5 py-1 text-[10px] font-medium tracking-wider text-white backdrop-blur-sm">
+                    {t("canvas.node.generating")}
+                    {image.previewStep && image.previewTotal ? ` ${image.previewStep}/${image.previewTotal}` : ""}
+                </div>
+            </div>
+        );
+    }
     const failed = image?.status === "error";
     return (
         <div className="flex h-full w-full flex-col items-center justify-center gap-3 px-6 text-center" style={{ background: theme.node.fill, color: failed ? theme.node.text : theme.node.activeStroke }}>

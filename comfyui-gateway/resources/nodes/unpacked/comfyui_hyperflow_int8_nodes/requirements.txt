@@ -1,0 +1,3 @@
+# Runtime: ComfyUI (with native MiniMax-H3 and comfy_kitchen INT8) plus the official ComfyUI-HyperFlow-Flash pack.
+# gguf is the official pack's dependency; this pack imports that pack's model_patch.py.
+gguf

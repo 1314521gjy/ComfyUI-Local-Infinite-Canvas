@@ -12,8 +12,8 @@ import { BaseModelPicker, WorkflowModelPicker } from "@/components/model-picker"
 import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeValue, videoModeLabel, videoSizeLabel } from "@/components/video-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { videoModelForWorkflow, videoModelModePatch, videoWorkflowId, isNoVdnWorkflowId } from "@/lib/canvas/video-model-mode";
-import { clampVideoSeconds, isCustomVideoSize } from "@/lib/media-size";
+import { videoModelModePatch } from "@/lib/canvas/video-model-mode";
+import { clampVideoSeconds } from "@/lib/media-size";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { deleteStoredMedia, resolveMediaUrl } from "@/services/file-storage";
 import { resolveImageUrl, ensureImagePreview, getImagePreviewRevision, previewUrlFor, subscribeImagePreviews, uploadImage } from "@/services/image-storage";
@@ -449,7 +449,7 @@ export default function VideoPage() {
 
                             <div className="flex items-center justify-between rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm dark:border-stone-800 dark:bg-stone-900 sm:hidden">
                                 <span className="truncate text-stone-500 dark:text-stone-400">
-                                    {modelOptionLabel(effectiveConfig, model)} · {isCustomVideoSize(effectiveConfig.size || "auto", effectiveConfig.vquality) ? `${t("settingsPanels.video.customSize")} ${videoSizeLabel(effectiveConfig.size, effectiveConfig.vquality)}` : `${normalizeResolution(effectiveConfig.vquality)}p · ${videoSizeLabel(effectiveConfig.size, effectiveConfig.vquality)}`} · {normalizeVideoSeconds(effectiveConfig.videoSeconds)}s · {videoModeLabel(effectiveConfig.videoMode)}
+                                    {modelOptionLabel(effectiveConfig, model)} · {normalizeResolution(effectiveConfig.vquality)}p · {videoSizeLabel(effectiveConfig.size)} · {normalizeVideoSeconds(effectiveConfig.videoSeconds)}s · {videoModeLabel(effectiveConfig.videoMode)}
                                 </span>
                                 <Button size="small" type="text" icon={<SlidersHorizontal className="size-4" />} onClick={() => setSettingsOpen(true)}>
                                     {t("workbench.adjust")}
@@ -574,13 +574,7 @@ function GenerationSettings({
                 <VideoSettingsPanel
                     config={{ ...config, model }}
                     onConfigChange={(key, value) => updateConfig(key, value)}
-                    onModeChange={(value) => {
-                        updateConfig("videoMode", value);
-                        if (videoWorkflowId(config, model) === "video-h3-fast") return;
-                        const baseId = value === "reference" ? "video-h3-ref2va" : value === "frames" ? "video-h3-frames" : "video-h3-t2v";
-                        const nextModel = videoModelForWorkflow(config, baseId, { noVdn: isNoVdnWorkflowId(videoWorkflowId(config, model)) });
-                        if (nextModel) updateConfig("videoModel", nextModel);
-                    }}
+                    onModeChange={(value) => updateConfig("videoMode", value)}
                     frameMode={frameMode}
                     onFrameModeChange={onFrameModeChange}
                     theme={theme}

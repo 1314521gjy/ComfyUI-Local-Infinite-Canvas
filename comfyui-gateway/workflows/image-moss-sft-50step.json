@@ -86,7 +86,7 @@
     "class_type": "KSampler",
     "inputs": {
       "model": [
-        "11",
+        "9001",
         0
       ],
       "positive": [
@@ -159,6 +159,17 @@
     },
     "_meta": {
       "title": "TE-Speed MOSS"
+    }
+  },
+  "9001": {
+    "class_type": "PathchSageAttentionKJ",
+    "inputs": {
+      "model": [
+        "6",
+        0
+      ],
+      "sage_attention": "auto",
+      "allow_compile": false
     }
   }
 }

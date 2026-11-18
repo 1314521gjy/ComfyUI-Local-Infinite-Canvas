@@ -13,6 +13,8 @@ type PromptOptimizeOptionsProps = {
     cloudReady: boolean;
     cloudModel?: string;
     localReady?: boolean;
+    forceCloud?: boolean;
+    forceCloudReason?: string;
     title?: string;
     disabled?: boolean;
     className?: string;
@@ -30,6 +32,8 @@ export function PromptOptimizeOptions({
     cloudReady,
     cloudModel,
     localReady = true,
+    forceCloud = false,
+    forceCloudReason,
     title,
     disabled = false,
     className = "",
@@ -62,13 +66,14 @@ export function PromptOptimizeOptions({
             <div>
                 <div className="mb-1 text-[11px] opacity-70">{t("canvas.promptPanel.optimizeEngine")}</div>
                 <div className="grid grid-cols-2 gap-2">
-                    <Button size="small" type={engine === "local" ? "primary" : "default"} onClick={() => onEngineChange("local")}>
+                    <Button size="small" type={engine === "local" ? "primary" : "default"} disabled={forceCloud} onClick={() => onEngineChange("local")}>
                         {t("canvas.promptPanel.optimizeEngineLocal")}
                     </Button>
                     <Button size="small" type={engine === "cloud" ? "primary" : "default"} onClick={() => onEngineChange("cloud")}>
                         {t("canvas.promptPanel.optimizeEngineCloud")}
                     </Button>
                 </div>
+                {forceCloud ? <div className="mt-1 text-[11px] leading-4 opacity-70">{forceCloudReason || "该模式仅支持云端优化"}</div> : null}
                 {engine === "cloud" ? (
                     <div className="mt-2 flex items-center justify-between gap-2 text-[11px] opacity-70">
                         <span className="min-w-0 truncate">
@@ -83,7 +88,7 @@ export function PromptOptimizeOptions({
                         ) : null}
                     </div>
                 ) : null}
-                {engine === "local" && !localReady ? (
+                {engine === "local" && !localReady && !forceCloud ? (
                     <div className="mt-2 flex items-center justify-between gap-2 text-[11px] opacity-70">
                         <span className="min-w-0 truncate">{t("canvas.promptPanel.optimizeLocalMissing")}</span>
                         <Button size="small" className="shrink-0" onClick={onOpenLocalSettings || onOpenSettings}>

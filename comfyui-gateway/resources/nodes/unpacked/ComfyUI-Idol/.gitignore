@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+dev/out/
+dev/logs/
+dev/pydeps/
+dev/reference_idol/*
+!dev/reference_idol/COMMIT
+dev/showcase/hy3_inputs/

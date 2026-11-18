@@ -52,10 +52,52 @@ export function safeFileName(value) {
   return path.basename(String(value || "file")).replace(/[^\w.-]+/g, "_");
 }
 
-export function uniqueFileName(value, suffix = crypto.randomUUID().slice(0, 8)) {
+const MEDIA_EXTENSIONS = new Set([
+  ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff", ".avif", ".heic", ".heif",
+  ".mp4", ".webm", ".mov", ".mkv", ".avi", ".m4v", ".mpeg", ".mpg",
+  ".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".opus",
+]);
+
+const MIME_EXTENSIONS = {
+  "image/png": ".png",
+  "image/jpeg": ".jpg",
+  "image/jpg": ".jpg",
+  "image/pjpeg": ".jpg",
+  "image/webp": ".webp",
+  "image/gif": ".gif",
+  "image/bmp": ".bmp",
+  "image/tiff": ".tif",
+  "image/avif": ".avif",
+  "image/heic": ".heic",
+  "image/heif": ".heif",
+  "video/mp4": ".mp4",
+  "video/webm": ".webm",
+  "video/quicktime": ".mov",
+  "video/x-matroska": ".mkv",
+  "video/x-msvideo": ".avi",
+  "video/mpeg": ".mpg",
+  "audio/mpeg": ".mp3",
+  "audio/wav": ".wav",
+  "audio/x-wav": ".wav",
+  "audio/flac": ".flac",
+  "audio/ogg": ".ogg",
+  "audio/mp4": ".m4a",
+  "audio/aac": ".aac",
+  "audio/opus": ".opus",
+};
+
+export function normalizeMediaExtension(name, mimeType) {
+  const raw = path.extname(String(name || "")).toLowerCase();
+  if (MEDIA_EXTENSIONS.has(raw)) return raw;
+  const mime = String(mimeType || "").split(";")[0].trim().toLowerCase();
+  return MIME_EXTENSIONS[mime] || ".png";
+}
+
+export function uniqueFileName(value, suffix = crypto.randomUUID().slice(0, 8), mimeType = "") {
   const safe = safeFileName(value || "image.png");
-  const ext = path.extname(safe) || ".png";
-  const stem = path.basename(safe, ext).slice(0, 60) || "image";
+  const rawExt = path.extname(safe);
+  const ext = normalizeMediaExtension(safe, mimeType);
+  const stem = path.basename(safe, rawExt).slice(0, 60) || "image";
   return safeFileName(`${stem}-${suffix}${ext}`);
 }
 
@@ -173,4 +215,23 @@ export function capH3ReferenceFrames(frames) {
   const value = Number(frames);
   if (!Number.isFinite(value) || value <= 0) return 0;
   return Math.min(value, H3_MAX_REFERENCE_FRAMES);
+}
+
+// Viggle Remake 单窗口是 17n+5，范围 90–345 帧（24fps 下 3.75–14.375s）。
+export const VIGGLE_MIN_FRAMES = 90;
+export const VIGGLE_MAX_FRAMES = 345;
+
+export function alignViggleFrames(frames) {
+  const value = Number(frames);
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  const n = Math.max(5, Math.floor((value - 5) / 17));
+  return Math.min(17 * n + 5, VIGGLE_MAX_FRAMES);
+}
+
+// Remake 只能接 17n+5；源片取下一档并补帧，生成后再裁回源时长，避免对齐时丢帧。
+export function alignViggleFramesUp(frames) {
+  const value = Number(frames);
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  const n = Math.max(5, Math.ceil((value - 5) / 17));
+  return Math.min(17 * n + 5, VIGGLE_MAX_FRAMES);
 }

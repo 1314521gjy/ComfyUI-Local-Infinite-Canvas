@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
-import { Box, Brush, Camera, Copy, FileText, Grid2x2, LayoutGrid, Lock, LockOpen, Maximize2, Scissors, Sparkles, Upload, ZoomIn } from "lucide-react";
+import { Brush, Camera, Copy, FileText, Grid2x2, LayoutGrid, Lock, LockOpen, Maximize2, Mountain, Scissors, Sparkles, Upload, ZoomIn } from "lucide-react";
 
 import type { CanvasNodeData } from "@/types/canvas";
 import i18n from "@/i18n";
 
-export type ImageNodeActionToolId = "copyPrompt" | "reversePrompt" | "replace" | "resize" | "maskEdit" | "crop" | "split" | "upscale" | "superResolve" | "angle" | "fourView" | "to3d" | "view";
+export type ImageNodeActionToolId = "copyPrompt" | "reversePrompt" | "replace" | "resize" | "maskEdit" | "crop" | "split" | "upscale" | "superResolve" | "angle" | "fourView" | "to3d" | "scene3d" | "view";
 export type ImageQuickToolId = "info" | "delete" | "saveAsset" | "saveStyle" | "download" | ImageNodeActionToolId;
 
 export type ImageToolHandlers = {
@@ -18,6 +18,8 @@ export type ImageToolHandlers = {
     onAngle: (node: CanvasNodeData) => void;
     onFourView: (node: CanvasNodeData) => void;
     onTo3D: (node: CanvasNodeData) => void;
+    onSceneTo3D: (node: CanvasNodeData) => void;
+    onScene3D: (node: CanvasNodeData) => void;
     onViewImage: (node: CanvasNodeData) => void;
     onCopyPrompt: (node: CanvasNodeData) => void;
     onReversePrompt: (node: CanvasNodeData) => void;
@@ -136,12 +138,12 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
         run: (node, handlers) => handlers.onFourView(node),
     },
     {
-        id: "to3d",
+        id: "scene3d",
         defaultVisible: true,
-        label: () => i18n.t("canvas.imageTools.to3d"),
-        title: () => i18n.t("canvas.imageTools.to3dTitle"),
-        icon: () => <Box className="size-4" />,
-        run: (node, handlers) => handlers.onTo3D(node),
+        label: () => i18n.t("canvas.imageTools.scenePanorama"),
+        title: () => i18n.t("canvas.imageTools.scenePanoramaTitle"),
+        icon: () => <Mountain className="size-4" />,
+        run: (node, handlers) => handlers.onScene3D(node),
     },
     {
         id: "view",
@@ -173,11 +175,12 @@ export function normalizeImageQuickToolIds(value: unknown[]) {
 }
 
 export function readImageQuickToolsConfig(value: unknown): ImageQuickToolsConfig {
-    if (Array.isArray(value)) return { ids: normalizeImageQuickToolIds(value), showLabels: false };
+    const withScene3D = (ids: ImageQuickToolId[]): ImageQuickToolId[] => (ids.includes("scene3d") ? ids : [...ids, "scene3d"]);
+    if (Array.isArray(value)) return { ids: withScene3D(normalizeImageQuickToolIds(value)), showLabels: false };
     if (!value || typeof value !== "object") return { ids: defaultImageQuickToolIds, showLabels: false };
     const data = value as Partial<ImageQuickToolsConfig>;
     return {
-        ids: Array.isArray(data.ids) ? normalizeImageQuickToolIds(data.ids) : defaultImageQuickToolIds,
+        ids: Array.isArray(data.ids) ? withScene3D(normalizeImageQuickToolIds(data.ids)) : defaultImageQuickToolIds,
         showLabels: data.showLabels === true,
     };
 }

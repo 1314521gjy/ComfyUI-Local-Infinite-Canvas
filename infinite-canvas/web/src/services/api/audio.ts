@@ -2,11 +2,11 @@ import axios from "axios";
 
 import i18n from "@/i18n";
 import { audioMimeType, normalizeAudioFormatValue, normalizeAudioSpeedValue, normalizeAudioVoiceValue } from "@/lib/audio-generation";
-import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
+import { uploadMediaFile, resolveMediaUrl, type UploadedFile } from "@/services/file-storage";
 import { buildApiUrl, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@/stores/use-config-store";
 import { runModelPlugin } from "./model-plugin";
 
-type RequestOptions = { signal?: AbortSignal };
+type RequestOptions = { signal?: AbortSignal; referenceAudio?: { url: string; storageKey?: string; name?: string } };
 const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiErrors.${key}`, options);
 
 function aiApiUrl(config: AiConfig, path: string) {
@@ -24,6 +24,7 @@ export async function requestAudioGeneration(config: AiConfig, prompt: string, o
     const requestConfig = resolveModelRequestConfig(config, config.model || config.audioModel);
     const model = requestConfig.model.trim();
     const format = normalizeAudioFormatValue(config.audioFormat);
+    if (config.channelMode === "local") return requestLocalAudio(config, requestConfig, prompt, format, options);
     const script = resolveModelScript(config, config.model || config.audioModel);
     if (script) {
         if (!model) throw new Error(apiText("audioModelRequired"));
@@ -64,6 +65,127 @@ export async function requestAudioGeneration(config: AiConfig, prompt: string, o
     } catch (error) {
         throw new Error(readAxiosError(error, apiText("audioGenerationFailed")));
     }
+}
+
+export async function requestDialogueSpeech(
+    config: AiConfig,
+    text: string,
+    instructions: string,
+    reference: { blob: Blob; name: string } | null,
+    seed: string,
+    options?: { signal?: AbortSignal },
+): Promise<Blob> {
+    const requestConfig = resolveModelRequestConfig(config, config.model || config.audioModel);
+    const seedValue = /^\d+$/.test(seed) ? Number(seed) : undefined;
+    try {
+        if (!reference) {
+            const response = await axios.post<Blob>(
+                aiApiUrl(requestConfig, "/audio/speech-h3"),
+                {
+                    input: text,
+                    voice_description: "",
+                    instructions,
+                    language: "zh",
+                    ...(seedValue !== undefined ? { seed: seedValue } : {}),
+                },
+                { headers: aiHeaders(requestConfig), responseType: "blob", signal: options?.signal },
+            );
+            await assertAudioBlob(response.data);
+            return response.data.type.startsWith("audio/") ? response.data : new Blob([response.data], { type: "audio/wav" });
+        }
+        const form = new FormData();
+        form.append("input", text);
+        form.append("instructions", instructions);
+        if (seedValue !== undefined) form.append("seed", String(seedValue));
+        form.append("reference_audio", reference.blob, reference.name || "reference.wav");
+        const response = await axios.post<Blob>(aiApiUrl(requestConfig, "/audio/speech"), form, {
+            headers: { "Content-Type": "multipart/form-data" },
+            responseType: "blob",
+            signal: options?.signal,
+        });
+        await assertAudioBlob(response.data);
+        return response.data.type.startsWith("audio/") ? response.data : new Blob([response.data], { type: "audio/wav" });
+    } catch (error) {
+        throw new Error(await localAudioErrorMessage(error, "台词生成失败"));
+    }
+}
+
+async function requestLocalAudio(config: AiConfig, requestConfig: ReturnType<typeof resolveModelRequestConfig>, prompt: string, format: string, options?: RequestOptions): Promise<Blob> {
+    const songMode = config.audioMode === "song";
+    const seed = String(config.seed || "").trim();
+    if (!songMode && config.audioReferenceMode === "none") {
+        try {
+            const response = await axios.post<Blob>(
+                aiApiUrl(requestConfig, "/audio/speech-h3"),
+                {
+                    input: prompt,
+                    voice_description: config.audioVoiceDescription || "",
+                    instructions: config.audioInstructions.trim(),
+                    language: config.audioLanguage || "zh",
+                    ...(/^\d+$/.test(seed) ? { seed: Number(seed) } : {}),
+                },
+                { headers: aiHeaders(requestConfig), responseType: "blob", signal: options?.signal },
+            );
+            await assertAudioBlob(response.data);
+            return response.data.type.startsWith("audio/") ? response.data : new Blob([response.data], { type: audioMimeType(format) });
+        } catch (error) {
+            throw new Error(await localAudioErrorMessage(error, apiText("audioGenerationFailed")));
+        }
+    }
+    const referenceKey = songMode ? config.audioSongReferenceKey : config.audioReferenceKey;
+    const wiredReference = options?.referenceAudio;
+    if (!referenceKey && !wiredReference) throw new Error(apiText("audioReferenceRequired"));
+    const form = new FormData();
+    form.append("input", prompt);
+    form.append("response_format", format);
+    form.append("speed", String(normalizeAudioSpeedValue(config.audioSpeed)));
+    if (!songMode) form.append("instructions", config.audioInstructions.trim());
+    if (songMode) {
+        const bpm = Number(String(config.audioBpm ?? "").trim());
+        const duration = Number(String(config.audioDuration ?? "").trim());
+        if (Number.isFinite(bpm) && bpm > 0) form.append("bpm", String(Math.trunc(bpm)));
+        if (Number.isFinite(duration) && duration > 0) form.append("duration", String(duration));
+        if (config.audioLanguage?.trim()) form.append("language", config.audioLanguage.trim());
+        if (config.audioKeyscale?.trim()) form.append("keyscale", config.audioKeyscale.trim());
+    }
+    if (/^\d+$/.test(seed)) form.append("seed", seed);
+    if (referenceKey || wiredReference) {
+        try {
+            const url = referenceKey ? await resolveMediaUrl(referenceKey) : wiredReference?.storageKey ? await resolveMediaUrl(wiredReference.storageKey) : wiredReference?.url || "";
+            if (!url) throw new Error("missing reference url");
+            const refBlob = await (await fetch(url, { signal: options?.signal })).blob();
+            const referenceName = referenceKey
+                ? (songMode ? config.audioSongReferenceName : config.audioReferenceName)?.trim() || "reference.mp3"
+                : wiredReference?.name || "reference.mp3";
+            form.append("reference_audio", refBlob, referenceName);
+        } catch {
+            throw new Error(apiText("audioReferenceUnavailable"));
+        }
+    }
+    try {
+        const response = await axios.post<Blob>(aiApiUrl(requestConfig, songMode ? "/audio/song" : "/audio/speech"), form, {
+            headers: { "Content-Type": "multipart/form-data" },
+            responseType: "blob",
+            signal: options?.signal,
+        });
+        await assertAudioBlob(response.data);
+        return response.data.type.startsWith("audio/") ? response.data : new Blob([response.data], { type: audioMimeType(format) });
+    } catch (error) {
+        throw new Error(await localAudioErrorMessage(error, apiText("audioGenerationFailed")));
+    }
+}
+
+async function localAudioErrorMessage(error: unknown, fallback: string) {
+    if (axios.isAxiosError(error) && error.response?.data instanceof Blob) {
+        try {
+            const payload = JSON.parse(await error.response.data.text()) as { error?: { message?: string }; message?: string; msg?: string };
+            const message = payload.error?.message || payload.message || payload.msg;
+            if (message) return message;
+        } catch {
+            // 非 JSON 错误体走通用错误处理。
+        }
+    }
+    return readAxiosError(error, fallback);
 }
 
 async function audioPluginBlob(result: unknown, format: string): Promise<Blob> {

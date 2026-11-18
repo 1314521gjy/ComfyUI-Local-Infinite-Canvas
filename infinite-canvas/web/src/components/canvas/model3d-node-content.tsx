@@ -6,6 +6,7 @@ import { saveAs } from "file-saver";
 
 import type { CanvasNodeContext } from "@/types/canvas-plugin";
 import { SceneMeshNodeContent } from "./scene-mesh-node-content";
+import { Scene3DNodeContent } from "./scene3d-node-content";
 import { uploadImage } from "@/services/image-storage";
 
 type ViewerStatus = "idle" | "loading" | "ready" | "error";
@@ -16,6 +17,7 @@ type OrbitView = {
 };
 
 export function Model3DNodeContent({ ctx }: { ctx: CanvasNodeContext }) {
+    if (ctx.node.metadata?.model3dEngine === "panorama") return <Scene3DNodeContent ctx={ctx} />;
     if (ctx.node.metadata?.model3d?.format === "glb") return <SceneMeshNodeContent ctx={ctx} />;
     return <SplatNodeContent ctx={ctx} />;
 }

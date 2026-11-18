@@ -9,6 +9,7 @@ import { isApiWorkflow, isUiWorkflow } from "./registry.js";
 import { findSimilarModel } from "./model-match.js";
 import { MODEL_LOADER_SPECS as LOADER_SPECS, discoverModelLoaderSpecs } from "./model-loaders.js";
 import { MODEL_DIR_KEYS, collectModelRoots, modelRelativePath } from "./model-paths.js";
+import { tierRequiresStatus } from "./moss-tier.js";
 import { nowIso, randomId, truncate, writeJsonAtomic } from "./util.js";
 
 function safeStat(file) {
@@ -111,6 +112,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
     let debounceTimer = null;
     let connectivityTimer = null;
     let connectivityChecking = false;
+    let connectivityFailures = 0;
     let lastAutoScanAt = 0;
     let lastComfyBase = "";
     let loaderCatalog = snapshot.loaderCatalog;
@@ -180,6 +182,15 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
             if (!seenContent.has(key)) seenContent.set(key, entry.id);
             const sourcePath = internal.source?.path;
             if (sourcePath) importedComfyPaths.add(path.isAbsolute(sourcePath) ? path.resolve(sourcePath) : path.resolve(comfyRoot, sourcePath));
+            // 变体/档位文件属于已注册工作流，不能再作为独立 free workflow 导入。
+            for (const variant of Object.values(internal.variants || {})) {
+                if (variant?.filePath) importedComfyPaths.add(path.resolve(variant.filePath));
+            }
+            for (const tier of Object.values(internal.tiers || {})) {
+                for (const selected of Object.values(tier?.workflows || {})) {
+                    if (selected?.filePath) importedComfyPaths.add(path.resolve(selected.filePath));
+                }
+            }
             if (internal.source?.kind === "comfyui" && internal.source.name) importedComfyNames.add(path.basename(String(internal.source.name)));
         }
         for (const id of duplicateIds) {
@@ -656,7 +667,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         return false;
     }
 
-    function validateWorkflow(workflow, classes, loaders, entry, view = null) {
+    function validateWorkflow(workflow, classes, loaders, entry, view = null, { allowOverride = true } = {}) {
         const problems = [];
         for (const [nodeId, node] of Object.entries(workflow || {})) {
             const classType = node?.class_type;
@@ -668,7 +679,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
             for (const loader of nodeLoaders) {
                 const value = node.inputs?.[loader.input];
                 if (typeof value !== "string" || !value || loader.options.has(value)) continue;
-                const override = mainModelFile(entry?.id);
+                const override = allowOverride ? mainModelFile(entry?.id) : "";
                 const overrideLower = normalizeAliasValue(override).toLowerCase();
                 const overrideInstalled = Boolean(override) && [...loader.options].some((option) => normalizeAliasValue(option).toLowerCase() === overrideLower);
                 if (override && classType === "UNETLoader" && loader.input === "unet_name" && overrideInstalled) continue;
@@ -772,24 +783,69 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                     const variantStatus = {};
                     for (const [mode, variant] of Object.entries(entry.variants || {})) {
                         if (!variant?.workflow) continue;
-                        variantStatus[mode] = validateWorkflow(variant.workflow, classes, loaders, entry, view);
+                        // 变体自带底模，不能让「主模型覆盖」把它判成可用；运行期也不会套覆盖。
+                        variantStatus[mode] = validateWorkflow(variant.workflow, classes, loaders, entry, view, { allowOverride: false });
                     }
                     const variantProblems = Object.values(variantStatus).flat();
+                    const tierStatus = {};
+                    const precisionFiles = { bf16: new Set(), int8: new Set() };
+                    for (const [tierId, tier] of Object.entries(entry.tiers || {})) {
+                        const tierPrecision = {};
+                        const tierProblems = [];
+                        for (const [precision, selected] of Object.entries(tier.workflows || {})) {
+                            const list = selected?.workflow ? validateWorkflow(selected.workflow, classes, loaders, entry, view) : [];
+                            tierPrecision[precision] = Boolean(selected?.workflow) && list.length === 0;
+                            tierProblems.push(...list);
+                            const unet = Object.values(selected?.workflow || {}).find((node) => node?.class_type === "UNETLoader")?.inputs?.unet_name;
+                            if (typeof unet === "string" && unet) precisionFiles[precision].add(unet);
+                        }
+                        let requiresOk = true;
+                        let requiresMessage = null;
+                        if (tier.requires) {
+                            const comfyRoot = config.comfyDir || detectComfyLayout(directorySettings.comfyDir)?.root || "";
+                            const loraRoots = collectModelRoots({ dir: "loras", folderPaths: view.folderPaths, comfyDir: config.comfyDir });
+                            const result = await tierRequiresStatus(tier.requires, { comfyDir: comfyRoot, comfyRoots: [comfyRoot].filter(Boolean), loraRoots });
+                            requiresOk = result.ok;
+                            requiresMessage = result.message;
+                            if (!result.ok) tierProblems.push({ type: "resource", message: result.message || tier.unavailableReason || "档位资源缺失" });
+                        }
+                        const hasWorkflows = Object.keys(tier.workflows || {}).length > 0;
+                        const available = hasWorkflows && requiresOk && Object.values(tierPrecision).some(Boolean);
+                        if (!hasWorkflows) tierProblems.push({ type: "resource", message: tier.unavailableReason || "该档位工作流未安装" });
+                        const reason = available ? null : tier.unavailableReason || requiresMessage || (hasWorkflows ? "该档位缺少可用模型" : "该档位工作流未安装");
+                        const uniqueTierProblems = [];
+                        for (const problem of tierProblems) {
+                            const key = `${problem.type}:${problem.message}`;
+                            if (uniqueTierProblems.some((item) => `${item.type}:${item.message}` === key)) continue;
+                            uniqueTierProblems.push(problem);
+                        }
+                        tierStatus[tierId] = { id: tierId, label: tier.label || tierId, steps: tier.steps ?? null, available, reason, precision: tierPrecision, problems: uniqueTierProblems };
+                    }
+                    const unetOptions = new Set(loaderOptionsFor("UNETLoader", "unet_name", view).map((file) => normalizeAliasValue(file)));
+                    const hasPrecision = (files) => [...files].some((file) => {
+                        const normalized = normalizeAliasValue(file);
+                        if (unetOptions.has(normalized)) return true;
+                        const base = normalizeBaseName(file);
+                        return [...unetOptions].some((option) => normalizeBaseName(option) === base);
+                    });
+                    const precision = { bf16: hasPrecision(precisionFiles.bf16), int8: hasPrecision(precisionFiles.int8) };
+                    const tierProblems = Object.values(tierStatus).flatMap((tier) => tier.problems || []);
                     const runtimeProblems = typeof runtimeProblemProvider === "function" ? runtimeProblemProvider(entry.id) || [] : [];
-                    const problems = [...baseProblems, ...variantProblems, ...runtimeProblems];
+                    const problems = [...baseProblems, ...variantProblems, ...tierProblems, ...runtimeProblems];
                     const unique = [];
                     for (const problem of problems) {
                         const key = `${problem.type}:${problem.message}`;
                         if (unique.some((item) => `${item.type}:${item.message}` === key)) continue;
                         unique.push(problem);
                     }
-                    // 一个 variant 缺模型不应拖着整个入口“不可用”：
-                    // 只要有任一 variant 可跑，入口就激活；具体哪档缺模型放在 variants 里。
+                    // 一个 variant/档位缺模型不应拖着整个入口“不可用”：
+                    // 只要有任一 variant/档位可跑，入口就激活；具体哪档缺模型放在 variants/tiers 里。
                     const baseAvailable = baseProblems.length === 0;
                     const anyVariantAvailable = Object.values(variantStatus).some((list) => list.length === 0);
-                    const available = runtimeProblems.length === 0 && (baseAvailable || anyVariantAvailable);
+                    const anyTierAvailable = Object.values(tierStatus).some((tier) => tier.available);
+                    const available = runtimeProblems.length === 0 && (baseAvailable || anyVariantAvailable || anyTierAvailable);
                     const variants = Object.fromEntries(Object.entries(variantStatus).map(([mode, list]) => [mode, { available: list.length === 0, problems: list }]));
-                    nextAvailability.set(entry.id, { available, problems: unique, variants });
+                    nextAvailability.set(entry.id, { available, problems: unique, variants, tiers: tierStatus, precision });
                     if (entry.hidden) continue;
                     for (const problem of unique) {
                         if (problem.type === "model") missingModels.add(problem.message);
@@ -797,7 +853,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                         if (problem.type === "runtime") missingRuntime.add(problem.message);
                         if (problem.type === "restart") missingRestart.add(problem.message);
                     }
-                    workflows.push({ id: entry.id, name: entry.name, type: entry.type, available, problems: unique, variants });
+                    workflows.push({ id: entry.id, name: entry.name, type: entry.type, available, problems: unique, variants, tiers: tierStatus, precision });
                 }
                 const counts = {
                     total: workflows.length,
@@ -907,6 +963,11 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
             const currentBase = typeof comfy.baseUrl === "function" ? comfy.baseUrl() : "";
             const addressChanged = Boolean(lastComfyBase && currentBase && currentBase !== lastComfyBase);
             if (!reachable) {
+                connectivityFailures += 1;
+                if (connectivityFailures < 2) {
+                    logger?.warn?.(`ComfyUI 连通性检查失败（${connectivityFailures}/2），暂不标记离线`);
+                    return;
+                }
                 if (state.comfyReachable || state.phase === "ready") {
                     state.comfyReachable = false;
                     state.phase = "degraded";
@@ -922,6 +983,7 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 }
                 return;
             }
+            connectivityFailures = 0;
             if (state.comfyReachable && state.phase === "ready" && !addressChanged) return;
             if (Date.now() - lastAutoScanAt < 10000) return;
             lastAutoScanAt = Date.now();

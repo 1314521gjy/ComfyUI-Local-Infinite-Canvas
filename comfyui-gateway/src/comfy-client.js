@@ -18,7 +18,9 @@ function formatNodeErrors(nodeErrors) {
   for (const [nodeId, value] of Object.entries(nodeErrors)) {
     const errors = Array.isArray(value?.errors) ? value.errors : [];
     for (const error of errors) {
-      messages.push(`节点 ${nodeId}: ${error.message || error.details || "校验失败"}`);
+      const message = error.message || "校验失败";
+      const detail = typeof error.details === "string" && error.details && !message.includes(error.details) ? `（${error.details}）` : "";
+      messages.push(`节点 ${nodeId}: ${message}${detail}`);
     }
     if (!errors.length && value) messages.push(`节点 ${nodeId}: ${truncate(JSON.stringify(value), 300)}`);
   }
@@ -177,7 +179,7 @@ export function createComfyClient({ baseUrl, timeoutMs = 10 * 60 * 1000, retryAt
     throw lastError;
   }
 
-  async function submit(workflow, { clientId = randomId("canvas-"), signal, requestId } = {}) {
+  async function submit(workflow, { clientId = randomId("canvas-"), signal, requestId, previewEnabled = true } = {}) {
     if (previewHub) {
       await previewHub.ensure(clientId).catch(() => false);
     }
@@ -194,7 +196,7 @@ export function createComfyClient({ baseUrl, timeoutMs = 10 * 60 * 1000, retryAt
     if (!data?.prompt_id) {
       throw new ComfyUIError(`ComfyUI 未返回 prompt_id：${truncate(JSON.stringify(data), 500)}`, { status: 502, code: "no_prompt_id", details: data });
     }
-    previewHub?.bindPrompt(clientId, data.prompt_id, { requestId, plan: estimateStepPlan(workflow) });
+    previewHub?.bindPrompt(clientId, data.prompt_id, { requestId, plan: estimateStepPlan(workflow), previewEnabled });
     return { promptId: data.prompt_id, number: data.number, raw: data };
   }
 
@@ -263,7 +265,7 @@ export function createComfyClient({ baseUrl, timeoutMs = 10 * 60 * 1000, retryAt
     });
 
   const objectInfo = () => request("/object_info", { timeout: 30000 });
-  const systemStats = () => request("/system_stats", { timeout: 3000 });
+  const systemStats = () => request("/system_stats", { timeout: 60000 });
   // ComfyUI 会把 extra_model_paths.yaml / 目录映射后的真实路径都列出来；
   // 老版本没有这个接口时返回空对象，由调用方回退到 models/<类型>。
   const folderPaths = async () => {

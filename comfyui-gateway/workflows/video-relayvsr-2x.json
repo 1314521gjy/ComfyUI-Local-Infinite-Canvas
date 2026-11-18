@@ -1,0 +1,129 @@
+{
+  "1": {
+    "class_type": "LoadVideo",
+    "inputs": {
+      "file": "placeholder.mp4"
+    }
+  },
+  "2": {
+    "class_type": "GetVideoComponents",
+    "inputs": {
+      "video": [
+        "1",
+        0
+      ]
+    }
+  },
+  "3": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "relayvsr_x2_lightx2v_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "4": {
+    "class_type": "RelayVSRConditioning",
+    "inputs": {
+      "model": [
+        "3",
+        0
+      ],
+      "images": [
+        "2",
+        0
+      ]
+    }
+  },
+  "5": {
+    "class_type": "ConditioningZeroOut",
+    "inputs": {
+      "conditioning": [
+        "4",
+        0
+      ]
+    }
+  },
+  "6": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "3",
+        0
+      ],
+      "positive": [
+        "4",
+        0
+      ],
+      "negative": [
+        "5",
+        0
+      ],
+      "latent_image": [
+        "4",
+        1
+      ],
+      "seed": 42,
+      "steps": 1,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1
+    }
+  },
+  "7": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "relayvsr_flash_vae_x2_fp32.safetensors"
+    }
+  },
+  "8": {
+    "class_type": "VSRDecode",
+    "inputs": {
+      "vae": [
+        "7",
+        0
+      ],
+      "samples": [
+        "6",
+        0
+      ],
+      "images": [
+        "2",
+        0
+      ],
+      "detail": 1
+    }
+  },
+  "9": {
+    "class_type": "CreateVideo",
+    "inputs": {
+      "images": [
+        "8",
+        0
+      ],
+      "audio": [
+        "2",
+        1
+      ],
+      "fps": [
+        "2",
+        2
+      ],
+      "bit_depth": "auto",
+      "color_space": "sRGB",
+      "codec": "none"
+    }
+  },
+  "10": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "video": [
+        "9",
+        0
+      ],
+      "filename_prefix": "video/relayvsr-2x",
+      "format": "auto",
+      "codec": "auto"
+    }
+  }
+}

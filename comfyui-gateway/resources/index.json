@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "version": "2026.11.06-39",
+  "version": "2026.11.18-2",
   "channel": "stable",
-  "updatedAt": "2026-11-06",
+  "updatedAt": "2026-11-17",
   "packs": [
     {
       "id": "core",
@@ -24,9 +24,11 @@
         "qwen3.5_9b_int8_convrot",
         "flux2-vae",
         "moss_image_sft_8steps_lora",
+        "moss_12steps_lora",
         "moss_guanlan_lora"
       ],
       "workflows": [
+        "image-moss-image",
         "image-moss-sft-8step",
         "image-moss-sft-50step",
         "image-moss-sft-int8-8step",
@@ -83,6 +85,7 @@
         "qwen3.5_9b_int8_convrot",
         "flux2-vae",
         "moss_image_sft_8steps_lora",
+        "moss_12steps_lora",
         "moss_guanlan_lora"
       ],
       "workflowDependencies": {
@@ -482,6 +485,117 @@
       "tier": "core"
     },
     {
+      "id": "viggle",
+      "label": "Viggle Remake 角色替换 / 视频编辑",
+      "description": "H3 衍生重铸模型，两种模式共用源视频 + 1–4 张参考图与源音轨。人物替换（默认安装）：换人 INT8 主模型。视频编辑：edit LoRA + pruned INT8 底模，24GB 可跑；Singularity 未剪枝 INT8 需 32GB+ 并依赖 offload（可选）。未安装 pruned 底模时，视频编辑自动回退 Singularity。",
+      "resources": [
+        "viggle_swap_int8",
+        "h3_te_qwen3vl_32b_int8_convrot",
+        "h3_video_vae_fp16",
+        "h3_audio_vae_fp32",
+        "viggle_swap_gguf_q4",
+        "viggle_edit_lora",
+        "h3_unet_fl2va_pruned_int8_convrot",
+        "h3_unet_singularity_ref2va_v13_int8_unpruned"
+      ],
+      "workflows": [
+        "video-h3-viggle-swap"
+      ],
+      "family": "h3",
+      "tier": "quality",
+      "requirements": {
+        "vramFloorGb": 24,
+        "weightsGb": 54,
+        "ramBaseGb": 64,
+        "safety": 0.15,
+        "recommendVramGb": 32
+      },
+      "optional": true,
+      "autoRecommend": false,
+      "variants": [
+        {
+          "id": "swap",
+          "label": "人物替换（换人 INT8）",
+          "tier": "quality",
+          "workflows": [
+            "video-h3-viggle-swap"
+          ],
+          "requiredResources": [
+            "viggle_swap_int8",
+            "h3_te_qwen3vl_32b_int8_convrot",
+            "h3_video_vae_fp16",
+            "h3_audio_vae_fp32"
+          ],
+          "requirements": {
+            "vramFloorGb": 24,
+            "weightsGb": 54,
+            "ramBaseGb": 64,
+            "safety": 0.15,
+            "recommendVramGb": 32
+          }
+        },
+        {
+          "id": "edit",
+          "label": "视频编辑（pruned INT8 默认，24GB 可跑）",
+          "tier": "quality",
+          "workflows": [
+            "video-h3-viggle-swap"
+          ],
+          "requiredResources": [
+            "viggle_edit_lora",
+            "h3_unet_fl2va_pruned_int8_convrot",
+            "h3_te_qwen3vl_32b_int8_convrot",
+            "h3_video_vae_fp16",
+            "h3_audio_vae_fp32"
+          ],
+          "requirements": {
+            "vramFloorGb": 24,
+            "weightsGb": 58,
+            "ramBaseGb": 64,
+            "safety": 0.15,
+            "recommendVramGb": 32
+          }
+        },
+        {
+          "id": "edit-singularity",
+          "label": "视频编辑（Singularity 未剪枝，32GB+ 且需 offload）",
+          "tier": "quality",
+          "workflows": [
+            "video-h3-viggle-swap"
+          ],
+          "requiredResources": [
+            "viggle_edit_lora",
+            "h3_unet_singularity_ref2va_v13_int8_unpruned",
+            "h3_te_qwen3vl_32b_int8_convrot",
+            "h3_video_vae_fp16",
+            "h3_audio_vae_fp32"
+          ],
+          "requirements": {
+            "vramFloorGb": 32,
+            "weightsGb": 71,
+            "ramBaseGb": 64,
+            "safety": 0.15,
+            "recommendVramGb": 40
+          }
+        }
+      ],
+      "optionalResources": [
+        "viggle_swap_gguf_q4",
+        "viggle_edit_lora",
+        "h3_unet_fl2va_pruned_int8_convrot",
+        "h3_unet_singularity_ref2va_v13_int8_unpruned"
+      ],
+      "optionalLabel": "视频编辑 / 低显存替代（可选）",
+      "workflowDependencies": {
+        "video-h3-viggle-swap": [
+          "viggle_swap_int8",
+          "h3_te_qwen3vl_32b_int8_convrot",
+          "h3_video_vae_fp16",
+          "h3_audio_vae_fp32"
+        ]
+      }
+    },
+    {
       "id": "upscale",
       "label": "超分",
       "description": "快速放大（ESRGAN）与 SeedVR2 图片/视频超分。节点随包自动安装，运行库与权重按工作流下载；3B/7B DiT 是选下内容。",
@@ -496,7 +610,9 @@
         "seedvr2_dep_rotary",
         "seedvr2_dep_omegaconf",
         "seedvr2_dep_opencv",
-        "seedvr2_dep_einops"
+        "seedvr2_dep_einops",
+        "relayvsr_x2_int8",
+        "relayvsr_flash_vae"
       ],
       "optionalResources": [
         "esrgan_x2plus",
@@ -509,13 +625,16 @@
         "seedvr2_dep_rotary",
         "seedvr2_dep_omegaconf",
         "seedvr2_dep_opencv",
-        "seedvr2_dep_einops"
+        "seedvr2_dep_einops",
+        "relayvsr_x2_int8",
+        "relayvsr_flash_vae"
       ],
       "workflows": [
         "image-esrgan-upscale",
         "video-esrgan_2x",
         "image-seedvr2-upscale",
-        "video-seedvr2-upscale"
+        "video-seedvr2-upscale",
+        "video-relayvsr-2x"
       ],
       "family": "upscale",
       "tier": "utility",
@@ -523,7 +642,7 @@
       "autoRecommend": false,
       "requirements": {
         "vramFloorGb": 8,
-        "weightsGb": 12.5,
+        "weightsGb": 17.8,
         "ramBaseGb": 16,
         "recommendVramGb": 16
       },
@@ -551,6 +670,10 @@
           "seedvr2_dep_omegaconf",
           "seedvr2_dep_opencv",
           "seedvr2_dep_einops"
+        ],
+        "video-relayvsr-2x": [
+          "relayvsr_x2_int8",
+          "relayvsr_flash_vae"
         ]
       }
     },
@@ -644,6 +767,57 @@
       "optionalLabel": "H3 极速草稿"
     },
     {
+      "id": "h3-hyperflow",
+      "label": "H3（HyperFlow 6+2）",
+      "description": "HyperFlow H3 Flash 14B INT8 视频卡：文生 / 首尾帧 / 多参三模式，8 步 schedule（6 低清 + 2 高清）；上游要求 ComfyUI 0.43+ 原生 MiniMax-H3 节点，本画布按 0.44.0 节点/模型扫描。权重为社区转换版（BennyDaBall），MiniMax H3 Community License；约 16.3GB，另需 Qwen3-VL-32B、H3 audio VAE、TRT VAE engine 与 HyperFlow/H3 节点。权重不随包。",
+      "family": "h3",
+      "tier": "quality",
+      "optional": true,
+      "autoRecommend": false,
+      "resources": [
+        "hyperflow_ref2va_int8",
+        "h3_te_qwen3vl_32b_int8_convrot",
+        "h3_audio_vae_fp32",
+        "h3_trt_vae_decoder_engine",
+        "h3_trt_vae_encoder_engine",
+        "h3_vae_onnx_decoder",
+        "h3_vae_onnx_decoder_data",
+        "h3_vae_onnx_encoder",
+        "hyperflow_int8_node",
+        "hyperflow_flash_node",
+        "h3_audio_t8_node",
+        "h3_selflift_node",
+        "h3_solattn_node",
+        "h3_trt_vae_node",
+        "h3_vhs_node",
+        "kjnodes"
+      ],
+      "workflows": [
+        "video-hyperflow-ref2va-6p2"
+      ],
+      "workflowDependencies": {
+        "video-hyperflow-ref2va-6p2": [
+          "hyperflow_ref2va_int8",
+          "h3_te_qwen3vl_32b_int8_convrot",
+          "h3_audio_vae_fp32",
+          "h3_trt_vae_decoder_engine",
+          "h3_trt_vae_encoder_engine",
+          "h3_vae_onnx_decoder",
+          "h3_vae_onnx_decoder_data",
+          "h3_vae_onnx_encoder",
+          "hyperflow_int8_node",
+          "hyperflow_flash_node",
+          "h3_audio_t8_node",
+          "h3_selflift_node",
+          "h3_solattn_node",
+          "h3_trt_vae_node",
+          "h3_vhs_node",
+          "kjnodes"
+        ]
+      },
+      "optionalLabel": "HyperFlow"
+    },
+    {
       "id": "image3d",
       "label": "3D 生成（Idol / MoGe）",
       "description": "仅 ComfyUI 0.44.0 及以上可用，版本过低将无法使用。 Idol 单物体图生高斯 PLY，MoGe 单图场景重建 GLB；插件与权重不随程序包分发，需在资源中心手动勾选安装。",
@@ -686,7 +860,46 @@
           "image3d_moge2"
         ]
       },
-      "optionalLabel": "3D 生成"
+      "optionalLabel": "3D 生成",
+      "hidden": true
+    },
+    {
+      "id": "h3-image",
+      "label": "H3-Image（文生图 / 多图编辑）",
+      "description": "仅 ComfyUI 0.45.0 及以上可用（需 MiniMaxH3ImageConditioning 等节点；版本过低将无法使用）。H3-Image int8 主干 + Qwen3-VL-32B 文本编码 + H3-Image VAE；支持文生图/多图编辑，3D 场景扩全景依赖此卡。多图编辑另需 Qwen3.5-9B W4A8 PE（可选，约 7.3GB）。权重不随包，需在资源中心下载。",
+      "family": "h3-image",
+      "tier": "quality",
+      "optional": true,
+      "autoRecommend": false,
+      "resources": [
+        "h3_image_unet_pruned_int8_convrot",
+        "h3_te_qwen3vl_32b_int8_convrot",
+        "h3_image_vae_fp16",
+        "h3_image_pe_qwen35_9b_w4a8_gptq"
+      ],
+      "optionalResources": [
+        "h3_image_pe_qwen35_9b_w4a8_gptq"
+      ],
+      "workflows": [
+        "image-h3image",
+        "image-scene-3d"
+      ],
+      "workflowDependencies": {
+        "image-h3image": [
+          "h3_image_unet_pruned_int8_convrot",
+          "h3_te_qwen3vl_32b_int8_convrot",
+          "h3_image_vae_fp16"
+        ],
+        "image-scene-3d": [
+          "h3_image_unet_pruned_int8_convrot",
+          "h3_te_qwen3vl_32b_int8_convrot",
+          "h3_image_vae_fp16",
+          "qwen_image_2.1_turbo_int8_convrot",
+          "qwen3vl_8b_int8_convrot",
+          "qwen_image_2.1_vae_bf16"
+        ]
+      },
+      "optionalLabel": "H3-Image"
     },
     {
       "id": "agent",
@@ -718,6 +931,21 @@
       "resources": [],
       "optionalResources": [],
       "workflows": []
+    },
+    {
+      "id": "audio",
+      "label": "音频（YuE2）",
+      "description": "YuE2-3B 写歌与纯音乐；int8 默认约 3.96GB，BF16 可选约 7.8GB；checkpoint 已含 VAE，无需单独下载；CC-BY-NC-4.0，仅个人/非商业使用。",
+      "resources": [
+        "yue2_3b_int8_convrot",
+        "yue2_3b_bf16"
+      ],
+      "workflows": [],
+      "family": "audio",
+      "tier": "optional",
+      "optionalResources": [
+        "yue2_3b_bf16"
+      ]
     }
   ],
   "resources": [
@@ -814,7 +1042,13 @@
       "provides": [
         "QwenMultiangleCameraNode"
       ],
-      "sources": []
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/unpacked/ComfyUI-qwenmultiangle",
+          "label": "随包"
+        }
+      ]
     },
     {
       "id": "qwen21_outpaint_lora",
@@ -846,7 +1080,13 @@
         "InpaintCropImproved",
         "InpaintStitchImproved"
       ],
-      "sources": []
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/unpacked/ComfyUI-Inpaint-CropAndStitch",
+          "label": "随包"
+        }
+      ]
     },
     {
       "id": "kjnodes",
@@ -861,7 +1101,13 @@
       "provides": [
         "DrawMaskOnImage"
       ],
-      "sources": []
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/unpacked/comfyui-kjnodes",
+          "label": "随包"
+        }
+      ]
     },
     {
       "id": "moss_image_sft_8steps_lora",
@@ -875,6 +1121,20 @@
         "https://www.modelscope.cn/models/lodestones/MOSS-Image-SFT-8-steps-dmd/resolve/master/lora.safetensors",
         "https://hf-mirror.com/lodestones/MOSS-Image-SFT-8-steps-dmd/resolve/main/lora.safetensors",
         "https://aifasthub.com/lodestones/MOSS-Image-SFT-8-steps-dmd/resolve/main/lora.safetensors"
+      ]
+    },
+    {
+      "id": "moss_12steps_lora",
+      "type": "model",
+      "label": "MOSS-Image 12步 Turbo LoRA",
+      "target": "loras/Moss_image/12_step_turbo_moss_1024_distill_v8_r64_weightsx2.safetensors",
+      "size": 284147832,
+      "sha256": "873f6de07cf21ae3a373c009383da3d120092a8f3a0ba92c9dc5815693ca24df",
+      "license": "Apache-2.0",
+      "note": "12步/CFG1/强度1；权重自带 weight_multiplier 2.0；来源 anyMODE/moss-image-12step-turbo-lora commit 5045cdb8。",
+      "sources": [
+        "https://hf-mirror.com/anyMODE/moss-image-12step-turbo-lora/resolve/5045cdb8/12_step_turbo_moss_1024_distill_v8_r64_weightsx2.safetensors",
+        "https://huggingface.co/anyMODE/moss-image-12step-turbo-lora/resolve/5045cdb8/12_step_turbo_moss_1024_distill_v8_r64_weightsx2.safetensors"
       ]
     },
     {
@@ -1024,7 +1284,7 @@
       "target": "custom_nodes/TE-Speed-MOSS",
       "size": 245760,
       "sha256": "1d833d6765973d1916a4447fded50c4ed4d6c67b827e5e2f9972485229258c53",
-      "license": "上游仓库未声明 LICENSE",
+      "license": "Proprietary (TETAE; all rights reserved; bundled by project)",
       "note": "Windows x64 / CPython 3.12（本机实测可加载；上游 README 写 3.13，分发前按目标环境核对）；安装后需重启 ComfyUI；仅 50 步工作流需要。上游未声明 LICENSE，私有包内分发前需确认授权。",
       "provides": [
         "TESpeedMoss"
@@ -1033,7 +1293,7 @@
         {
           "kind": "bundled",
           "path": "resources/nodes/TE-Speed-MOSS.zip",
-          "label": "内置"
+          "label": "随包"
         }
       ],
       "bundleDir": "resources/nodes/unpacked/TE-Speed-MOSS",
@@ -1046,7 +1306,7 @@
       "target": "loras/Moss_image/KOOK-MOSS-SFT-观澜.safetensors",
       "size": 145157232,
       "sha256": "52e41bc8ab3964b11104332bc7fc742571e5fd1eaf7bc046285a5b37c56d3020",
-      "license": "未知（社区 LoRA）",
+      "license": "MOSS-Image Community License (community LoRA; source: RunningHub/ModelScope)",
       "note": "可选；随包分发（魔搭资源集为私有，匿名不可用）。",
       "sources": [
         {
@@ -1072,13 +1332,57 @@
       ]
     },
     {
+      "id": "h3_unet_singularity_ref2va_v13_int8_unpruned",
+      "type": "model",
+      "label": "H3 Singularity Ref2VA v1.3 int8（未剪枝 · Viggle edit）",
+      "target": "diffusion_models/Minimax-h3_Singularity_ref2va_v1.3_int8.safetensors",
+      "size": 34004507622,
+      "sha256": "551915097b8727537a82f3a2c5acec965165ec84e780b3e9a5f28ce867fddf08",
+      "license": "Apache-2.0（Singularity）/ MiniMax H3 Community License",
+      "note": "Singularity v1.3 未剪枝 int8；Viggle Remake 视频编辑的可选高质量底模，pruned 底模缺失时自动回退到它。34GB > 32GB 卡，ComfyUI dynamic VRAM 会 offload/stream。",
+      "sources": [
+        {
+          "url": "https://hf-mirror.com/WarmBloodAban/Minimax-h3_Singularity/resolve/main/Minimax-h3_Singularity_ref2va_v1.3_int8.safetensors",
+          "label": "hf-mirror"
+        },
+        {
+          "url": "https://huggingface.co/WarmBloodAban/Minimax-h3_Singularity/resolve/main/Minimax-h3_Singularity_ref2va_v1.3_int8.safetensors",
+          "label": "Hugging Face"
+        }
+      ]
+    },
+    {
+      "id": "h3_unet_fl2va_pruned_int8_convrot",
+      "type": "model",
+      "label": "H3 基础底模 pruned INT8（视频编辑低显存）",
+      "target": "diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+      "size": 20970379616,
+      "sha256": "e889202c41dafb67b10d67b97f0d8541508036a6090af23425a5c2615d03c47a",
+      "license": "MiniMax H3 Community License",
+      "note": "官方 fl2va 剪枝 INT8（20.97GB）。Viggle Remake 视频编辑的默认底模，24GB 显存可跑；与未剪枝 Singularity 输出近乎同图。",
+      "sources": [
+        {
+          "url": "https://www.modelscope.cn/models/Comfy-Org/MiniMax-H3/resolve/master/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+          "label": "魔搭"
+        },
+        {
+          "url": "https://hf-mirror.com/Comfy-Org/MiniMax-H3/resolve/main/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+          "label": "hf-mirror"
+        },
+        {
+          "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+          "label": "Hugging Face"
+        }
+      ]
+    },
+    {
       "id": "h3_te_qwen3vl_32b_int8_convrot",
       "type": "model",
       "label": "Qwen3-VL-32B H3 文本编码器 int8 ConvRot",
       "target": "text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
       "size": 27141342152,
       "license": "MiniMax H3 Community License / Qwen",
-      "note": "H3 共用 TE；约 27.1GB，加载占显存较大。",
+      "note": "H3 视频、H3-Image 与 3D 场景共用；官方 int8 convrot；约 27.1GB。",
       "sources": [
         "https://www.modelscope.cn/models/Comfy-Org/MiniMax-H3/resolve/master/text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
         "https://hf-mirror.com/Comfy-Org/MiniMax-H3/resolve/main/text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors"
@@ -1094,6 +1398,19 @@
       "sources": [
         "https://www.modelscope.cn/models/Comfy-Org/MiniMax-H3/resolve/master/vae/minimax_h3_audio_vae_fp32.safetensors",
         "https://hf-mirror.com/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_audio_vae_fp32.safetensors"
+      ]
+    },
+    {
+      "id": "h3_video_vae_fp16",
+      "type": "model",
+      "label": "H3 视频 VAE fp16",
+      "target": "vae/minimax_h3_video_vae_fp16.safetensors",
+      "size": 5207808496,
+      "license": "MiniMax H3 Community License",
+      "note": "Viggle Remake 与标准 H3 解码共用；stock VAELoader 需要编码与解码两侧。",
+      "sources": [
+        "https://www.modelscope.cn/models/Comfy-Org/MiniMax-H3/resolve/master/vae/minimax_h3_video_vae_fp16.safetensors",
+        "https://hf-mirror.com/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_video_vae_fp16.safetensors"
       ]
     },
     {
@@ -1303,7 +1620,13 @@
         "ApplyVDNH3Advanced"
       ],
       "note": "预解压目录随包复制，不跑 pip；节点依赖按 README 处理；不安装未校验的可变分支 ZIP。",
-      "sources": [],
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/unpacked/ComfyUI-VDN-H3",
+          "label": "随包"
+        }
+      ],
       "downloadable": false
     },
     {
@@ -1313,13 +1636,23 @@
       "target": "custom_nodes/TE-Speed-MiniMaxH3",
       "bundleDir": "resources/nodes/unpacked/TE-Speed-MiniMaxH3",
       "size": 398955,
-      "license": "未声明 LICENSE",
+      "license": "Proprietary (tl2012tl/TE-Speed-MiniMaxH3; all rights reserved)",
       "autoInstall": true,
       "provides": [
         "TESpeedMiniMaxH3"
       ],
       "note": "预解压目录随包复制，不跑 pip；节点依赖按 README 处理。",
-      "sources": []
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/unpacked/TE-Speed-MiniMaxH3",
+          "label": "随包"
+        },
+        {
+          "url": "https://github.com/tl2012tl/TE-Speed-MiniMaxH3",
+          "label": "上游"
+        }
+      ]
     },
     {
       "id": "h3_audio_t8_node",
@@ -1338,7 +1671,13 @@
         "LoraLoaderBypassModelOnly"
       ],
       "note": "预解压目录随包复制，不跑 pip；节点依赖按 README 处理；不安装未校验的可变分支 ZIP。",
-      "sources": []
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/unpacked/minimax-h3-audio-t8",
+          "label": "随包"
+        }
+      ]
     },
     {
       "id": "h3_yc_nodes",
@@ -1353,7 +1692,13 @@
         "H3SigmaRefiner"
       ],
       "note": "预解压目录随包复制，不跑 pip；节点依赖按 README 处理。",
-      "sources": []
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/unpacked/ComfyUI-YCNodes-MiniMax-H3",
+          "label": "随包"
+        }
+      ]
     },
     {
       "id": "h3_selflift_node",
@@ -1362,13 +1707,23 @@
       "target": "custom_nodes/comfyui-SelfLift",
       "bundleDir": "resources/nodes/unpacked/comfyui-SelfLift",
       "size": 330000,
-      "license": "未声明 LICENSE",
+      "license": "Proprietary (facok/comfyui-SelfLift; all rights reserved)",
       "autoInstall": true,
       "provides": [
         "SelfLiftH3Sampler"
       ],
       "note": "预解压目录随包复制，不跑 pip；节点依赖按 README 处理；不安装未校验的可变分支 ZIP。",
-      "sources": []
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/unpacked/comfyui-SelfLift",
+          "label": "随包"
+        },
+        {
+          "url": "https://github.com/facok/comfyui-SelfLift",
+          "label": "上游"
+        }
+      ]
     },
     {
       "id": "h3_solattn_node",
@@ -1377,13 +1732,23 @@
       "target": "custom_nodes/ComfyUI-SolAttn_triton",
       "bundleDir": "resources/nodes/unpacked/ComfyUI-SolAttn_triton",
       "size": 104848,
-      "license": "未声明 LICENSE",
+      "license": "Apache-2.0",
       "autoInstall": true,
       "provides": [
         "SolAttnPatch"
       ],
       "note": "预解压目录随包复制，不跑 pip；节点依赖按 README 处理。",
-      "sources": []
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/unpacked/ComfyUI-SolAttn_triton",
+          "label": "随包"
+        },
+        {
+          "url": "https://github.com/kijai/ComfyUI-SolAttn_triton",
+          "label": "上游"
+        }
+      ]
     },
     {
       "id": "h3_trt_vae_node",
@@ -1398,7 +1763,13 @@
         "MiniMaxH3TRTVAELoader"
       ],
       "note": "预解压目录随包复制；装好后首次需在 ComfyUI 用 MiniMax-H3 TRT Compiler 编译 decoder/encoder engine（每台机器一次），否则 H3 工作流不可用；不安装未校验的可变分支 ZIP。",
-      "sources": []
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/unpacked/ComfyUI-H3VAE_TRT",
+          "label": "随包"
+        }
+      ]
     },
     {
       "id": "h3_vhs_node",
@@ -1413,7 +1784,13 @@
         "VHS_VideoCombine"
       ],
       "note": "预解压目录随包复制，不跑 pip；节点依赖按 README 处理；不安装未校验的可变分支 ZIP。",
-      "sources": []
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/unpacked/ComfyUI-VideoHelperSuite",
+          "label": "随包"
+        }
+      ]
     },
     {
       "id": "h3_trt_vae_decoder_engine",
@@ -1431,7 +1808,14 @@
         "device": 0
       },
       "license": "MiniMax H3 Community License",
-      "note": "安装器下载 ONNX 后自动调用 ComfyUI-H3VAE_TRT/compile.py 编译；engine 与 GPU/TRT 版本绑定，不随包分发。"
+      "note": "安装器下载 ONNX 后自动调用 ComfyUI-H3VAE_TRT/compile.py 编译；engine 与 GPU/TRT 版本绑定，不随包分发。",
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "vae/minimax_h3_vae_decoder.engine",
+          "label": "随包"
+        }
+      ]
     },
     {
       "id": "h3_trt_vae_encoder_engine",
@@ -1448,7 +1832,14 @@
         "device": 0
       },
       "license": "MiniMax H3 Community License",
-      "note": "安装器下载 ONNX 后自动调用 ComfyUI-H3VAE_TRT/compile.py 编译；engine 与 GPU/TRT 版本绑定，不随包分发。"
+      "note": "安装器下载 ONNX 后自动调用 ComfyUI-H3VAE_TRT/compile.py 编译；engine 与 GPU/TRT 版本绑定，不随包分发。",
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "vae/minimax_h3_vae_encoder.engine",
+          "label": "随包"
+        }
+      ]
     },
     {
       "id": "h3_tiny_vae",
@@ -1481,7 +1872,13 @@
         "llama_cpp_model_loader",
         "llama_cpp_instruct_adv"
       ],
-      "sources": []
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/unpacked/ComfyUI-llama-cpp_vllm",
+          "label": "随包"
+        }
+      ]
     },
     {
       "id": "prompt_florence_node",
@@ -1497,7 +1894,13 @@
         "DownloadAndLoadFlorence2Model",
         "Florence2Run"
       ],
-      "sources": []
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/unpacked/ComfyUI-Florence2",
+          "label": "随包"
+        }
+      ]
     },
     {
       "id": "prompt_te_man",
@@ -1507,14 +1910,24 @@
       "autoInstall": true,
       "bundleDir": "resources/nodes/unpacked/TE_MAN",
       "size": 74263373,
-      "license": "作者授权（原 LICENSE 禁止再分发）",
+      "license": "Authorized proprietary (TE_MAN LICENSE; redistribution prohibited)",
       "note": "本地提示词优化 / H3 本地模板 / 反推文本输出节点；作者已授权随工作台分发。",
       "provides": [
         "TE_text_display",
         "TE_H3_Prompt_Enhancer",
         "TE_Qwen_Image_2_1_Prompt_Enhancer"
       ],
-      "sources": []
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/unpacked/TE_MAN",
+          "label": "随包"
+        },
+        {
+          "url": "https://github.com/tl2012tl/TE_MAN",
+          "label": "上游"
+        }
+      ]
     },
     {
       "id": "prompt_llama_python",
@@ -1533,7 +1946,13 @@
         "3.13": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/wheels/llama_cpp_python-0.3.46%2Bcu128-cp313-cp313-win_amd64.whl",
         "3.14": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/wheels/llama_cpp_python-0.3.46%2Bcu128-cp314-cp314-win_amd64.whl"
       },
-      "sources": []
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "LLM/llama_cpp_python",
+          "label": "随包"
+        }
+      ]
     },
     {
       "id": "prompt_qwen_gguf",
@@ -1671,6 +2090,12 @@
       ],
       "sources": [
         {
+          "url": "https://modelscope.cn/datasets/shensanshu/ComfyUI-Local-Infinite-Canvas-Models/resolve/master/wheels/sageattention/sageattention-2.2.0%2Bcu130torch2.10.0andhigher.post6-cp310-abi3-win_amd64.whl",
+          "label": "ModelScope 预编译 wheel（主源）",
+          "size": 16656067,
+          "sha256": "1635283f5c01ec3cda58a784d0d7eabbcaffaf9511d1b263db4750e1ed7958bb"
+        },
+        {
           "url": "https://github.com/woct0rdho/SageAttention/releases",
           "label": "上游预编译发布（woct0rdho）",
           "verify": false
@@ -1697,6 +2122,37 @@
         "SeedVR2LoadDiTModel",
         "SeedVR2LoadVAEModel",
         "SeedVR2VideoUpscaler"
+      ],
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/unpacked/ComfyUI-SeedVR2_VideoUpscaler",
+          "label": "随包"
+        }
+      ]
+    },
+    {
+      "id": "viggle_remake_node",
+      "type": "node",
+      "label": "Viggle Remake 节点",
+      "target": "custom_nodes/ComfyUI-Viggle-Remake",
+      "autoInstall": true,
+      "bundleDir": "resources/nodes/unpacked/ComfyUI-Viggle-Remake",
+      "size": 25959,
+      "license": "Apache-2.0",
+      "note": "随包节点（2 个 Python 文件 + LICENSE-CODE），启动器自动复制；要求 ComfyUI 0.42+，不改核心。",
+      "provides": [
+        "RemakeConditioning",
+        "RemakeKeyframeUntil",
+        "RemakeNoise",
+        "RemakePrefix"
+      ],
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/unpacked/ComfyUI-Viggle-Remake",
+          "label": "随包"
+        }
       ]
     },
     {
@@ -1716,6 +2172,13 @@
           "size": 3554612,
           "sha256": "027469e74f289338eb24127409f8d60d840b1b7ce4b27ffcd3134fd3b8431567",
           "label": "阿里云 PyPI 镜像"
+        }
+      ],
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "SEEDVR2/runtime/seedvr2_dep_diffusers",
+          "label": "随包"
         }
       ]
     },
@@ -1737,6 +2200,13 @@
           "sha256": "700e8de9dfbefba5f9117a66652a2520648dcc60136895f0068b6a85347cab02",
           "label": "阿里云 PyPI 镜像"
         }
+      ],
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "SEEDVR2/runtime/seedvr2_dep_rotary",
+          "label": "随包"
+        }
       ]
     },
     {
@@ -1756,6 +2226,13 @@
           "size": 254152,
           "sha256": "f141a664c777582405e3cc6e0545ecc79429e79f844995b1a6e71c35946a025c",
           "label": "阿里云 PyPI 镜像"
+        }
+      ],
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "SEEDVR2/runtime/seedvr2_dep_omegaconf",
+          "label": "随包"
         }
       ]
     },
@@ -1777,6 +2254,13 @@
           "sha256": "32dbbd94c26f611dc5cc6979e6b7aa1f55a64d6b463cc1dcd3c95505a63e48fe",
           "label": "阿里云 PyPI 镜像"
         }
+      ],
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "SEEDVR2/runtime/seedvr2_dep_opencv",
+          "label": "随包"
+        }
       ]
     },
     {
@@ -1796,6 +2280,13 @@
           "size": 64359,
           "sha256": "919387eb55330f5757c6bea9165c5ff5cfe63a642682ea788a6d472576d81737",
           "label": "阿里云 PyPI 镜像"
+        }
+      ],
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "SEEDVR2/runtime/seedvr2_dep_einops",
+          "label": "随包"
         }
       ]
     },
@@ -1855,6 +2346,110 @@
         },
         {
           "url": "https://huggingface.co/numz/SeedVR2_comfyUI/resolve/main/ema_vae_fp16.safetensors",
+          "label": "Hugging Face"
+        }
+      ]
+    },
+    {
+      "id": "relayvsr_x2_int8",
+      "type": "model",
+      "label": "RelayVSR 2× INT8 主模型",
+      "target": "diffusion_models/relayvsr_x2_lightx2v_int8_convrot.safetensors",
+      "size": 5163295248,
+      "sha256": "240e75e0c17cf2845d559b25254a230ff7458f81449d7a8c5e7e3fb8275c7b3c",
+      "license": "Apache-2.0",
+      "note": "RelayVSR 2× 视频超分（INT8 ConvRot，原生节点，1 步）；原音频直通。",
+      "sources": [
+        {
+          "url": "https://modelscope.cn/models/Comfy-Org/RelayVSR/resolve/master/diffusion_models/relayvsr_x2_lightx2v_int8_convrot.safetensors",
+          "label": "魔搭"
+        }
+      ]
+    },
+    {
+      "id": "relayvsr_flash_vae",
+      "type": "model",
+      "label": "RelayVSR Flash 解码器（2×）",
+      "target": "vae/relayvsr_flash_vae_x2_fp32.safetensors",
+      "size": 127759464,
+      "sha256": "b5bb0339acb5b52545911ea29a51b4c5b805776a779222b5a14591571f42e21c",
+      "license": "Apache-2.0",
+      "note": "RelayVSR 2× 视频超分专用解码器。",
+      "sources": [
+        {
+          "url": "https://modelscope.cn/models/Comfy-Org/RelayVSR/resolve/master/vae/relayvsr_flash_vae_x2_fp32.safetensors",
+          "label": "魔搭"
+        }
+      ]
+    },
+    {
+      "id": "viggle_swap_int8",
+      "type": "model",
+      "label": "Viggle Remake 换人 INT8 主模型",
+      "target": "diffusion_models/viggle_remake_swap_pruned_int8_convrot.safetensors",
+      "size": 20970379616,
+      "sha256": "7ba8cf79f8f09944f743f99b69d85300a70a4bc9493156cb1fff3a68a9716a47",
+      "license": "MiniMax-H3 Community License",
+      "note": "Viggle Remake 换人 INT8 ConvRot 主模型（H3 衍生，6 步 euler，无 CFG）；源视频音轨直通，单窗口 90–345 帧。",
+      "sources": [
+        {
+          "url": "https://modelscope.cn/models/Viggle/Viggle-Remake/resolve/master/int8/viggle_remake_swap_pruned_int8_convrot.safetensors",
+          "label": "魔搭"
+        },
+        {
+          "url": "https://hf-mirror.com/Viggle/Viggle-Remake/resolve/main/int8/viggle_remake_swap_pruned_int8_convrot.safetensors",
+          "label": "hf-mirror"
+        },
+        {
+          "url": "https://huggingface.co/Viggle/Viggle-Remake/resolve/main/int8/viggle_remake_swap_pruned_int8_convrot.safetensors",
+          "label": "Hugging Face"
+        }
+      ]
+    },
+    {
+      "id": "viggle_edit_lora",
+      "type": "model",
+      "label": "Viggle Remake 视频编辑 LoRA（ComfyUI 重打包）",
+      "target": "loras/viggle_remake_edit_comfyui.safetensors",
+      "size": 3773044920,
+      "sha256": "98709d3f1c1a7a8b524d373868b245138e658e2e44ab47bc61ffb40b3dd545f9",
+      "license": "MiniMax-H3 Community License",
+      "note": "Viggle Remake edit 模式 LoRA；默认挂 H3 pruned INT8 底模，未装 pruned 时自动回退 Singularity 未剪枝；LoraLoaderBypassModelOnly 强度 1.0，官方 6 步 edit sigmas；源视频 + 1–4 张编辑参考图，保留运动/镜头/音轨。",
+      "sources": [
+        {
+          "url": "https://modelscope.cn/models/Viggle/Viggle-Remake/resolve/master/comfyui/viggle_remake_edit_comfyui.safetensors",
+          "label": "魔搭"
+        },
+        {
+          "url": "https://hf-mirror.com/Viggle/Viggle-Remake/resolve/main/comfyui/viggle_remake_edit_comfyui.safetensors",
+          "label": "hf-mirror"
+        },
+        {
+          "url": "https://huggingface.co/Viggle/Viggle-Remake/resolve/main/comfyui/viggle_remake_edit_comfyui.safetensors",
+          "label": "Hugging Face"
+        }
+      ]
+    },
+    {
+      "id": "viggle_swap_gguf_q4",
+      "type": "model",
+      "label": "Viggle Remake 换人 Q4_K_M（低显存备用）",
+      "target": "diffusion_models/viggle_remake_swap-Q4_K_M.gguf",
+      "size": 14333031136,
+      "sha256": "72c4f9c0e6d997216888b8c509c28d06194437dd0d2969abb1605dd0b7a0b7de",
+      "license": "MiniMax-H3 Community License",
+      "note": "GGUF Q4_K_M 备用；需 ComfyUI-GGUF 与 --reserve-vram，速度低于 int8。",
+      "sources": [
+        {
+          "url": "https://modelscope.cn/models/Viggle/Viggle-Remake/resolve/master/gguf/viggle_remake_swap-Q4_K_M.gguf",
+          "label": "魔搭"
+        },
+        {
+          "url": "https://hf-mirror.com/Viggle/Viggle-Remake/resolve/main/gguf/viggle_remake_swap-Q4_K_M.gguf",
+          "label": "hf-mirror"
+        },
+        {
+          "url": "https://huggingface.co/Viggle/Viggle-Remake/resolve/main/gguf/viggle_remake_swap-Q4_K_M.gguf",
           "label": "Hugging Face"
         }
       ]
@@ -2070,18 +2665,18 @@
       "note": "仅 ComfyUI 0.44.0 及以上可用，版本过低将无法使用。 安装后需重启 ComfyUI；仅提供节点代码，不包含权重。",
       "sources": [
         {
-          "url": "https://ghfast.top/https://github.com/PedroMarinhoDev/ComfyUI-Idol/archive/59ed4b43f0d04a2c8bac689f99e51901dd7c2329.zip",
-          "label": "国内加速",
-          "size": 7173208,
-          "sha256": "60a1cfb86f6a7b54bd3d9439d7668fef05ba9a4a80f6cfd2417293147cacadc0"
+          "kind": "bundled",
+          "path": "resources/nodes/unpacked/ComfyUI-Idol",
+          "label": "随包"
         },
         {
           "url": "https://github.com/PedroMarinhoDev/ComfyUI-Idol/archive/59ed4b43f0d04a2c8bac689f99e51901dd7c2329.zip",
-          "label": "GitHub",
+          "label": "GitHub 兜底",
           "size": 7173208,
           "sha256": "60a1cfb86f6a7b54bd3d9439d7668fef05ba9a4a80f6cfd2417293147cacadc0"
         }
-      ]
+      ],
+      "bundleDir": "resources/nodes/unpacked/ComfyUI-Idol"
     },
     {
       "id": "image3d_birefnet",
@@ -2220,6 +2815,168 @@
           "kind": "bundled",
           "path": "resources/nodes/unpacked/Goohaitools-comfyui",
           "label": "随包"
+        }
+      ]
+    },
+    {
+      "id": "yue2_instrumental",
+      "type": "node",
+      "label": "YuE2 纯音乐转换节点",
+      "target": "custom_nodes/yue2_instrumental",
+      "autoInstall": true,
+      "bundleDir": "resources/nodes/unpacked/yue2_instrumental",
+      "size": 46439,
+      "license": "Apache-2.0",
+      "note": "Apache-2.0；YuE2 纯音乐 Vocal→Ins 转换；随包内置，安装后需重启 ComfyUI；LICENSE 随节点目录。",
+      "provides": [
+        "YuE2InstrumentalConvert"
+      ],
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/unpacked/yue2_instrumental",
+          "label": "随包"
+        }
+      ]
+    },
+    {
+      "id": "yue2_3b_int8_convrot",
+      "type": "model",
+      "label": "YuE2-3B int8（写歌/纯音乐）",
+      "target": "checkpoints/yue2_3b_int8_convrot.safetensors",
+      "size": 3960938800,
+      "sha256": "96fe199377309001ed8cd26a944baeee8cc31a20ba7c36d1d3c0a7e1f4149db6",
+      "license": "CC-BY-NC-4.0",
+      "note": "NOTICE：CC-BY-NC-4.0，仅个人/非商业使用；YuE2 写歌/纯音乐必需；checkpoint 已含 VAE（encoder/decoder），无需单独下载；约 3.96GB；来源 Comfy-Org/YuE2。",
+      "sources": [
+        "https://www.modelscope.cn/models/Comfy-Org/YuE2/resolve/master/checkpoints/yue2_3b_int8_convrot.safetensors",
+        "https://hf-mirror.com/Comfy-Org/YuE2/resolve/main/checkpoints/yue2_3b_int8_convrot.safetensors"
+      ]
+    },
+    {
+      "id": "h3_image_unet_pruned_int8_convrot",
+      "type": "model",
+      "label": "H3-Image int8 主干（pruned convrot）",
+      "target": "diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors",
+      "size": 20979314802,
+      "sha256": "83eb140f1ff95c068f8a6886e6d3f3d0d4ab2e07bb2fe6d2ef992a51146ee622",
+      "license": "MiniMax H3 Community License",
+      "note": "H3-Image 文生图/多图编辑与 3D 场景扩全景必需；官方 Comfy-Org 重打包；约 20.9GB。",
+      "sources": [
+        "https://www.modelscope.cn/models/Comfy-Org/MiniMax-H3-Image/resolve/master/diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors",
+        "https://hf-mirror.com/Comfy-Org/MiniMax-H3-Image/resolve/main/diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors",
+        "https://huggingface.co/Comfy-Org/MiniMax-H3-Image/resolve/main/diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors"
+      ]
+    },
+    {
+      "id": "h3_image_vae_fp16",
+      "type": "model",
+      "label": "H3-Image VAE fp16",
+      "target": "vae/minimax_h3_image_vae_fp16.safetensors",
+      "size": 1168505312,
+      "sha256": "d80e9c2e5cfc9844869961ff5a58c9a9e52182df6bfb30b26018dd7f348721af",
+      "license": "MiniMax H3 Community License",
+      "note": "H3-Image 专用 VAE；3D 场景扩全景必需；约 1.17GB。",
+      "sources": [
+        "https://www.modelscope.cn/models/Comfy-Org/MiniMax-H3-Image/resolve/master/vae/minimax_h3_image_vae_fp16.safetensors",
+        "https://hf-mirror.com/Comfy-Org/MiniMax-H3-Image/resolve/main/vae/minimax_h3_image_vae_fp16.safetensors",
+        "https://huggingface.co/Comfy-Org/MiniMax-H3-Image/resolve/main/vae/minimax_h3_image_vae_fp16.safetensors"
+      ]
+    },
+    {
+      "id": "h3_image_pe_qwen35_9b_w4a8_gptq",
+      "type": "model",
+      "label": "H3-Image 多图编辑 PE（Qwen3.5-9B W4A8）",
+      "target": "text_encoders/qwen3.5_9b_w4a8_gptq.safetensors",
+      "size": 7343591088,
+      "sha256": "4cc6a1543ad2061806da46f35f90cadb4801dcba246c44782cf42ec0feb6407c",
+      "license": "Apache-2.0（Qwen3.5-9B）",
+      "note": "H3-Image 多图编辑提示词扩写 PE；文生图可不装；约 7.3GB；来自官方 H3-Image 仓库，许可随 Qwen3.5-9B。",
+      "sources": [
+        "https://www.modelscope.cn/models/Comfy-Org/MiniMax-H3-Image/resolve/master/text_encoders/qwen3.5_9b_w4a8_gptq.safetensors",
+        "https://hf-mirror.com/Comfy-Org/MiniMax-H3-Image/resolve/main/text_encoders/qwen3.5_9b_w4a8_gptq.safetensors",
+        "https://huggingface.co/Comfy-Org/MiniMax-H3-Image/resolve/main/text_encoders/qwen3.5_9b_w4a8_gptq.safetensors"
+      ]
+    },
+    {
+      "id": "yue2_3b_bf16",
+      "type": "model",
+      "label": "YuE2-3B BF16（可选高精度）",
+      "target": "checkpoints/yue2_3b_bf16.safetensors",
+      "size": 7799983228,
+      "sha256": "33765adbf9813c9a50318218760b2fd819a319862460a04884607581961c6fee",
+      "license": "CC-BY-NC-4.0",
+      "note": "NOTICE：CC-BY-NC-4.0，仅个人/非商业使用；BF16 可选高精度写歌；checkpoint 已含 VAE；约 7.8GB。",
+      "sources": [
+        "https://www.modelscope.cn/models/Comfy-Org/YuE2/resolve/master/checkpoints/yue2_3b_bf16.safetensors",
+        "https://hf-mirror.com/Comfy-Org/YuE2/resolve/main/checkpoints/yue2_3b_bf16.safetensors",
+        "https://huggingface.co/Comfy-Org/YuE2/resolve/main/checkpoints/yue2_3b_bf16.safetensors"
+      ]
+    },
+    {
+      "id": "hyperflow_ref2va_int8",
+      "type": "model",
+      "label": "HyperFlow H3 Flash 14B Ref2VA INT8（ComfyUI 转换版）",
+      "target": "diffusion_models/minimax_h3_ref2va_hyperflow_flash_int8_convrot.safetensors",
+      "size": 16324655568,
+      "sha256": "fcb104b56e2be5e531b3785952d0fb944bb763840aadbc7c49223c1ef6d76b9c",
+      "license": "MiniMax H3 Community License（转换衍生）",
+      "note": "HyperFlow（6+2）视频主模型，三模式共用；社区转换版（BennyDaBall），非官方；源 VideoRebirthAI/hyperflow-h3-flash revision 9e9ed14b8be4b751d7517b8ca58dd199d509720c；约 16.3GB。",
+      "sources": [
+        "https://hf-mirror.com/BennyDaBall/HyperFlow-H3-Flash-INT8-ComfyUI/resolve/main/minimax_h3_ref2va_hyperflow_flash_int8_convrot.safetensors",
+        "https://aifasthub.com/BennyDaBall/HyperFlow-H3-Flash-INT8-ComfyUI/resolve/main/minimax_h3_ref2va_hyperflow_flash_int8_convrot.safetensors",
+        "https://huggingface.co/BennyDaBall/HyperFlow-H3-Flash-INT8-ComfyUI/resolve/main/minimax_h3_ref2va_hyperflow_flash_int8_convrot.safetensors"
+      ]
+    },
+    {
+      "id": "hyperflow_int8_node",
+      "type": "node",
+      "label": "HyperFlow INT8 加载节点",
+      "target": "custom_nodes/comfyui_hyperflow_int8_nodes",
+      "autoInstall": true,
+      "bundleDir": "resources/nodes/unpacked/comfyui_hyperflow_int8_nodes",
+      "size": 2324678,
+      "license": "GPL-3.0",
+      "note": "提供 HyperFlowINT8Loader；随包内置，安装后需重启 ComfyUI；依赖官方 ComfyUI-HyperFlow-Flash 提供 HyperFlowSigmas。",
+      "provides": [
+        "HyperFlowINT8Loader"
+      ],
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/unpacked/comfyui_hyperflow_int8_nodes",
+          "label": "内置"
+        },
+        {
+          "url": "https://github.com/BennyDaBall930/comfyui_hyperflow_int8_nodes",
+          "label": "上游"
+        }
+      ]
+    },
+    {
+      "id": "hyperflow_flash_node",
+      "type": "node",
+      "label": "HyperFlow Flash 节点（HyperFlowSigmas）",
+      "target": "custom_nodes/ComfyUI-HyperFlow-Flash",
+      "autoInstall": true,
+      "bundleDir": "resources/nodes/unpacked/ComfyUI-HyperFlow-Flash",
+      "size": 641367,
+      "license": "GPL-3.0",
+      "note": "提供 HyperFlowSigmas / HyperFlowLoader；随包内置，安装后需重启 ComfyUI；为 HyperFlow INT8 包的依赖。",
+      "provides": [
+        "HyperFlowSigmas",
+        "HyperFlowLoader",
+        "HyperFlowGGUFLoader"
+      ],
+      "sources": [
+        {
+          "kind": "bundled",
+          "path": "resources/nodes/unpacked/ComfyUI-HyperFlow-Flash",
+          "label": "内置"
+        },
+        {
+          "url": "https://github.com/Video-Rebirth/ComfyUI-HyperFlow-Flash",
+          "label": "上游"
         }
       ]
     }

@@ -29,6 +29,8 @@
 - **comfystreamerh3** — MIT，Copyright (c) 2026 Comfy Org；上游 https://github.com/Comfy-Org/comfystreamerh3 ；随工作台提供预解压目录，未改动源码。
 - **ComfyUI-ClipProj** — MIT，Copyright (c) 2026 nicolab28；上游 https://github.com/nicolab28/ComfyUI-ClipProj ；随工作台提供预解压目录，未改动源码。
 - **Goohaitools-comfyui** — GPL-3.0；上游 https://github.com/goohai/Goohaitools-comfyui ；随工作台提供预解压目录，未改动源码。
+- **comfyui_hyperflow_int8_nodes** — GPL-3.0；上游 https://github.com/BennyDaBall930/comfyui_hyperflow_int8_nodes ；随工作台提供预解压目录，未改动源码。
+- **ComfyUI-HyperFlow-Flash** — GPL-3.0；上游 https://github.com/Video-Rebirth/ComfyUI-HyperFlow-Flash ；随工作台提供预解压目录，未改动源码。
 
 ## 自托管的 Qwen 2.1 LoRA（资源卡下载）
 
@@ -68,6 +70,16 @@
 - **minimax_h3_video_vae_int8_convrot** — MiniMax H3 社区许可；来源 ModelScope `Comfy-Org/MiniMax-H3`。
 - **minimax_h3_audio_vae_fp32** — MiniMax H3 Community License；来源 ModelScope `Comfy-Org/MiniMax-H3`（hf-mirror 备源）。
 
+## 可选下载的 H3 图像 / 音频 / HyperFlow 组件
+
+以下权重不进入主安装包，由资源卡按需下载：
+
+- **H3-Image int8 主干 / H3-Image VAE** — MiniMax H3 Community License；官方 Comfy-Org/MiniMax-H3-Image 重打包，ModelScope 主、hf-mirror 与 Hugging Face 备；未改动权重。
+- **Qwen3-VL-32B int8** — MiniMax H3 Community License / Qwen；来源 Comfy-Org/MiniMax-H3，ModelScope 主、hf-mirror 备；未改动权重。
+- **Qwen3.5-9B W4A8 PE** — Apache-2.0（Qwen3.5-9B）；来源 Comfy-Org/MiniMax-H3-Image，ModelScope 主、hf-mirror 与 Hugging Face 备；仅 H3-Image 多图编辑使用；未改动权重。
+- **YuE2-3B int8 / BF16** — CC-BY-NC-4.0，仅个人/非商业使用；来源 Comfy-Org/YuE2，ModelScope 主、hf-mirror 与 Hugging Face 备；checkpoint 已含 VAE；未改动权重。
+- **HyperFlow H3 Flash 14B Ref2VA INT8（ComfyUI 转换版）** — MiniMax H3 Community License（转换衍生，非官方）；社区转换版 BennyDaBall，源 VideoRebirthAI/hyperflow-h3-flash；hf-mirror / aifasthub 主、Hugging Face 备；未改动权重。
+
 ## 可选下载的超分模型
 
 以下模型不进入主安装包，由「超分」资源卡按工作流按需下载：
@@ -95,3 +107,13 @@
 ## 商标
 
 ComfyUI、MiniMax、Qwen、MOSS、SeedVR2 等名称和标识归各自所有者。本仓库仅在说明兼容性/技术来源时使用这些名称，不表示背书或隶属关系。
+
+## #382 捆绑节点来源与许可状态
+
+- **TE-Speed-MOSS** — 上游 TETAE（B站）/未发布 LICENSE；仅按原样随包，源码/二进制来源见资源索引 `tespeed_moss`。
+- **TE-Speed-MiniMaxH3** — 上游 https://github.com/tl2012tl/TE-Speed-MiniMaxH3 ，仓库未发布 LICENSE；仅按原样随包。
+- **comfyui-SelfLift** — 上游 https://github.com/facok/comfyui-SelfLift ，上游未发布 LICENSE；仅按原样随包。
+- **ComfyUI-SolAttn_triton** — Apache-2.0，上游 https://github.com/kijai/ComfyUI-SolAttn_triton 。
+- **TE_MAN** — 原作者 LICENSE 明确禁止再分发；本项目依据作者书面授权（2026-10-29）随包，源 https://github.com/tl2012tl/TE_MAN 。
+- **MOSS-Image 观澜 LoRA（KOOK-MOSS-SFT）** — 社区 LoRA，源 RunningHub 作品页；未单独声明许可证，按 MOSS-Image Community License 记录，来源见资源索引 `moss_guanlan_lora`。
+- **SageAttention Windows wheel** — Apache-2.0，ModelScope 数据集 `shensanshu/ComfyUI-Local-Infinite-Canvas-Models` 为主源，GitHub/上游为兜底。

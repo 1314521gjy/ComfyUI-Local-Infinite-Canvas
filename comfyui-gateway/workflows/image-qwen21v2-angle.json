@@ -10,9 +10,9 @@
     }
   },
   "21": {
-    "class_type": "PrimitiveStringMultiline",
+    "class_type": "CR Prompt Text",
     "inputs": {
-      "value": "保持主体、颜色、材质和画面风格一致，只改变相机视角与构图。"
+      "prompt": "保持主体、颜色、材质和画面风格一致，只改变相机视角与构图。"
     }
   },
   "22": {

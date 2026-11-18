@@ -1,0 +1,151 @@
+{
+  "1": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "viggle_remake_swap_pruned_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    },
+    "_meta": { "title": "Viggle Remake Swap INT8" }
+  },
+  "2": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
+      "type": "minimax",
+      "device": "default"
+    },
+    "_meta": { "title": "H3 text encoder" }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "minimax_h3_video_vae_fp16.safetensors"
+    },
+    "_meta": { "title": "H3 video VAE" }
+  },
+  "4": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
+    },
+    "_meta": { "title": "H3 audio VAE" }
+  },
+  "5": {
+    "class_type": "RemakeKeyframeUntil",
+    "inputs": {
+      "model": ["1", 0],
+      "keyframe_until": 0.9
+    },
+    "_meta": { "title": "Release keyframes below sigma 0.9" }
+  },
+  "6": {
+    "class_type": "RemakeConditioning",
+    "inputs": {
+      "clip": ["2", 0],
+      "vae": ["3", 0],
+      "audio_vae": ["4", 0],
+      "source": ["1", 0],
+      "prompt": "",
+      "ref_1": ["1", 0],
+      "pins": "",
+      "frames": 124,
+      "short_edge": 480,
+      "audio": ["1", 0]
+    },
+    "_meta": { "title": "Viggle Remake conditioning" }
+  },
+  "7": {
+    "class_type": "RemakeNoise",
+    "inputs": {
+      "positive": ["6", 0],
+      "seed": 0
+    },
+    "_meta": { "title": "Viggle Remake noise" }
+  },
+  "8": {
+    "class_type": "BasicGuider",
+    "inputs": {
+      "model": ["40", 0],
+      "conditioning": ["6", 0]
+    }
+  },
+  "30": {
+    "class_type": "PathchSageAttentionKJ",
+    "inputs": {
+      "model": ["5", 0],
+      "sage_attention": "auto",
+      "allow_compile": false
+    },
+    "_meta": { "title": "SageAttention 加速（可关闭）" }
+  },
+  "9": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler"
+    }
+  },
+  "10": {
+    "class_type": "ManualSigmas",
+    "inputs": {
+      "sigmas": "1.0, 0.990476, 0.965243, 0.923077, 0.8, 0.631579, 0.0"
+    }
+  },
+  "11": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": ["7", 0],
+      "guider": ["8", 0],
+      "sampler": ["9", 0],
+      "sigmas": ["10", 0],
+      "latent_image": ["6", 1]
+    }
+  },
+  "12": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["11", 0],
+      "vae": ["3", 0]
+    }
+  },
+  "13": {
+    "class_type": "VAEDecodeAudio",
+    "inputs": {
+      "samples": ["11", 0],
+      "vae": ["4", 0]
+    }
+  },
+  "14": {
+    "class_type": "CreateVideo",
+    "inputs": {
+      "images": ["12", 0],
+      "audio": ["13", 0],
+      "fps": 24,
+      "bit_depth": "auto",
+      "color_space": "sRGB",
+      "codec": "none"
+    }
+  },
+  "15": {
+    "class_type": "SaveVideo",
+    "inputs": {
+      "video": ["14", 0],
+      "filename_prefix": "viggle/viggle_swap",
+      "format": "mp4",
+      "codec": "h264"
+    },
+    "_meta": { "title": "Viggle Remake output" }
+  },
+  "40": {
+    "class_type": "ModelPreviewOverrideKJ",
+    "inputs": {
+      "max_resolution": 1024,
+      "jpeg_quality": 80,
+      "suppress_default_preview": true,
+      "preview_frames": 8,
+      "preview_fps": 12,
+      "tiny_vae": "taeh3.safetensors",
+      "model": ["30", 0]
+    },
+    "_meta": { "title": "Model Preview Override" }
+  }
+}

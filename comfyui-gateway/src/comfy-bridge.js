@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const BRIDGE_SOURCE = fileURLToPath(new URL("../comfyui-bridge/open-workflow.js", import.meta.url));
+const NODE_SOURCE = fileURLToPath(new URL("../comfyui-bridge/yue2_instrumental", import.meta.url));
 const BRIDGE_DIR = path.join("extensions", "local-canvas");
 const BRIDGE_FILE = "open-workflow.js";
 const FRONTEND_CANDIDATES = [
@@ -88,7 +89,34 @@ export function createComfyBridge({ config, logger } = {}) {
       await fsp.writeFile(targetFile, source, "utf8");
       logger?.info?.(`已安装 ComfyUI 工作流桥接扩展：${targetFile}`);
     }
-    return { installed: true, frontendDir, file: targetFile, updated: current !== source };
+    let nodeTarget = "";
+    for (const root of installRoots(config)) {
+      try {
+        await fsp.access(path.join(root, "custom_nodes"));
+        nodeTarget = path.join(root, "custom_nodes", "yue2_instrumental");
+        break;
+      } catch {
+        // Try the next install root.
+      }
+    }
+    let nodeReason = "";
+    if (nodeTarget) {
+      try {
+        await fsp.cp(NODE_SOURCE, nodeTarget, {
+          recursive: true,
+          force: true,
+          filter: (sourcePath) => !sourcePath.includes(`${path.sep}__pycache__`) && !sourcePath.endsWith(".pyc"),
+        });
+        logger?.info?.(`已同步 YuE2 纯音乐转换节点：${nodeTarget}（重启 ComfyUI 后生效）`);
+      } catch (error) {
+        nodeTarget = "";
+        nodeReason = error?.message || String(error);
+        logger?.warn?.(`同步 YuE2 纯音乐转换节点失败：${nodeReason}`);
+      }
+    } else {
+      nodeReason = "未找到 ComfyUI custom_nodes 目录";
+    }
+    return { installed: true, frontendDir, file: targetFile, updated: current !== source, nodeInstalled: Boolean(nodeTarget), nodeTarget, nodeReason };
   }
 
   async function ensure({ force = false } = {}) {

@@ -26,6 +26,7 @@ type CanvasNodeHoverToolbarProps = {
     onGenerateImage: (node: CanvasNodeData) => void;
     onUpload: (node: CanvasNodeData) => void;
     onVideoUpscale: (node: CanvasNodeData) => void;
+    onVideoEdit: (node: CanvasNodeData) => void;
     onInterpolateVideo: (node: CanvasNodeData) => void;
     onDraftVideo: (node: CanvasNodeData) => void;
     onDownload: (node: CanvasNodeData) => void;
@@ -39,6 +40,8 @@ type CanvasNodeHoverToolbarProps = {
     onAngle: (node: CanvasNodeData) => void;
     onFourView: (node: CanvasNodeData) => void;
     onTo3D: (node: CanvasNodeData) => void;
+    onSceneTo3D: (node: CanvasNodeData) => void;
+    onScene3D: (node: CanvasNodeData) => void;
     onViewImage: (node: CanvasNodeData) => void;
     onReversePrompt: (node: CanvasNodeData) => void;
     onRetry: (node: CanvasNodeData) => void;
@@ -70,6 +73,7 @@ export function CanvasNodeHoverToolbar({
     onGenerateImage,
     onUpload,
     onVideoUpscale,
+    onVideoEdit,
     onInterpolateVideo,
     onDraftVideo,
     onDownload,
@@ -83,6 +87,8 @@ export function CanvasNodeHoverToolbar({
     onAngle,
     onFourView,
     onTo3D,
+    onSceneTo3D,
+    onScene3D,
     onViewImage,
     onReversePrompt,
     onRetry,
@@ -107,7 +113,7 @@ export function CanvasNodeHoverToolbar({
                 const legacy = window.localStorage.getItem(LEGACY_IMAGE_QUICK_TOOLS_STORAGE_KEY) || window.localStorage.getItem(LEGACY_IMAGE_QUICK_TOOLS_STORAGE_KEY_V10) || window.localStorage.getItem(LEGACY_IMAGE_QUICK_TOOLS_STORAGE_KEY_V9);
                 if (legacy) {
                     const config = readImageQuickToolsConfig(JSON.parse(legacy) as unknown);
-                    const ids = [...new Set([...config.ids, "fourView", "saveStyle", "to3d"])] as ImageQuickToolId[];
+                    const ids = [...new Set([...config.ids, "fourView", "saveStyle", "scene3d"])] as ImageQuickToolId[];
                     stored = JSON.stringify({ ...config, ids });
                     window.localStorage.setItem(IMAGE_QUICK_TOOLS_STORAGE_KEY, stored);
                 }
@@ -139,6 +145,8 @@ export function CanvasNodeHoverToolbar({
     const hasAudio = isAudio && Boolean(node.metadata?.content);
     const isText = node.type === CanvasNodeType.Text;
     const isConfig = node.type === CanvasNodeType.Config;
+    const isFreeCard = node.type === CanvasNodeType.FreeCard;
+    const hasFreeCardImage = isFreeCard && Boolean(node.metadata?.content);
     const canRetry = node.metadata?.status === "error" && !(isVideo && Boolean(node.metadata?.videoTaskId) && !hasVideo);
     const canQueryVideoTask = isVideo && Boolean(node.metadata?.videoTaskId) && !hasVideo && node.metadata?.status !== "loading";
     const quickImageToolIdSet = new Set(quickImageToolIds);
@@ -150,7 +158,7 @@ export function CanvasNodeHoverToolbar({
         }
         copyText(prompt, t("common.promptCopied"));
     };
-    const imageTools = buildImageToolbarTools(node, { onUpload, onToggleFreeResize, onMaskEdit, onCrop, onSplit, onUpscale, onSuperResolve, onAngle, onFourView, onTo3D, onViewImage, onCopyPrompt: copyImagePrompt, onReversePrompt });
+    const imageTools = buildImageToolbarTools(node, { onUpload, onToggleFreeResize, onMaskEdit, onCrop, onSplit, onUpscale, onSuperResolve, onAngle, onFourView, onTo3D, onSceneTo3D, onScene3D, onViewImage, onCopyPrompt: copyImagePrompt, onReversePrompt });
 
     function openImageToolSettings() {
         onKeep(activeNode.id);
@@ -170,15 +178,16 @@ export function CanvasNodeHoverToolbar({
         ...(hasImage || hasVideo || isText ? [{ id: "saveAsset", title: t("common.addToAssets"), label: t("canvas.nodeToolbar.saveAsset"), icon: <FolderPlus className="size-4" />, onClick: () => onSaveAsset(node) }] : []),
         ...(hasImage ? [{ id: "saveStyle", title: t("canvas.styleRecipes.saveTitle"), label: t("canvas.nodeToolbar.saveStyle"), icon: <Palette className="size-4" />, onClick: () => onSaveStyle(node) }] : []),
         ...(hasImage || hasVideo || hasAudio ? [{ id: "download", title: t(hasAudio ? "canvas.nodeToolbar.downloadAudio" : hasVideo ? "canvas.nodeToolbar.downloadVideo" : "canvas.nodeToolbar.downloadImage"), label: t("common.download"), icon: <Download className="size-4" />, onClick: () => onDownload(node) }] : []),
-        ...(isVideo ? [{ id: "edit", title: t("common.edit"), label: t("common.edit"), icon: <MessageSquare className="size-4" />, onClick: () => onToggleDialog(node) }] : []),
+        ...(isVideo ? [{ id: "videoEdit", title: "视频编辑", label: "视频编辑", icon: <MessageSquare className="size-4" />, onClick: () => onVideoEdit(node) }] : []),
         ...(isVideo ? [{ id: "videoDraft", title: t("canvas.nodeToolbar.draftTitle"), label: t("canvas.nodeToolbar.draft"), icon: <Zap className="size-4" />, onClick: () => onDraftVideo(node) }] : []),
         ...(hasVideo ? [{ id: "videoInterpolate", title: t("canvas.nodeToolbar.interpolateTitle"), label: t("canvas.nodeToolbar.interpolate"), icon: <Clapperboard className="size-4" />, onClick: () => onInterpolateVideo(node) }] : []),
-        ...(hasVideo ? [{ id: "videoUpscale", title: "SeedVR2 视频超分", label: "超分", icon: <Maximize2 className="size-4" />, onClick: () => onVideoUpscale(node) }] : []),
+        ...(hasVideo ? [{ id: "videoUpscale", title: "视频超分", label: "超分", icon: <Maximize2 className="size-4" />, onClick: () => onVideoUpscale(node) }] : []),
         ...(isText ? [{ id: "generateImage", title: t("canvas.node.generateImage"), label: t("canvas.node.generate"), icon: <ImageIcon className="size-4" />, onClick: () => onGenerateImage(node) }] : []),
         ...(isConfig && CONFIG_COMPOSER_ENABLED ? [{ id: "config", title: t("canvas.configNode.title"), label: t("canvas.configNode.title"), icon: <Settings2 className="size-4" />, onClick: () => onToggleDialog(node) }] : []),
         ...(isText ? [{ id: "decreaseFont", title: t("canvas.nodeToolbar.decreaseFont"), label: t("canvas.nodeToolbar.zoomOut"), icon: <Minus className="size-4" />, onClick: () => onDecreaseFont(node) }] : []),
         ...(isText ? [{ id: "increaseFont", title: t("canvas.nodeToolbar.increaseFont"), label: t("canvas.nodeToolbar.zoomIn"), icon: <Plus className="size-4" />, onClick: () => onIncreaseFont(node) }] : []),
         ...(isImage && !hasImage ? [{ id: "uploadImage", title: t("canvas.nodeToolbar.uploadImage"), label: t("canvas.nodeToolbar.uploadImage"), icon: <Upload className="size-4" />, onClick: () => onUpload(node) }] : []),
+        ...(isFreeCard ? [{ id: "uploadFreeCard", title: hasFreeCardImage ? "替换自由卡图片" : "上传图片到自由卡", label: t("canvas.nodeToolbar.uploadImage"), icon: <Upload className="size-4" />, onClick: () => onUpload(node) }] : []),
         ...(isVideo ? [{ id: "uploadVideo", title: t(hasVideo ? "canvas.nodeToolbar.replaceVideo" : "canvas.nodeToolbar.uploadVideo"), label: t(hasVideo ? "canvas.nodeToolbar.replaceVideo" : "canvas.nodeToolbar.uploadVideo"), icon: <Video className="size-4" />, onClick: () => onUpload(node) }] : []),
         ...(isAudio ? [{ id: "uploadAudio", title: t(hasAudio ? "canvas.nodeToolbar.replaceAudio" : "canvas.nodeToolbar.uploadAudio"), label: t(hasAudio ? "canvas.nodeToolbar.replaceAudio" : "canvas.nodeToolbar.uploadAudio"), icon: <Music2 className="size-4" />, onClick: () => onUpload(node) }] : []),
         ...(hasImage ? imageTools.map((tool) => ({ id: tool.id, title: tool.title, label: tool.label, icon: tool.icon, active: tool.active, onClick: tool.onClick })) : []),
@@ -246,12 +255,8 @@ export function CanvasNodeInfoModal({ node, open, onClose }: { node: CanvasNodeD
     const theme = useCanvasTheme();
     const { t } = useTranslation();
     const [view, setView] = useState<"info" | "json">("info");
-    const primaryImage = node?.metadata?.images?.find((image) => image.id === node.metadata?.primaryImageId) || node?.metadata?.images?.find((image) => image.status === "success") || node?.metadata?.images?.[0];
-    const imageBytes = node?.type === CanvasNodeType.Image ? Number(primaryImage?.bytes || node.metadata?.bytes) || (node.metadata?.content ? getDataUrlByteSize(node.metadata.content) : 0) : 0;
+    const imageBytes = node?.type === CanvasNodeType.Image && node.metadata?.content ? getDataUrlByteSize(node.metadata.content) : 0;
     const batchCount = node?.type === CanvasNodeType.Image ? node.metadata?.images?.length || 0 : 0;
-    const mediaWidth = Math.round(Number(primaryImage?.naturalWidth || node?.metadata?.naturalWidth) || 0);
-    const mediaHeight = Math.round(Number(primaryImage?.naturalHeight || node?.metadata?.naturalHeight) || 0);
-    const hasMediaSize = (node?.type === CanvasNodeType.Image || node?.type === CanvasNodeType.Video) && mediaWidth > 0 && mediaHeight > 0;
     const json = useMemo(() => {
         if (!node) return "";
         return JSON.stringify(
@@ -294,8 +299,7 @@ export function CanvasNodeInfoModal({ node, open, onClose }: { node: CanvasNodeD
                             <InfoRow label="ID" value={node.id} />
                             <InfoRow label={t("canvas.nodeToolbar.name")} value={node.title || t("canvas.node.untitled")} />
                             <InfoRow label={t("canvas.nodeToolbar.type")} value={node.type === CanvasNodeType.Group ? t("canvas.node.group") : node.type === CanvasNodeType.Config ? t("canvas.configNode.title") : [CanvasNodeType.Image, CanvasNodeType.Video, CanvasNodeType.Audio, CanvasNodeType.Text].includes(node.type as CanvasNodeType) ? t(`assets.kinds.${node.type}`) : getNodeDefinition(node.type)?.title || node.type} />
-                            {hasMediaSize ? <InfoRow label={t("canvas.nodeToolbar.mediaSize")} value={`${mediaWidth} × ${mediaHeight}`} /> : null}
-                            <InfoRow label={t("canvas.nodeToolbar.size")} value={`${Math.round(node.width)} × ${Math.round(node.height)}`} />
+                            <InfoRow label={t("canvas.nodeToolbar.size")} value={`${Math.round(node.width)} x ${Math.round(node.height)}`} />
                             <InfoRow label={t("canvas.nodeToolbar.position")} value={`${Math.round(node.position.x)}, ${Math.round(node.position.y)}`} />
                             <InfoRow label={t("canvas.nodeToolbar.status")} value={node.metadata?.status || "idle"} />
                             {batchCount > 1 ? <InfoRow label={t("canvas.nodeToolbar.imageGroup")} value={t("canvas.configNode.images", { count: batchCount })} /> : null}

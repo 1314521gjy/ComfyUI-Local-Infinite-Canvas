@@ -90,6 +90,8 @@ function applyTransform(value, binding) {
       return Math.round(Number(value));
     case "int":
       return Math.trunc(Number(value));
+    case "float":
+      return Number(value);
     case "invert10":
       return 10 - Number(value);
     case "boolean":
@@ -182,6 +184,7 @@ export function applyBindings(workflow, entry, context, { logger, stats } = {}) 
       }
       selected.forEach((uploaded, index) => {
         const loadNodeId = nextGatewayLoadId(next);
+        const inputKey = binding.singleInput ? String(binding.singleInput) : `${prefix}${indexBase + index}`;
         if (isVideo && binding.loader === "native") {
           next[loadNodeId] = {
             class_type: "LoadVideo",
@@ -194,7 +197,7 @@ export function applyBindings(workflow, entry, context, { logger, stats } = {}) 
             inputs: { video: [loadNodeId, 0] },
             _meta: { title: `Gateway Video Frames ${index + 1}` },
           };
-          node.inputs[`${prefix}${indexBase + index}`] = [componentsId, 0];
+          node.inputs[inputKey] = [componentsId, 0];
           if (binding.sourceLengthInput) {
             const frames = Math.round(Number(context.sourceVideoFrames));
             if (Number.isFinite(frames) && frames > 0) node.inputs[binding.sourceLengthInput] = frames;
@@ -202,6 +205,10 @@ export function applyBindings(workflow, entry, context, { logger, stats } = {}) 
           return;
         }
         if (isVideo) {
+          const sourceFrames = Math.round(Number(context.sourceVideoFrames));
+          const frameLoadCap = binding.sourceLengthStatic && Number.isFinite(sourceFrames) && sourceFrames > 0
+            ? sourceFrames
+            : Number(binding.frameLoadCap ?? 0);
           next[loadNodeId] = {
             class_type: "VHS_LoadVideo",
             inputs: {
@@ -209,8 +216,8 @@ export function applyBindings(workflow, entry, context, { logger, stats } = {}) 
               force_rate: Number(binding.forceRate ?? 0),
               custom_width: 0,
               custom_height: 0,
-              frame_load_cap: 0,
-              skip_first_frames: 0,
+              frame_load_cap: frameLoadCap,
+              skip_first_frames: Number(context.sourceSkipFrames ?? 0),
               select_every_nth: 1,
               format: "AnimateDiff",
             },
@@ -229,13 +236,19 @@ export function applyBindings(workflow, entry, context, { logger, stats } = {}) 
             _meta: { title: `Gateway Ref ${index + 1}` },
           };
         }
-        node.inputs[`${prefix}${indexBase + index}`] = [loadNodeId, 0];
-        if (isVideo && binding.audioPrefix) {
-          node.inputs[`${binding.audioPrefix}${indexBase + index}`] = [loadNodeId, 2];
+        node.inputs[inputKey] = [loadNodeId, 0];
+        if (isVideo && (binding.audioInput || binding.audioPrefix)) {
+          const audioKey = binding.audioInput ? String(binding.audioInput) : `${binding.audioPrefix}${indexBase + index}`;
+          node.inputs[audioKey] = [loadNodeId, 2];
         }
         if (isVideo && binding.sourceLengthInput) {
-          const sourceLengthOutput = Number.isInteger(binding.sourceLengthOutput) ? binding.sourceLengthOutput : 1;
-          node.inputs[binding.sourceLengthInput] = [loadNodeId, sourceLengthOutput];
+          if (binding.sourceLengthStatic) {
+            const frames = Math.round(Number(context.sourceVideoFrames));
+            if (Number.isFinite(frames) && frames > 0) node.inputs[binding.sourceLengthInput] = frames;
+          } else {
+            const sourceLengthOutput = Number.isInteger(binding.sourceLengthOutput) ? binding.sourceLengthOutput : 1;
+            node.inputs[binding.sourceLengthInput] = [loadNodeId, sourceLengthOutput];
+          }
         }
       });
       continue;

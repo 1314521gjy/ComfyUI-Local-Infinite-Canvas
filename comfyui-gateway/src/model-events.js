@@ -24,7 +24,7 @@ export function createModelEventBus({ logger } = {}) {
   }
 
   // 只允许携带与快照关联的非敏感标量；不允许把模型列表/提示词塞进 SSE。
-  const META_FIELDS = ["scanId", "setupRevision", "stale", "instanceId"];
+  const META_FIELDS = ["scanId", "setupRevision", "stale", "instanceId", "freeWorkflowId"];
 
   function broadcast(reason = "change", meta = {}) {
     revision += 1;

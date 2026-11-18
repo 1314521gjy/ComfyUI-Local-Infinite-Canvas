@@ -1,12 +1,13 @@
-import type { ReactNode } from "react";
-import { Columns2, Download, Group, Play, Ungroup } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { Columns2, Download, Group, Play, Scissors, Ungroup } from "lucide-react";
 import { Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
 
+import { CanvasVideoEditModal } from "@/components/canvas/canvas-video-edit-modal";
 import { useCanvasTheme } from "@/lib/canvas/use-canvas-theme";
 import { nodeBounds } from "@/lib/canvas/canvas-node-geometry";
-import type { CanvasNodeData, ViewportTransform } from "@/types/canvas";
+import { CanvasNodeType, type CanvasNodeData, type ViewportTransform } from "@/types/canvas";
 
 const SELECTION_PAD = 14;
 
@@ -33,22 +34,28 @@ export function CanvasSelectionToolbar({
     canUngroup: boolean;
     canSyncPlay: boolean;
     canBatchDownload: boolean;
+    canEdit?: boolean;
     onCompare: () => void;
     onGroup: () => void;
     onUngroup: () => void;
     onSyncPlay: () => void;
     onBatchDownload: () => void;
+    onEdit?: () => void;
 }) {
     const { t } = useTranslation();
     const theme = useCanvasTheme();
+    const [editing, setEditing] = useState(false);
+    const [editingVideos, setEditingVideos] = useState<CanvasNodeData[]>([]);
     if (nodes.length < 2) return null;
 
+    const videoNodes = nodes.filter((node) => node.type === CanvasNodeType.Video && Boolean(node.metadata?.content));
+    const canCut = videoNodes.length >= 2;
     const bounds = nodeBounds(nodes);
     const left = viewport.x + bounds.left * viewport.k - SELECTION_PAD;
     const top = viewport.y + bounds.top * viewport.k - SELECTION_PAD;
     const width = (bounds.right - bounds.left) * viewport.k + SELECTION_PAD * 2;
     const height = (bounds.bottom - bounds.top) * viewport.k + SELECTION_PAD * 2;
-    const showActions = showToolbar && (canCompare || canGroup || canUngroup || canSyncPlay || canBatchDownload);
+    const showActions = showToolbar && (canCompare || canGroup || canUngroup || canSyncPlay || canBatchDownload || canCut);
 
     return (
         <>
@@ -78,10 +85,12 @@ export function CanvasSelectionToolbar({
                     {canCompare ? <SelectionAction title={t("canvas.nodeToolbar.compareTitle")} label={t("canvas.nodeToolbar.compare")} icon={<Columns2 className="size-4" />} onClick={onCompare} /> : null}
                     {canBatchDownload ? <SelectionAction title={t("canvas.nodeToolbar.batchDownloadTitle")} label={t("canvas.nodeToolbar.batchDownload")} icon={<Download className="size-4" />} onClick={onBatchDownload} /> : null}
                     {canSyncPlay ? <SelectionAction title={t("canvas.nodeToolbar.syncPlayTitle")} label={t("canvas.nodeToolbar.syncPlay")} icon={<Play className="size-4" />} onClick={onSyncPlay} /> : null}
+                    {canCut ? <SelectionAction title="剪辑选中的视频片段" label="剪辑" icon={<Scissors className="size-4" />} onClick={() => { setEditingVideos(videoNodes); setEditing(true); }} /> : null}
                     {canGroup ? <SelectionAction title={t("canvas.nodeToolbar.groupTitle")} label={t("canvas.nodeToolbar.group")} icon={<Group className="size-4" />} onClick={onGroup} /> : null}
                     {canUngroup ? <SelectionAction title={t("canvas.nodeToolbar.ungroupTitle")} label={t("canvas.nodeToolbar.ungroup")} icon={<Ungroup className="size-4" />} onClick={onUngroup} /> : null}
                 </div>
             ) : null}
+            {editing ? <CanvasVideoEditModal open videos={editingVideos} onClose={() => { setEditing(false); setEditingVideos([]); }} /> : null}
         </>
     );
 }

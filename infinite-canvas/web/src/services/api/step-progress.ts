@@ -1,4 +1,4 @@
-export type GenerationStepProgress = { step: number; total: number; requestId?: string };
+export type GenerationStepProgress = { step: number; total: number; requestId?: string; previewUrl?: string; previewMime?: string };
 
 const handlers = new WeakMap<AbortSignal, (progress: GenerationStepProgress) => void>();
 

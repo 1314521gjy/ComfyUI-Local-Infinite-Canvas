@@ -1,0 +1,13 @@
+ComfyUI-Idol
+
+This package runs speridlabs' Idol (https://github.com/speridlabs/idol-sdk, commit 4702a7f, Apache License 2.0) on
+ComfyUI's native TripoSplat nodes.
+
+Ported from it (Apache-2.0, modified for ComfyUI):
+- nodes.py, preprocess(): the framing of idol/preprocess.py (resize, 1 px alpha erosion, square crop of
+  CROP_MARGIN x the object's bounding box, composite on black)
+- nodes.py, IdolInputCamera: the reading of Idol's predicted camera token (direction, inverse distance, half-width)
+- tools/convert_idol.py: the decoders' layout and the Sobol token positions, checked against the release
+
+Model weights are not included. Idol's weights are released by speridlabs under the Apache License 2.0; the converted
+files at https://huggingface.co/PedroMarinhoDev/Idol-ComfyUI are those weights with the changes listed in their card.

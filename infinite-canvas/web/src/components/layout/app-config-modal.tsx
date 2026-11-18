@@ -7,9 +7,9 @@ import { useTranslation } from "react-i18next";
 import { ModelPicker, WorkflowModelPicker } from "@/components/model-picker";
 import { imageAspectOptions } from "@/components/image-settings-panel";
 import { LOCAL_ONLY } from "@/constant/app-mode";
+import { DSH_EMBEDDED } from "@/constant/runtime-config";
 import { videoResolutionOptions } from "@/components/video-settings-panel";
 import { ChannelEditorDrawer } from "@/components/layout/channel-editor-drawer";
-import { ConfigDirectories } from "@/components/layout/config-directories";
 import { ConfigLocalProxy } from "@/components/layout/config-local-proxy";
 import { ConfigPromptSources } from "@/components/layout/config-prompt-sources";
 import { ConfigLocalStorage } from "@/components/layout/config-local-storage";
@@ -527,6 +527,15 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                         </>
                                     ) : null}
                                 </div>
+                                <div className="mb-2 text-sm font-semibold">{t("config.preferences.previewSection")}</div>
+                                <div className="mb-4 grid gap-4 md:grid-cols-2">
+                                    <Form.Item label={t("config.preferences.imagePreview")} extra={t("config.preferences.imagePreviewDescription")} className="mb-4">
+                                        <Switch checked={config.imagePreviewEnabled !== false} onChange={(checked) => updateConfig("imagePreviewEnabled", checked)} />
+                                    </Form.Item>
+                                    <Form.Item label={t("config.preferences.videoPreview")} extra={t("config.preferences.videoPreviewDescription")} className="mb-4">
+                                        <Switch checked={config.videoPreviewEnabled !== false} onChange={(checked) => updateConfig("videoPreviewEnabled", checked)} />
+                                    </Form.Item>
+                                </div>
                                 <Form.Item label={t("config.preferences.cardSkin")} extra={t("config.preferences.cardSkinDescription")} className="mb-4">
                                     <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                                         {cardSkinIds.map((id) => {
@@ -574,14 +583,16 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                     </div>
                                     {((cardSkin === "fish" && unlockedCardSkins.includes("fish")) || cardSkin === "angel") && fishOptionsOpen ? (
                                         <div className="mt-3 rounded-lg border border-stone-200 bg-stone-50/80 px-3 py-3 dark:border-stone-800 dark:bg-white/5">
-                                            <div className="flex items-start justify-between gap-4">
-                                                <div className="min-w-0">
-                                                    <div className="text-sm font-medium">{t("config.preferences.agentAvatar")}</div>
-                                                    <div className="mt-1 text-[11px] leading-5 opacity-60">{t("config.preferences.agentAvatarDescription")}</div>
+                                            {!DSH_EMBEDDED ? (
+                                                <div className="flex items-start justify-between gap-4">
+                                                    <div className="min-w-0">
+                                                        <div className="text-sm font-medium">{t("config.preferences.agentAvatar")}</div>
+                                                        <div className="mt-1 text-[11px] leading-5 opacity-60">{t("config.preferences.agentAvatarDescription")}</div>
+                                                    </div>
+                                                    <Switch checked={agentAvatarEnabled} onChange={setAgentAvatarEnabled} />
                                                 </div>
-                                                <Switch checked={agentAvatarEnabled} onChange={setAgentAvatarEnabled} />
-                                            </div>
-                                            <div className="mt-3 flex items-start justify-between gap-4 border-t border-stone-200/70 pt-3 dark:border-stone-800/70">
+                                            ) : null}
+                                            <div className={`${DSH_EMBEDDED ? "" : "mt-3 "}flex items-start justify-between gap-4 border-t border-stone-200/70 pt-3 dark:border-stone-800/70`}>
                                                 <div className="min-w-0">
                                                     <div className="text-sm font-medium">{t("config.preferences.fishWhip")}</div>
                                                     <div className="mt-1 text-[11px] leading-5 opacity-60">{t("config.preferences.fishWhipDescription")}</div>
@@ -722,12 +733,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                     {
                         key: "resources",
                         label: t("config.tabs.resources"),
-                        children: (
-                            <>
-                                <ConfigDirectories />
-                                <ResourceCenterPanel />
-                            </>
-                        ),
+                        children: <ResourceCenterPanel />,
                     },
                     {
                         key: "local-storage",

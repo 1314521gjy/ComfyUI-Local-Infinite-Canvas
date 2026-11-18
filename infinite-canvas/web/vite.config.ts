@@ -43,7 +43,19 @@ function localPluginsManifest(): Plugin {
 
 export default defineConfig({
     base: process.env.VITE_BASE || "/",
+    // 重新构建时保留旧 hash 资源，已打开的页面不会被新包打断（刷新后走新入口）。
+    build: { emptyOutDir: false },
     plugins: [react(), localPluginsManifest()],
+    server: {
+        host: "127.0.0.1",
+        port: 5199,
+        strictPort: true,
+        fs: { allow: [webDir, resolve(webDir, "..")] },
+        proxy: {
+            "/api": { target: "http://127.0.0.1:8190", changeOrigin: true },
+            "/v1": { target: "http://127.0.0.1:8190", changeOrigin: true },
+        },
+    },
     resolve: {
         alias: {
             "@": resolve(webDir, "src"),

@@ -911,7 +911,7 @@ test("krea2 and four-view packs keep the base workflow and standalone resource e
     ]);
     assert.equal(index.resources.some((item) => item.id === "krea2_darkbrush_lora"), false);
     assert.equal(index.resources.some((item) => item.id === "krea2_retroanime_lora"), false);
-    assert.equal(index.resources.length, 87);
+    assert.equal(index.resources.length, 89);
 });
 
 test("moss pack no longer ships Balanced workflows or the local bake resource", () => {
@@ -966,7 +966,9 @@ test("upscale pack ships the node with the app and downloads ESRGAN/SeedVR2 weig
         "video-esrgan_2x",
         "image-seedvr2-upscale",
         "video-seedvr2-upscale",
+        "video-relayvsr-2x",
     ]);
+    assert.deepEqual(pack.workflowDependencies["video-relayvsr-2x"], ["relayvsr_x2_int8", "relayvsr_flash_vae"]);
     assert.deepEqual(pack.workflowDependencies["image-esrgan-upscale"], ["esrgan_x2plus"]);
     assert.deepEqual(pack.workflowDependencies["image-esrgan-upscale"], pack.workflowDependencies["video-esrgan_2x"]);
     const runtimes = ["seedvr2_dep_diffusers", "seedvr2_dep_rotary", "seedvr2_dep_omegaconf", "seedvr2_dep_opencv", "seedvr2_dep_einops"];

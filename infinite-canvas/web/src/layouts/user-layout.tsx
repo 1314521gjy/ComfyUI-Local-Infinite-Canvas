@@ -1,7 +1,9 @@
-import type { ReactNode } from "react";
+import { lazy, Suspense, type ReactNode } from "react";
 
-import { AgentPet } from "@/components/agent/agent-pet";
 import { AppTopNav } from "@/components/layout/app-top-nav";
+import { DSH_EMBEDDED } from "@/constant/runtime-config";
+
+const AgentPet = DSH_EMBEDDED ? null : lazy(() => import("@/components/agent/agent-pet").then((module) => ({ default: module.AgentPet })));
 
 export default function UserLayout({ children }: { children: ReactNode }) {
     return (
@@ -10,7 +12,11 @@ export default function UserLayout({ children }: { children: ReactNode }) {
                 <AppTopNav />
                 <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
             </div>
-            <AgentPet />
+            {AgentPet ? (
+                <Suspense fallback={null}>
+                    <AgentPet />
+                </Suspense>
+            ) : null}
         </div>
     );
 }

@@ -7,6 +7,8 @@ import type { UploadedFile } from "@/services/file-storage";
 import type { ReferenceImage } from "@/types/image";
 import { CanvasNodeType, type CanvasImageGenerationType, type CanvasNodeData, type CanvasNodeMetadata, type CanvasNodeTypeId, type Position } from "@/types/canvas";
 
+export const AUDIO_CONFIG_NODE_SIZE = { width: 380, height: 440 };
+
 export function createCanvasNode(type: CanvasNodeTypeId, position: Position, metadata?: CanvasNodeMetadata, options?: { remember?: boolean; inherit?: boolean }): CanvasNodeData {
     const spec = getNodeSpec(type);
     const id = `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -40,33 +42,6 @@ export function audioMetadata(audio: UploadedFile): CanvasNodeMetadata {
     return { content: audio.url, storageKey: audio.storageKey, status: "success", bytes: audio.bytes, mimeType: audio.mimeType || "audio/mpeg", durationMs: audio.durationMs };
 }
 
-export function removeBatchImage(node: CanvasNodeData, imageId: string): CanvasNodeData {
-    const previousImages = node.metadata?.images || [];
-    const primaryImageId = node.metadata?.primaryImageId || previousImages[0]?.id;
-    const images = previousImages.filter((image) => image.id !== imageId);
-    const removingPrimary = primaryImageId === imageId;
-    const primary = removingPrimary ? images[0] : images.find((image) => image.id === primaryImageId);
-    return {
-        ...node,
-        metadata: {
-            ...node.metadata,
-            ...(removingPrimary
-                ? {
-                      content: primary?.content,
-                      storageKey: primary?.storageKey,
-                      naturalWidth: primary?.naturalWidth,
-                      naturalHeight: primary?.naturalHeight,
-                      bytes: primary?.bytes,
-                      mimeType: primary?.mimeType,
-                  }
-                : {}),
-            images,
-            count: images.length,
-            primaryImageId: removingPrimary ? primary?.id : primaryImageId,
-        },
-    };
-}
-
 export function referenceUrl(image: ReferenceImage) {
     return image.storageKey || image.url || (!image.dataUrl.startsWith("data:") ? image.dataUrl : undefined);
 }
@@ -93,6 +68,28 @@ export function buildAudioGenerationMetadata(config: AiConfig): CanvasNodeMetada
         audioFormat: config.audioFormat,
         audioSpeed: config.audioSpeed,
         audioInstructions: config.audioInstructions,
+        audioMode: config.audioMode === "dialogue" ? "dialogue" : "song",
+        audioReferenceMode: config.audioReferenceMode === "none" ? "none" : "reference",
+        audioDuration: config.audioDuration || "120",
+        audioBpm: config.audioBpm || "120",
+        audioLanguage: config.audioLanguage || "zh",
+        audioKeyscale: config.audioKeyscale || "E minor",
+        audioVoiceDescription: config.audioVoiceDescription || "",
+        audioStyle: config.audioStyle || "",
+        audioGenre: config.audioGenre || "",
+        audioEmotion: config.audioEmotion || "",
+        audioSeed: config.audioSeed || "",
+        audioSourceKey: config.audioSourceKey || "",
+        audioSourceName: config.audioSourceName || "",
+        audioReferenceKey: config.audioReferenceKey || "",
+        audioSongReferenceKey: config.audioSongReferenceKey || "",
+        audioReferenceName: config.audioReferenceName || "",
+        audioSongReferenceName: config.audioSongReferenceName || "",
+        audioDialogueVoiceKey: config.audioDialogueVoiceKey || "",
+        audioDialogueVoiceName: config.audioDialogueVoiceName || "",
+        audioDialogueSpeed: config.audioDialogueSpeed || "",
+        audioDialogueTone: config.audioDialogueTone || "",
+        audioStrength: config.audioStrength || "1",
     };
 }
 
@@ -100,6 +97,10 @@ export function applyNodeConfigPatch(node: CanvasNodeData, patch: Partial<Canvas
     const safePatch = patch || {};
     const next = { ...node, metadata: { ...node.metadata, ...safePatch } };
     if (Object.keys(safePatch).some(isInheritableNodeField)) rememberNodeSettings(next.type, next.metadata);
+    if (node.type === CanvasNodeType.Config && safePatch.generationMode) {
+        const size = safePatch.generationMode === "audio" ? AUDIO_CONFIG_NODE_SIZE : NODE_DEFAULT_SIZE[CanvasNodeType.Config];
+        return { ...next, ...size, position: { x: node.position.x + node.width / 2 - size.width / 2, y: node.position.y + node.height / 2 - size.height / 2 } };
+    }
     const spec = node.type === CanvasNodeType.Video ? NODE_DEFAULT_SIZE[CanvasNodeType.Video] : NODE_DEFAULT_SIZE[CanvasNodeType.Image];
     const size = typeof safePatch.size === "string" && !node.metadata?.content ? nodeSizeFromRatio(safePatch.size, spec.width, spec.height) : null;
     return size && (node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Video) ? { ...next, ...size, position: { x: node.position.x + node.width / 2 - size.width / 2, y: node.position.y + node.height / 2 - size.height / 2 } } : next;

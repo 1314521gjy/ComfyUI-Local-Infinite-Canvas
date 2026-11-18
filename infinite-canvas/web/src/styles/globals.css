@@ -226,11 +226,6 @@
         font-weight: 700;
     }
 
-    .thin-scrollbar {
-        scrollbar-color: rgba(120, 113, 108, 0.45) transparent;
-        scrollbar-width: thin;
-    }
-
     /* Keep the same scrollbar width as the transparent textarea, but hide its thumb. */
     .canvas-mention-highlight {
         scrollbar-color: transparent transparent;
@@ -243,6 +238,11 @@
 
     .canvas-mention-highlight::-webkit-scrollbar-track {
         background: transparent;
+    }
+
+    .thin-scrollbar {
+        scrollbar-color: rgba(120, 113, 108, 0.45) transparent;
+        scrollbar-width: thin;
     }
 
     .thin-scrollbar::-webkit-scrollbar {

@@ -151,7 +151,7 @@
       "name": "video-h3-ref2va",
       "type": "video",
       "file": "h3-ref2va-drama-vdn.json",
-      "description": "MiniMax-H3 multi-reference on the VDN 8-step backend (Singularity + VDN stage-dmd-step-250; turbo adapter + TESpeed + Sage + SelfLift, 8 NFE). Supports 1–6 images, 0–2 audio clips and 0–1 video (at least one media). Requires models/vdn/stage-dmd-step-250.",
+      "description": "MiniMax-H3 单条目内切换 文生 / 首尾帧 / 多参（1–6 图 + 0–2 音频 + 0–1 视频）· SelfLift 单采 · 画布原链。",
       "lora": {
         "filter": "H3|minimax_h3|TaoMate-H3",
         "source": "5"
@@ -237,6 +237,48 @@
           "from": "params.w_max",
           "default": 1
         },
+        "task_type_text": {
+          "node": "76",
+          "input": "task_type",
+          "default": "auto",
+          "modes": [
+            "text"
+          ]
+        },
+        "task_type_frames": {
+          "node": "76",
+          "input": "task_type",
+          "from": "params.frameMode",
+          "map": {
+            "first": "I2VA",
+            "last": "L2VA",
+            "both": "FL2VA"
+          },
+          "default": "FL2VA",
+          "modes": [
+            "frames"
+          ]
+        },
+        "task_type_reference": {
+          "node": "76",
+          "input": "task_type",
+          "modes": [
+            "reference"
+          ],
+          "default": "Ref2VA"
+        },
+        "frames": {
+          "node": "76",
+          "input": "first_frame",
+          "from": "image",
+          "frameMode": true,
+          "firstInput": "first_frame",
+          "lastInput": "last_frame",
+          "max": 2,
+          "modes": [
+            "frames"
+          ]
+        },
         "refs": {
           "node": "76",
           "input": "ref_images",
@@ -244,7 +286,10 @@
           "array": true,
           "inputPrefix": "ref_images.ref_image_",
           "min": 0,
-          "max": 6
+          "max": 6,
+          "modes": [
+            "reference"
+          ]
         },
         "videos": {
           "node": "76",
@@ -255,7 +300,10 @@
           "audioPrefix": "ref_video_audios.ref_video_audio_",
           "min": 0,
           "max": 1,
-          "loadType": "video"
+          "loadType": "video",
+          "modes": [
+            "reference"
+          ]
         },
         "audios": {
           "node": "76",
@@ -265,7 +313,10 @@
           "inputPrefix": "ref_audios.ref_audio_",
           "min": 0,
           "max": 2,
-          "loadType": "audio"
+          "loadType": "audio",
+          "modes": [
+            "reference"
+          ]
         }
       },
       "parameters": [
@@ -343,378 +394,14 @@
           "default": 1
         }
       ],
-      "label": "H3 多参（VDN）",
-      "minMedia": 1
-    },
-    {
-      "id": "video-h3-t2v",
-      "name": "video-h3-t2v",
-      "type": "video",
-      "file": "h3-ref2va-drama-vdn.json",
-      "description": "MiniMax-H3 text-to-video on the VDN 8-step backend (Singularity + VDN stage-dmd-step-250; turbo adapter + TESpeed + Sage + SelfLift, 8 NFE). No image/audio/video input. Requires models/vdn/stage-dmd-step-250.",
-      "lora": {
-        "filter": "H3|minimax_h3|TaoMate-H3",
-        "source": "5"
-      },
-      "defaults": {
-        "76.strict_prompt_tags": false
-      },
-      "bindings": {
-        "prompt": {
-          "node": "76",
-          "input": "prompt"
-        },
-        "width": {
-          "node": "76",
-          "input": "width",
-          "from": "size.width",
-          "transform": "snap32",
-          "default": 1344
-        },
-        "height": {
-          "node": "76",
-          "input": "height",
-          "from": "size.height",
-          "transform": "snap32",
-          "default": 768
-        },
-        "length": {
-          "node": "76",
-          "input": "length",
-          "from": "seconds",
-          "transform": "secondsToFrames17",
-          "fps": 24,
-          "default": 124
-        },
-        "seed": {
-          "node": "78",
-          "input": "seed",
-          "from": "params.seed",
-          "transform": "int",
-          "random": true
-        },
-        "steps": {
-          "node": "74",
-          "input": "steps",
-          "from": "params.steps",
-          "transform": "int",
-          "default": 8
-        },
-        "cfg": {
-          "node": "78",
-          "input": "cfg",
-          "from": "params.cfg",
-          "default": 1
-        },
-        "transition_step": {
-          "node": "78",
-          "input": "transition_step",
-          "from": "params.transition_step",
-          "transform": "int",
-          "default": 6
-        },
-        "lowres_scale": {
-          "node": "78",
-          "input": "lowres_scale",
-          "from": "params.lowres_scale",
-          "default": 0.6
-        },
-        "rho": {
-          "node": "78",
-          "input": "rho",
-          "from": "params.rho",
-          "default": 0
-        },
-        "w_min": {
-          "node": "78",
-          "input": "w_min",
-          "from": "params.w_min",
-          "default": 0.3
-        },
-        "w_max": {
-          "node": "78",
-          "input": "w_max",
-          "from": "params.w_max",
-          "default": 1
-        },
-        "task_type": {
-          "node": "76",
-          "input": "task_type",
-          "default": "T2VA"
-        }
-      },
-      "parameters": [
-        {
-          "key": "seed",
-          "label": "种子",
-          "type": "number",
-          "min": 1,
-          "max": 2147483647,
-          "step": 1,
-          "description": "留空则每次随机"
-        },
-        {
-          "key": "steps",
-          "label": "步数",
-          "type": "number",
-          "min": 1,
-          "max": 30,
-          "step": 1,
-          "default": 8
-        },
-        {
-          "key": "cfg",
-          "label": "CFG",
-          "type": "number",
-          "min": 1,
-          "max": 10,
-          "step": 0.1,
-          "default": 1
-        },
-        {
-          "key": "transition_step",
-          "label": "SelfLift 切换步",
-          "type": "number",
-          "min": 1,
-          "max": 7,
-          "step": 1,
-          "default": 6,
-          "description": "总 8 步：快速 6 步低清 + 2 步全分辨率；质量 5 步低清 + 3 步全分辨率"
-        },
-        {
-          "key": "lowres_scale",
-          "label": "SelfLift 低清比例",
-          "type": "number",
-          "min": 0.25,
-          "max": 1,
-          "step": 0.05,
-          "default": 0.6
-        },
-        {
-          "key": "rho",
-          "label": "SelfLift 锚点校正",
-          "type": "number",
-          "min": 0,
-          "max": 1,
-          "step": 0.05,
-          "default": 0
-        },
-        {
-          "key": "w_min",
-          "label": "SelfLift w_min",
-          "type": "number",
-          "min": 0,
-          "max": 1,
-          "step": 0.05,
-          "default": 0.3
-        },
-        {
-          "key": "w_max",
-          "label": "SelfLift w_max",
-          "type": "number",
-          "min": 0,
-          "max": 1,
-          "step": 0.05,
-          "default": 1
-        }
-      ],
-      "label": "H3 文生视频（VDN）"
-    },
-    {
-      "id": "video-h3-frames",
-      "name": "video-h3-frames",
-      "type": "video",
-      "file": "h3-ref2va-drama-vdn.json",
-      "description": "MiniMax-H3 first/last-frame video on the VDN 8-step backend (VDN stage-dmd-step-250 + TESpeed + Sage + SelfLift, 8 NFE). Requires 1–2 images: first, last, or both; task_type switches I2VA/L2VA/FL2VA.",
-      "lora": {
-        "filter": "H3|minimax_h3|TaoMate-H3",
-        "source": "5"
-      },
-      "defaults": {
-        "76.strict_prompt_tags": false
-      },
-      "bindings": {
-        "prompt": {
-          "node": "76",
-          "input": "prompt"
-        },
-        "width": {
-          "node": "76",
-          "input": "width",
-          "from": "size.width",
-          "transform": "snap32",
-          "default": 1344
-        },
-        "height": {
-          "node": "76",
-          "input": "height",
-          "from": "size.height",
-          "transform": "snap32",
-          "default": 768
-        },
-        "length": {
-          "node": "76",
-          "input": "length",
-          "from": "seconds",
-          "transform": "secondsToFrames17",
-          "fps": 24,
-          "default": 124
-        },
-        "seed": {
-          "node": "78",
-          "input": "seed",
-          "from": "params.seed",
-          "transform": "int",
-          "random": true
-        },
-        "steps": {
-          "node": "74",
-          "input": "steps",
-          "from": "params.steps",
-          "transform": "int",
-          "default": 8
-        },
-        "cfg": {
-          "node": "78",
-          "input": "cfg",
-          "from": "params.cfg",
-          "default": 1
-        },
-        "transition_step": {
-          "node": "78",
-          "input": "transition_step",
-          "from": "params.transition_step",
-          "transform": "int",
-          "default": 6
-        },
-        "lowres_scale": {
-          "node": "78",
-          "input": "lowres_scale",
-          "from": "params.lowres_scale",
-          "default": 0.6
-        },
-        "rho": {
-          "node": "78",
-          "input": "rho",
-          "from": "params.rho",
-          "default": 0
-        },
-        "w_min": {
-          "node": "78",
-          "input": "w_min",
-          "from": "params.w_min",
-          "default": 0.3
-        },
-        "w_max": {
-          "node": "78",
-          "input": "w_max",
-          "from": "params.w_max",
-          "default": 1
-        },
-        "task_type": {
-          "node": "76",
-          "input": "task_type",
-          "from": "params.frameMode",
-          "map": {
-            "first": "I2VA",
-            "last": "L2VA",
-            "both": "FL2VA"
-          },
-          "default": "FL2VA"
-        },
-        "frames": {
-          "node": "76",
-          "input": "first_frame",
-          "from": "image",
-          "frameMode": true,
-          "firstInput": "first_frame",
-          "lastInput": "last_frame",
-          "max": 2
-        }
-      },
-      "parameters": [
-        {
-          "key": "seed",
-          "label": "种子",
-          "type": "number",
-          "min": 1,
-          "max": 2147483647,
-          "step": 1,
-          "description": "留空则每次随机"
-        },
-        {
-          "key": "steps",
-          "label": "步数",
-          "type": "number",
-          "min": 1,
-          "max": 30,
-          "step": 1,
-          "default": 8
-        },
-        {
-          "key": "cfg",
-          "label": "CFG",
-          "type": "number",
-          "min": 1,
-          "max": 10,
-          "step": 0.1,
-          "default": 1
-        },
-        {
-          "key": "transition_step",
-          "label": "SelfLift 切换步",
-          "type": "number",
-          "min": 1,
-          "max": 7,
-          "step": 1,
-          "default": 6,
-          "description": "总 8 步：快速 6 步低清 + 2 步全分辨率；质量 5 步低清 + 3 步全分辨率"
-        },
-        {
-          "key": "lowres_scale",
-          "label": "SelfLift 低清比例",
-          "type": "number",
-          "min": 0.25,
-          "max": 1,
-          "step": 0.05,
-          "default": 0.6
-        },
-        {
-          "key": "rho",
-          "label": "SelfLift 锚点校正",
-          "type": "number",
-          "min": 0,
-          "max": 1,
-          "step": 0.05,
-          "default": 0
-        },
-        {
-          "key": "w_min",
-          "label": "SelfLift w_min",
-          "type": "number",
-          "min": 0,
-          "max": 1,
-          "step": 0.05,
-          "default": 0.3
-        },
-        {
-          "key": "w_max",
-          "label": "SelfLift w_max",
-          "type": "number",
-          "min": 0,
-          "max": 1,
-          "step": 0.05,
-          "default": 1
-        }
-      ],
-      "label": "H3 首尾帧（VDN）"
+      "label": "H3（VDN）"
     },
     {
       "id": "video-h3-ref2va-novdn",
       "name": "video-h3-ref2va-novdn",
       "type": "video",
       "file": "h3-ref2va-drama.json",
-      "description": "MiniMax-H3 multi-reference on the original canvas chain (LightX2V 8-step LoRA + SolAttn/Sage + TESpeed + SelfLift + SigmaRefiner, 9 NFE; no VDN). Supports 1–6 images, 0–2 audio clips and 0–1 video (at least one media).",
+      "description": "MiniMax-H3 单条目内切换 文生 / 首尾帧 / 多参（1–6 图 + 0–2 音频 + 0–1 视频）· SelfLift 单采 · 画布原链。",
       "lora": {
         "filter": "H3|minimax_h3|TaoMate-H3",
         "source": "5"
@@ -800,6 +487,48 @@
           "from": "params.w_max",
           "default": 1
         },
+        "task_type_text": {
+          "node": "76",
+          "input": "task_type",
+          "default": "auto",
+          "modes": [
+            "text"
+          ]
+        },
+        "task_type_frames": {
+          "node": "76",
+          "input": "task_type",
+          "from": "params.frameMode",
+          "map": {
+            "first": "I2VA",
+            "last": "L2VA",
+            "both": "FL2VA"
+          },
+          "default": "FL2VA",
+          "modes": [
+            "frames"
+          ]
+        },
+        "task_type_reference": {
+          "node": "76",
+          "input": "task_type",
+          "modes": [
+            "reference"
+          ],
+          "default": "Ref2VA"
+        },
+        "frames": {
+          "node": "76",
+          "input": "first_frame",
+          "from": "image",
+          "frameMode": true,
+          "firstInput": "first_frame",
+          "lastInput": "last_frame",
+          "max": 2,
+          "modes": [
+            "frames"
+          ]
+        },
         "refs": {
           "node": "76",
           "input": "ref_images",
@@ -807,7 +536,10 @@
           "array": true,
           "inputPrefix": "ref_images.ref_image_",
           "min": 0,
-          "max": 6
+          "max": 6,
+          "modes": [
+            "reference"
+          ]
         },
         "videos": {
           "node": "76",
@@ -818,7 +550,10 @@
           "audioPrefix": "ref_video_audios.ref_video_audio_",
           "min": 0,
           "max": 1,
-          "loadType": "video"
+          "loadType": "video",
+          "modes": [
+            "reference"
+          ]
         },
         "audios": {
           "node": "76",
@@ -828,7 +563,10 @@
           "inputPrefix": "ref_audios.ref_audio_",
           "min": 0,
           "max": 2,
-          "loadType": "audio"
+          "loadType": "audio",
+          "modes": [
+            "reference"
+          ]
         }
       },
       "parameters": [
@@ -906,371 +644,7 @@
           "default": 1
         }
       ],
-      "label": "H3 多参（无VDN）",
-      "minMedia": 1
-    },
-    {
-      "id": "video-h3-t2v-novdn",
-      "name": "video-h3-t2v-novdn",
-      "type": "video",
-      "file": "h3-ref2va-drama.json",
-      "description": "MiniMax-H3 text-to-video on the original canvas chain (LightX2V 8-step LoRA + SolAttn/Sage + TESpeed + SelfLift + SigmaRefiner, 9 NFE; no VDN). No image/audio/video input.",
-      "lora": {
-        "filter": "H3|minimax_h3|TaoMate-H3",
-        "source": "5"
-      },
-      "defaults": {
-        "76.strict_prompt_tags": false
-      },
-      "bindings": {
-        "prompt": {
-          "node": "76",
-          "input": "prompt"
-        },
-        "width": {
-          "node": "76",
-          "input": "width",
-          "from": "size.width",
-          "transform": "snap32",
-          "default": 1344
-        },
-        "height": {
-          "node": "76",
-          "input": "height",
-          "from": "size.height",
-          "transform": "snap32",
-          "default": 768
-        },
-        "length": {
-          "node": "76",
-          "input": "length",
-          "from": "seconds",
-          "transform": "secondsToFrames17",
-          "fps": 24,
-          "default": 124
-        },
-        "seed": {
-          "node": "78",
-          "input": "seed",
-          "from": "params.seed",
-          "transform": "int",
-          "random": true
-        },
-        "steps": {
-          "node": "74",
-          "input": "steps",
-          "from": "params.steps",
-          "transform": "int",
-          "default": 8
-        },
-        "cfg": {
-          "node": "78",
-          "input": "cfg",
-          "from": "params.cfg",
-          "default": 1
-        },
-        "transition_step": {
-          "node": "78",
-          "input": "transition_step",
-          "from": "params.transition_step",
-          "transform": "int",
-          "default": 6
-        },
-        "lowres_scale": {
-          "node": "78",
-          "input": "lowres_scale",
-          "from": "params.lowres_scale",
-          "default": 0.6
-        },
-        "rho": {
-          "node": "78",
-          "input": "rho",
-          "from": "params.rho",
-          "default": 0
-        },
-        "w_min": {
-          "node": "78",
-          "input": "w_min",
-          "from": "params.w_min",
-          "default": 0.3
-        },
-        "w_max": {
-          "node": "78",
-          "input": "w_max",
-          "from": "params.w_max",
-          "default": 1
-        },
-        "task_type": {
-          "node": "76",
-          "input": "task_type",
-          "default": "T2VA"
-        }
-      },
-      "parameters": [
-        {
-          "key": "seed",
-          "label": "种子",
-          "type": "number",
-          "min": 1,
-          "max": 2147483647,
-          "step": 1,
-          "description": "留空则每次随机"
-        },
-        {
-          "key": "steps",
-          "label": "步数",
-          "type": "number",
-          "min": 1,
-          "max": 30,
-          "step": 1,
-          "default": 8
-        },
-        {
-          "key": "cfg",
-          "label": "CFG",
-          "type": "number",
-          "min": 1,
-          "max": 10,
-          "step": 0.1,
-          "default": 1
-        },
-        {
-          "key": "transition_step",
-          "label": "SelfLift 切换步",
-          "type": "number",
-          "min": 1,
-          "max": 7,
-          "step": 1,
-          "default": 6,
-          "description": "8 步时最大 7"
-        },
-        {
-          "key": "lowres_scale",
-          "label": "SelfLift 低清比例",
-          "type": "number",
-          "min": 0.25,
-          "max": 1,
-          "step": 0.05,
-          "default": 0.6
-        },
-        {
-          "key": "rho",
-          "label": "SelfLift 锚点校正",
-          "type": "number",
-          "min": 0,
-          "max": 1,
-          "step": 0.05,
-          "default": 0
-        },
-        {
-          "key": "w_min",
-          "label": "SelfLift w_min",
-          "type": "number",
-          "min": 0,
-          "max": 1,
-          "step": 0.05,
-          "default": 0.3
-        },
-        {
-          "key": "w_max",
-          "label": "SelfLift w_max",
-          "type": "number",
-          "min": 0,
-          "max": 1,
-          "step": 0.05,
-          "default": 1
-        }
-      ],
-      "label": "H3 文生视频（无VDN）"
-    },
-    {
-      "id": "video-h3-frames-novdn",
-      "name": "video-h3-frames-novdn",
-      "type": "video",
-      "file": "h3-ref2va-drama.json",
-      "description": "MiniMax-H3 first/last-frame video on the original canvas chain (LightX2V 8-step LoRA + SolAttn/Sage + TESpeed + SelfLift + SigmaRefiner, 9 NFE; no VDN). Requires 1–2 images: first, last, or both; task_type switches I2VA/L2VA/FL2VA.",
-      "lora": {
-        "filter": "H3|minimax_h3|TaoMate-H3",
-        "source": "5"
-      },
-      "defaults": {
-        "76.strict_prompt_tags": false
-      },
-      "bindings": {
-        "prompt": {
-          "node": "76",
-          "input": "prompt"
-        },
-        "width": {
-          "node": "76",
-          "input": "width",
-          "from": "size.width",
-          "transform": "snap32",
-          "default": 1344
-        },
-        "height": {
-          "node": "76",
-          "input": "height",
-          "from": "size.height",
-          "transform": "snap32",
-          "default": 768
-        },
-        "length": {
-          "node": "76",
-          "input": "length",
-          "from": "seconds",
-          "transform": "secondsToFrames17",
-          "fps": 24,
-          "default": 124
-        },
-        "seed": {
-          "node": "78",
-          "input": "seed",
-          "from": "params.seed",
-          "transform": "int",
-          "random": true
-        },
-        "steps": {
-          "node": "74",
-          "input": "steps",
-          "from": "params.steps",
-          "transform": "int",
-          "default": 8
-        },
-        "cfg": {
-          "node": "78",
-          "input": "cfg",
-          "from": "params.cfg",
-          "default": 1
-        },
-        "transition_step": {
-          "node": "78",
-          "input": "transition_step",
-          "from": "params.transition_step",
-          "transform": "int",
-          "default": 6
-        },
-        "lowres_scale": {
-          "node": "78",
-          "input": "lowres_scale",
-          "from": "params.lowres_scale",
-          "default": 0.6
-        },
-        "rho": {
-          "node": "78",
-          "input": "rho",
-          "from": "params.rho",
-          "default": 0
-        },
-        "w_min": {
-          "node": "78",
-          "input": "w_min",
-          "from": "params.w_min",
-          "default": 0.3
-        },
-        "w_max": {
-          "node": "78",
-          "input": "w_max",
-          "from": "params.w_max",
-          "default": 1
-        },
-        "task_type": {
-          "node": "76",
-          "input": "task_type",
-          "from": "params.frameMode",
-          "map": {
-            "first": "I2VA",
-            "last": "L2VA",
-            "both": "FL2VA"
-          },
-          "default": "FL2VA"
-        },
-        "frames": {
-          "node": "76",
-          "input": "first_frame",
-          "from": "image",
-          "frameMode": true,
-          "firstInput": "first_frame",
-          "lastInput": "last_frame",
-          "max": 2
-        }
-      },
-      "parameters": [
-        {
-          "key": "seed",
-          "label": "种子",
-          "type": "number",
-          "min": 1,
-          "max": 2147483647,
-          "step": 1,
-          "description": "留空则每次随机"
-        },
-        {
-          "key": "steps",
-          "label": "步数",
-          "type": "number",
-          "min": 1,
-          "max": 30,
-          "step": 1,
-          "default": 8
-        },
-        {
-          "key": "cfg",
-          "label": "CFG",
-          "type": "number",
-          "min": 1,
-          "max": 10,
-          "step": 0.1,
-          "default": 1
-        },
-        {
-          "key": "transition_step",
-          "label": "SelfLift 切换步",
-          "type": "number",
-          "min": 1,
-          "max": 7,
-          "step": 1,
-          "default": 6,
-          "description": "8 步时最大 7"
-        },
-        {
-          "key": "lowres_scale",
-          "label": "SelfLift 低清比例",
-          "type": "number",
-          "min": 0.25,
-          "max": 1,
-          "step": 0.05,
-          "default": 0.6
-        },
-        {
-          "key": "rho",
-          "label": "SelfLift 锚点校正",
-          "type": "number",
-          "min": 0,
-          "max": 1,
-          "step": 0.05,
-          "default": 0
-        },
-        {
-          "key": "w_min",
-          "label": "SelfLift w_min",
-          "type": "number",
-          "min": 0,
-          "max": 1,
-          "step": 0.05,
-          "default": 0.3
-        },
-        {
-          "key": "w_max",
-          "label": "SelfLift w_max",
-          "type": "number",
-          "min": 0,
-          "max": 1,
-          "step": 0.05,
-          "default": 1
-        }
-      ],
-      "label": "H3 首尾帧（无VDN）"
+      "label": "H3（无VDN）"
     },
     {
       "id": "video-esrgan_2x",
@@ -1602,8 +976,9 @@
       "name": "image-qwen21",
       "label": "Qwen Image 2.1",
       "type": "image",
-      "description": "Qwen-Image 2.1 Turbo 整合包（新版）：文生图 / 图像编辑 / 局部重绘 / 图像扩展 / 元素移除；文生图 8 步，其余 9 步。",
+      "description": "Qwen-Image 2.1 Turbo 整合包（新版）：文生图 / 多图编辑 / 局部重绘 / 扩图 / 元素移除；文生图 8 步，其余 9 步。",
       "file": "image-qwen21v2-edit.json",
+      "defaultMode": "t2i",
       "variantLabels": {
         "t2i": "文生图",
         "edit": "多图编辑",
@@ -1646,7 +1021,7 @@
           "inputPrefix": "images.image_",
           "indexBase": 1,
           "min": 1,
-          "max": 3
+          "max": 10
         }
       },
       "parameters": [
@@ -1709,8 +1084,8 @@
         },
         "edit": {
           "file": "image-qwen21v2-edit.json",
-          "label": "图像编辑",
-          "description": "1–3 张参考图，一致性无偏移 LoRA 0.48",
+          "label": "多图编辑",
+          "description": "1–10 张参考图，一致性无偏移 LoRA 0.48",
           "outputSize": {
             "node": "445",
             "latentNode": "444",
@@ -1795,7 +1170,7 @@
         },
         "outpaint": {
           "file": "image-qwen21v2-outpaint.json",
-          "label": "图像扩展",
+          "label": "扩图",
           "description": "原图外扩；扩图 LoRA 0.7，像素级 padding",
           "bindings": {
             "prompt": {
@@ -1849,12 +1224,239 @@
       }
     },
     {
+      "id": "image-moss-image",
+      "name": "image-moss-image",
+      "label": "MOSS-Image",
+      "type": "image",
+      "description": "MOSS-Image 单卡三档：快速 8步 / 质量 12步（需有效 12步 Turbo LoRA）/ 极致 50步；设置内再用滑竿选择自动 / int8 / bf16 精度。",
+      "file": "image-moss-sft-8step.json",
+      "defaultTier": "fast",
+      "defaultPrecision": "auto",
+      "tiers": {
+        "fast": {
+          "label": "快速",
+          "steps": 8,
+          "files": {
+            "bf16": "image-moss-sft-8step.json",
+            "int8": "image-moss-sft-int8-8step.json"
+          },
+          "bindings": {
+            "prompt": {
+              "node": "4",
+              "input": "text"
+            },
+            "negative": {
+              "node": "5",
+              "input": "text",
+              "default": "worst quality, bad anatomy, watermark, jpeg artifact"
+            },
+            "width": {
+              "node": "7",
+              "input": "width",
+              "from": "size.width",
+              "transform": "snap16",
+              "default": 1024
+            },
+            "height": {
+              "node": "7",
+              "input": "height",
+              "from": "size.height",
+              "transform": "snap16",
+              "default": 1024
+            },
+            "batch": {
+              "node": "7",
+              "input": "batch_size",
+              "from": "count",
+              "default": 1
+            },
+            "seed": {
+              "node": "8",
+              "input": "seed",
+              "from": "params.seed",
+              "transform": "int",
+              "random": true
+            },
+            "lora_strength": {
+              "node": "6",
+              "input": "strength_model",
+              "from": "params.lora_strength",
+              "default": 1
+            }
+          }
+        },
+        "quality": {
+          "label": "质量",
+          "steps": 12,
+          "files": {
+            "bf16": "image-moss-sft-12step.json",
+            "int8": "image-moss-sft-int8-12step.json"
+          },
+          "unavailableReason": "12步加速 LoRA 未安装",
+          "requires": {
+            "resource": "moss_12steps_lora",
+            "file": "models/loras/Moss_image/12_step_turbo_moss_1024_distill_v8_r64_weightsx2.safetensors",
+            "minBytes": 284147832,
+            "sha256": "873f6de07cf21ae3a373c009383da3d120092a8f3a0ba92c9dc5815693ca24df",
+            "missingMessage": "12步加速 LoRA 未安装",
+            "invalidMessage": "12步加速 LoRA 文件不完整（下载失败）"
+          },
+          "bindings": {
+            "prompt": {
+              "node": "4",
+              "input": "text"
+            },
+            "negative": {
+              "node": "5",
+              "input": "text",
+              "default": ""
+            },
+            "width": {
+              "node": "7",
+              "input": "width",
+              "from": "size.width",
+              "transform": "snap16",
+              "default": 1024
+            },
+            "height": {
+              "node": "7",
+              "input": "height",
+              "from": "size.height",
+              "transform": "snap16",
+              "default": 1024
+            },
+            "batch": {
+              "node": "7",
+              "input": "batch_size",
+              "from": "count",
+              "default": 1
+            },
+            "seed": {
+              "node": "8",
+              "input": "seed",
+              "from": "params.seed",
+              "transform": "int",
+              "random": true
+            },
+            "lora_strength": {
+              "node": "6",
+              "input": "strength_model",
+              "from": "params.lora_strength",
+              "default": 1
+            }
+          }
+        },
+        "ultra": {
+          "label": "极致",
+          "steps": 50,
+          "files": {
+            "bf16": "image-moss-sft-50step.json",
+            "int8": "image-moss-sft-int8-50step.json"
+          },
+          "bindings": {
+            "prompt": {
+              "node": "4",
+              "input": "text"
+            },
+            "negative": {
+              "node": "5",
+              "input": "text",
+              "default": "worst quality, bad anatomy, watermark, jpeg artifact"
+            },
+            "width": {
+              "node": "7",
+              "input": "width",
+              "from": "size.width",
+              "transform": "snap16",
+              "default": 1024
+            },
+            "height": {
+              "node": "7",
+              "input": "height",
+              "from": "size.height",
+              "transform": "snap16",
+              "default": 1024
+            },
+            "batch": {
+              "node": "7",
+              "input": "batch_size",
+              "from": "count",
+              "default": 1
+            },
+            "seed": {
+              "node": "8",
+              "input": "seed",
+              "from": "params.seed",
+              "transform": "int",
+              "random": true
+            }
+          }
+        }
+      },
+      "bindings": {
+        "prompt": {
+          "node": "4",
+          "input": "text"
+        },
+        "negative": {
+          "node": "5",
+          "input": "text",
+          "default": "worst quality, bad anatomy, watermark, jpeg artifact"
+        },
+        "width": {
+          "node": "7",
+          "input": "width",
+          "from": "size.width",
+          "transform": "snap16",
+          "default": 1024
+        },
+        "height": {
+          "node": "7",
+          "input": "height",
+          "from": "size.height",
+          "transform": "snap16",
+          "default": 1024
+        },
+        "batch": {
+          "node": "7",
+          "input": "batch_size",
+          "from": "count",
+          "default": 1
+        },
+        "seed": {
+          "node": "8",
+          "input": "seed",
+          "from": "params.seed",
+          "transform": "int",
+          "random": true
+        },
+        "lora_strength": {
+          "node": "6",
+          "input": "strength_model",
+          "from": "params.lora_strength",
+          "default": 1
+        }
+      },
+      "parameters": [
+        {
+          "key": "seed",
+          "label": "种子",
+          "type": "number",
+          "min": 1,
+          "max": 2147483647,
+          "step": 1,
+          "description": "留空则每次随机"
+        }
+      ]
+    },
+    {
       "id": "image-moss-sft-8step",
       "name": "image-moss-sft-8step",
       "label": "MOSS-Image 极速 8步",
       "type": "image",
       "description": "MOSS-Image SFT bf16 + Qwen3.5 9B + FLUX.2 VAE；内置 8-step DMD LoRA，默认 8 步 / cfg1 / euler simple，极速出图。",
       "file": "image-moss-sft-8step.json",
+      "hidden": true,
       "bindings": {
         "prompt": {
           "node": "4",
@@ -2006,6 +1608,7 @@
       "type": "image",
       "description": "MOSS-Image SFT bf16 高质量版；默认 50 步 / cfg3.5 / euler simple，SLG 跳过第 22 层，并内置 TE-Speed-MOSS 跳步加速（默认 te_predictor 2 / reuse 0.12 / error 0.06；实测 1.44×）。",
       "file": "image-moss-sft-50step.json",
+      "hidden": true,
       "bindings": {
         "prompt": {
           "node": "4",
@@ -2694,12 +2297,137 @@
       "hidden": false
     },
     {
+      "id": "video-h3-viggle-swap",
+      "name": "video-h3-viggle-swap",
+      "type": "video",
+      "file": "h3-viggle-swap.json",
+      "description": "Viggle Remake, rebuilt from the official comfyui/workflows/remake_swap_ui.json and remake_edit_ui.json. Swap replaces 1–4 characters; edit changes objects, background, weather, light, costume or style. Source video supplies motion, camera, framing and the soundtrack; 1–4 reference images define the target. Six forwards at 24 fps, no CFG, 17n+5 frames from 90 to 345; SageAttention is an optional toggle.",
+      "bindings": {
+        "prompt": {
+          "node": "6",
+          "input": "prompt"
+        },
+        "refs": {
+          "node": "6",
+          "input": "ref_1",
+          "from": "image",
+          "array": true,
+          "inputPrefix": "ref_",
+          "indexBase": 1,
+          "min": 1,
+          "max": 4
+        },
+        "videos": {
+          "node": "6",
+          "input": "source",
+          "from": "video",
+          "array": true,
+          "inputPrefix": "source",
+          "singleInput": "source",
+          "min": 1,
+          "max": 1,
+          "loadType": "video",
+          "loader": "vhs",
+          "forceRate": 24,
+          "frameLoadCap": 345,
+          "audioInput": "audio",
+          "sourceLengthInput": "frames",
+          "sourceLengthStatic": true
+        },
+        "seed": {
+          "node": "7",
+          "input": "seed",
+          "from": "params.seed",
+          "transform": "int",
+          "random": true
+        },
+        "short_edge": {
+          "node": "6",
+          "input": "short_edge",
+          "from": "params.short_edge",
+          "transform": "int",
+          "default": 480
+        },
+        "sage": {
+          "node": "30",
+          "input": "sage_attention",
+          "from": "params.sage",
+          "default": "auto"
+        },
+        "pins": {
+          "node": "6",
+          "input": "pins",
+          "from": "params.pins",
+          "default": ""
+        }
+      },
+      "parameters": [
+        {
+          "key": "seed",
+          "label": "种子",
+          "type": "number",
+          "min": 1,
+          "max": 2147483647,
+          "step": 1,
+          "description": "留空则每次随机"
+        },
+        {
+          "key": "sage",
+          "label": "SageAttention 加速",
+          "type": "select",
+          "options": [
+            "auto",
+            "disabled"
+          ],
+          "default": "auto",
+          "description": "auto=启用 SageAttention（124 帧 832×480 实测 106s，SSIM 0.974）；disabled=官方原速"
+        },
+        {
+          "key": "pins",
+          "label": "钉源帧（pins）",
+          "type": "string",
+          "default": "",
+          "description": "留空=不钉；每张参考图一个源帧号，用逗号分隔，例如 96；数量必须等于参考图数量"
+        },
+        {
+          "key": "short_edge",
+          "label": "短边分辨率",
+          "type": "number",
+          "min": 480,
+          "max": 736,
+          "step": 256,
+          "default": 480,
+          "description": "480=832×480；736=1280×736，显存不足时保持 480"
+        }
+      ],
+      "variants": {
+        "edit": {
+          "file": "h3-viggle-edit-pruned.json",
+          "label": "视频编辑",
+          "description": "源视频 + 1–4 张编辑参考图；改景/改物/天气/光照/服装/风格，保留人物动作、镜头、构图和源音轨。默认用 H3 pruned INT8 底模 + 官方 edit LoRA，6 步官方 edit sigmas，24GB 显存可跑，Sage 可关。"
+        },
+        "edit-singularity": {
+          "file": "h3-viggle-edit.json",
+          "label": "视频编辑（Singularity 高质量）",
+          "description": "同一套 edit LoRA 与 6 步官方 sigmas，底模换成 Singularity 未剪枝 INT8（34GB）；画质与 pruned 近乎同图，需要 32GB+ 显存并依赖 ComfyUI offload。pruned 底模缺失时自动回退到这条。"
+        }
+      },
+      "variantLabels": {
+        "edit": "视频编辑（pruned INT8 默认）",
+        "edit-singularity": "视频编辑（Singularity 未剪枝）"
+      },
+      "label": "H3 角色替换（Viggle Remake）",
+      "minMedia": 2,
+      "hidden": false
+    },
+    {
       "id": "image-moss-sft-int8-8step",
       "name": "image-moss-sft-int8-8step",
       "label": "MOSS-Image 低显存 int8 8步",
       "type": "image",
       "description": "MOSS-Image SFT int8 convrot + Qwen3.5 INT8 文本编码器 + 全量 FLUX.2 VAE + 8步 LoRA；低显存变体。",
       "file": "image-moss-sft-int8-8step.json",
+      "hidden": true,
       "bindings": {
         "prompt": {
           "node": "4",
@@ -2851,6 +2579,7 @@
       "type": "image",
       "description": "MOSS-Image SFT int8 + Qwen3.5 INT8 TE + 全量 FLUX.2 VAE；50步/cfg3.5，SLG 第22层，TE-Speed-MOSS 跳步；不挂 8步 LoRA。",
       "file": "image-moss-sft-int8-50step.json",
+      "hidden": true,
       "bindings": {
         "prompt": {
           "node": "4",
@@ -3065,7 +2794,7 @@
       "name": "image-krea2-turbo",
       "label": "Krea2 Turbo",
       "type": "image",
-      "file": "image-krea2-turbo.json",
+      "file": "image-krea2-turbo-v2.json",
       "description": "Krea 2 Turbo FP8 文生图，Qwen3-VL 4B 文本编码器 + Qwen Image VAE；8 步蒸馏，CFG 1。",
       "lora": {
         "filter": "Krea2|krea2|K2-"
@@ -3102,7 +2831,7 @@
         },
         "seed": {
           "node": "7",
-          "input": "seed",
+          "input": "noise_seed",
           "from": "params.seed",
           "transform": "int",
           "random": true
@@ -3455,6 +3184,1101 @@
           "from": "params.mogeTexture",
           "transform": "boolean",
           "default": true
+        }
+      },
+      "defaults": {},
+      "presets": {},
+      "parameters": [],
+      "lora": null
+    },
+    {
+      "id": "video-image-ph3-image-edit",
+      "name": "video-image-ph3-image-edit",
+      "type": "video",
+      "description": "",
+      "file": "video-image-ph3-image-edit.json",
+      "bindings": {
+        "seed": {
+          "node": "9",
+          "input": "noise_seed",
+          "random": true
+        },
+        "width": {
+          "node": "5",
+          "input": "width",
+          "from": "size.width",
+          "default": 0,
+          "transform": "snap32"
+        },
+        "height": {
+          "node": "5",
+          "input": "height",
+          "from": "size.height",
+          "default": 0,
+          "transform": "snap32"
+        },
+        "prompt": {
+          "node": "5",
+          "input": "prompt"
+        }
+      },
+      "defaults": {},
+      "presets": {},
+      "parameters": [],
+      "lora": null,
+      "importedAt": "2026-11-06T16:12:47.400Z",
+      "source": {
+        "kind": "json"
+      }
+    },
+    {
+      "id": "video-h3-pika-flex-a",
+      "name": "video-h3-pika-flex-a",
+      "type": "video",
+      "description": "",
+      "file": "video-h3-pika-flex-a.json",
+      "bindings": {
+        "seed": {
+          "node": "7",
+          "input": "noise_seed",
+          "random": true
+        },
+        "width": {
+          "node": "5",
+          "input": "width",
+          "from": "size.width",
+          "default": 1344,
+          "transform": "snap32"
+        },
+        "height": {
+          "node": "5",
+          "input": "height",
+          "from": "size.height",
+          "default": 768,
+          "transform": "snap32"
+        },
+        "length": {
+          "node": "5",
+          "input": "length",
+          "from": "seconds",
+          "transform": "secondsToFrames17",
+          "fps": 24,
+          "default": 124
+        },
+        "prompt": {
+          "node": "5",
+          "input": "prompt"
+        }
+      },
+      "defaults": {},
+      "presets": {},
+      "parameters": [],
+      "lora": null,
+      "importedAt": "2026-11-06T16:12:47.484Z",
+      "source": {
+        "kind": "json"
+      }
+    },
+    {
+      "id": "video-h3-pika-flex-b",
+      "name": "video-h3-pika-flex-b",
+      "type": "video",
+      "description": "",
+      "file": "video-h3-pika-flex-b.json",
+      "bindings": {
+        "seed": {
+          "node": "7",
+          "input": "noise_seed",
+          "random": true
+        },
+        "width": {
+          "node": "5",
+          "input": "width",
+          "from": "size.width",
+          "default": 1344,
+          "transform": "snap32"
+        },
+        "height": {
+          "node": "5",
+          "input": "height",
+          "from": "size.height",
+          "default": 768,
+          "transform": "snap32"
+        },
+        "length": {
+          "node": "5",
+          "input": "length",
+          "from": "seconds",
+          "transform": "secondsToFrames17",
+          "fps": 24,
+          "default": 124
+        },
+        "prompt": {
+          "node": "5",
+          "input": "prompt"
+        }
+      },
+      "defaults": {},
+      "presets": {},
+      "parameters": [],
+      "lora": null,
+      "importedAt": "2026-11-06T16:12:47.518Z",
+      "source": {
+        "kind": "json"
+      }
+    },
+    {
+      "id": "video-image-idol-3d",
+      "name": "video-image-idol-3d",
+      "type": "video",
+      "description": "",
+      "file": "video-image-idol-3d.json",
+      "bindings": {
+        "seed": {
+          "node": "10",
+          "input": "seed",
+          "random": true
+        },
+        "steps": {
+          "node": "10",
+          "input": "steps",
+          "from": "quality.steps",
+          "default": 50
+        },
+        "cfg": {
+          "node": "10",
+          "input": "cfg",
+          "from": "quality.cfg",
+          "default": 4
+        },
+        "denoise": {
+          "node": "10",
+          "input": "denoise",
+          "from": "params.denoise",
+          "default": 1
+        },
+        "image": {
+          "node": "1",
+          "input": "image",
+          "from": "image",
+          "imageIndex": 0
+        }
+      },
+      "defaults": {},
+      "presets": {},
+      "parameters": [],
+      "lora": null,
+      "importedAt": "2026-11-06T16:12:47.549Z",
+      "source": {
+        "kind": "json"
+      },
+      "hidden": true
+    },
+    {
+      "id": "video-relayvsr-2x",
+      "name": "video-relayvsr-2x",
+      "type": "video",
+      "category": "upscale",
+      "hidden": true,
+      "label": "RelayVSR 2× 超分",
+      "description": "RelayVSR native 2x video upscale; fixed 2x, original audio preserved.",
+      "file": "video-relayvsr-2x.json",
+      "bindings": {
+        "video": {
+          "node": "1",
+          "input": "file",
+          "from": "video",
+          "videoIndex": 0,
+          "required": true
+        },
+        "detail": {
+          "node": "8",
+          "input": "detail",
+          "from": "params.detail",
+          "transform": "float",
+          "default": 1
+        },
+        "seed": {
+          "node": "6",
+          "input": "seed",
+          "random": true
+        },
+        "steps": {
+          "node": "6",
+          "input": "steps",
+          "from": "quality.steps",
+          "default": 1
+        },
+        "cfg": {
+          "node": "6",
+          "input": "cfg",
+          "from": "quality.cfg",
+          "default": 1
+        }
+      },
+      "defaults": {},
+      "presets": {},
+      "parameters": [
+        {
+          "key": "detail",
+          "label": "细节强度",
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "default": 1
+        }
+      ],
+      "lora": null,
+      "importedAt": "2026-11-07T14:17:27.175Z",
+      "source": {
+        "kind": "json"
+      }
+    },
+    {
+      "id": "image-h3image",
+      "name": "image-h3image",
+      "label": "MiniMax H3-Image",
+      "type": "image",
+      "description": "MiniMax H3-Image：文生图 / 多图编辑；4 步、CFG1、原生约 16MP，最多 16 张参考图。",
+      "file": "image-h3image-t2i.json",
+      "variantLabels": {
+        "t2i": "文生图",
+        "edit": "多图编辑"
+      },
+      "bindings": {
+        "prompt": {
+          "node": "11",
+          "input": "value"
+        },
+        "seed": {
+          "node": "6",
+          "input": "seed",
+          "from": "params.seed",
+          "transform": "int",
+          "random": true
+        },
+        "width": {
+          "node": "4",
+          "input": "width",
+          "from": "size.width",
+          "transform": "snap32",
+          "default": 2048
+        },
+        "height": {
+          "node": "4",
+          "input": "height",
+          "from": "size.height",
+          "transform": "snap32",
+          "default": 2048
+        },
+        "refs": {
+          "node": "4",
+          "input": "images",
+          "from": "image",
+          "array": true,
+          "inputPrefix": "images.image_",
+          "indexBase": 1,
+          "min": 1,
+          "max": 16
+        }
+      },
+      "parameters": [
+        {
+          "key": "seed",
+          "label": "种子",
+          "type": "number",
+          "min": 1,
+          "max": 2147483647,
+          "step": 1,
+          "description": "留空每次随机"
+        }
+      ],
+      "resolutionTiers": [
+        {
+          "label": "4MP",
+          "pixels": 4194304
+        },
+        {
+          "label": "8MP",
+          "pixels": 8388608
+        },
+        {
+          "label": "16MP",
+          "pixels": 16777216
+        }
+      ],
+      "defaultTier": "16MP",
+      "variants": {
+        "t2i": {
+          "file": "image-h3image-t2i.json",
+          "label": "文生图",
+          "description": "官方 T2I：2048² 起，4 步 / CFG1（无 PE 扩写）",
+          "bindings": {
+            "prompt": {
+              "node": "11",
+              "input": "value"
+            },
+            "seed": {
+              "node": "6",
+              "input": "seed",
+              "from": "params.seed",
+              "transform": "int",
+              "random": true
+            },
+            "width": {
+              "node": "4",
+              "input": "width",
+              "from": "size.width",
+              "transform": "snap32",
+              "default": 2048
+            },
+            "height": {
+              "node": "4",
+              "input": "height",
+              "from": "size.height",
+              "transform": "snap32",
+              "default": 2048
+            }
+          }
+        },
+        "edit": {
+          "file": "image-h3image-edit.json",
+          "label": "多图编辑",
+          "description": "1–16 张参考图；第一张为目标图，prompt 用 <Picture N>",
+          "bindings": {
+            "prompt": {
+              "node": "11",
+              "input": "value"
+            },
+            "seed": {
+              "node": "6",
+              "input": "seed",
+              "from": "params.seed",
+              "transform": "int",
+              "random": true
+            },
+            "width": {
+              "node": "4",
+              "input": "width",
+              "from": "size.width",
+              "transform": "snap32",
+              "default": 4096
+            },
+            "height": {
+              "node": "4",
+              "input": "height",
+              "from": "size.height",
+              "transform": "snap32",
+              "default": 4096
+            },
+            "refs": {
+              "node": "4",
+              "input": "images",
+              "from": "image",
+              "array": true,
+              "inputPrefix": "images.image_",
+              "indexBase": 1,
+              "min": 1,
+              "max": 16
+            },
+            "refsPe": {
+              "node": "14",
+              "input": "images",
+              "from": "image",
+              "array": true,
+              "inputPrefix": "images.image",
+              "indexBase": 1,
+              "min": 1,
+              "max": 16
+            }
+          }
+        }
+      },
+      "defaults": {},
+      "presets": {},
+      "lora": null,
+      "importedAt": "2026-11-11T00:00:00.000Z",
+      "source": {
+        "kind": "json"
+      }
+    },
+    {
+      "id": "image-ph3image",
+      "name": "image-ph3image",
+      "label": "P-H3-Image（旧版）",
+      "type": "image",
+      "description": "旧版 P-H3-Image：8 步、4MP/8MP；文生图 / 多图编辑（最多 9 张参考图）。",
+      "file": "image-ph3-image-t2i.json",
+      "variantLabels": {
+        "t2i": "文生图",
+        "edit": "多图编辑"
+      },
+      "variantDescriptions": {
+        "t2i": "旧版 8 步文生图",
+        "edit": "第一张为目标图，参考图最多 9 张"
+      },
+      "bindings": {
+        "prompt": {
+          "node": "5",
+          "input": "prompt"
+        },
+        "seed": {
+          "node": "9",
+          "input": "noise_seed",
+          "from": "params.seed",
+          "transform": "int",
+          "random": true
+        },
+        "width": {
+          "node": "5",
+          "input": "width",
+          "from": "size.width",
+          "transform": "snap32",
+          "default": 2048
+        },
+        "height": {
+          "node": "5",
+          "input": "height",
+          "from": "size.height",
+          "transform": "snap32",
+          "default": 2048
+        },
+        "refs": {
+          "node": "5",
+          "input": "images",
+          "from": "image",
+          "array": true,
+          "inputPrefix": "images.image_",
+          "indexBase": 1,
+          "min": 1,
+          "max": 9
+        }
+      },
+      "parameters": [
+        {
+          "key": "seed",
+          "label": "种子",
+          "type": "number",
+          "min": 1,
+          "max": 2147483647,
+          "step": 1,
+          "description": "留空每次随机"
+        }
+      ],
+      "resolutionTiers": [
+        {
+          "label": "4MP",
+          "pixels": 4194304
+        },
+        {
+          "label": "8MP",
+          "pixels": 8388608
+        }
+      ],
+      "defaultTier": "4MP",
+      "variants": {
+        "t2i": {
+          "file": "image-ph3-image-t2i.json",
+          "label": "文生图",
+          "description": "旧版 8 步文生图",
+          "bindings": {
+            "prompt": {
+              "node": "5",
+              "input": "prompt"
+            },
+            "seed": {
+              "node": "9",
+              "input": "noise_seed",
+              "from": "params.seed",
+              "transform": "int",
+              "random": true
+            },
+            "width": {
+              "node": "5",
+              "input": "width",
+              "from": "size.width",
+              "transform": "snap32",
+              "default": 2048
+            },
+            "height": {
+              "node": "5",
+              "input": "height",
+              "from": "size.height",
+              "transform": "snap32",
+              "default": 2048
+            }
+          }
+        },
+        "edit": {
+          "file": "image-ph3-image-edit.json",
+          "label": "多图编辑",
+          "description": "第一张为目标图，参考图最多 9 张",
+          "bindings": {
+            "prompt": {
+              "node": "5",
+              "input": "prompt"
+            },
+            "seed": {
+              "node": "9",
+              "input": "noise_seed",
+              "from": "params.seed",
+              "transform": "int",
+              "random": true
+            },
+            "refs": {
+              "node": "5",
+              "input": "images",
+              "from": "image",
+              "array": true,
+              "inputPrefix": "images.image_",
+              "indexBase": 1,
+              "min": 1,
+              "max": 9
+            }
+          }
+        }
+      },
+      "defaults": {},
+      "presets": {},
+      "lora": null,
+      "importedAt": "2026-11-11T00:00:00.000Z",
+      "source": {
+        "kind": "json"
+      }
+    },
+    {
+      "id": "image-krea2-turbo-2",
+      "name": "image-krea2-turbo-2",
+      "type": "image",
+      "description": "",
+      "file": "image-krea2-turbo-2.json",
+      "bindings": {
+        "negative": {
+          "node": "5",
+          "input": "text",
+          "default": ""
+        },
+        "width": {
+          "node": "6",
+          "input": "width",
+          "from": "size.width",
+          "default": 1024
+        },
+        "height": {
+          "node": "6",
+          "input": "height",
+          "from": "size.height",
+          "default": 1024
+        },
+        "batch": {
+          "node": "6",
+          "input": "batch_size",
+          "from": "count",
+          "default": 1
+        },
+        "seed": {
+          "node": "7",
+          "input": "seed",
+          "random": true
+        },
+        "steps": {
+          "node": "7",
+          "input": "steps",
+          "from": "quality.steps",
+          "default": 8
+        },
+        "cfg": {
+          "node": "7",
+          "input": "cfg",
+          "from": "quality.cfg",
+          "default": 1
+        },
+        "prompt": {
+          "node": "5",
+          "input": "text"
+        }
+      },
+      "defaults": {},
+      "presets": {},
+      "parameters": [],
+      "lora": null,
+      "importedAt": "2026-11-11T09:47:08.171Z",
+      "source": {
+        "kind": "json"
+      }
+    },
+    {
+      "id": "video-hyperflow-ref2va-6p2",
+      "name": "video-hyperflow-ref2va-6p2",
+      "type": "video",
+      "file": "video-hyperflow-ref2va-6p2.json",
+      "description": "HyperFlow H3 Flash INT8 · 文生 / 首尾帧 / 多参三模式 · 8 步 schedule（6 低清 / 2 高清 SelfLift）· 画布 Sage/Sol/TRT VAE/T8；模式内切换，不换模型。",
+      "defaults": {
+        "76.strict_prompt_tags": false
+      },
+      "bindings": {
+        "width": {
+          "node": "76",
+          "input": "width",
+          "from": "size.width",
+          "transform": "snap32",
+          "default": 1344
+        },
+        "height": {
+          "node": "76",
+          "input": "height",
+          "from": "size.height",
+          "transform": "snap32",
+          "default": 768
+        },
+        "length": {
+          "node": "76",
+          "input": "length",
+          "from": "seconds",
+          "transform": "secondsToFrames17",
+          "fps": 24,
+          "default": 124
+        },
+        "prompt": {
+          "node": "76",
+          "input": "prompt"
+        },
+        "seed": {
+          "node": "78",
+          "input": "seed",
+          "from": "params.seed",
+          "transform": "int",
+          "random": true
+        },
+        "steps": {
+          "node": "74",
+          "input": "steps",
+          "from": "params.steps",
+          "transform": "int",
+          "default": 8
+        },
+        "cfg": {
+          "node": "78",
+          "input": "cfg",
+          "from": "params.cfg",
+          "default": 1
+        },
+        "transition_step": {
+          "node": "78",
+          "input": "transition_step",
+          "from": "params.transition_step",
+          "transform": "int",
+          "default": 6
+        },
+        "lowres_scale": {
+          "node": "78",
+          "input": "lowres_scale",
+          "from": "params.lowres_scale",
+          "default": 0.6
+        },
+        "rho": {
+          "node": "78",
+          "input": "rho",
+          "from": "params.rho",
+          "default": 0
+        },
+        "w_min": {
+          "node": "78",
+          "input": "w_min",
+          "from": "params.w_min",
+          "default": 0.3
+        },
+        "w_max": {
+          "node": "78",
+          "input": "w_max",
+          "from": "params.w_max",
+          "default": 1
+        },
+        "task_type_text": {
+          "node": "76",
+          "input": "task_type",
+          "modes": [
+            "text"
+          ],
+          "default": "auto"
+        },
+        "task_type_frames": {
+          "node": "76",
+          "input": "task_type",
+          "modes": [
+            "frames"
+          ],
+          "from": "params.frameMode",
+          "map": {
+            "first": "I2VA",
+            "last": "L2VA",
+            "both": "FL2VA"
+          },
+          "default": "FL2VA"
+        },
+        "task_type_reference": {
+          "node": "76",
+          "input": "task_type",
+          "modes": [
+            "reference"
+          ],
+          "default": "Ref2VA"
+        },
+        "frames": {
+          "node": "76",
+          "input": "first_frame",
+          "from": "image",
+          "frameMode": true,
+          "firstInput": "first_frame",
+          "lastInput": "last_frame",
+          "max": 2,
+          "modes": [
+            "frames"
+          ]
+        },
+        "refs": {
+          "node": "76",
+          "input": "ref_images",
+          "from": "image",
+          "array": true,
+          "inputPrefix": "ref_images.ref_image_",
+          "min": 0,
+          "max": 6,
+          "modes": [
+            "reference"
+          ]
+        },
+        "videos": {
+          "node": "76",
+          "input": "ref_videos",
+          "from": "video",
+          "array": true,
+          "inputPrefix": "ref_videos.ref_video_",
+          "audioPrefix": "ref_video_audios.ref_video_audio_",
+          "min": 0,
+          "max": 1,
+          "loadType": "video",
+          "modes": [
+            "reference"
+          ]
+        },
+        "audios": {
+          "node": "76",
+          "input": "ref_audios",
+          "from": "audio",
+          "array": true,
+          "inputPrefix": "ref_audios.ref_audio_",
+          "min": 0,
+          "max": 2,
+          "loadType": "audio",
+          "modes": [
+            "reference"
+          ]
+        }
+      },
+      "parameters": [
+        {
+          "key": "seed",
+          "label": "种子",
+          "type": "number",
+          "min": 1,
+          "max": 2147483647,
+          "step": 1,
+          "description": "留空则每次随机"
+        },
+        {
+          "key": "steps",
+          "label": "步数",
+          "type": "number",
+          "min": 4,
+          "max": 8,
+          "step": 2,
+          "default": 8,
+          "description": "HyperFlow 仅支持 4/6/8；8 = 6 低清 + 2 高清"
+        },
+        {
+          "key": "cfg",
+          "label": "CFG",
+          "type": "number",
+          "min": 1,
+          "max": 10,
+          "step": 0.1,
+          "default": 1
+        },
+        {
+          "key": "transition_step",
+          "label": "SelfLift 低清步数",
+          "type": "number",
+          "min": 1,
+          "max": 7,
+          "step": 1,
+          "default": 6,
+          "description": "8 步时最大 7"
+        },
+        {
+          "key": "lowres_scale",
+          "label": "SelfLift 低清比例",
+          "type": "number",
+          "min": 0.25,
+          "max": 1,
+          "step": 0.05,
+          "default": 0.6
+        },
+        {
+          "key": "rho",
+          "label": "SelfLift 锚点校正",
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "step": 0.05,
+          "default": 0
+        },
+        {
+          "key": "w_min",
+          "label": "SelfLift w_min",
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "step": 0.05,
+          "default": 0.3
+        },
+        {
+          "key": "w_max",
+          "label": "SelfLift w_max",
+          "type": "number",
+          "min": 0,
+          "max": 1,
+          "step": 0.05,
+          "default": 1
+        }
+      ],
+      "label": "H3（HyperFlow 6+2）",
+      "lora": null
+    },
+    {
+      "id": "image-moss-sft-12step",
+      "name": "image-moss-sft-12step",
+      "type": "image",
+      "description": "",
+      "file": "image-moss-sft-12step.json",
+      "hidden": true,
+      "bindings": {
+        "prompt": {
+          "node": "4",
+          "input": "text"
+        },
+        "negative": {
+          "node": "5",
+          "input": "text",
+          "default": ""
+        },
+        "width": {
+          "node": "7",
+          "input": "width",
+          "from": "size.width",
+          "default": 1024
+        },
+        "height": {
+          "node": "7",
+          "input": "height",
+          "from": "size.height",
+          "default": 1024
+        },
+        "batch": {
+          "node": "7",
+          "input": "batch_size",
+          "from": "count",
+          "default": 1
+        },
+        "seed": {
+          "node": "8",
+          "input": "seed",
+          "random": true
+        },
+        "steps": {
+          "node": "8",
+          "input": "steps",
+          "from": "quality.steps",
+          "default": 12
+        },
+        "cfg": {
+          "node": "8",
+          "input": "cfg",
+          "from": "quality.cfg",
+          "default": 1
+        }
+      },
+      "defaults": {},
+      "presets": {},
+      "parameters": [],
+      "lora": null,
+      "importedAt": "2026-11-12T18:55:24.468Z",
+      "source": {
+        "kind": "json"
+      }
+    },
+    {
+      "id": "image-moss-sft-int8-12step",
+      "name": "image-moss-sft-int8-12step",
+      "type": "image",
+      "description": "",
+      "file": "image-moss-sft-int8-12step.json",
+      "hidden": true,
+      "bindings": {
+        "prompt": {
+          "node": "4",
+          "input": "text"
+        },
+        "negative": {
+          "node": "5",
+          "input": "text",
+          "default": ""
+        },
+        "width": {
+          "node": "7",
+          "input": "width",
+          "from": "size.width",
+          "default": 1024
+        },
+        "height": {
+          "node": "7",
+          "input": "height",
+          "from": "size.height",
+          "default": 1024
+        },
+        "batch": {
+          "node": "7",
+          "input": "batch_size",
+          "from": "count",
+          "default": 1
+        },
+        "seed": {
+          "node": "8",
+          "input": "seed",
+          "random": true
+        },
+        "steps": {
+          "node": "8",
+          "input": "steps",
+          "from": "quality.steps",
+          "default": 12
+        },
+        "cfg": {
+          "node": "8",
+          "input": "cfg",
+          "from": "quality.cfg",
+          "default": 1
+        }
+      },
+      "defaults": {},
+      "presets": {},
+      "parameters": [],
+      "lora": null,
+      "importedAt": "2026-11-12T18:55:24.492Z",
+      "source": {
+        "kind": "json"
+      }
+    },
+    {
+      "id": "image-scene3d-pano",
+      "name": "image-scene3d-pano",
+      "label": "H3 全景扩图（内部）",
+      "type": "image",
+      "description": "H3-Image Edit 无 PE，4 步/CFG1/euler/simple，5664×2832 等距柱状扩图。",
+      "file": "image-scene3d-pano.json",
+      "hidden": true,
+      "bindings": {
+        "image": {
+          "node": "17",
+          "input": "image",
+          "from": "image",
+          "imageIndex": 0,
+          "required": true
+        },
+        "prompt": {
+          "node": "11",
+          "input": "value",
+          "from": "prompt",
+          "required": true
+        },
+        "seed": {
+          "node": "6",
+          "input": "seed",
+          "from": "params.seed",
+          "transform": "int",
+          "random": true
+        }
+      },
+      "defaults": {},
+      "presets": {},
+      "parameters": [],
+      "lora": null
+    },
+    {
+      "id": "image-scene3d-seam",
+      "name": "image-scene3d-seam",
+      "label": "Qwen 接缝带修复（内部）",
+      "type": "image",
+      "description": "QwenImage 2.1 turbo int8，6 步/CFG1，修 1536×2816 接缝带。",
+      "file": "image-scene3d-seam.json",
+      "hidden": true,
+      "bindings": {
+        "strip": {
+          "node": "4",
+          "input": "image",
+          "from": "image",
+          "imageIndex": 0,
+          "required": true
+        },
+        "mask": {
+          "node": "5",
+          "input": "image",
+          "from": "image",
+          "imageIndex": 1,
+          "required": true
+        },
+        "seed": {
+          "node": "14",
+          "input": "seed",
+          "from": "params.seed",
+          "transform": "int",
+          "random": true
+        }
+      },
+      "defaults": {},
+      "presets": {},
+      "parameters": [],
+      "lora": null
+    },
+    {
+      "id": "image-scene-3d",
+      "name": "image-scene-3d",
+      "label": "3D 场景",
+      "type": "image",
+      "description": "普通图片 → 2:1 等距柱状全景 → Qwen 修接缝；用于 TE 导演台全景背景，不是可走入的 3D mesh。",
+      "file": "image-scene3d-pano.json",
+      "hidden": false,
+      "bindings": {
+        "image": {
+          "node": "17",
+          "input": "image",
+          "from": "image",
+          "imageIndex": 0,
+          "required": true
+        },
+        "prompt": {
+          "node": "11",
+          "input": "value",
+          "from": "prompt",
+          "required": true
+        },
+        "seed": {
+          "node": "6",
+          "input": "seed",
+          "from": "params.seed",
+          "transform": "int",
+          "random": true
         }
       },
       "defaults": {},

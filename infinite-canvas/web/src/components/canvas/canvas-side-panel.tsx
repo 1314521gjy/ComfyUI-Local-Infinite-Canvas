@@ -1,7 +1,7 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from "react";
-import { App, Empty, Input, Popconfirm, Select, Spin, Tag } from "antd";
+import { App, Button, Empty, Input, Modal, Popconfirm, Select, Spin, Tag } from "antd";
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Check, ChevronRight, Download, Eye, FileText, Image as ImageIcon, LayoutGrid, ListChecks, Music2, Pencil, Plus, RefreshCw, Rows3, Search, Settings2, Sparkles, Square, Trash2, Type, Video } from "lucide-react";
+import { BookOpen, Check, ChevronRight, Download, Eye, FileText, Image as ImageIcon, LayoutGrid, ListChecks, Music2, Pencil, Plus, RefreshCw, Rows3, Search, Settings2, Sparkles, Square, Trash2, Type, Video, Workflow } from "lucide-react";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 
@@ -114,7 +114,7 @@ export function CanvasSidePanel({ nodes, selectedNodeIds, onFocusNode, onPreview
                 <div className="flex items-center gap-5 px-4 pt-3.5">
                     <TabButton label={t("canvas.sidePanel.canvas")} active={tab === "canvas"} theme={theme} onClick={() => setTab("canvas")} />
                     <TabButton label={t("canvas.sidePanel.assets")} active={tab === "assets"} theme={theme} onClick={() => setTab("assets")} />
-                    {LOCAL_ONLY ? <TabButton label={t("canvas.sidePanel.freeCards")} active={tab === "free"} theme={theme} onClick={() => setTab("free")} /> : null}
+                    <TabButton label={t("canvas.sidePanel.freeCards")} active={tab === "free"} theme={theme} onClick={() => setTab("free")} />
                     {!LOCAL_ONLY ? <TabButton label={t("canvas.sidePanel.prompts")} active={tab === "prompts"} theme={theme} onClick={() => setTab("prompts")} /> : null}
                     <TabButton label={t("canvas.styleRecipes.tab")} active={tab === "styles"} theme={theme} onClick={() => setTab("styles")} />
                 </div>
@@ -560,17 +560,7 @@ const CanvasAssetsTab = memo(function CanvasAssetsTab({ onInsert, theme }: { onI
                                     {isCollapsed ? null : (
                                         <div className="grid grid-cols-2 gap-2 px-1 pb-2 pt-1">
                                             {group.items.map((asset) => (
-                                                <AssetCard
-                                                    key={asset.id}
-                                                    asset={asset}
-                                                    theme={theme}
-                                                    onInsert={() => onInsert(buildInsertPayload(asset))}
-                                                    onRemove={() =>
-                                                        void removeAsset(asset.id)
-                                                            .then(() => message.success(t("canvas.sidePanel.assetRemoved")))
-                                                            .catch((error) => message.error(error instanceof Error ? error.message : t("canvas.sidePanel.removeAssetFailed")))
-                                                    }
-                                                />
+                                                <AssetCard key={asset.id} asset={asset} theme={theme} onInsert={() => onInsert(buildInsertPayload(asset))} onRemove={() => (removeAsset(asset.id), message.success(t("canvas.sidePanel.assetRemoved")))} />
                                             ))}
                                         </div>
                                     )}
@@ -783,7 +773,13 @@ function CanvasFreeCardsTab({ theme, onAdd }: { theme: CanvasTheme; onAdd?: (wor
     const [editingId, setEditingId] = useState("");
     const [nameDraft, setNameDraft] = useState("");
     const [renamingId, setRenamingId] = useState("");
+    const [preview, setPreview] = useState<FreeWorkflowSummary | null>(null);
     const renameInFlight = useRef(new Set<string>());
+    const archiveTime = (item: FreeWorkflowSummary) => {
+        const value = item.snapshotAt || item.archivedAt || item.updatedAt;
+        const date = value ? new Date(value) : null;
+        return date && !Number.isNaN(date.getTime()) ? date.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+    };
 
     const load = async () => {
         setLoading(true);
@@ -848,7 +844,10 @@ function CanvasFreeCardsTab({ theme, onAdd }: { theme: CanvasTheme; onAdd?: (wor
 
     useEffect(() => {
         void load();
-        // Refresh when the local gateway/channel changes.
+        const onWorkflowsChanged = () => void load();
+        window.addEventListener("infinite-canvas:free-workflows-changed", onWorkflowsChanged);
+        return () => window.removeEventListener("infinite-canvas:free-workflows-changed", onWorkflowsChanged);
+        // Refresh when the local gateway/channel changes or a snapshot is archived.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [config.baseUrl]);
 
@@ -879,7 +878,7 @@ function CanvasFreeCardsTab({ theme, onAdd }: { theme: CanvasTheme; onAdd?: (wor
                             return (
                                 <div key={item.id} className="group flex items-center gap-2.5 rounded-lg px-2 py-2 transition hover:bg-black/5 dark:hover:bg-white/5">
                                     <span className="grid size-9 shrink-0 place-items-center rounded-lg" style={{ background: theme.node.panel }}>
-                                        <Sparkles className="size-4 opacity-60" />
+                                        <Workflow className="size-4 opacity-60" />
                                     </span>
                                     {editing ? (
                                         <div className="min-w-0 flex-1">
@@ -909,17 +908,17 @@ function CanvasFreeCardsTab({ theme, onAdd }: { theme: CanvasTheme; onAdd?: (wor
                                                 </button>
                                             </div>
                                             <div className="mt-0.5 truncate text-[11px] opacity-50">
-                                                {item.outputType === "video" ? t("canvas.freeCard.videoWorkflow") : item.outputType === "image" ? t("canvas.freeCard.imageWorkflow") : t("canvas.freeCard.otherWorkflow")} · {item.sourceRel}
+                                                {archiveTime(item)}{item.pageCount && item.pageCount > 1 ? ` · 共 ${item.pageCount} 页` : ""}
                                             </div>
                                         </div>
                                     ) : (
-                                        <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onAdd?.(item)} disabled={!onAdd}>
+                                        <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setPreview(item)} disabled={!onAdd}>
                                             <div className="flex min-w-0 items-center gap-1.5">
                                                 <span className="truncate text-sm font-medium">{item.name}</span>
                                                 {item.sourceChanged ? <span className="size-1.5 shrink-0 rounded-full bg-amber-500" title={t("canvas.freeCard.sourceChanged")} /> : null}
                                             </div>
                                             <div className="mt-0.5 truncate text-[11px] opacity-50">
-                                                {item.outputType === "video" ? t("canvas.freeCard.videoWorkflow") : item.outputType === "image" ? t("canvas.freeCard.imageWorkflow") : t("canvas.freeCard.otherWorkflow")} · {item.sourceRel}
+                                                {archiveTime(item)}{item.pageCount && item.pageCount > 1 ? ` · 共 ${item.pageCount} 页` : ""}
                                             </div>
                                         </button>
                                     )}
@@ -974,6 +973,57 @@ function CanvasFreeCardsTab({ theme, onAdd }: { theme: CanvasTheme; onAdd?: (wor
                     </Empty>
                 )}
             </div>
+            <Modal open={Boolean(preview)} onCancel={() => setPreview(null)} footer={null} width={460} title="归档卡片" centered destroyOnHidden>
+                {preview ? (
+                    <div className="space-y-3 text-sm">
+                        <div className="pr-7 text-sm font-semibold leading-5 break-words">{preview.name}</div>
+                        <div className="flex flex-wrap items-center gap-2 text-[11px] opacity-60">
+                            <span>{archiveTime(preview)}</span>
+                            {preview.snapshotPageLabel ? <span>· {preview.snapshotPageLabel}</span> : null}
+                            {preview.pageCount && preview.pageCount > 1 ? <span>· 共 {preview.pageCount} 页</span> : null}
+                            {preview.snapshot ? <span className="rounded-full border border-cyan-300/50 px-1.5 text-[10px] text-cyan-600 dark:border-cyan-800/60 dark:text-cyan-300">归档快照</span> : null}
+                        </div>
+                        {preview.textLabels?.length ? (
+                            <div>
+                                <div className="mb-1 text-[10px] opacity-50">文本输入</div>
+                                <div className="flex flex-wrap gap-1">
+                                    {preview.textLabels.map((label) => (
+                                        <span key={label} className="rounded-full border border-stone-200 px-2 py-0.5 text-[10px] dark:border-stone-700">{label}</span>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : null}
+                        <div className="grid grid-cols-3 gap-2">
+                            <div className="rounded-lg border border-stone-200 p-2 dark:border-stone-700">
+                                <div className="text-[9px] opacity-50">尺寸</div>
+                                <div className="text-xs">{preview.snapshotCard?.size || (preview.size ? `${preview.size.width}×${preview.size.height}` : "—")}</div>
+                            </div>
+                            <div className="rounded-lg border border-stone-200 p-2 dark:border-stone-700">
+                                <div className="text-[9px] opacity-50">画幅</div>
+                                <div className="text-xs">{preview.snapshotCard?.aspectRatio || preview.aspectRatio || "—"}</div>
+                            </div>
+                            <div className="rounded-lg border border-stone-200 p-2 dark:border-stone-700">
+                                <div className="text-[9px] opacity-50">张数</div>
+                                <div className="text-xs">{preview.snapshotCard?.count ?? preview.count ?? 1}</div>
+                            </div>
+                        </div>
+                        {!preview.snapshot ? <div className="text-[11px] text-amber-600">旧档案没有完整文本快照，恢复时使用当前工作流设定。</div> : null}
+                        <div className="flex justify-end gap-2 pt-1">
+                            <Button onClick={() => setPreview(null)}>取消</Button>
+                            <Button
+                                type="primary"
+                                disabled={!onAdd}
+                                onClick={() => {
+                                    if (preview) onAdd?.(preview);
+                                    setPreview(null);
+                                }}
+                            >
+                                添加到画布
+                            </Button>
+                        </div>
+                    </div>
+                ) : null}
+            </Modal>
         </div>
     );
 }

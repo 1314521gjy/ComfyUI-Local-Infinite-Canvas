@@ -1,10 +1,11 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Button, Segmented, Switch } from "antd";
-import { CircleDot, Eraser, Grid2x2, Group, Hand, Image as ImageIcon, Info, LocateFixed, Moon, MousePointer2, Music2, Palette, Puzzle, Redo2, Sparkles, Square, Sun, Trash2, Type, Undo2, Upload, Video } from "lucide-react";
+import { CircleDot, Clapperboard, Eraser, Grid2x2, Group, Hand, Image as ImageIcon, Info, LocateFixed, Moon, MousePointer2, Music2, Palette, Puzzle, Redo2, Sparkles, Square, Sun, Trash2, Type, Undo2, Upload, Video } from "lucide-react";
 
 import { canvasThemes, type CanvasBackgroundMode, type CanvasColorTheme, type CanvasTheme } from "@/lib/canvas-theme";
 import { getNodePluginId, listNodeDefinitions, useNodeRegistryVersion } from "@/lib/canvas/node-registry";
+import { HIDDEN_NODE_TYPES, HIDE_UNRELEASED_FEATURES } from "@/lib/release-flags";
 import { getNodeSpec } from "@/constant/canvas";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
@@ -23,6 +24,7 @@ export function CanvasToolbar({
     onAddAudio,
     onAddText,
     onAddFreeCard,
+    onAddDrama,
     onAddGroup,
     onAddExtensionNode,
     onUndo,
@@ -46,6 +48,7 @@ export function CanvasToolbar({
     onAddAudio: () => void;
     onAddText: () => void;
     onAddFreeCard: () => void;
+    onAddDrama: () => void;
     onAddGroup: () => void;
     onAddExtensionNode: (type: string) => void;
     onUndo: () => void;
@@ -72,7 +75,7 @@ export function CanvasToolbar({
     const [extPanelX, setExtPanelX] = useState(0);
     // Keep extension plugin nodes synchronized with registry changes.
     useNodeRegistryVersion();
-    const extensionDefs = listNodeDefinitions().filter((def) => def.showInCreateMenu !== false && getNodePluginId(def.type) !== "builtin");
+    const extensionDefs = listNodeDefinitions().filter((def) => def.showInCreateMenu !== false && getNodePluginId(def.type) !== "builtin" && !(HIDE_UNRELEASED_FEATURES && HIDDEN_NODE_TYPES.has(def.type)));
     const dockStyle = { background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.toolbar.item, boxShadow: colorTheme === "dark" ? "0 18px 45px rgba(0,0,0,.32)" : "0 16px 40px rgba(28,25,23,.12)" };
     const hoverStyle = { background: theme.toolbar.itemHover, color: theme.toolbar.activeText };
     const activeStyle = { background: theme.toolbar.activeBg, color: theme.toolbar.activeText };
@@ -117,18 +120,21 @@ export function CanvasToolbar({
                 <ToolbarButton id="tool-video" label={t("canvas.toolbar.video")} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddVideo}>
                     <Video className="size-4.5" />
                 </ToolbarButton>
-                {!LOCAL_ONLY ? (
-                    <ToolbarButton id="tool-audio" label={t("canvas.toolbar.audio")} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddAudio}>
-                        <Music2 className="size-4.5" />
-                    </ToolbarButton>
-                ) : null}
-                <ToolbarButton id="tool-free-card" label={t("canvas.toolbar.freeCard")} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddFreeCard}>
+                <ToolbarButton id="tool-free-card" label={t("canvas.freeCard.title")} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddFreeCard}>
                     <Sparkles className="size-4.5" />
+                </ToolbarButton>
+                {HIDE_UNRELEASED_FEATURES ? null : (
+                    <ToolbarButton id="tool-drama" label="短剧" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddDrama}>
+                        <Clapperboard className="size-4.5" />
+                    </ToolbarButton>
+                )}
+                <ToolbarButton id="tool-audio" label={t("canvas.toolbar.audio")} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddAudio}>
+                    <Music2 className="size-4.5" />
                 </ToolbarButton>
                 <ToolbarButton id="tool-group" label={t("canvas.toolbar.group")} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onAddGroup}>
                     <Group className="size-4.5" />
                 </ToolbarButton>
-                {extensionDefs.length ? (
+                {!HIDE_UNRELEASED_FEATURES && extensionDefs.length ? (
                     <ToolbarButton
                         id="tool-extensions"
                         label={t("canvas.toolbar.extensions")}
@@ -312,7 +318,6 @@ function ToolbarButton({
         <Button
             type="text"
             aria-label={label}
-            data-onboarding={id}
             className="!h-8 !w-8 !min-w-8 !p-0"
             disabled={disabled}
             style={active ? activeStyle : hovered === id && !disabled ? hoverStyle : { color: danger ? "#f87171" : theme.toolbar.item, opacity: disabled ? 0.35 : 1 }}
