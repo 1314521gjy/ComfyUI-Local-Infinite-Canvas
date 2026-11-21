@@ -12,7 +12,7 @@ const LORA_EXTS = /\.(safetensors|ckpt|pt|pth)$/i;
 const MAX_SCAN_ENTRIES = 50000;
 
 export function emptyDirectorySettings() {
-    return { mode: "auto", comfyDir: "", modelDirs: [], loraDirs: [], customNodesDirs: [], updatedAt: "" };
+    return { mode: "auto", comfyDir: "", workflowDirs: [], modelDirs: [], loraDirs: [], customNodesDirs: [], updatedAt: "" };
 }
 
 function splitPaths(value) {
@@ -41,6 +41,7 @@ export function normalizeDirectorySettings(input = {}) {
     return {
         mode,
         comfyDir: String(input.comfyDir || "").trim() ? path.resolve(String(input.comfyDir).trim()) : "",
+        workflowDirs: splitPaths(input.workflowDirs ?? input.workflowDir),
         modelDirs: splitPaths(input.modelDirs ?? input.modelDir),
         loraDirs: splitPaths(input.loraDirs ?? input.loraDir),
         customNodesDirs: splitPaths(input.customNodesDirs ?? input.customNodesDir),
@@ -113,6 +114,7 @@ export function validateDirectorySettings(settings) {
     else if (settings.mode === "manual" && settings.comfyDir && info && !info.mainPy && !info.modelsDir && !info.customNodesDir) {
         errors.push(`目录里没有 main.py / models / custom_nodes，可能不是 ComfyUI 目录：${settings.comfyDir}`);
     }
+    for (const dir of settings.workflowDirs) if (!isDir(dir)) errors.push(`工作流目录不存在：${dir}`);
     for (const dir of settings.modelDirs) if (!isDir(dir)) errors.push(`模型目录不存在：${dir}`);
     for (const dir of settings.loraDirs) if (!isDir(dir)) errors.push(`LoRA 目录不存在：${dir}`);
     for (const dir of settings.customNodesDirs) if (!isDir(dir)) errors.push(`插件目录不存在：${dir}`);
@@ -127,7 +129,7 @@ function safeStat(file) {
     }
 }
 
-function walkFiles(dir, { maxDepth = 8, limit = MAX_SCAN_ENTRIES } = {}) {
+export function walkFiles(dir, { maxDepth = 8, limit = MAX_SCAN_ENTRIES } = {}) {
     const files = [];
     let dirs = 0;
     let truncated = false;
@@ -203,6 +205,11 @@ function summarizeFiles(files, extPattern) {
     return { count, byKind, totalBytes, samples };
 }
 
+function summarizeWorkflowFiles(files) {
+    const matched = files.filter((file) => /\.json$/i.test(file.name));
+    return { count: matched.length, samples: matched.slice(0, 12).map((file) => file.rel) };
+}
+
 function summarizeCustomNodes(dir) {
     const names = [];
     let count = 0;
@@ -222,6 +229,10 @@ function summarizeCustomNodes(dir) {
 }
 
 export function scanDirectories(settings) {
+    const workflowDirs = settings.workflowDirs.map((dir) => {
+        const walk = walkFiles(dir);
+        return { dir, ...summarizeWorkflowFiles(walk.files), dirs: walk.dirs, truncated: walk.truncated };
+    });
     const modelDirs = settings.modelDirs.map((dir) => {
         const walk = walkFiles(dir);
         return { dir, ...summarizeFiles(walk.files, MODEL_EXTS), dirs: walk.dirs, truncated: walk.truncated };
@@ -247,10 +258,12 @@ export function scanDirectories(settings) {
                   customNodesDir: layout.customNodesDir,
               }
             : null,
+        workflowDirs,
         modelDirs,
         loraDirs,
         customNodesDirs,
         totals: {
+            workflows: workflowDirs.reduce((sum, item) => sum + item.count, 0),
             models: modelDirs.reduce((sum, item) => sum + item.count, 0),
             loras: loraDirs.reduce((sum, item) => sum + item.count, 0),
             plugins: customNodesDirs.reduce((sum, item) => sum + item.count, 0),
@@ -487,6 +500,7 @@ export function describeAutoDirectories({ comfyDir = "", comfyRoot = "", workflo
         comfyDir: comfyDir || comfyRoot || "",
         root: layout?.root || comfyRoot || "",
         workflowsDir: workflowsDir || layout?.workflowsDir || "",
+        workflowDirs: workflowsDir || layout?.workflowsDir ? [workflowsDir || layout.workflowsDir] : [],
         modelDirs: layout?.modelsDir ? [layout.modelsDir] : [],
         loraDirs: layout?.modelsDir ? [path.join(layout.modelsDir, "loras")] : [],
         customNodesDirs: layout?.customNodesDir ? [layout.customNodesDir] : [],
