@@ -170,9 +170,8 @@ function pythonFromBat(bat) {
 
 const processPythonCache = new Map();
 
-// 从监听 ComfyUI 端口的进程反查它真实的 Python，兼容非便携版/conda/自定义启动脚本。
-function pythonFromRunningComfy(config) {
-    if (process.platform !== "win32") return "";
+// ComfyUI 监听端口（默认 8188）。
+function comfyPortFromConfig(config) {
     let port = 8188;
     try {
         const url = new URL(config.comfyUrl || "http://127.0.0.1:8188");
@@ -180,31 +179,106 @@ function pythonFromRunningComfy(config) {
     } catch {
         port = 8188;
     }
+    return port;
+}
+
+// Linux：在 /proc/net/tcp(6) 里找监听该端口的 socket inode，再扫 /proc/<pid>/fd 认领进程。
+function pidListeningOnPort(port) {
+    const inodes = new Set();
+    for (const file of ["/proc/net/tcp", "/proc/net/tcp6"]) {
+        let text;
+        try {
+            text = fs.readFileSync(file, "utf8");
+        } catch {
+            continue;
+        }
+        for (const line of text.split("\n").slice(1)) {
+            const parts = line.trim().split(/\s+/);
+            if (parts.length < 10) continue;
+            const portHex = String(parts[1] || "").split(":")[1];
+            if (!portHex || Number.parseInt(portHex, 16) !== port) continue;
+            if (String(parts[3] || "") !== "0A") continue; // 0A = LISTEN
+            inodes.add(String(parts[9] || ""));
+        }
+    }
+    if (!inodes.size) return "";
+    let pids = [];
+    try {
+        pids = fs.readdirSync("/proc").filter((name) => /^\d+$/.test(name));
+    } catch {
+        return "";
+    }
+    for (const pid of pids) {
+        let fds;
+        try {
+            fds = fs.readdirSync(`/proc/${pid}/fd`);
+        } catch {
+            continue;
+        }
+        for (const fd of fds) {
+            let link;
+            try {
+                link = fs.readlinkSync(`/proc/${pid}/fd/${fd}`);
+            } catch {
+                continue;
+            }
+            const match = link.match(/^socket:\[(\d+)\]$/);
+            if (match && inodes.has(match[1])) return pid;
+        }
+    }
+    return "";
+}
+
+// 从监听 ComfyUI 端口的进程反查它真实的 Python，兼容非便携版/conda/自定义启动脚本。
+function pythonFromRunningComfy(config) {
+    const port = comfyPortFromConfig(config);
     const cached = processPythonCache.get(port);
     if (cached && Date.now() - cached.at < 30000) return cached.value;
-    const systemRoot = process.env.SystemRoot || "C:\\Windows";
-    const powershell = path.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
-    const script = [
-        `$conn = Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1`,
-        "if ($conn) {",
-        "  $proc = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $conn.OwningProcess)",
-        // 控制台按系统代码页输出，中文路径会被读成乱码；用 UTF-8 Base64 回传。
-        "  if ($proc) { [Console]::Out.Write([Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($proc.ExecutablePath))) }",
-        "}",
-    ].join("\n");
     let found = "";
-    try {
-        const output = execFileSync(powershell, ["-NoProfile", "-Command", script], {
-            timeout: 4000,
-            windowsHide: true,
-            encoding: "utf8",
-            maxBuffer: 64 * 1024,
-        });
-        const encoded = String(output || "").split(/\r?\n/).map((line) => line.trim()).find(Boolean) || "";
-        const first = encoded ? Buffer.from(encoded, "base64").toString("utf8").trim() : "";
-        if (first && /python(?:w)?\.exe$/i.test(first) && isFile(first)) found = first;
-    } catch {
-        found = "";
+    if (process.platform === "win32") {
+        const systemRoot = process.env.SystemRoot || "C:\\Windows";
+        const powershell = path.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+        const script = [
+            `$conn = Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1`,
+            "if ($conn) {",
+            "  $proc = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $conn.OwningProcess)",
+            // 控制台按系统代码页输出，中文路径会被读成乱码；用 UTF-8 Base64 回传。
+            "  if ($proc) { [Console]::Out.Write([Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($proc.ExecutablePath))) }",
+            "}",
+        ].join("\n");
+        try {
+            const output = execFileSync(powershell, ["-NoProfile", "-Command", script], {
+                timeout: 4000,
+                windowsHide: true,
+                encoding: "utf8",
+                maxBuffer: 64 * 1024,
+            });
+            const encoded = String(output || "").split(/\r?\n/).map((line) => line.trim()).find(Boolean) || "";
+            const first = encoded ? Buffer.from(encoded, "base64").toString("utf8").trim() : "";
+            if (first && /python(?:w)?\.exe$/i.test(first) && isFile(first)) found = first;
+        } catch {
+            found = "";
+        }
+    } else if (process.platform === "darwin") {
+        try {
+            const pid = String(execFileSync("lsof", ["-tiTCP:" + port, "-sTCP:LISTEN"], { timeout: 4000, encoding: "utf8" }) || "").trim().split("\n")[0];
+            if (pid) {
+                const exe = String(execFileSync("ps", ["-o", "comm=", "-p", pid], { timeout: 4000, encoding: "utf8" }) || "").trim();
+                if (/\/python[0-9.]*$/.test(exe)) found = exe;
+            }
+        } catch {
+            found = "";
+        }
+    } else {
+        try {
+            const pid = pidListeningOnPort(port);
+            if (pid) {
+                const exe = fs.realpathSync(`/proc/${pid}/exe`);
+                if (/\/python[0-9.]*$/.test(exe)) found = exe;
+            }
+        } catch {
+            found = "";
+        }
     }
     processPythonCache.set(port, { value: found, at: Date.now() });
     return found;
@@ -238,6 +312,7 @@ function resolveComfyPython(config, root, { probeProcess = false } = {}) {
     };
     add(process.env.COMFY_PYTHON);
     const roots = [root, config.comfyDir].filter(Boolean);
+    const posix = process.platform !== "win32";
     for (const base of roots) {
         add(path.join(base, "python.exe"));
         add(path.join(base, "python_embeded", "python.exe"));
@@ -253,12 +328,25 @@ function resolveComfyPython(config, root, { probeProcess = false } = {}) {
         add(path.join(base, "miniconda3", "python.exe"));
         add(path.join(base, "miniforge3", "python.exe"));
         add(path.join(base, "anaconda3", "python.exe"));
+        if (posix) {
+            // Linux/macOS：venv / conda 环境都把解释器放在 bin/ 下。
+            add(path.join(base, "python"));
+            add(path.join(base, "python3"));
+            add(path.join(base, "bin", "python"));
+            add(path.join(base, "bin", "python3"));
+            add(path.join(base, ".venv", "bin", "python"));
+            add(path.join(base, "venv", "bin", "python"));
+            add(path.join(base, "miniconda3", "bin", "python"));
+            add(path.join(base, "miniforge3", "bin", "python"));
+            add(path.join(base, "anaconda3", "bin", "python"));
+        }
         add(pythonFromBat(path.join(base, "run_nvidia_gpu.bat")));
         try {
             const envs = path.join(base, "envs");
             for (const name of fs.readdirSync(envs)) {
                 add(path.join(envs, name, "python.exe"));
                 add(path.join(envs, name, "Scripts", "python.exe"));
+                if (posix) add(path.join(envs, name, "bin", "python"));
             }
         } catch {
             // 没有 conda envs 目录。
@@ -495,7 +583,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
     }
 
     function comfyPython(root = comfyRoot()) {
-        return resolveComfyPython(config, root);
+        // 和烘焙/装库用同一套判定：候选路径都不在时，反查正在跑 ComfyUI 的那个 Python。
+        return resolveComfyPython(config, root, { probeProcess: true });
     }
 
     function comfyPythonForBake(root = comfyRoot()) {
