@@ -114,6 +114,8 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
     let connectivityTimer = null;
     let connectivityChecking = false;
     let connectivityFailures = 0;
+    // 断开过但还没补扫：等连通性恢复后（或下一个 10s 周期）重扫一次。
+    let needsRescanAfterRecovery = false;
     let lastAutoScanAt = 0;
     let lastComfyBase = "";
     let loaderCatalog = snapshot.loaderCatalog;
@@ -1003,11 +1005,17 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 }
                 return;
             }
+            // 只要刚刚出现过连通性失败，ComfyUI 就可能重启过（节点/模型会变），
+            // 恢复后必须补一次重扫；否则「装完节点重启 ComfyUI」会一直显示缺节点。
+            const recovered = connectivityFailures > 0;
+            if (recovered) needsRescanAfterRecovery = true;
             connectivityFailures = 0;
-            if (state.comfyReachable && state.phase === "ready" && !addressChanged) return;
+            if (state.comfyReachable && state.phase === "ready" && !addressChanged && !needsRescanAfterRecovery) return;
             if (Date.now() - lastAutoScanAt < 10000) return;
             lastAutoScanAt = Date.now();
-            logger?.info?.(addressChanged ? `ComfyUI 地址变化（${lastComfyBase} → ${currentBase}），自动重新扫描` : "ComfyUI 已连接，自动重新扫描工作流与模型");
+            const wasRecovered = needsRescanAfterRecovery;
+            needsRescanAfterRecovery = false;
+            logger?.info?.(addressChanged ? `ComfyUI 地址变化（${lastComfyBase} → ${currentBase}），自动重新扫描` : wasRecovered ? "ComfyUI 曾短暂断开，恢复后自动重新扫描工作流与模型" : "ComfyUI 已连接，自动重新扫描工作流与模型");
             await scan(addressChanged ? "address-change" : "reconnect");
         } catch (error) {
             logger?.warn?.(`ComfyUI 连通性检查失败：${error.message}`);
