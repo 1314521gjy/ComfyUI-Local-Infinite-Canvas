@@ -5,6 +5,20 @@ import path from "node:path";
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export const nowIso = () => new Date().toISOString();
 export const randomId = (prefix = "") => `${prefix}${crypto.randomUUID()}`;
+
+// custom_nodes / models 这类目录常被符号链接到另一块盘（例如指向 NTFS 数据盘），
+// 此时 rename 会报 EXDEV。跨设备时退化为递归复制 + 删除源目录。
+export async function moveTree(source, target) {
+    try {
+        await fs.rename(source, target);
+        return;
+    } catch (error) {
+        if (error?.code !== "EXDEV") throw error;
+    }
+    await fs.cp(source, target, { recursive: true });
+    // 复制已经成功时，源目录清不掉不影响结果（临时目录会由调用方收尾）。
+    await fs.rm(source, { recursive: true, force: true }).catch(() => {});
+}
 const atomicWriteQueues = new Map();
 
 export function clamp(value, min, max) {

@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { alignH3Frames, capH3ReferenceFrames, framesFromSeconds, uniqueFileName, writeJsonAtomic } from "../src/util.js";
+import { alignH3Frames, capH3ReferenceFrames, framesFromSeconds, moveTree, uniqueFileName, writeJsonAtomic } from "../src/util.js";
 
 test("upload filenames stay unique for references with the same original name", () => {
   assert.equal(uniqueFileName("AI_.png", "aaaa"), "AI_-aaaa.png");
@@ -65,5 +66,34 @@ test("atomic JSON writes survive a transient Windows read lock", async () => {
     assert.equal((await fsp.readdir(dir)).some((name) => name.endsWith(".tmp")), false);
   } finally {
     await fsp.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("moveTree copies across devices when rename is not possible", async (t) => {
+  const source = await fsp.mkdtemp(path.join(os.tmpdir(), "move-tree-src-"));
+  // custom_nodes 可能被符号链接到另一块盘；/dev/shm 是独立 tmpfs，常与 os.tmpdir() 不同设备。
+  let targetParent = "";
+  try {
+    const probe = path.join("/dev/shm", `.move-tree-probe-${process.pid}`);
+    await fsp.mkdir(probe, { recursive: true });
+    await fsp.rm(probe, { recursive: true, force: true });
+    if (fs.statSync("/dev/shm").dev !== fs.statSync(source).dev) targetParent = "/dev/shm";
+  } catch {
+    targetParent = "";
+  }
+  if (!targetParent) {
+    t.skip("本机没有与临时目录不同设备的可写目录，无法模拟 EXDEV");
+    await fsp.rm(source, { recursive: true, force: true });
+    return;
+  }
+  try {
+    await fsp.writeFile(path.join(source, "marker.txt"), "moved\n", "utf8");
+    const target = path.join(targetParent, `move-tree-dst-${process.pid}`);
+    await moveTree(source, target);
+    assert.equal(await fsp.readFile(path.join(target, "marker.txt"), "utf8"), "moved\n");
+    assert.equal(await fsp.stat(source).then(() => true, () => false), false);
+  } finally {
+    await fsp.rm(source, { recursive: true, force: true });
+    await fsp.rm(path.join(targetParent, `move-tree-dst-${process.pid}`), { recursive: true, force: true });
   }
 });
