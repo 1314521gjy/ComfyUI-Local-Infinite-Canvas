@@ -2,6 +2,8 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
+import { pickFileLinux } from "./file-picker-linux.js";
+
 function powershellPath() {
   const systemRoot = process.env.SystemRoot || "C:\\Windows";
   return path.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
@@ -20,14 +22,17 @@ function isDir(value) {
 }
 
 // 浏览器拿不到本地绝对路径；由本机网关弹原生文件夹对话框，选完把路径回填。
-export function pickFolder({ title = "选择文件夹", initial = "", timeoutMs = 10 * 60 * 1000 } = {}) {
+export async function pickFolder({ title = "选择文件夹", initial = "", timeoutMs = 10 * 60 * 1000 } = {}) {
   if (process.env.FOLDER_PICKER_FAKE) {
-    return Promise.resolve({ canceled: false, path: path.resolve(process.env.FOLDER_PICKER_FAKE) });
-  }
-  if (process.platform !== "win32") {
-    return Promise.reject(new Error("当前系统不支持原生文件夹选择，请手动输入路径"));
+    return { canceled: false, path: path.resolve(process.env.FOLDER_PICKER_FAKE) };
   }
   const initialDir = initial && isDir(initial) ? path.resolve(initial) : "";
+  // Linux/macOS 没有 PowerShell，改走 zenity/kdialog/tkinter 的原生对话框。
+  if (process.platform !== "win32") {
+    const picked = await pickFileLinux({ title, initialDir, directory: true, timeoutMs });
+    if (picked.error) throw new Error(picked.error);
+    return { canceled: !picked.path, path: picked.path || "" };
+  }
   const script = [
     "$ErrorActionPreference = 'Stop'",
     "Add-Type -AssemblyName System.Windows.Forms",

@@ -5,6 +5,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import { detectComfyLayout, loadDirectorySettings, normalizeDirectorySettings, writeManagedExtraPaths } from "./directories.js";
+import { pickFileLinux } from "./file-picker-linux.js";
 import { isApiWorkflow, isUiWorkflow } from "./registry.js";
 import { findSimilarModel } from "./model-match.js";
 import { MODEL_LOADER_SPECS as LOADER_SPECS, discoverModelLoaderSpecs } from "./model-loaders.js";
@@ -542,6 +543,25 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         const roots = modelRootsForDir(dir).filter((root) => safeStat(root)?.isDirectory());
         if (!roots.length) throw new Error("未找到 ComfyUI 的模型目录");
         const initial = preferredModelRoot(roots);
+        // Linux/macOS 没有 PowerShell，改走 zenity/kdialog/tkinter 的原生对话框。
+        if (process.platform !== "win32") {
+            const picked = await pickFileLinux({
+                title: "选择模型文件",
+                initialDir: initial,
+                filters: [
+                    { name: "模型文件", patterns: ["*.safetensors", "*.sft", "*.ckpt", "*.pt", "*.pth", "*.bin", "*.gguf", "*.onnx", "*.engine"] },
+                    { name: "所有文件", patterns: ["*"] },
+                ],
+                timeoutMs: 300000,
+            });
+            if (picked.error) throw new Error(picked.error);
+            if (picked.canceled || !picked.path) return null;
+            const relative = modelRelativePath(roots, picked.path);
+            if (!relative) {
+                throw new Error(`所选文件不在 ComfyUI 的模型目录中，ComfyUI 看不到它。当前可用目录：${roots.join("、")}`);
+            }
+            return relative;
+        }
         const quote = (value) => `'${String(value).replace(/'/g, "''")}'`;
         const foregroundType = [
             'Add-Type @"',
