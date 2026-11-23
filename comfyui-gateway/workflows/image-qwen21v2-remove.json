@@ -103,11 +103,12 @@
     }
   },
   "205": {
-    "class_type": "LayerUtility: ColorImage",
+    "class_type": "EmptyImage",
     "inputs": {
       "width": 512,
       "height": 512,
-      "color": "#00ff00"
+      "batch_size": 1,
+      "color": 65280
     }
   },
   "207": {
