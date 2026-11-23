@@ -1221,7 +1221,8 @@
             }
           }
         }
-      }
+      },
+      "backgroundPrompt": "qwen-rgba"
     },
     {
       "id": "image-moss-image",
