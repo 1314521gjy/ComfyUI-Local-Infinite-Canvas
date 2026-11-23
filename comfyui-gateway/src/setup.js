@@ -510,9 +510,10 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 aliases[key] = actual;
                 continue;
             }
+            // 磁盘上有、但 ComfyUI 还没把它列进 loader 选项：此时写下别名也不会生效，
+            // 界面却会报「替换成功」，资源卡依旧「缺少」。所以直接拒绝并说清楚下一步。
             if (aliasTargetExists(classType, target, input)) {
-                aliases[key] = normalizeAliasValue(target);
-                continue;
+                throw new Error(`「${target}」不在 ComfyUI 的模型列表中（磁盘上已存在但未被加载）。重启 ComfyUI 后再替换；若重启后仍不出现，说明 ComfyUI 不支持该文件或所在目录。`);
             }
             throw new Error(`所选模型尚未安装或不在 ComfyUI 列表中：${target}`);
         }
