@@ -1284,9 +1284,6 @@ export async function createGatewayApp(overrides = {}) {
 
   app.post("/api/setup/pick-directory", async (req, res) => {
     if (config.allowRemote) throw new HttpError("远程模式不支持原生目录选择，请手动输入路径", { status: 400, code: "picker_remote_disabled" });
-    if (process.platform !== "win32" && !process.env.FOLDER_PICKER_FAKE) {
-      throw new HttpError("当前系统不支持原生目录选择，请手动输入路径", { status: 400, code: "picker_unsupported" });
-    }
     if (pickerBusy) throw new HttpError("已有目录选择窗口打开，请先完成或取消", { status: 409, code: "picker_busy" });
     pickerBusy = true;
     try {

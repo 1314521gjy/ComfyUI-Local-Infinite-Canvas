@@ -5,6 +5,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import { detectComfyLayout, loadDirectorySettings, normalizeDirectorySettings, writeManagedExtraPaths } from "./directories.js";
+import { pickFileLinux } from "./file-picker-linux.js";
 import { isApiWorkflow, isUiWorkflow } from "./registry.js";
 import { findSimilarModel } from "./model-match.js";
 import { MODEL_LOADER_SPECS as LOADER_SPECS, discoverModelLoaderSpecs } from "./model-loaders.js";
@@ -113,6 +114,8 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
     let connectivityTimer = null;
     let connectivityChecking = false;
     let connectivityFailures = 0;
+    // 断开过但还没补扫：等连通性恢复后（或下一个 10s 周期）重扫一次。
+    let needsRescanAfterRecovery = false;
     let lastAutoScanAt = 0;
     let lastComfyBase = "";
     let loaderCatalog = snapshot.loaderCatalog;
@@ -507,9 +510,10 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 aliases[key] = actual;
                 continue;
             }
+            // 磁盘上有、但 ComfyUI 还没把它列进 loader 选项：此时写下别名也不会生效，
+            // 界面却会报「替换成功」，资源卡依旧「缺少」。所以直接拒绝并说清楚下一步。
             if (aliasTargetExists(classType, target, input)) {
-                aliases[key] = normalizeAliasValue(target);
-                continue;
+                throw new Error(`「${target}」不在 ComfyUI 的模型列表中（磁盘上已存在但未被加载）。重启 ComfyUI 后再替换；若重启后仍不出现，说明 ComfyUI 不支持该文件或所在目录。`);
             }
             throw new Error(`所选模型尚未安装或不在 ComfyUI 列表中：${target}`);
         }
@@ -542,6 +546,25 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
         const roots = modelRootsForDir(dir).filter((root) => safeStat(root)?.isDirectory());
         if (!roots.length) throw new Error("未找到 ComfyUI 的模型目录");
         const initial = preferredModelRoot(roots);
+        // Linux/macOS 没有 PowerShell，改走 zenity/kdialog/tkinter 的原生对话框。
+        if (process.platform !== "win32") {
+            const picked = await pickFileLinux({
+                title: "选择模型文件",
+                initialDir: initial,
+                filters: [
+                    { name: "模型文件", patterns: ["*.safetensors", "*.sft", "*.ckpt", "*.pt", "*.pth", "*.bin", "*.gguf", "*.onnx", "*.engine"] },
+                    { name: "所有文件", patterns: ["*"] },
+                ],
+                timeoutMs: 300000,
+            });
+            if (picked.error) throw new Error(picked.error);
+            if (picked.canceled || !picked.path) return null;
+            const relative = modelRelativePath(roots, picked.path);
+            if (!relative) {
+                throw new Error(`所选文件不在 ComfyUI 的模型目录中，ComfyUI 看不到它。当前可用目录：${roots.join("、")}`);
+            }
+            return relative;
+        }
         const quote = (value) => `'${String(value).replace(/'/g, "''")}'`;
         const foregroundType = [
             'Add-Type @"',
@@ -983,11 +1006,17 @@ export function createSetupManager({ config, registry, comfy, logger, mainModelF
                 }
                 return;
             }
+            // 只要刚刚出现过连通性失败，ComfyUI 就可能重启过（节点/模型会变），
+            // 恢复后必须补一次重扫；否则「装完节点重启 ComfyUI」会一直显示缺节点。
+            const recovered = connectivityFailures > 0;
+            if (recovered) needsRescanAfterRecovery = true;
             connectivityFailures = 0;
-            if (state.comfyReachable && state.phase === "ready" && !addressChanged) return;
+            if (state.comfyReachable && state.phase === "ready" && !addressChanged && !needsRescanAfterRecovery) return;
             if (Date.now() - lastAutoScanAt < 10000) return;
             lastAutoScanAt = Date.now();
-            logger?.info?.(addressChanged ? `ComfyUI 地址变化（${lastComfyBase} → ${currentBase}），自动重新扫描` : "ComfyUI 已连接，自动重新扫描工作流与模型");
+            const wasRecovered = needsRescanAfterRecovery;
+            needsRescanAfterRecovery = false;
+            logger?.info?.(addressChanged ? `ComfyUI 地址变化（${lastComfyBase} → ${currentBase}），自动重新扫描` : wasRecovered ? "ComfyUI 曾短暂断开，恢复后自动重新扫描工作流与模型" : "ComfyUI 已连接，自动重新扫描工作流与模型");
             await scan(addressChanged ? "address-change" : "reconnect");
         } catch (error) {
             logger?.warn?.(`ComfyUI 连通性检查失败：${error.message}`);

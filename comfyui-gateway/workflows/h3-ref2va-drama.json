@@ -295,24 +295,6 @@
       "cnr_id": "comfy-core"
     }
   },
-  "110": {
-    "inputs": {
-      "processing_control_value": 0.08,
-      "processing_percent_1": 0.1,
-      "processing_percent_2": 0.9,
-      "mcs": 2,
-      "device": "auto",
-      "mode": "standard",
-      "model": [
-        "4",
-        0
-      ]
-    },
-    "class_type": "TESpeedMiniMaxH3",
-    "_meta": {
-      "title": "TE-Speed-MiniMaxH3"
-    }
-  },
   "111": {
     "inputs": {
       "max_resolution": 1024,

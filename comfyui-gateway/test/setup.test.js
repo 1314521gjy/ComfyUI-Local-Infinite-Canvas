@@ -425,6 +425,59 @@ test("explicit alias only applies after the user chooses an installed candidate"
   }
 });
 
+test("replacing with a file ComfyUI has not loaded is rejected instead of silently saved", async () => {
+  const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-alias-pending-"));
+  const comfyDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-alias-comfy-"));
+  try {
+    await fsp.mkdir(path.join(comfyDir, "models", "diffusion_models"), { recursive: true });
+    await fsp.writeFile(path.join(comfyDir, "models", "diffusion_models", "dropped_on_disk.safetensors"), "x");
+    const custom = { ...entry, workflow: { 1: { class_type: "UNETLoader", inputs: { unet_name: "missing_model.safetensors" } } }, baseModels: undefined };
+    const manager = createSetupManager({
+      config: { dataDir, comfyDir, comfyUrl: "http://127.0.0.1:1", comfyWorkflowsDir: "", maxWorkflowBytes: 1024 * 1024 },
+      registry: {
+        list: () => [{ id: custom.id }],
+        resolve: () => custom,
+        scan: async () => ({ imported: 0 }),
+        reloadIfChanged: () => {},
+      },
+      comfy: {
+        systemStats: async () => ({}),
+        objectInfo: async () => objectInfo(["installed_other.safetensors"]),
+      },
+      logger: null,
+      mainModelFile: () => "",
+    });
+    await manager.scan();
+    assert.equal(manager.isAvailable(custom.id), false);
+    await assert.rejects(
+      () => manager.setModelAlias({ classType: "UNETLoader", input: "unet_name", from: "missing_model.safetensors", to: "dropped_on_disk.safetensors" }),
+      /不在 ComfyUI 的模型列表中/,
+    );
+    // 拒绝后不能留下别名，否则资源卡会假装“已替换”而实际没生效。
+    assert.equal(manager.userModelAliasFor("UNETLoader", "unet_name", "missing_model.safetensors"), "");
+    assert.equal(await fsp.stat(path.join(dataDir, "model-aliases.json")).then(() => true, () => false), false);
+  } finally {
+    await fsp.rm(dataDir, { recursive: true, force: true });
+    await fsp.rm(comfyDir, { recursive: true, force: true });
+  }
+});
+
+test("replacing with a file that is nowhere to be found keeps the plain error", async () => {
+  const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-alias-absent-"));
+  try {
+    const manager = createAliasManager(dataDir, ["installed_other.safetensors"], {
+      1: { class_type: "UNETLoader", inputs: { unet_name: "missing_model.safetensors" } },
+    });
+    await manager.scan();
+    await assert.rejects(
+      () => manager.setModelAlias({ classType: "UNETLoader", input: "unet_name", from: "missing_model.safetensors", to: "not_on_disk.safetensors" }),
+      /所选模型尚未安装或不在 ComfyUI 列表中/,
+    );
+  } finally {
+    await fsp.rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("workflow stays available when the default base model is absent but a tier variant is installed", async () => {
   const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "setup-base-fallback-"));
   try {

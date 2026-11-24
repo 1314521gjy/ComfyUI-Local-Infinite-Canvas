@@ -257,7 +257,8 @@ test("resources can install a custom node zip", async () => {
     await fsp.mkdir(path.join(source, "ComfyUI-testnode"), { recursive: true });
     await fsp.writeFile(path.join(source, "ComfyUI-testnode", "__init__.py"), `NODE_CLASS_MAPPINGS = {}\n`, "utf8");
     const archive = path.join(root, "node.zip");
-    const zipped = spawnSync("tar", ["-a", "-c", "-f", "node.zip", "-C", "source", "ComfyUI-testnode"], { cwd: root, encoding: "utf8" });
+    // 真实 zip：GNU tar 读不了 zip，节点包在 Linux 上必须走 unzip/zipfile 分支。
+    const zipped = spawnSync("python3", ["-m", "zipfile", "-c", archive, "ComfyUI-testnode"], { cwd: source, encoding: "utf8" });
     assert.equal(zipped.status, 0, zipped.stderr);
     const payload = await fsp.readFile(archive);
     const server = http.createServer((_req, res) => {

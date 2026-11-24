@@ -13,7 +13,7 @@ import { MODEL_LOADER_SPECS } from "./model-loaders.js";
 import { findSimilarModel, FUZZY_MODEL_EXTENSIONS } from "./model-match.js";
 import { collectModelRoots, clearExtraModelPathsCache } from "./model-paths.js";
 import { isManualModelCategory, manualCustomNodeRoots, manualModelRoots } from "./directories.js";
-import { nowIso, truncate, writeJsonAtomic } from "./util.js";
+import { nowIso, truncate, writeJsonAtomic, moveTree } from "./util.js";
 
 const MODEL_DIRS = new Set(["diffusion_models", "text_encoders", "vae", "vae_approx", "loras", "checkpoints", "upscale_models", "latent_upscale_models", "vdn", "clip_vision", "clip_projections", "background_removal", "geometry_estimation", "LLM", "SEEDVR2"]);
 const VDN_STAGE_RESOURCE_PREFIX = "h3_vdn_stage_";
@@ -170,9 +170,8 @@ function pythonFromBat(bat) {
 
 const processPythonCache = new Map();
 
-// 从监听 ComfyUI 端口的进程反查它真实的 Python，兼容非便携版/conda/自定义启动脚本。
-function pythonFromRunningComfy(config) {
-    if (process.platform !== "win32") return "";
+// ComfyUI 监听端口（默认 8188）。
+function comfyPortFromConfig(config) {
     let port = 8188;
     try {
         const url = new URL(config.comfyUrl || "http://127.0.0.1:8188");
@@ -180,31 +179,106 @@ function pythonFromRunningComfy(config) {
     } catch {
         port = 8188;
     }
+    return port;
+}
+
+// Linux：在 /proc/net/tcp(6) 里找监听该端口的 socket inode，再扫 /proc/<pid>/fd 认领进程。
+function pidListeningOnPort(port) {
+    const inodes = new Set();
+    for (const file of ["/proc/net/tcp", "/proc/net/tcp6"]) {
+        let text;
+        try {
+            text = fs.readFileSync(file, "utf8");
+        } catch {
+            continue;
+        }
+        for (const line of text.split("\n").slice(1)) {
+            const parts = line.trim().split(/\s+/);
+            if (parts.length < 10) continue;
+            const portHex = String(parts[1] || "").split(":")[1];
+            if (!portHex || Number.parseInt(portHex, 16) !== port) continue;
+            if (String(parts[3] || "") !== "0A") continue; // 0A = LISTEN
+            inodes.add(String(parts[9] || ""));
+        }
+    }
+    if (!inodes.size) return "";
+    let pids = [];
+    try {
+        pids = fs.readdirSync("/proc").filter((name) => /^\d+$/.test(name));
+    } catch {
+        return "";
+    }
+    for (const pid of pids) {
+        let fds;
+        try {
+            fds = fs.readdirSync(`/proc/${pid}/fd`);
+        } catch {
+            continue;
+        }
+        for (const fd of fds) {
+            let link;
+            try {
+                link = fs.readlinkSync(`/proc/${pid}/fd/${fd}`);
+            } catch {
+                continue;
+            }
+            const match = link.match(/^socket:\[(\d+)\]$/);
+            if (match && inodes.has(match[1])) return pid;
+        }
+    }
+    return "";
+}
+
+// 从监听 ComfyUI 端口的进程反查它真实的 Python，兼容非便携版/conda/自定义启动脚本。
+function pythonFromRunningComfy(config) {
+    const port = comfyPortFromConfig(config);
     const cached = processPythonCache.get(port);
     if (cached && Date.now() - cached.at < 30000) return cached.value;
-    const systemRoot = process.env.SystemRoot || "C:\\Windows";
-    const powershell = path.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
-    const script = [
-        `$conn = Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1`,
-        "if ($conn) {",
-        "  $proc = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $conn.OwningProcess)",
-        // 控制台按系统代码页输出，中文路径会被读成乱码；用 UTF-8 Base64 回传。
-        "  if ($proc) { [Console]::Out.Write([Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($proc.ExecutablePath))) }",
-        "}",
-    ].join("\n");
     let found = "";
-    try {
-        const output = execFileSync(powershell, ["-NoProfile", "-Command", script], {
-            timeout: 4000,
-            windowsHide: true,
-            encoding: "utf8",
-            maxBuffer: 64 * 1024,
-        });
-        const encoded = String(output || "").split(/\r?\n/).map((line) => line.trim()).find(Boolean) || "";
-        const first = encoded ? Buffer.from(encoded, "base64").toString("utf8").trim() : "";
-        if (first && /python(?:w)?\.exe$/i.test(first) && isFile(first)) found = first;
-    } catch {
-        found = "";
+    if (process.platform === "win32") {
+        const systemRoot = process.env.SystemRoot || "C:\\Windows";
+        const powershell = path.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+        const script = [
+            `$conn = Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1`,
+            "if ($conn) {",
+            "  $proc = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $conn.OwningProcess)",
+            // 控制台按系统代码页输出，中文路径会被读成乱码；用 UTF-8 Base64 回传。
+            "  if ($proc) { [Console]::Out.Write([Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($proc.ExecutablePath))) }",
+            "}",
+        ].join("\n");
+        try {
+            const output = execFileSync(powershell, ["-NoProfile", "-Command", script], {
+                timeout: 4000,
+                windowsHide: true,
+                encoding: "utf8",
+                maxBuffer: 64 * 1024,
+            });
+            const encoded = String(output || "").split(/\r?\n/).map((line) => line.trim()).find(Boolean) || "";
+            const first = encoded ? Buffer.from(encoded, "base64").toString("utf8").trim() : "";
+            if (first && /python(?:w)?\.exe$/i.test(first) && isFile(first)) found = first;
+        } catch {
+            found = "";
+        }
+    } else if (process.platform === "darwin") {
+        try {
+            const pid = String(execFileSync("lsof", ["-tiTCP:" + port, "-sTCP:LISTEN"], { timeout: 4000, encoding: "utf8" }) || "").trim().split("\n")[0];
+            if (pid) {
+                const exe = String(execFileSync("ps", ["-o", "comm=", "-p", pid], { timeout: 4000, encoding: "utf8" }) || "").trim();
+                if (/\/python[0-9.]*$/.test(exe)) found = exe;
+            }
+        } catch {
+            found = "";
+        }
+    } else {
+        try {
+            const pid = pidListeningOnPort(port);
+            if (pid) {
+                const exe = fs.realpathSync(`/proc/${pid}/exe`);
+                if (/\/python[0-9.]*$/.test(exe)) found = exe;
+            }
+        } catch {
+            found = "";
+        }
     }
     processPythonCache.set(port, { value: found, at: Date.now() });
     return found;
@@ -238,6 +312,7 @@ function resolveComfyPython(config, root, { probeProcess = false } = {}) {
     };
     add(process.env.COMFY_PYTHON);
     const roots = [root, config.comfyDir].filter(Boolean);
+    const posix = process.platform !== "win32";
     for (const base of roots) {
         add(path.join(base, "python.exe"));
         add(path.join(base, "python_embeded", "python.exe"));
@@ -253,12 +328,25 @@ function resolveComfyPython(config, root, { probeProcess = false } = {}) {
         add(path.join(base, "miniconda3", "python.exe"));
         add(path.join(base, "miniforge3", "python.exe"));
         add(path.join(base, "anaconda3", "python.exe"));
+        if (posix) {
+            // Linux/macOS：venv / conda 环境都把解释器放在 bin/ 下。
+            add(path.join(base, "python"));
+            add(path.join(base, "python3"));
+            add(path.join(base, "bin", "python"));
+            add(path.join(base, "bin", "python3"));
+            add(path.join(base, ".venv", "bin", "python"));
+            add(path.join(base, "venv", "bin", "python"));
+            add(path.join(base, "miniconda3", "bin", "python"));
+            add(path.join(base, "miniforge3", "bin", "python"));
+            add(path.join(base, "anaconda3", "bin", "python"));
+        }
         add(pythonFromBat(path.join(base, "run_nvidia_gpu.bat")));
         try {
             const envs = path.join(base, "envs");
             for (const name of fs.readdirSync(envs)) {
                 add(path.join(envs, name, "python.exe"));
                 add(path.join(envs, name, "Scripts", "python.exe"));
+                if (posix) add(path.join(envs, name, "bin", "python"));
             }
         } catch {
             // 没有 conda envs 目录。
@@ -495,7 +583,8 @@ export function createResourceManager({ config, setup, registry, logger, workflo
     }
 
     function comfyPython(root = comfyRoot()) {
-        return resolveComfyPython(config, root);
+        // 和烘焙/装库用同一套判定：候选路径都不在时，反查正在跑 ComfyUI 的那个 Python。
+        return resolveComfyPython(config, root, { probeProcess: true });
     }
 
     function comfyPythonForBake(root = comfyRoot()) {
@@ -2055,6 +2144,21 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         throw lastError || new Error("所有下载源均失败");
     }
 
+    async function isZipArchive(archive) {
+        let handle;
+        try {
+            handle = await fsp.open(archive, "r");
+            const buffer = Buffer.alloc(4);
+            const { bytesRead } = await handle.read(buffer, 0, 4, 0);
+            // PK\x03\x04 普通 zip；PK\x05\x06 空 zip；PK\x07\x08 分卷头。
+            return bytesRead >= 2 && buffer[0] === 0x50 && buffer[1] === 0x4b && [0x03, 0x05, 0x07].includes(buffer[2]);
+        } catch {
+            return false;
+        } finally {
+            await handle?.close().catch(() => {});
+        }
+    }
+
     async function extractArchive(archive, destination) {
         await fsp.rm(destination, { recursive: true, force: true });
         await fsp.mkdir(destination, { recursive: true });
@@ -2065,16 +2169,35 @@ export function createResourceManager({ config, setup, registry, logger, workflo
             child.on("error", reject);
             child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(stderr || `解压失败（exit ${code}）`))));
         });
+        const target = destination.replace(/\\/g, "/");
+        let lastError = null;
         try {
             // archive 用 basename + cwd，避免 Git 的 GNU tar 把 C: 当远程主机；-C 用绝对路径，支持跨盘。
-            await run("tar", ["-xf", path.basename(archive), "-C", destination.replace(/\\/g, "/")], { cwd: path.dirname(archive) });
+            await run("tar", ["-xf", path.basename(archive), "-C", target], { cwd: path.dirname(archive) });
+            return;
         } catch (error) {
-            const powershell = process.env.SystemRoot ? path.join(process.env.SystemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe") : "powershell.exe";
-            const quoted = (value) => `'${String(value).replace(/'/g, "''")}'`;
-            await run(powershell, ["-NoProfile", "-Command", `Expand-Archive -LiteralPath ${quoted(archive)} -DestinationPath ${quoted(destination)} -Force`]).catch(() => {
-                throw new Error(`无法解压节点包：${error.message}`);
-            });
+            lastError = error;
         }
+        // GNU tar 读不了 zip（节点包基本都是 zip），改用 unzip，再退到 python3 自带 zipfile。
+        if (await isZipArchive(archive)) {
+            try {
+                await run("unzip", ["-o", path.basename(archive), "-d", target], { cwd: path.dirname(archive) });
+                return;
+            } catch (error) {
+                lastError = error;
+            }
+            try {
+                await run("python3", ["-m", "zipfile", "-e", archive, destination]);
+                return;
+            } catch (error) {
+                lastError = error;
+            }
+        }
+        const powershell = process.env.SystemRoot ? path.join(process.env.SystemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe") : "powershell.exe";
+        const quoted = (value) => `'${String(value).replace(/'/g, "''")}'`;
+        await run(powershell, ["-NoProfile", "-Command", `Expand-Archive -LiteralPath ${quoted(archive)} -DestinationPath ${quoted(destination)} -Force`]).catch(() => {
+            throw new Error(`无法解压节点包：${lastError?.message || "未知错误"}`);
+        });
     }
 
     async function findNodeRoot(directory, depth = 0) {
@@ -2135,6 +2258,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
         const extract = path.join(installRoot, "extract");
         await fsp.mkdir(installRoot, { recursive: true });
         let lastError = null;
+        let bundledError = null;
         try {
             if (bundleDir && isDir(bundleDir)) {
                 try {
@@ -2148,7 +2272,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                     if (!sourceDir) throw new Error("内置目录里没有找到 __init__.py");
                     await fsp.mkdir(path.dirname(target), { recursive: true });
                     throwIfCanceled(signal);
-                    if (!isDir(target)) await fsp.rename(sourceDir, target);
+                    if (!isDir(target)) await moveTree(sourceDir, target);
                     lock.installed = lock.installed || {};
                     lock.installed[resource.id] = { version: index?.version || "", target: resource.target, size: resource.size || 0, installedAt: nowIso() };
                     lock.updatedAt = nowIso();
@@ -2160,6 +2284,7 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                     return;
                 } catch (error) {
                     lastError = error;
+                    bundledError = error;
                     throwIfCanceled(signal);
                     logger?.warn?.(`内置节点复制失败 ${resource.id}: ${error.message}，尝试下载源`);
                 }
@@ -2192,13 +2317,16 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                     let movedBackup = false;
                     throwIfCanceled(signal);
                     if (isDir(target)) {
-                        await fsp.rename(target, backup);
+                        await moveTree(target, backup);
                         movedBackup = true;
                     }
                     try {
-                        await fsp.rename(sourceDir, target);
+                        await moveTree(sourceDir, target);
                     } catch (error) {
-                        if (movedBackup) await fsp.rename(backup, target).catch(() => {});
+                        if (movedBackup) {
+                            await fsp.rm(target, { recursive: true, force: true }).catch(() => {});
+                            await moveTree(backup, target).catch(() => {});
+                        }
                         throw error;
                     }
                     lock.installed = lock.installed || {};
@@ -2215,6 +2343,12 @@ export function createResourceManager({ config, setup, registry, logger, workflo
                     throwIfCanceled(signal);
                     logger?.warn?.(`节点安装失败 ${resource.id} ← ${jobItem.source}: ${error.message}`);
                 }
+            }
+            // 内置目录明明在、却装不进去时，报下载源的最后一条错误毫无意义
+            // （例如「大小不一致」），必须把真正的失败原因说清楚。
+            if (bundledError) {
+                const downloadError = lastError && lastError !== bundledError ? `；下载源也失败：${lastError.message}` : "";
+                throw new Error(`内置节点目录安装失败：${bundledError.message}${downloadError}`);
             }
             throw lastError || new Error("所有节点下载源均失败");
         } finally {
